@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from '../database/firebase.js';
+import { db } from '../database/db.js';
 import { authenticateApiKey, activeApiKeys } from '../middleware/auth.js';
 
 const router = express.Router();

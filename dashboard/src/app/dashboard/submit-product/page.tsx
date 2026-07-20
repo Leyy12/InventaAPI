@@ -34,17 +34,26 @@ export default function SubmitProductPage() {
     setLoading(true);
 
     try {
-      await addDoc(collection(db, "products"), {
-        barcode: formData.barcode,
-        name: formData.name,
-        nameLower: formData.name.toLowerCase(),
-        price: parseFloat(formData.price),
-        stock: parseInt(formData.stock),
-        category: formData.category,
-        businessType: appUser.businessSegment,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const response = await fetch("/api/v1/products", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          barcode: formData.barcode,
+          name: formData.name,
+          nameLower: formData.name.toLowerCase(),
+          price: parseFloat(formData.price),
+          stock: parseInt(formData.stock),
+          category: formData.category,
+          businessType: appUser.businessSegment,
+        })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add product");
+      }
       setSuccess(true);
       setFormData({ barcode: "", name: "", price: "", stock: "", category: "" });
       setTimeout(() => setSuccess(false), 3000);
@@ -66,7 +75,7 @@ export default function SubmitProductPage() {
         <p className="text-slate-400">Add a new product to your inventory database.</p>
       </div>
 
-      <div className="glass-card rounded-xl p-8 max-w-2xl border border-slate-700/60">
+      <div className="glass-card rounded-xl p-8 border border-slate-700/60">
         {success ? (
           <div className="flex flex-col items-center justify-center py-10 space-y-4">
             <CheckCircle className="w-16 h-16 text-emerald-400" />
@@ -150,7 +159,7 @@ export default function SubmitProductPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex items-center justify-center w-full gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-medium px-4 py-3 rounded-xl transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center justify-center w-full gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Package className="w-5 h-5" />
                 {loading ? "Saving Product..." : "Add to Inventory"}

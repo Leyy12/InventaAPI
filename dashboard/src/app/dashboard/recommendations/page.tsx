@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { Sparkles, Check, X, PackagePlus } from "lucide-react";
-import { collection, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, query, orderBy, where } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
 
 export default function RecommendationsPage() {
@@ -11,58 +9,82 @@ export default function RecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const { appUser } = useAuth();
 
-  useEffect(() => {
+  const fetchRecommendations = async () => {
     if (!appUser) return;
-    
     setLoading(true);
-    let q;
-    if (appUser.role === "Admin") {
-      q = query(collection(db, "recommendations"));
-    } else {
-      q = query(collection(db, "recommendations"), where("businessType", "==", appUser.businessSegment));
-    }
+    try {
+      let mappedType = appUser.businessSegment.toLowerCase();
+      if (mappedType.includes("hardware")) mappedType = "hardware";
+      else if (mappedType.includes("grocery")) mappedType = "grocery";
+      else if (mappedType.includes("pharmacy")) mappedType = "pharmacy";
+      else if (mappedType.includes("clothing")) mappedType = "clothing";
+      else mappedType = "hardware";
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      let data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      data.sort((a: any, b: any) => {
-        // Sort pending first, then by timestamp descending
+      let url = "/api/v1/products/recommendations/list";
+      if (appUser.role !== "Admin" && appUser.role !== "Super Admin") {
+        url += `?businessType=${encodeURIComponent(mappedType)}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+      const list = data.recommendations || [];
+      
+      list.sort((a: any, b: any) => {
         if (a.status === 'pending' && b.status !== 'pending') return -1;
         if (a.status !== 'pending' && b.status === 'pending') return 1;
-        const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : 0;
-        const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : 0;
+        const timeA = new Date(a.timestamp).getTime();
+        const timeB = new Date(b.timestamp).getTime();
         return timeB - timeA;
       });
-      setRecommendations(data);
+      setRecommendations(list);
+    } catch (err) {
+      console.error("Error fetching recommendations:", err);
+    } finally {
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching recommendations:", error);
-      setLoading(false);
-    });
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchRecommendations();
+    // Poll every 5 seconds for updates
+    const interval = setInterval(fetchRecommendations, 5000);
+    return () => clearInterval(interval);
   }, [appUser]);
 
   const handleApprove = async (rec: any) => {
     if (!appUser) return;
     try {
-      // 1. Add to products collection
-      await addDoc(collection(db, "products"), {
-        barcode: rec.barcode || "",
-        name: rec.suggestedName || `Product ${rec.barcode}`,
-        nameLower: (rec.suggestedName || `Product ${rec.barcode}`).toLowerCase(),
-        price: 0,
-        stock: 0,
-        category: "Uncategorized",
-        businessType: rec.businessType || appUser.businessSegment,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      let mappedType = appUser.businessSegment.toLowerCase();
+      if (mappedType.includes("hardware")) mappedType = "hardware";
+      else if (mappedType.includes("grocery")) mappedType = "grocery";
+      else if (mappedType.includes("pharmacy")) mappedType = "pharmacy";
+      else if (mappedType.includes("clothing")) mappedType = "clothing";
+      else mappedType = "hardware";
+
+      // 1. Add to products collection via Express API
+      const pRes = await fetch("/api/v1/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          barcode: rec.barcode || "",
+          name: rec.suggestedName || `Product ${rec.barcode}`,
+          nameLower: (rec.suggestedName || `Product ${rec.barcode}`).toLowerCase(),
+          price: 0,
+          stock: 0,
+          category: "Uncategorized",
+          businessType: rec.businessType || mappedType,
+        })
+      });
+      if (!pRes.ok) throw new Error("Failed to add product");
+      
+      // 2. Update recommendation status via Express API
+      await fetch(`/api/v1/products/recommendations/${rec.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "approved" })
       });
       
-      // 2. Update recommendation status
-      await updateDoc(doc(db, "recommendations", rec.id), {
-        status: "approved",
-        updatedAt: serverTimestamp(),
-      });
+      fetchRecommendations();
     } catch (err: any) {
       alert("Error approving: " + err.message);
     }
@@ -70,27 +92,39 @@ export default function RecommendationsPage() {
 
   const handleIgnore = async (id: string) => {
     try {
-      await updateDoc(doc(db, "recommendations", id), {
-        status: "ignored",
-        updatedAt: serverTimestamp(),
+      await fetch(`/api/v1/products/recommendations/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ignored" })
       });
+      fetchRecommendations();
     } catch (err: any) {
       alert("Error ignoring: " + err.message);
     }
   };
 
-  // Mock function to add a test recommendation (for demonstration purposes since POS isn't connected)
+  // Mock function to add a test recommendation
   const addTestRecommendation = async () => {
     if (!appUser?.businessSegment) return;
     try {
+      let mappedType = appUser.businessSegment.toLowerCase();
+      if (mappedType.includes("hardware")) mappedType = "hardware";
+      else if (mappedType.includes("grocery")) mappedType = "grocery";
+      else if (mappedType.includes("pharmacy")) mappedType = "pharmacy";
+      else if (mappedType.includes("clothing")) mappedType = "clothing";
+      else mappedType = "hardware";
+
       const mockBarcode = "8402" + Math.floor(Math.random() * 10000);
-      await addDoc(collection(db, "recommendations"), {
-        barcode: mockBarcode,
-        suggestedName: "Unknown Item " + mockBarcode,
-        status: "pending",
-        businessType: appUser.businessSegment,
-        timestamp: serverTimestamp(),
+      await fetch("/api/v1/products/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          barcode: mockBarcode,
+          suggestedName: "Unknown Item " + mockBarcode,
+          businessType: mappedType,
+        })
       });
+      fetchRecommendations();
     } catch (err: any) {
       alert("Error adding test data: " + err.message);
     }
@@ -158,7 +192,7 @@ export default function RecommendationsPage() {
                       </span>
                     </td>
                     <td className="p-4 text-sm text-slate-400">
-                      {rec.timestamp?.toDate ? rec.timestamp.toDate().toLocaleDateString() : "Just now"}
+                      {rec.timestamp ? new Date(rec.timestamp).toLocaleDateString() : "Just now"}
                     </td>
                     <td className="p-4 text-right">
                       {rec.status === 'pending' ? (

@@ -140,11 +140,12 @@ class LocalDatabase {
     }
 
     // --- Products Helper ---
-    getProducts(businessType = null) {
+    getProducts(businessType = null, limit = 100) {
+        let results = this.data.products;
         if (businessType) {
-            return this.data.products.filter(p => p.businessType === businessType);
+            results = results.filter(p => p.businessType === businessType);
         }
-        return this.data.products;
+        return results.slice(0, limit);
     }
 
     getProductByBarcode(barcode) {
@@ -211,6 +212,16 @@ class LocalDatabase {
         this.data.recommendations.push(newReco);
         this.save();
         return newReco;
+    }
+
+    updateRecommendation(id, updates) {
+        const idx = this.data.recommendations.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            this.data.recommendations[idx] = { ...this.data.recommendations[idx], ...updates, updatedAt: new Date().toISOString() };
+            this.save();
+            return this.data.recommendations[idx];
+        }
+        return null;
     }
 }
 

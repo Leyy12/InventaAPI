@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, writeBatch, collection } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase } from "lucide-react";
@@ -52,19 +52,23 @@ export default function SignupPage() {
       const user = userCredential.user;
 
       // Create user document in Firestore
+      const isSuperAdmin = formData.email.toLowerCase() === 'balquinkevinconeal27@gmail.com';
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         fullName: formData.fullName,
         email: formData.email,
         businessName: formData.businessName,
-        businessSegment: formData.businessSegment,
-        plan: "Starter",
-        role: "Developer",
-        apiRequestLimit: 50,
+        businessSegment: isSuperAdmin ? "Admin" : formData.businessSegment,
+        plan: isSuperAdmin ? "Unlimited" : "Starter",
+        role: isSuperAdmin ? "Admin" : "Developer",
+        apiRequestLimit: isSuperAdmin ? 999999 : 50,
         apiRequestsUsed: 0,
         createdAt: serverTimestamp(),
         lastLogin: serverTimestamp()
       });
+
+      // Remove Firestore seeding to prevent permission errors
+      // Dashboard now fetches products directly from the DaaS API (data.json)
 
       router.push("/dashboard");
     } catch (err: any) {
@@ -108,10 +112,11 @@ export default function SignupPage() {
         <form onSubmit={handleSignup} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5 md:col-span-2">
-              <label className="text-sm font-medium text-slate-300 ml-1">Full Name</label>
+              <label htmlFor="fullName" className="text-sm font-medium text-slate-300 ml-1">Full Name</label>
               <div className="relative">
                 <UserIcon className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
+                  id="fullName"
                   type="text" 
                   name="fullName"
                   value={formData.fullName}
@@ -124,10 +129,11 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5 md:col-span-2">
-              <label className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
+              <label htmlFor="email" className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
               <div className="relative">
                 <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
+                  id="email"
                   type="email" 
                   name="email"
                   value={formData.email}
@@ -140,10 +146,11 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300 ml-1">Password</label>
+              <label htmlFor="password" className="text-sm font-medium text-slate-300 ml-1">Password</label>
               <div className="relative">
                 <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
+                  id="password"
                   type="password" 
                   name="password"
                   value={formData.password}
@@ -157,10 +164,11 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300 ml-1">Confirm Password</label>
+              <label htmlFor="confirmPassword" className="text-sm font-medium text-slate-300 ml-1">Confirm Password</label>
               <div className="relative">
                 <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
+                  id="confirmPassword"
                   type="password" 
                   name="confirmPassword"
                   value={formData.confirmPassword}
@@ -174,10 +182,11 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300 ml-1">Business Name</label>
+              <label htmlFor="businessName" className="text-sm font-medium text-slate-300 ml-1">Business Name</label>
               <div className="relative">
                 <Building className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
+                  id="businessName"
                   type="text" 
                   name="businessName"
                   value={formData.businessName}
@@ -190,10 +199,11 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300 ml-1">Business Segment</label>
+              <label htmlFor="businessSegment" className="text-sm font-medium text-slate-300 ml-1">Business Segment</label>
               <div className="relative">
                 <Briefcase className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <select 
+                  id="businessSegment"
                   name="businessSegment"
                   value={formData.businessSegment}
                   onChange={handleChange}
@@ -228,7 +238,7 @@ export default function SignupPage() {
         </form>
 
         <p className="text-center text-sm text-slate-500 mt-8">
-          Already have an account? <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Sign In</Link>
+          Already have an account? <Link href="/" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
         </p>
       </div>
     </div>

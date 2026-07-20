@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from '../database/firebase.js';
+import { db } from '../database/db.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -30,13 +30,48 @@ router.get('/barcode/:barcode', async (req, res) => {
                 error: "Product not registered in database.",
                 barcode: barcode,
                 suggestAcquisition: true,
-                message: "Barcode detected is unregistered. The DaaS recommendation engine suggests adding this new item to the inventory to prevent future unrecorded sales."
+                message: "Barcode detected is unregistered. The DaaS recommendation engine suggests adding this new item to the inventory to prevent future unrecorded sales.",
+                action_url: `/add-product?barcode=${barcode}`
             });
         }
 
         res.json({ product });
     } catch (err) {
         res.status(500).json({ error: "Barcode query failure: " + err.message });
+    }
+});
+
+// Retrieve recommendations
+router.get('/recommendations/list', (req, res) => {
+    const { businessType } = req.query;
+    try {
+        let recos = db.getRecommendations();
+        if (businessType && businessType !== 'Admin') {
+            recos = recos.filter(r => r.businessType === businessType);
+        }
+        res.json({ recommendations: recos });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch recommendations: " + err.message });
+    }
+});
+
+// Add a recommendation
+router.post('/recommendations', (req, res) => {
+    try {
+        const reco = db.addRecommendation(req.body);
+        res.json({ success: true, recommendation: reco });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to add recommendation: " + err.message });
+    }
+});
+
+// Update a recommendation (Approve/Ignore)
+router.put('/recommendations/:id', (req, res) => {
+    try {
+        const updated = db.updateRecommendation(req.params.id, req.body);
+        res.json({ success: true, recommendation: updated });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to update recommendation: " + err.message });
     }
 });
 
@@ -52,9 +87,9 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Add a new product (RBAC secured, supports images, variations, sizes/capacities)
-router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => {
-    const { barcode, name, description, category, businessType, price, stock, image, size, capacity, variations, expirationDate, supplierInfo } = req.body;
+// Add a new product (RBAC secured, supports images, variations, sizes/capacities, and dynamic attributes)
+router.post('/', async (req, res) => {
+    const { barcode, name, description, category, businessType, price, stock, image, size, capacity, variations, attributes, expirationDate, supplierInfo } = req.body;
 
     if (!barcode || !name || !businessType || price === undefined || stock === undefined) {
         return res.status(400).json({ error: "Barcode, name, businessType, price, and stock are required." });
@@ -69,10 +104,16 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
             businessType,
             price: parseFloat(price),
             stock: parseInt(stock),
+            image_url: image || "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
             image: image || "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
-            size: size || "N/A",
-            capacity: capacity || "N/A",
-            variations: variations || {},
+            size: req.body.size || "Standard",
+            color: req.body.color || "Assorted",
+            capacity: capacity || "Standard",
+            weight: req.body.weight || "N/A",
+            uom: req.body.uom || "pcs",
+            status: req.body.status || "Active",
+            variations: variations || [],
+            attributes: attributes || { brand: req.body.brand || "Generic" },
             expirationDate: expirationDate || null,
             supplierInfo: supplierInfo || { name: "N/A", contact: "N/A" }
         });

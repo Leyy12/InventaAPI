@@ -20,17 +20,27 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 
-const routes = [
+const dashboardRoutes = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
   { name: "Products", href: "/dashboard/products", icon: Package },
+  { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
   { name: "Documentation", href: "/dashboard/docs", icon: BookOpen },
   { name: "Recommendations", href: "/dashboard/recommendations", icon: Sparkles },
-  { name: "Submit Product", href: "/dashboard/submit-product", icon: UploadCloud },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-  { name: "Security", href: "/dashboard/security", icon: ShieldCheck },
-  { name: "Segments", href: "/dashboard/business-segment", icon: Settings },
-  { name: "Mobile App", href: "/dashboard/mobile", icon: Smartphone },
+];
+
+const adminRoutes = [
+  { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
+  { name: "Hardware Catalog", href: "/admin/products/hardware", icon: Package },
+  { name: "Pharmacy Catalog", href: "/admin/products/pharmacy", icon: Package },
+  { name: "Grocery Catalog", href: "/admin/products/grocery", icon: Package },
+  { name: "Clothing Catalog", href: "/admin/products/clothing", icon: Package },
+  { name: "Pending Requests", href: "/admin/requests", icon: Sparkles },
+  { name: "API Consumers", href: "/admin/consumers", icon: Key },
+  { name: "Categories", href: "/admin/categories", icon: BookOpen },
+  { name: "Security Center", href: "/admin/security", icon: ShieldCheck },
+  { name: "Audit Logs", href: "/admin/audit", icon: ShieldAlert },
+  { name: "System Settings", href: "/admin/settings", icon: Settings },
 ];
 
 export default function Sidebar() {
@@ -50,10 +60,10 @@ export default function Sidebar() {
 
       <div className="flex-1 py-6 px-3 overflow-y-auto space-y-1 custom-scrollbar">
         <div className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          Developer
+          {pathname.startsWith("/admin") ? "Super Admin" : "SME Consumer"}
         </div>
-        {routes.map((route) => {
-          const isActive = pathname === route.href || (pathname.startsWith(route.href) && route.href !== "/dashboard");
+        {(pathname.startsWith("/admin") ? adminRoutes : dashboardRoutes).map((route) => {
+          const isActive = pathname === route.href || (pathname.startsWith(route.href) && route.href !== "/dashboard" && route.href !== "/admin");
           return (
             <Link
               key={route.href}
@@ -61,11 +71,11 @@ export default function Sidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
                 isActive
-                  ? "bg-indigo-500/10 text-indigo-400"
+                  ? pathname.startsWith("/admin") ? "bg-red-500/10 text-red-400" : "bg-indigo-500/10 text-indigo-400"
                   : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
               )}
             >
-              <route.icon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300")} />
+              <route.icon className={cn("w-4 h-4", isActive ? (pathname.startsWith("/admin") ? "text-red-400" : "text-indigo-400") : "text-slate-500 group-hover:text-slate-300")} />
               {route.name}
             </Link>
           );
@@ -73,28 +83,10 @@ export default function Sidebar() {
 
         <div className="mt-8 pt-6 border-t border-slate-800/60">
           <div className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            Management
-          </div>
-          <Link
-            href="/admin"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
-              pathname.startsWith("/admin")
-                ? "bg-purple-500/10 text-purple-400"
-                : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
-            )}
-          >
-            <ShieldAlert className={cn("w-4 h-4", pathname.startsWith("/admin") ? "text-purple-400" : "text-slate-500 group-hover:text-slate-300")} />
-            Admin Panel
-          </Link>
-        </div>
-
-        <div className="mt-8 pt-6 border-t border-slate-800/60">
-          <div className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
             External Links
           </div>
           <a
-            href="http://localhost:5000"
+            href="/?view=landing"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-all duration-200 group"
           >
             <Globe className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />

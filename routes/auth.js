@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { db } from '../database/firebase.js';
+import { db } from '../database/db.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
