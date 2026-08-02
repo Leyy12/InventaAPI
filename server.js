@@ -9,12 +9,21 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ⚠️  IMPORTANT: Import Firebase initialization FIRST before any routes.
+// Route files call getFirestore() at module load time, so Firebase must
+// be initialized (via database/firebase.js) before any route is imported.
+import './database/firebase.js';
+
 // Import routers
 import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
-import recommendationsRouter from './routes/recommendations.js';
 import daasRouter from './routes/daas.js';
 import apiKeysRouter from './routes/apikeys.js';
+import productRequestsRouter from './routes/product-requests.js';
+import notificationsRouter from './routes/notifications.js';
+import webhooksRouter from './routes/webhooks.js';
+import checkoutRouter from './routes/checkout.js';
+
 
 dotenv.config();
 
@@ -39,8 +48,24 @@ app.use(helmet({
 }));
 
 // 2. CORS: Restrict cross-origin communications to approved origins
+// Allow both customer dashboard (3000) and admin panel (3001)
+const allowedOrigins = [
+    'http://localhost:3000',  // Customer Dashboard
+    'http://localhost:3001',  // Admin Panel
+];
+
 app.use(cors({
-    origin: '*', // In production, replace with specific domain e.g., 'https://sme-sales-pwa.vercel.app'
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, Postman, curl)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.warn('[CORS] Blocked request from origin:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
     credentials: true
@@ -60,7 +85,20 @@ app.use('/daas/', limiter);
 // 4. Data Compression: Ensure JSON responses are lightweight for Mobile Computing
 app.use(compression());
 
-// Express body parsers
+// ─────────────────────────────────────────────────────────────────────────────
+// WEBHOOK RAW BODY CAPTURE
+// PayMongo signature verification requires the raw (un-parsed) request body.
+// We attach it to req.rawBody via the verify callback BEFORE express.json()
+// processes the body. This ONLY applies to the /api/webhooks/* path.
+// ─────────────────────────────────────────────────────────────────────────────
+app.use('/api/webhooks', express.json({
+    limit: '1mb',
+    verify: (req, res, buf) => {
+        req.rawBody = buf.toString('utf8');
+    },
+}));
+
+// Express body parsers (for all other routes)
 app.use(express.json({ limit: '10mb' })); // Support larger base64 images if needed
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -73,8 +111,13 @@ app.use((req, res, next) => {
 // --- API Routing Hookup (Version 1) ---
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/products', productsRouter);
-app.use('/api/v1/recommendations', recommendationsRouter);
 app.use('/api/v1/api-keys', apiKeysRouter);
+app.use('/api/v1/product-requests', productRequestsRouter);
+app.use('/api/v1/notifications', notificationsRouter);
+app.use('/api/v1/checkout', checkoutRouter);
+
+// --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
+app.use('/api/webhooks', webhooksRouter);
 
 // DaaS Integration Layer (Guarded internally by API Key)
 app.use('/daas/v1', daasRouter);
@@ -82,9 +125,9 @@ app.use('/daas/v1', daasRouter);
 // --- Serve static assets (CSS, images, etc.) ---
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Base / Root Endpoint — Serves the Landing Page ---
+// --- Base / Root Endpoint — Redirect to Next.js Landing Page ---
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+    res.redirect('http://localhost:3000/');
 });
 
 // --- Developer Portal Route ---
@@ -96,13 +139,13 @@ app.get('/developer', (req, res) => {
 app.get('/api', (req, res) => {
     res.json({
         message: "API-Based Data-as-a-Service Sales & Inventory Management System Engine is online.",
-        documentation: "http://localhost:5000/",
+        documentation: "http://localhost:3000/",
         compliance: "Data Privacy Act (DPA) of 2012 Secure Access Enabled",
         version: "1.0.0",
         endpoints: {
             auth: "/api/v1/auth/login",
             products: "/api/v1/products",
-            recommendations: "/api/v1/recommendations",
+            product_requests: "/api/v1/product-requests",
             daas_catalog: "/daas/v1/catalog (x-api-key required)"
         }
     });

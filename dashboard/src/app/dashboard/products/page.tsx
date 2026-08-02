@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Database, ShoppingCart, Check, Package, Key, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ProductNotFound, ProductRequestModal, ConfirmationModal } from "@/components/product-request";
+
+// ==================== TYPES ====================
 
 interface Product {
   id: string;
@@ -25,22 +28,43 @@ interface CartSummary {
   productIds: string[];
 }
 
+// ==================== CONSTANTS ====================
+
+const SEGMENTS = ["All", "Pharmacy", "Hardware", "Grocery"] as const;
+const COPY_REDIRECT_DELAY = 1500;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+// ==================== MAIN COMPONENT ====================
+
 export default function ProductCatalogPage() {
   const router = useRouter();
+  
+  // Core State
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [activeSegment, setActiveSegment] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // API Key Generation State
   const [showGenModal, setShowGenModal] = useState(false);
   const [keyName, setKeyName] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  
+  // Product Request State
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
+
+  // ==================== EFFECTS ====================
 
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  // ==================== DATA FETCHING ====================
 
   const fetchProducts = async () => {
     try {
@@ -55,7 +79,46 @@ export default function ProductCatalogPage() {
     }
   };
 
-  const toggleProduct = (productId: string) => {
+  // ==================== COMPUTED VALUES ====================
+
+  const getFilteredProducts = useCallback(() => {
+    let filtered = products;
+    
+    if (activeSegment !== "All") {
+      filtered = filtered.filter(p => p.segment === activeSegment);
+    }
+    
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(p =>
+        p.name?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q)
+      );
+    }
+    
+    return filtered;
+  }, [products, activeSegment, searchQuery]);
+
+  const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
+
+  const cartSummary = useMemo((): CartSummary => {
+    const selectedItems = products.filter(p => selectedProducts.has(p.id));
+    const bySegment = selectedItems.reduce((acc, p) => {
+      acc[p.segment] = (acc[p.segment] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return {
+      totalProducts: selectedProducts.size,
+      bySegment,
+      productIds: Array.from(selectedProducts)
+    };
+  }, [products, selectedProducts]);
+
+  // ==================== PRODUCT SELECTION ====================
+
+  const toggleProduct = useCallback((productId: string) => {
     setSelectedProducts((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(productId)) {
@@ -65,61 +128,36 @@ export default function ProductCatalogPage() {
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const selectAllInView = () => {
-    const filtered = getFilteredProducts();
+  const selectAllInView = useCallback(() => {
     setSelectedProducts((prev) => {
       const newSet = new Set(prev);
-      filtered.forEach(p => newSet.add(p.id));
+      filteredProducts.forEach(p => newSet.add(p.id));
       return newSet;
     });
-  };
+  }, [filteredProducts]);
 
-  const clearSelection = () => {
+  const clearSelection = useCallback(() => {
     setSelectedProducts(new Set());
-  };
+  }, []);
 
-  const getFilteredProducts = () => {
-    let filtered = products;
-    if (activeSegment !== "All") filtered = filtered.filter(p => p.segment === activeSegment);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(p =>
-        p.name?.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.sku?.toLowerCase().includes(q)
-      );
-    }
-    return filtered;
-  };
-
-  const getCartSummary = (): CartSummary => {
-    const selectedItems = products.filter(p => selectedProducts.has(p.id));
-    const bySegment = selectedItems.reduce((acc, p) => {
-      acc[p.segment] = (acc[p.segment] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    return {
-      totalProducts: selectedProducts.size,
-      bySegment,
-      productIds: Array.from(selectedProducts)
-    };
-  };
+  // ==================== API KEY GENERATION ====================
 
   const handleGenerateApiKey = async () => {
     if (!keyName.trim()) {
       alert("Please enter a name for your API key");
       return;
     }
+    
     setGenerating(true);
+    
     try {
       const { auth } = await import("@/lib/firebase/config");
       const currentUser = auth.currentUser;
       
       if (!currentUser) {
         alert("You must be logged in to generate an API key.");
-        setGenerating(false);
         return;
       }
 
@@ -127,13 +165,9 @@ export default function ProductCatalogPage() {
         .filter(p => selectedProducts.has(p.id))
         .map(p => ({ id: p.id, name: p.name, sku: p.sku, segment: p.segment }));
 
-      // Call the backend API which uses Firebase Admin SDK (bypassing client-side rules)
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      const response = await fetch(`${apiUrl}/api/v1/api-keys/generate`, {
+      const response = await fetch(`${API_URL}/api/v1/api-keys/generate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.uid,
           userEmail: currentUser.email || "",
@@ -159,20 +193,21 @@ export default function ProductCatalogPage() {
     }
   };
 
-  const handleCopyAndClose = () => {
+  const handleCopyAndClose = useCallback(() => {
     if (generatedKey) {
       navigator.clipboard.writeText(generatedKey);
       setCopied(true);
       setTimeout(() => {
         router.push('/dashboard/api-keys');
-      }, 1500);
+      }, COPY_REDIRECT_DELAY);
     }
-  };
+  }, [generatedKey, router]);
 
-  const handleDownloadEnv = () => {
+  const handleDownloadEnv = useCallback(() => {
     if (!generatedKey) return;
+    
     const content = `# DaaS API Configuration
-NEXT_PUBLIC_DAAS_API_URL=${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}
+NEXT_PUBLIC_DAAS_API_URL=${API_URL}
 DAAS_API_KEY=${generatedKey}
 `;
     const blob = new Blob([content], { type: "text/plain" });
@@ -184,10 +219,11 @@ DAAS_API_KEY=${generatedKey}
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  };
+  }, [generatedKey]);
 
-  const handleDownloadPostman = () => {
+  const handleDownloadPostman = useCallback(() => {
     if (!generatedKey) return;
+    
     const collection = {
       info: {
         name: "DaaS API Integration",
@@ -198,18 +234,17 @@ DAAS_API_KEY=${generatedKey}
           name: "Get Catalog",
           request: {
             method: "GET",
-            header: [
-              { key: "x-api-key", value: generatedKey }
-            ],
+            header: [{ key: "x-api-key", value: generatedKey }],
             url: {
-              raw: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/daas/v1/catalog`,
-              host: [(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001').replace('http://', '')],
+              raw: `${API_URL}/daas/v1/catalog`,
+              host: [API_URL.replace('http://', '')],
               path: ["daas", "v1", "catalog"]
             }
           }
         }
       ]
     };
+    
     const blob = new Blob([JSON.stringify(collection, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -219,11 +254,49 @@ DAAS_API_KEY=${generatedKey}
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }, [generatedKey]);
+
+  // ==================== PRODUCT REQUEST ====================
+
+  const handleOpenRequestModal = () => {
+    setShowRequestModal(true);
   };
 
-  const cartSummary = getCartSummary();
-  const filteredProducts = getFilteredProducts();
-  const segments = ["All", "Pharmacy", "Hardware", "Grocery"];
+  const handleRequestSuccess = () => {
+    // Optionally store request ID here if returned from modal
+    setShowRequestModal(false);
+    setShowConfirmationModal(true);
+    // Optionally refetch products
+    fetchProducts();
+  };
+
+  const handleCancelRequest = async () => {
+    if (!lastRequestId) return;
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${apiUrl}/api/v1/product-requests/${lastRequestId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to cancel request');
+      }
+      
+      setShowConfirmationModal(false);
+      setLastRequestId(null);
+    } catch (error) {
+      console.error('Error cancelling request:', error);
+      throw error;
+    }
+  };
+
+  const handleReturnToCatalog = () => {
+    setShowConfirmationModal(false);
+    setSearchQuery("");
+  };
+
+  // ==================== RENDER ====================
 
   return (
     <div className="space-y-6 pb-10">
@@ -235,8 +308,14 @@ DAAS_API_KEY=${generatedKey}
         </div>
         {selectedProducts.size > 0 && (
           <button
-            onClick={() => { setShowGenModal(true); setGeneratedKey(null); setKeyName(""); setCopied(false); }}
+            onClick={() => { 
+              setShowGenModal(true); 
+              setGeneratedKey(null); 
+              setKeyName(""); 
+              setCopied(false); 
+            }}
             className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+            aria-label={`Generate API Key for ${selectedProducts.size} selected products`}
           >
             <Key className="w-4 h-4" />
             Generate API Key ({selectedProducts.size} products)
@@ -271,6 +350,7 @@ DAAS_API_KEY=${generatedKey}
               <button
                 onClick={clearSelection}
                 className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors"
+                aria-label="Clear all selected products"
               >
                 Clear All
               </button>
@@ -286,9 +366,9 @@ DAAS_API_KEY=${generatedKey}
         </div>
       )}
 
-      {/* Filter Row: Search (left) + Dropdown (right) */}
+      {/* Filter Row */}
       <div className="flex items-center gap-3">
-        {/* Search Bar — Left */}
+        {/* Search Bar */}
         <div className="relative flex-1">
           <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
             <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -301,14 +381,14 @@ DAAS_API_KEY=${generatedKey}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search products, SKU..."
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500
-                       focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20
-                       hover:bg-slate-700/80 hover:border-slate-600 transition-all"
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all"
+            aria-label="Search products by name or SKU"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
               className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+              aria-label="Clear search"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -330,15 +410,14 @@ DAAS_API_KEY=${generatedKey}
           </span>
         )}
 
-        {/* Category Dropdown — Right */}
+        {/* Category Dropdown */}
         <div className="relative">
           <select
             id="category-filter"
             value={activeSegment}
             onChange={(e) => setActiveSegment(e.target.value)}
-            className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200
-                       focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20
-                       hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px]"
+            className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px]"
+            aria-label="Filter products by category"
           >
             <option value="All">All Categories</option>
             <option value="Hardware">Hardware</option>
@@ -357,6 +436,7 @@ DAAS_API_KEY=${generatedKey}
           <button
             onClick={selectAllInView}
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-sm font-medium text-slate-300 transition-all whitespace-nowrap"
+            aria-label={`Select all ${filteredProducts.length} filtered products`}
           >
             Select All ({filteredProducts.length})
           </button>
@@ -375,11 +455,31 @@ DAAS_API_KEY=${generatedKey}
           ))}
         </div>
       ) : filteredProducts.length === 0 ? (
-        <div className="glass-card rounded-xl p-12 text-center">
-          <Package className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">No Products Found</h3>
-          <p className="text-slate-400">No products available in this category</p>
-        </div>
+        <>
+          {/* Product Not Found Component */}
+          <ProductNotFound
+            searchQuery={searchQuery}
+            onRequestProduct={handleOpenRequestModal}
+          />
+
+          {/* Product Request Modal */}
+          <ProductRequestModal
+            isOpen={showRequestModal}
+            onClose={() => setShowRequestModal(false)}
+            productName={searchQuery}
+            onSuccess={handleRequestSuccess}
+          />
+
+          {/* Confirmation Modal */}
+          <ConfirmationModal
+            isOpen={showConfirmationModal}
+            onClose={() => setShowConfirmationModal(false)}
+            productName={searchQuery}
+            requestId={lastRequestId || undefined}
+            onReturnToCatalog={handleReturnToCatalog}
+            onCancelRequest={handleCancelRequest}
+          />
+        </>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredProducts.map((product) => {

@@ -1,0 +1,1109 @@
+"use client";
+
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Database, ShoppingCart, Check, Package, Key, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+// ==================== TYPES ====================
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  segment: "Pharmacy" | "Hardware" | "Grocery";
+  price: number;
+  size?: string | null;
+  description: string;
+  image_url: string;
+  image?: string;
+  stock?: number;
+}
+
+interface CartSummary {
+  totalProducts: number;
+  bySegment: Record<string, number>;
+  productIds: string[];
+}
+
+interface ProductRequestFormData {
+  productName: string;
+  category: string;
+  sku: string;
+  details: string;
+  imageFile: File | null;
+}
+
+// ==================== CONSTANTS ====================
+
+const SEGMENTS = ["All", "Pharmacy", "Hardware", "Grocery"] as const;
+const SUCCESS_MESSAGE_DURATION = 6000;
+const COPY_REDIRECT_DELAY = 1500;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+const INITIAL_FORM_STATE: ProductRequestFormData = {
+  productName: "",
+  category: "Pharmacy",
+  sku: "",
+  details: "",
+  imageFile: null
+};
+
+// ==================== MAIN COMPONENT ====================
+
+export default function ProductCatalogPage() {
+  const router = useRouter();
+  
+  // Core State
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [activeSegment, setActiveSegment] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // API Key Generation State
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [keyName, setKeyName] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  
+  // Product Request State
+  const [requestFormData, setRequestFormData] = useState<ProductRequestFormData>(INITIAL_FORM_STATE);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [showRequestForm, setShowRequestForm] = useState(false);
+
+  // ==================== EFFECTS ====================
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  // Auto-fill product name when search returns no results
+  useEffect(() => {
+    const filtered = getFilteredProducts();
+    if (searchQuery.trim() && filtered.length === 0 && !requestSuccess) {
+      setRequestFormData(prev => ({
+        ...prev,
+        productName: searchQuery.trim()
+      }));
+    }
+  }, [searchQuery, products, activeSegment, requestSuccess]);
+
+  // ==================== DATA FETCHING ====================
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const { getAllProducts } = await import('@/lib/firebase/products-service');
+      const productsData = await getAllProducts();
+      setProducts(productsData as unknown as Product[]);
+    } catch (error) {
+      console.error("[Products] Error fetching:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==================== COMPUTED VALUES ====================
+
+  const getFilteredProducts = useCallback(() => {
+    let filtered = products;
+    
+    if (activeSegment !== "All") {
+      filtered = filtered.filter(p => p.segment === activeSegment);
+    }
+    
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(p =>
+        p.name?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q)
+      );
+    }
+    
+    return filtered;
+  }, [products, activeSegment, searchQuery]);
+
+  const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
+
+  const cartSummary = useMemo((): CartSummary => {
+    const selectedItems = products.filter(p => selectedProducts.has(p.id));
+    const bySegment = selectedItems.reduce((acc, p) => {
+      acc[p.segment] = (acc[p.segment] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return {
+      totalProducts: selectedProducts.size,
+      bySegment,
+      productIds: Array.from(selectedProducts)
+    };
+  }, [products, selectedProducts]);
+
+  // ==================== PRODUCT SELECTION ====================
+
+  const toggleProduct = useCallback((productId: string) => {
+    setSelectedProducts((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(productId)) {
+        newSet.delete(productId);
+      } else {
+        newSet.add(productId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const selectAllInView = useCallback(() => {
+    setSelectedProducts((prev) => {
+      const newSet = new Set(prev);
+      filteredProducts.forEach(p => newSet.add(p.id));
+      return newSet;
+    });
+  }, [filteredProducts]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedProducts(new Set());
+  }, []);
+
+  // ==================== API KEY GENERATION ====================
+
+  const handleGenerateApiKey = async () => {
+    if (!keyName.trim()) {
+      alert("Please enter a name for your API key");
+      return;
+    }
+    
+    setGenerating(true);
+    
+    try {
+      const { auth } = await import("@/lib/firebase/config");
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        alert("You must be logged in to generate an API key.");
+        return;
+      }
+
+      const selectedProductsList = products
+        .filter(p => selectedProducts.has(p.id))
+        .map(p => ({ id: p.id, name: p.name, sku: p.sku, segment: p.segment }));
+
+      const response = await fetch(`${API_URL}/api/v1/api-keys/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          userEmail: currentUser.email || "",
+          keyName: keyName.trim(),
+          plan: "Professional",
+          linkedProducts: selectedProductsList,
+          linkedProductIds: Array.from(selectedProducts),
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate API key via backend");
+      }
+
+      setGeneratedKey(data.key);
+    } catch (error) {
+      console.error("Error generating API key:", error);
+      alert("Failed to generate API key. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCopyAndClose = useCallback(() => {
+    if (generatedKey) {
+      navigator.clipboard.writeText(generatedKey);
+      setCopied(true);
+      setTimeout(() => {
+        router.push('/dashboard/api-keys');
+      }, COPY_REDIRECT_DELAY);
+    }
+  }, [generatedKey, router]);
+
+  const handleDownloadEnv = useCallback(() => {
+    if (!generatedKey) return;
+    
+    const content = `# DaaS API Configuration
+NEXT_PUBLIC_DAAS_API_URL=${API_URL}
+DAAS_API_KEY=${generatedKey}
+`;
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = ".env.local";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [generatedKey]);
+
+  const handleDownloadPostman = useCallback(() => {
+    if (!generatedKey) return;
+    
+    const collection = {
+      info: {
+        name: "DaaS API Integration",
+        schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+      },
+      item: [
+        {
+          name: "Get Catalog",
+          request: {
+            method: "GET",
+            header: [{ key: "x-api-key", value: generatedKey }],
+            url: {
+              raw: `${API_URL}/daas/v1/catalog`,
+              host: [API_URL.replace('http://', '')],
+              path: ["daas", "v1", "catalog"]
+            }
+          }
+        }
+      ]
+    };
+    
+    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "daas-api-postman.json";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [generatedKey]);
+
+  // ==================== PRODUCT REQUEST ====================
+
+  const handleImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setRequestFormData(prev => ({ ...prev, imageFile: file }));
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
+  const handleSubmitProductRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!requestFormData.productName.trim()) {
+      alert("Please enter a product name");
+      return;
+    }
+
+    setSubmittingRequest(true);
+    
+    try {
+      const { auth } = await import("@/lib/firebase/config");
+      const { collection, addDoc, serverTimestamp } = await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase/config");
+      const currentUser = auth.currentUser;
+      
+      let imageUrl = null;
+      
+      // Upload image if provided
+      if (requestFormData.imageFile) {
+        const { ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
+        const { storage } = await import("@/lib/firebase/config");
+        const storageRef = ref(storage, `product-requests/${Date.now()}_${requestFormData.imageFile.name}`);
+        await uploadBytes(storageRef, requestFormData.imageFile);
+        imageUrl = await getDownloadURL(storageRef);
+      }
+      
+      await addDoc(collection(db, "product_requests"), {
+        productName: requestFormData.productName.trim(),
+        category: requestFormData.category,
+        sku: requestFormData.sku.trim() || null,
+        details: requestFormData.details.trim() || null,
+        searchQuery: searchQuery || null,
+        imageUrl: imageUrl,
+        requestedBy: {
+          uid: currentUser?.uid || "anonymous",
+          email: currentUser?.email || "anonymous",
+        },
+        status: "pending",
+        createdAt: serverTimestamp(),
+        reviewedAt: null,
+        reviewedBy: null,
+        notes: null
+      });
+      
+      setRequestSuccess(true);
+      setRequestFormData(INITIAL_FORM_STATE);
+      setImagePreview(null);
+      
+      setTimeout(() => {
+        setRequestSuccess(false);
+        setShowRequestForm(false);
+      }, SUCCESS_MESSAGE_DURATION);
+    } catch (error) {
+      console.error("Error submitting product request:", error);
+      alert("Failed to submit request. Please try again.");
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
+
+  const resetProductRequest = useCallback(() => {
+    setRequestSuccess(false);
+    setShowRequestForm(false);
+    setSearchQuery("");
+  }, []);
+
+  // ==================== RENDER ====================
+
+  return (
+    <div className="space-y-6 pb-10">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Product Catalog</h1>
+          <p className="text-slate-400">Select products to include in your custom API endpoint</p>
+        </div>
+        {selectedProducts.size > 0 && (
+          <button
+            onClick={() => { 
+              setShowGenModal(true); 
+              setGeneratedKey(null); 
+              setKeyName(""); 
+              setCopied(false); 
+            }}
+            className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+            aria-label={`Generate API Key for ${selectedProducts.size} selected products`}
+          >
+            <Key className="w-4 h-4" />
+            Generate API Key ({selectedProducts.size} products)
+          </button>
+        )}
+      </div>
+
+      {/* Shopping Cart Summary - Sticky */}
+      {selectedProducts.size > 0 && (
+        <div className="glass-card rounded-xl p-6 border-2 border-indigo-500/30 sticky top-4 z-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
+                <ShoppingCart className="w-6 h-6 text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white mb-1">Selected Products</h3>
+                <p className="text-sm text-slate-400 mb-3">Your custom API will return these {cartSummary.totalProducts} products</p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(cartSummary.bySegment).map(([segment, count]) => (
+                    <span 
+                      key={segment}
+                      className="px-3 py-1 rounded-full text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300"
+                    >
+                      {segment}: {count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={clearSelection}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors"
+                aria-label="Clear all selected products"
+              >
+                Clear All
+              </button>
+              <Link
+                href={`/dashboard/api-playground?products=${Array.from(selectedProducts).join(',')}`}
+                className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-colors flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Test in Playground
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Row */}
+      <div className="flex items-center gap-3">
+        {/* Search Bar */}
+        <div className="relative flex-1">
+          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+          </div>
+          <input
+            id="product-search"
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search products, SKU..."
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all"
+            aria-label="Search products by name or SKU"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+              aria-label="Clear search"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Active filter badge */}
+        {activeSegment !== "All" && (
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+            activeSegment === "Pharmacy" ? "bg-green-500/15 text-green-400 border-green-500/30" :
+            activeSegment === "Hardware" ? "bg-orange-500/15 text-orange-400 border-orange-500/30" :
+            "bg-blue-500/15 text-blue-400 border-blue-500/30"
+          }`}>
+            {filteredProducts.length} {activeSegment}
+          </span>
+        )}
+
+        {/* Category Dropdown */}
+        <div className="relative">
+          <select
+            id="category-filter"
+            value={activeSegment}
+            onChange={(e) => setActiveSegment(e.target.value)}
+            className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px]"
+            aria-label="Filter products by category"
+          >
+            <option value="All">All Categories</option>
+            <option value="Hardware">Hardware</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Pharmacy">Pharmacy</option>
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Select All button */}
+        {filteredProducts.length > 0 && (
+          <button
+            onClick={selectAllInView}
+            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-sm font-medium text-slate-300 transition-all whitespace-nowrap"
+            aria-label={`Select all ${filteredProducts.length} filtered products`}
+          >
+            Select All ({filteredProducts.length})
+          </button>
+        )}
+      </div>
+
+      {/* Product Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="glass-card rounded-xl p-6 animate-pulse">
+              <div className="w-full h-32 bg-slate-800 rounded-lg mb-4" />
+              <div className="h-4 bg-slate-800 rounded w-3/4 mb-2" />
+              <div className="h-3 bg-slate-800 rounded w-1/2" />
+            </div>
+          ))}
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="relative space-y-6">
+          {/* Animated Background Gradients */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+            <div className="absolute top-20 -left-20 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute bottom-20 -right-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}} />
+          </div>
+
+          {/* Product Request - Premium 2-Step Flow */}
+          <div className="relative glass-card rounded-2xl overflow-hidden border border-white/10 backdrop-blur-xl bg-gradient-to-br from-slate-900/90 to-slate-800/90 shadow-2xl">
+            {requestSuccess ? (
+              // Step 3: Success State
+              <div className="p-12 animate-fadeIn">
+                <div className="max-w-md mx-auto text-center">
+                  <div className="relative w-20 h-20 mx-auto mb-6">
+                    <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl animate-pulse" />
+                    <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/50">
+                      <Check className="w-10 h-10 text-white" strokeWidth={3} />
+                    </div>
+                  </div>
+                  
+                  <h3 className="text-3xl font-bold text-white mb-4 bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                    Request Received!
+                  </h3>
+                  
+                  <div className="space-y-3 text-slate-300 mb-8">
+                    <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                      <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-sm font-bold text-emerald-400">Request Successfully Submitted!</span>
+                    </div>
+                    
+                    <p className="text-lg font-medium">Thank you for helping us grow! 🎉</p>
+                    <p className="text-sm leading-relaxed">
+                      Your product request has been submitted for verification.
+                    </p>
+                    
+                    {/* Timeline */}
+                    <div className="mt-6 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20">
+                      <div className="flex items-start gap-3">
+                        <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1">
+                          <p className="text-xs font-semibold text-blue-300 mb-2">📋 What happens next?</p>
+                          <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                            <li>Admin reviews your submission (24-48 hours)</li>
+                            <li>Product gets verified and added to catalog</li>
+                            <li>Available via API for all users</li>
+                            <li>You'll receive a notification when approved</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <p className="text-xs text-slate-500 mt-4">
+                      💡 Tip: You can track the status in your dashboard notifications
+                    </p>
+                  </div>
+                  
+                  <button
+                    onClick={resetProductRequest}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white font-medium transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105"
+                  >
+                    ← Back to Catalog
+                  </button>
+                </div>
+              </div>
+            ) : !showRequestForm ? (
+              // Step 1: API Capability Showcase - Product Not Found + Recommendation
+              <div className="p-12 animate-fadeIn">
+                <div className="max-w-3xl mx-auto">
+                  {/* API Capability Badge */}
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <div className="px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 backdrop-blur-sm">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider">API Capability</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Main Content - 2 Column Layout */}
+                  <div className="grid md:grid-cols-2 gap-6 mb-8">
+                    {/* LEFT: Product Not Found */}
+                    <div className="p-6 rounded-2xl bg-gradient-to-br from-red-500/5 to-orange-500/5 border border-red-500/20">
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-lg font-bold text-white mb-2">🔍 Search Result</h3>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-red-400 bg-red-500/10 px-2 py-1 rounded">404</span>
+                              <span className="text-sm font-semibold text-red-400">No Product Found</span>
+                            </div>
+                            <p className="text-xs text-slate-400 leading-relaxed">
+                              Product <span className="font-bold text-white">"{searchQuery || "Coffee Mate"}"</span> doesn't exist in our database yet.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* API Response Preview */}
+                      <div className="mt-4 p-3 rounded-lg bg-slate-900/50 border border-slate-700">
+                        <p className="text-xs text-slate-500 mb-2 font-mono">API Response:</p>
+                        <pre className="text-xs text-slate-400 font-mono overflow-x-auto">
+{`{
+  "status": "not_found",
+  "message": "No products found"
+}`}
+                        </pre>
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Recommend (Add Product) */}
+                    <div className="p-6 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border-2 border-cyan-500/30 relative overflow-hidden">
+                      {/* Glow Effect */}
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/20 rounded-full blur-3xl" />
+                      
+                      <div className="relative">
+                        <div className="flex items-start gap-4 mb-4">
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/20">
+                            <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="text-lg font-bold text-white mb-2">💡 Smart Recommendation</h3>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded">AUTO</span>
+                                <span className="text-sm font-semibold text-cyan-400">Add Product</span>
+                              </div>
+                              <p className="text-xs text-slate-300 leading-relaxed">
+                                Help us expand the catalog! Submit this product and we'll add it after verification.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Benefits List */}
+                        <div className="mt-4 space-y-2">
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-xs text-slate-300">Available in API after approval</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-xs text-slate-300">Grows the database over time</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-xs text-slate-300">Review time: 24-48 hours</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Feedback Loop Explanation */}
+                  <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 border border-blue-500/20">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-white mb-2">🔄 Feedback Loop System</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                          Unlike traditional APIs that just return <span className="font-mono text-red-400">404 errors</span>, our system provides <span className="font-bold text-cyan-400">actionable recommendations</span>. When a product isn't found, we suggest adding it—turning every search into an opportunity to grow the database.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Result:</span>
+                          <span className="text-xs font-semibold text-cyan-400">Collaborative, self-expanding catalog 🚀</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Action CTA - Prominent */}
+                  <div className="text-center">
+                    <button
+                      onClick={() => setShowRequestForm(true)}
+                      className="group relative px-10 py-5 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xl transition-all duration-300 shadow-2xl shadow-cyan-500/40 hover:shadow-3xl hover:shadow-cyan-500/60 hover:scale-105 flex items-center gap-4 mx-auto"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                        <svg className="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </div>
+                      <span>Submit Product Request</span>
+                      <div className="absolute inset-0 rounded-2xl bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
+                    </button>
+                    
+                    <p className="mt-4 text-sm text-slate-500">
+                      Fill out a quick form and we'll review it within 24-48 hours
+                    </p>
+                    
+                    {/* Alternative Actions */}
+                    <div className="mt-6 flex items-center justify-center gap-4">
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="text-sm text-slate-400 hover:text-cyan-400 transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Search Again
+                      </button>
+                      <span className="text-slate-700">|</span>
+                      <button
+                        onClick={() => window.history.back()}
+                        className="text-sm text-slate-400 hover:text-cyan-400 transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                        Back to Products
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Step 2: Product Request Form - Cool Blue Design
+              <div className="animate-fadeIn">
+                {/* Header - Deep Blue Gradient */}
+                <div className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-cyan-500/10 p-8 text-center border-b border-cyan-500/20">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-cyan-500/20">
+                    <Package className="w-8 h-8 text-cyan-400" />
+                  </div>
+                  <h3 className="text-3xl font-bold text-white mb-3 bg-gradient-to-r from-cyan-200 to-blue-200 bg-clip-text text-transparent">
+                    Submit Product Request
+                  </h3>
+                  <p className="text-slate-400 max-w-xl mx-auto">
+                    Fill out the information below and we'll add it to our catalog after verification
+                  </p>
+                </div>
+                
+                {/* Form */}
+                <div className="p-8 max-w-2xl mx-auto">
+                  <form onSubmit={handleSubmitProductRequest} className="space-y-6">
+                    {/* Product Name */}
+                    <div className="group">
+                      <label className="text-sm font-semibold text-white block mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                        Product Name
+                      </label>
+                      <input 
+                        type="text"
+                        required
+                        value={requestFormData.productName}
+                        onChange={(e) => setRequestFormData({...requestFormData, productName: e.target.value})}
+                        placeholder="e.g. Coffee Mate French Vanilla"
+                        className="w-full bg-white/5 border border-cyan-500/20 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-300 hover:bg-white/10"
+                      />
+                    </div>
+                    
+                    {/* Category & SKU */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="group">
+                        <label className="text-sm font-semibold text-white block mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                          Category
+                        </label>
+                        <select 
+                          value={requestFormData.category}
+                          onChange={(e) => setRequestFormData({...requestFormData, category: e.target.value})}
+                          className="w-full bg-white/5 border border-cyan-500/20 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-300 hover:bg-white/10"
+                        >
+                          <option>Pharmacy</option>
+                          <option>Hardware</option>
+                          <option>Grocery</option>
+                          <option>Electronics</option>
+                        </select>
+                      </div>
+                      
+                      <div className="group">
+                        <label className="text-sm font-semibold text-white block mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                          SKU (Optional)
+                        </label>
+                        <input 
+                          type="text"
+                          value={requestFormData.sku}
+                          onChange={(e) => setRequestFormData({...requestFormData, sku: e.target.value})}
+                          placeholder="Product SKU or Barcode"
+                          className="w-full bg-white/5 border border-cyan-500/20 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-300 hover:bg-white/10"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Product Image */}
+                    <div className="group">
+                      <label className="text-sm font-semibold text-white block mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                        Product Image (Optional)
+                      </label>
+                      <div className="flex items-start gap-6">
+                        {imagePreview ? (
+                          <div className="relative w-44 h-44 rounded-2xl overflow-hidden border-2 border-cyan-500/30 flex-shrink-0 group/img shadow-xl shadow-cyan-500/20">
+                            <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/img:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setImagePreview(null);
+                                  setRequestFormData({...requestFormData, imageFile: null});
+                                }}
+                                className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-all duration-300 shadow-lg"
+                              >
+                                Remove Photo
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-44 h-44 rounded-2xl border-2 border-dashed border-cyan-500/20 bg-white/5 hover:bg-white/10 flex flex-col items-center justify-center flex-shrink-0 transition-all duration-300 group/upload cursor-pointer">
+                            <svg className="w-12 h-12 text-slate-500 group-hover/upload:text-cyan-400 transition-colors mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span className="text-xs text-slate-500">Click to upload</span>
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <input
+                            type="file"
+                            id="product-image"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="hidden"
+                          />
+                          <label
+                            htmlFor="product-image"
+                            className="inline-block px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-cyan-500/20 hover:border-cyan-500/50 text-white text-sm font-medium cursor-pointer transition-all duration-300 hover:scale-105"
+                          >
+                            {imagePreview ? "Change Photo" : "Upload Photo"}
+                          </label>
+                          <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                            Upload a clear product image<br/>
+                            PNG, JPG, or WebP (max 5MB)
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Additional Details */}
+                    <div className="group">
+                      <label className="text-sm font-semibold text-white block mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                        Additional Details (Optional)
+                      </label>
+                      <textarea 
+                        rows={4}
+                        value={requestFormData.details}
+                        onChange={(e) => setRequestFormData({...requestFormData, details: e.target.value})}
+                        placeholder="Brand, size, flavor, specifications, or any other relevant information..."
+                        className="w-full bg-white/5 border border-cyan-500/20 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-300 resize-none hover:bg-white/10"
+                      />
+                    </div>
+
+                    {/* Buttons - Electric Cyan Blue */}
+                    <div className="flex gap-4 pt-6 border-t border-cyan-500/20">
+                      <button 
+                        type="button"
+                        onClick={() => setShowRequestForm(false)}
+                        className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-cyan-500/20 text-slate-300 hover:text-white font-medium transition-all duration-300 hover:scale-105"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit"
+                        disabled={submittingRequest}
+                        className="flex-1 px-6 py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-semibold text-lg transition-all duration-300 shadow-xl shadow-cyan-500/30 hover:shadow-2xl hover:shadow-cyan-500/50 hover:scale-105 flex items-center justify-center gap-3"
+                      >
+                        {submittingRequest ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                            Submitting Request...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Submit Request
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredProducts.map((product) => {
+            const isSelected = selectedProducts.has(product.id);
+            return (
+              <div
+                key={product.id}
+                onClick={() => toggleProduct(product.id)}
+                className={`glass-card rounded-xl cursor-pointer transition-all hover:scale-[1.02] overflow-hidden ${
+                  isSelected
+                    ? "border-2 border-indigo-500 shadow-lg shadow-indigo-500/20"
+                    : "border border-slate-700 hover:border-slate-600"
+                }`}
+              >
+                {/* Image Area */}
+                <div className="relative w-full h-44 bg-slate-800 overflow-hidden">
+                  {product.image_url || product.image ? (
+                    <img
+                      src={product.image_url || product.image}
+                      alt={product.name}
+                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  {/* Fallback icon (shown if image fails or missing) */}
+                  <div className={`absolute inset-0 flex items-center justify-center ${product.image_url || product.image ? 'hidden' : ''}`}>
+                    <Database className="w-14 h-14 text-slate-600" />
+                  </div>
+
+                  {/* Top overlay row: checkbox + segment badge */}
+                  <div className="absolute top-0 left-0 right-0 flex items-start justify-between p-3">
+                    {/* Checkbox */}
+                    <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all shadow-md ${
+                      isSelected
+                        ? "bg-indigo-500 border-indigo-500"
+                        : "bg-slate-900/70 border-slate-500 backdrop-blur-sm"
+                    }`}>
+                      {isSelected && <Check className="w-4 h-4 text-white" />}
+                    </div>
+
+                    {/* Segment badge */}
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold backdrop-blur-sm shadow-md ${
+                      product.segment === "Pharmacy" ? "bg-green-500/80 text-white" :
+                      product.segment === "Hardware" ? "bg-orange-500/80 text-white" :
+                      "bg-blue-500/80 text-white"
+                    }`}>
+                      {product.segment}
+                    </span>
+                  </div>
+
+                  {/* Selected overlay tint */}
+                  {isSelected && (
+                    <div className="absolute inset-0 bg-indigo-500/10 pointer-events-none" />
+                  )}
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4">
+                  <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
+                  <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{product.description}</p>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/60">
+                    <span className="text-xs text-slate-500 font-mono">SKU: {product.sku}</span>
+                    <span className="text-sm font-bold text-white">₱{product.price?.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Generate API Key Modal */}
+      {showGenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
+          <div className="w-full max-w-md glass-card rounded-2xl border border-slate-700 shadow-2xl p-8 animate-in fade-in zoom-in duration-200">
+            {!generatedKey ? (
+              <>
+                <div className="w-14 h-14 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center mx-auto mb-5">
+                  <Key className="w-7 h-7 text-indigo-400" />
+                </div>
+                <h3 className="text-2xl font-bold text-white text-center mb-1">Generate API Key</h3>
+                <p className="text-sm text-slate-400 text-center mb-6">
+                  This key will be linked to <span className="text-indigo-400 font-semibold">{selectedProducts.size} selected product{selectedProducts.size !== 1 ? 's' : ''}</span>.
+                </p>
+                <div className="mb-6">
+                  <label className="text-sm font-medium text-slate-300 mb-2 block">KEY NAME <span className="text-red-400">*</span></label>
+                  <input
+                    type="text"
+                    value={keyName}
+                    onChange={(e) => setKeyName(e.target.value)}
+                    placeholder="e.g., Production POS, Dev Server"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-500"
+                    autoFocus
+                    onKeyDown={(e) => e.key === 'Enter' && handleGenerateApiKey()}
+                  />
+                </div>
+                <div className="bg-slate-900/60 border border-slate-700 rounded-xl p-4 mb-6">
+                  <p className="text-xs text-slate-400 mb-2 font-medium">LINKED PRODUCTS</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(cartSummary.bySegment).map(([seg, cnt]) => (
+                      <span key={seg} className="px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
+                        {seg}: {cnt}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowGenModal(false)}
+                    className="flex-1 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleGenerateApiKey}
+                    disabled={!keyName.trim() || generating}
+                    className="flex-[2] px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {generating ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Generating...</>
+                    ) : (
+                      <><Key className="w-4 h-4" />Generate Key</>
+                    )}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-5">
+                  <Check className="w-8 h-8 text-emerald-400" />
+                </div>
+                <h3 className="text-2xl font-bold text-white text-center mb-2">API Key Generated!</h3>
+                <p className="text-sm text-slate-400 text-center mb-6">
+                  Your key is now active and linked to your selected products. <strong className="text-amber-400">Copy it now</strong> — you won't see it again.
+                </p>
+                <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
+                  <p className="text-xs font-medium text-emerald-400 mb-2">YOUR NEW API KEY</p>
+                  <div className="bg-slate-900 rounded-lg p-3 mb-3 break-all font-mono text-sm text-emerald-300 select-all">
+                    {generatedKey}
+                  </div>
+                </div>
+                <button
+                  onClick={handleCopyAndClose}
+                  className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 mb-3"
+                >
+                  {copied ? <Check className="w-5 h-5" /> : <Key className="w-5 h-5" />}
+                  {copied ? "Copied! Going to API Keys..." : "Copy & Go to API Keys →"}
+                </button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={handleDownloadEnv}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-all text-sm border border-slate-700"
+                  >
+                    Download .env
+                  </button>
+                  <button
+                    onClick={handleDownloadPostman}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-all text-sm border border-slate-700"
+                  >
+                    Download Postman
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

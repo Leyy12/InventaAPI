@@ -8,15 +8,9 @@ import {
   Key,
   BookOpen,
   Package,
-  Sparkles,
-  UploadCloud,
   BarChart3,
-  ShieldCheck,
-  Settings,
-  Smartphone,
-  ShieldAlert,
   LogOut,
-  Globe
+  Home
 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 
@@ -25,27 +19,31 @@ const dashboardRoutes = [
   { name: "Products", href: "/dashboard/products", icon: Package },
   { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
   { name: "Documentation", href: "/dashboard/docs", icon: BookOpen },
-  { name: "Recommendations", href: "/dashboard/recommendations", icon: Sparkles },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
 ];
 
-const adminRoutes = [
-  { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { name: "Hardware Catalog", href: "/admin/products/hardware", icon: Package },
-  { name: "Pharmacy Catalog", href: "/admin/products/pharmacy", icon: Package },
-  { name: "Grocery Catalog", href: "/admin/products/grocery", icon: Package },
-  { name: "Clothing Catalog", href: "/admin/products/clothing", icon: Package },
-  { name: "Pending Requests", href: "/admin/requests", icon: Sparkles },
-  { name: "API Consumers", href: "/admin/consumers", icon: Key },
-  { name: "Categories", href: "/admin/categories", icon: BookOpen },
-  { name: "Security Center", href: "/admin/security", icon: ShieldCheck },
-  { name: "Audit Logs", href: "/admin/audit", icon: ShieldAlert },
-  { name: "System Settings", href: "/admin/settings", icon: Settings },
-];
+// Helper: Map legacy plan values to correct display names
+function getPlanDisplayName(plan: string | undefined): string {
+  if (!plan) return "Free";
+  const planLower = plan.toLowerCase();
+  if (planLower === "starter") return "Free";
+  if (planLower === "pro" || planLower === "professional") return "Pro";
+  if (planLower === "enterprise" || planLower === "unlimited") return "Enterprise";
+  return plan; // fallback to original if no match
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, appUser, logout } = useAuth();
+
+  // DIAGNOSTIC LOGGING: Track sidebar re-renders
+  const renderTime = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
+  console.log(`[🔍 SIDEBAR RENDER @ ${renderTime}]`, {
+    hasAppUser: !!appUser,
+    fullName: appUser?.fullName,
+    plan: appUser?.plan,
+    displayName: getPlanDisplayName(appUser?.plan)
+  });
 
   return (
     <aside className="w-64 glass border-r border-slate-800/60 hidden md:flex flex-col relative z-20">
@@ -60,10 +58,10 @@ export default function Sidebar() {
 
       <div className="flex-1 py-6 px-3 overflow-y-auto space-y-1 custom-scrollbar">
         <div className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          {pathname.startsWith("/admin") ? "Super Admin" : "SME Consumer"}
+          SME Consumer
         </div>
-        {(pathname.startsWith("/admin") ? adminRoutes : dashboardRoutes).map((route) => {
-          const isActive = pathname === route.href || (pathname.startsWith(route.href) && route.href !== "/dashboard" && route.href !== "/admin");
+        {dashboardRoutes.map((route) => {
+          const isActive = pathname === route.href || (pathname.startsWith(route.href) && route.href !== "/dashboard");
           return (
             <Link
               key={route.href}
@@ -71,27 +69,28 @@ export default function Sidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
                 isActive
-                  ? pathname.startsWith("/admin") ? "bg-red-500/10 text-red-400" : "bg-indigo-500/10 text-indigo-400"
+                  ? "bg-indigo-500/10 text-indigo-400"
                   : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
               )}
             >
-              <route.icon className={cn("w-4 h-4", isActive ? (pathname.startsWith("/admin") ? "text-red-400" : "text-indigo-400") : "text-slate-500 group-hover:text-slate-300")} />
+              <route.icon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300")} />
               {route.name}
             </Link>
           );
         })}
 
-        <div className="mt-8 pt-6 border-t border-slate-800/60">
+        {/* External Links Section */}
+        <div className="pt-4 mt-4 border-t border-slate-800/60">
           <div className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
             External Links
           </div>
-          <a
+          <Link
             href="/?view=landing"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-all duration-200 group"
           >
-            <Globe className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
+            <Home className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
             Landing Page
-          </a>
+          </Link>
         </div>
       </div>
 
@@ -103,7 +102,7 @@ export default function Sidebar() {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-medium text-slate-200 truncate w-32">{appUser?.fullName || user?.email || "Developer"}</span>
-            <span className="text-xs text-slate-500 truncate w-32">{appUser?.plan || "Starter"} Plan</span>
+            <span className="text-xs text-slate-500 truncate w-32">{getPlanDisplayName(appUser?.plan)} Plan</span>
           </div>
         </div>
         <button

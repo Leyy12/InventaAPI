@@ -191,10 +191,6 @@ export default function AnalyticsPage() {
     (sum, p) => sum + (p.price || 0) * (p.stock || 0),
     0
   );
-  const outOfStock = products.filter((p) => (p.stock || 0) <= 0).length;
-  const lowStock = products.filter(
-    (p) => (p.stock || 0) > 0 && (p.stock || 0) <= 10
-  ).length;
 
   /* ── Chart 1: Price Distribution (bar) ── */
   const priceDistribution = useMemo(() => {
@@ -357,7 +353,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* ── KPI Stat Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 max-w-2xl">
         {[
           {
             label: "Total Products",
@@ -379,39 +375,21 @@ export default function AnalyticsPage() {
             valueColor: "text-emerald-400",
             sub: "Total estimated value",
           },
-          {
-            label: "Out of Stock",
-            value: isFiltering ? "—" : outOfStock.toLocaleString(),
-            icon: AlertTriangle,
-            iconBg: "bg-red-500/10",
-            iconColor: "text-red-400",
-            valueColor: outOfStock > 0 ? "text-red-400" : "text-white",
-            sub: "Items with 0 inventory",
-          },
-          {
-            label: "Low Stock",
-            value: isFiltering ? "—" : lowStock.toLocaleString(),
-            icon: TrendingUp,
-            iconBg: "bg-amber-500/10",
-            iconColor: "text-amber-400",
-            valueColor: lowStock > 0 ? "text-amber-400" : "text-white",
-            sub: "Items with ≤10 units",
-          },
         ].map(({ label, value, icon: Icon, iconBg, iconColor, valueColor, sub }) => (
           <div
             key={label}
-            className="glass-card p-5 rounded-xl border border-slate-700/60 transition-all duration-300"
+            className="glass-card p-4 rounded-xl border border-slate-700/60 transition-all duration-300"
           >
-            <div className="flex justify-between items-start mb-3">
+            <div className="flex justify-between items-start mb-2">
               <p className="text-xs font-medium text-slate-400">{label}</p>
-              <div className={`p-2 ${iconBg} rounded-lg`}>
-                <Icon className={`w-4 h-4 ${iconColor}`} />
+              <div className={`p-1.5 ${iconBg} rounded-lg`}>
+                <Icon className={`w-3.5 h-3.5 ${iconColor}`} />
               </div>
             </div>
-            <h3 className={`text-2xl font-bold ${valueColor} transition-all duration-300 ${isFiltering ? "opacity-40" : "opacity-100"}`}>
+            <h3 className={`text-xl font-bold ${valueColor} transition-all duration-300 ${isFiltering ? "opacity-40" : "opacity-100"}`}>
               {value}
             </h3>
-            <p className="text-xs text-slate-600 mt-1">{sub}</p>
+            <p className="text-xs text-slate-600 mt-0.5">{sub}</p>
           </div>
         ))}
       </div>

@@ -98,8 +98,7 @@ const initialData = {
             variations: { brand: "Silver Swan", type: "Regular Soy Sauce" }
         }
     ],
-    sales: [],
-    recommendations: [] // Holds products requested/added dynamically by intelligent scanner feature
+    sales: []
 };
 
 class LocalDatabase {
@@ -194,34 +193,6 @@ class LocalDatabase {
         
         this.save();
         return newSale;
-    }
-
-    // --- Recommendations/Intelligent Product Acquisition Helper ---
-    getRecommendations() {
-        return this.data.recommendations;
-    }
-
-    addRecommendation(reco) {
-        const id = "reco_" + Date.now();
-        const newReco = { 
-            id, 
-            timestamp: new Date().toISOString(), 
-            status: "pending", // pending, approved, ignored
-            ...reco 
-        };
-        this.data.recommendations.push(newReco);
-        this.save();
-        return newReco;
-    }
-
-    updateRecommendation(id, updates) {
-        const idx = this.data.recommendations.findIndex(r => r.id === id);
-        if (idx !== -1) {
-            this.data.recommendations[idx] = { ...this.data.recommendations[idx], ...updates, updatedAt: new Date().toISOString() };
-            this.save();
-            return this.data.recommendations[idx];
-        }
-        return null;
     }
 }
 

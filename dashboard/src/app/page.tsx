@@ -6,16 +6,42 @@ import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-rea
 import LoginModal from "@/components/auth/LoginModal";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
 
 function LandingPageInner() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const searchParams = useSearchParams();
   const isLandingBypass = searchParams.get("view") === "landing";
 
   // Start hidden — never flash the login modal before auth resolves
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<"starter" | "professional" | "enterprise">("professional");
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>("pro");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  console.log("[LANDING PAGE] Rendered - user:", !!user, "loading:", loading);
+
+  console.log("[LANDING PAGE] Rendered - user:", !!user, "loading:", loading);
+
+  // Check for error query params from admin panel redirects
+  useEffect(() => {
+    const error = searchParams.get("error");
+    
+    if (error) {
+      const errorMessages: Record<string, string> = {
+        admin_auth_failed: "⚠️ Admin authentication failed. Please try logging in again.",
+        token_expired: "⏱️ Your login session expired. Please login again.",
+        admin_only: "🔒 Access denied. Admin privileges required.",
+        user_not_found: "❌ User account not found. Please contact support.",
+      };
+      
+      const message = errorMessages[error] || "❌ An error occurred. Please try again.";
+      setErrorMessage(message);
+      
+      // Auto-clear after 6 seconds
+      setTimeout(() => setErrorMessage(null), 6000);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!loading) {
@@ -27,15 +53,30 @@ function LandingPageInner() {
         setShowLoginModal(false);
       }
     }
-  }, [user, loading, isLandingBypass]);
+  }, [user, loading, isLandingBypass, searchParams]);
 
-  const openSubscription = (plan: "starter" | "professional" | "enterprise") => {
+  const openSubscription = (plan: PlanId) => {
     setSelectedPlan(plan);
     setShowSubscriptionModal(true);
   };
 
   return (
     <div className="min-h-screen bg-[#020617] text-white selection:bg-indigo-500/30 overflow-x-hidden">
+      {/* Error Toast Notification */}
+      {errorMessage && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[150] animate-in slide-in-from-top duration-300">
+          <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-6 py-4 flex items-center gap-3 shadow-2xl backdrop-blur-md min-w-[400px]">
+            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse flex-shrink-0"></div>
+            <span className="text-red-100 font-medium text-sm flex-1">{errorMessage}</span>
+            <button 
+              onClick={() => setErrorMessage(null)}
+              className="ml-2 text-red-300 hover:text-white transition-colors text-lg font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       {/* Navigation */}
       <nav className="fixed w-full z-50 top-0 border-b border-white/5 bg-[#020617]/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -51,6 +92,19 @@ function LandingPageInner() {
               <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
               <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
               <a href="#" className="hover:text-white transition-colors">API Docs</a>
+              
+              {/* Show Logout button only when logged in */}
+              {user && !loading && (
+                <button 
+                  onClick={async () => {
+                    console.log("[NAVBAR] Logout button clicked");
+                    await logout();
+                  }}
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-all"
+                >
+                  Logout
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -149,153 +203,105 @@ function LandingPageInner() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {/* Starter Plan */}
+            {/* Free Plan */}
             <div className="glass-card p-8 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all">
               <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">STARTER</h3>
+                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.free.displayName.toUpperCase()}</h3>
                 <div className="flex items-baseline gap-1">
                   <span className="text-sm text-slate-400">₱</span>
-                  <span className="text-5xl font-extrabold">0</span>
-                  <span className="text-slate-400 text-sm">/mo</span>
+                  <span className="text-5xl font-extrabold">{SUBSCRIPTION_PLANS.free.price}</span>
+                  <span className="text-slate-400 text-sm">/{SUBSCRIPTION_PLANS.free.billingCycle}</span>
                 </div>
-                <p className="text-sm text-slate-400 mt-3">For developers exploring the API, students, or teams doing a proof-of-concept integration.</p>
+                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.free.tagline}</p>
               </div>
 
               <div className="space-y-3 mb-8">
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">1 API Key (shared access)</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">50 requests per day</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Product Catalog endpoint</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Product Recommendations</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-slate-600 mt-0.5">✗</span>
-                  <span className="text-slate-500">Sales Analytics Feed</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-slate-600 mt-0.5">✗</span>
-                  <span className="text-slate-500">Priority Support</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-slate-600 mt-0.5">✗</span>
-                  <span className="text-slate-500">Custom Business Segment</span>
-                </div>
+                {SUBSCRIPTION_PLANS.free.features.map((feature) => (
+                  <div key={feature} className="flex items-start gap-2 text-sm">
+                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span className="text-slate-300">{feature}</span>
+                  </div>
+                ))}
+                {SUBSCRIPTION_PLANS.free.exclusions.map((feature) => (
+                  <div key={feature} className="flex items-start gap-2 text-sm">
+                    <span className="text-slate-600 mt-0.5">✗</span>
+                    <span className="text-slate-500">{feature}</span>
+                  </div>
+                ))}
               </div>
 
               <button 
-                onClick={() => openSubscription("starter")}
+                onClick={() => openSubscription("free")}
                 className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
-                Get Started Free →
+                {SUBSCRIPTION_PLANS.free.ctaText} →
               </button>
             </div>
 
-            {/* Professional Plan - Most Popular */}
+            {/* Pro Plan - Most Popular */}
             <div className="glass-card p-8 rounded-2xl border-2 border-indigo-500/50 hover:border-indigo-500 transition-all relative shadow-lg shadow-indigo-500/20">
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                <span className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">MOST POPULAR</span>
-              </div>
+              {SUBSCRIPTION_PLANS.pro.badge && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                  <span className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">{SUBSCRIPTION_PLANS.pro.badge}</span>
+                </div>
+              )}
               
               <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">PROFESSIONAL</h3>
+                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.pro.displayName.toUpperCase()}</h3>
                 <div className="flex items-baseline gap-1">
                   <span className="text-sm text-slate-400">₱</span>
-                  <span className="text-5xl font-extrabold">1,499</span>
-                  <span className="text-slate-400 text-sm">/mo</span>
+                  <span className="text-5xl font-extrabold">{SUBSCRIPTION_PLANS.pro.price?.toLocaleString()}</span>
+                  <span className="text-slate-400 text-sm">{SUBSCRIPTION_PLANS.pro.billingCycle}</span>
                 </div>
-                <p className="text-sm text-slate-400 mt-3">For active businesses — suppliers, distributors, and e-commerce platforms needing reliable, fast data integration.</p>
+                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.pro.tagline}</p>
               </div>
 
               <div className="space-y-3 mb-8">
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">1 Dedicated API Key</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">5,000 requests per day</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Full Product Catalog + Recommendations</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Sales Analytics Feed</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">All Business Segments</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Email + Chat Support</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-slate-600 mt-0.5">✗</span>
-                  <span className="text-slate-500">Custom Endpoints</span>
-                </div>
+                <p className="text-xs font-semibold text-indigo-400 mb-2">Everything in Free, and:</p>
+                {SUBSCRIPTION_PLANS.pro.incrementalFeatures.map((feature) => (
+                  <div key={feature} className="flex items-start gap-2 text-sm">
+                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span className="text-slate-300">{feature}</span>
+                  </div>
+                ))}
+                {SUBSCRIPTION_PLANS.pro.exclusions.map((feature) => (
+                  <div key={feature} className="flex items-start gap-2 text-sm">
+                    <span className="text-slate-600 mt-0.5">✗</span>
+                    <span className="text-slate-500">{feature}</span>
+                  </div>
+                ))}
               </div>
 
               <button 
-                onClick={() => openSubscription("professional")}
+                onClick={() => openSubscription("pro")}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25">
-                Subscribe Now →
+                {SUBSCRIPTION_PLANS.pro.ctaText} →
               </button>
             </div>
 
             {/* Enterprise Plan */}
             <div className="glass-card p-8 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all">
               <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">ENTERPRISE</h3>
+                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.enterprise.displayName.toUpperCase()}</h3>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold">Custom</span>
+                  <span className="text-4xl font-extrabold">{SUBSCRIPTION_PLANS.enterprise.priceDisplay}</span>
                 </div>
-                <p className="text-sm text-slate-400 mt-3">For large-scale ERP integrations, multi-branch businesses, and organizations needing custom endpoints and dedicated infrastructure.</p>
+                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.enterprise.tagline}</p>
               </div>
 
               <div className="space-y-3 mb-8">
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Multiple API Keys</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Unlimited requests</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">All endpoints + Custom routes</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Priority dedicated support</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">Custom Business Segments</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">99.9% SLA Guarantee</span>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <span className="text-emerald-400 mt-0.5">✓</span>
-                  <span className="text-slate-300">NDA + Custom data agreement</span>
-                </div>
+                <p className="text-xs font-semibold text-emerald-400 mb-2">Everything in Pro, and:</p>
+                {SUBSCRIPTION_PLANS.enterprise.incrementalFeatures.map((feature) => (
+                  <div key={feature} className="flex items-start gap-2 text-sm">
+                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span className="text-slate-300">{feature}</span>
+                  </div>
+                ))}
               </div>
 
-              <button className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
-                Contact Sales →
+              <button 
+                onClick={() => openSubscription("enterprise")}
+                className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
+                {SUBSCRIPTION_PLANS.enterprise.ctaText} →
               </button>
             </div>
           </div>

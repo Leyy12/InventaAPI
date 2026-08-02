@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Key, Copy, Plus, Trash2, Eye, EyeOff, AlertTriangle, Shield, CheckCircle2, Clock, Activity, Info } from "lucide-react";
+import { Key, Copy, Plus, Trash2, Eye, EyeOff, AlertTriangle, Shield, CheckCircle2, Clock, Activity, Info, Code } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
+import CodeSnippet from "@/components/shared/CodeSnippet";
 
 interface ApiKey {
   id: string;
@@ -26,6 +27,7 @@ export default function ApiKeysPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [generatingKey, setGeneratingKey] = useState(false);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
+  const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
   
   const { user } = useAuth();
 
@@ -183,6 +185,13 @@ DAAS_API_KEY=${keyStr}
 
   const toggleShowKey = (keyId: string) => {
     setShowKey(prev => ({
+      ...prev,
+      [keyId]: !prev[keyId]
+    }));
+  };
+
+  const toggleCodeSnippet = (keyId: string) => {
+    setShowCodeSnippet(prev => ({
       ...prev,
       [keyId]: !prev[keyId]
     }));
@@ -398,6 +407,27 @@ DAAS_API_KEY=${keyStr}
                       </p>
                     </div>
                   </div>
+
+                  {/* Code Snippet Toggle */}
+                  <div className="mt-4 pt-4 border-t border-slate-700">
+                    <button
+                      onClick={() => toggleCodeSnippet(apiKey.id)}
+                      className="w-full px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                      <Code className="w-4 h-4" />
+                      {showCodeSnippet[apiKey.id] ? "Hide" : "Show"} Integration Code Examples
+                    </button>
+                  </div>
+
+                  {/* Code Snippet Component */}
+                  {showCodeSnippet[apiKey.id] && (
+                    <div className="mt-4">
+                      <CodeSnippet 
+                        apiKey={apiKey.key}
+                        apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

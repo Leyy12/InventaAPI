@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
@@ -19,6 +19,19 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  // Reset all state when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      console.log("[LOGIN MODAL] Modal opened - resetting state");
+      // Clear all messages and form state when modal opens
+      setError("");
+      setSuccess("");
+      setEmail("");
+      setPassword("");
+      setLoading(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -28,18 +41,99 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setSuccess("");
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // 1. Sign in with Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
       
-      setSuccess("Login successful!");
-      setTimeout(() => {
-        onClose();
-      }, 1000);
+      console.log("[LOGIN] User authenticated:", user.email);
+      
+      // 2. Get user role from Firestore
+      const { doc, getDoc } = await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase/config");
+      
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      const userData = userDoc.data();
+      const role = userData?.role?.toLowerCase();
+      
+      console.log("[LOGIN] User role:", role);
+      
+      // 3. Check if admin
+      if (role === "admin") {
+        console.log("[LOGIN] 🔑 Admin detected - initiating token bridge...");
+        
+        // Show success message for admin before redirect
+        setSuccess("Admin login successful! Redirecting to admin panel...");
+        
+        // 4. Get Firebase ID token (valid for 1 hour)
+        const idToken = await user.getIdToken();
+        
+        console.log("[LOGIN] ✅ ID Token generated");
+        
+        // 5. Redirect to admin panel with token
+        const adminUrl = `http://localhost:3001/?authToken=${idToken}`;
+        
+        console.log("[LOGIN] 🚀 Redirecting to admin panel...");
+        
+        // Wait 2 seconds so user can see the success message
+        setTimeout(() => {
+          window.location.href = adminUrl;
+        }, 2000);
+        
+      } else {
+        // Normal customer login - show success and stay on landing
+        console.log("[LOGIN] ✅ Customer login successful");
+        setSuccess("Login successful! Welcome back.");
+        
+        // Wait 3 seconds before closing modal so user can see success message
+        setTimeout(() => {
+          onClose();
+          setLoading(false);
+        }, 3000);
+      }
       
     } catch (err: unknown) {
-      console.error(err);
-      setError("Invalid email or password. Please try again.");
-    } finally {
+      console.error("[LOGIN] Error:", err);
+      
+      // Parse Firebase error codes into user-friendly messages
+      let errorMessage = "An error occurred during login. Please try again.";
+      
+      if (err && typeof err === 'object' && 'code' in err) {
+        const firebaseError = err as { code: string; message: string };
+        
+        switch (firebaseError.code) {
+          case 'auth/wrong-password':
+            errorMessage = "❌ Incorrect password. Please check your password and try again.";
+            break;
+          case 'auth/user-not-found':
+            errorMessage = "❌ No account found with this email address. Please sign up first.";
+            break;
+          case 'auth/invalid-email':
+            errorMessage = "❌ Invalid email format. Please enter a valid email address.";
+            break;
+          case 'auth/user-disabled':
+            errorMessage = "❌ This account has been disabled. Please contact support.";
+            break;
+          case 'auth/too-many-requests':
+            errorMessage = "❌ Too many failed login attempts. Please try again later.";
+            break;
+          case 'auth/network-request-failed':
+            errorMessage = "❌ Network error. Please check your internet connection.";
+            break;
+          case 'auth/invalid-credential':
+            errorMessage = "❌ Invalid email or password. Please check your credentials.";
+            break;
+          default:
+            errorMessage = `❌ Login failed: ${firebaseError.code}`;
+        }
+      }
+      
+      setError(errorMessage);
       setLoading(false);
+      
+      // Keep error visible for 5 seconds before auto-clearing
+      setTimeout(() => {
+        setError("");
+      }, 5000);
     }
   };
 
@@ -77,16 +171,16 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         </div>
 
         {error && (
-          <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-400 text-sm">
+          <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-400 text-sm animate-in fade-in duration-200">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p>{error}</p>
+            <p className="flex-1">{error}</p>
           </div>
         )}
 
         {success && (
-          <div className="mb-6 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-sm">
+          <div className="mb-6 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-sm animate-in fade-in duration-200">
             <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p>{success}</p>
+            <p className="flex-1">{success}</p>
           </div>
         )}
 

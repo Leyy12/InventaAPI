@@ -5,7 +5,7 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp, writeBatch, collection } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
-import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase } from "lucide-react";
+import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
 const BUSINESS_SEGMENTS = [
@@ -27,6 +27,8 @@ export default function SignupPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const router = useRouter();
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -52,16 +54,15 @@ export default function SignupPage() {
       const user = userCredential.user;
 
       // Create user document in Firestore
-      const isSuperAdmin = formData.email.toLowerCase() === 'balquinkevinconeal27@gmail.com';
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         fullName: formData.fullName,
         email: formData.email,
         businessName: formData.businessName,
-        businessSegment: isSuperAdmin ? "Admin" : formData.businessSegment,
-        plan: isSuperAdmin ? "Unlimited" : "Starter",
-        role: isSuperAdmin ? "Admin" : "Developer",
-        apiRequestLimit: isSuperAdmin ? 999999 : 50,
+        businessSegment: formData.businessSegment,
+        plan: "Starter",
+        role: "Developer",  // All signups are Developer role
+        apiRequestLimit: 50,
         apiRequestsUsed: 0,
         createdAt: serverTimestamp(),
         lastLogin: serverTimestamp()
@@ -151,15 +152,22 @@ export default function SignupPage() {
                 <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
                   id="password"
-                  type="password" 
+                  type={showPassword ? "text" : "password"} 
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
                   required
                   minLength={6}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
@@ -169,15 +177,22 @@ export default function SignupPage() {
                 <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
                   id="confirmPassword"
-                  type="password" 
+                  type={showConfirmPassword ? "text" : "password"} 
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   required
                   minLength={6}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 

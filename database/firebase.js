@@ -1,17 +1,34 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import dotenv from 'dotenv';
+import { createRequire } from 'module';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 // ─── Firebase Initialization ────────────────────────────────────────────────
+// Loads credentials directly from the service account JSON file.
+// Place your downloaded Firebase service account key at:
+//   <project-root>/service-account.json
+// This file is listed in .gitignore and must NEVER be committed to version control.
 if (!getApps().length) {
+    let serviceAccount;
+    try {
+        serviceAccount = require(path.resolve(__dirname, '../service-account.json'));
+    } catch (err) {
+        console.error(
+            '[Firebase] ERROR: service-account.json not found.\n' +
+            '  → Download your service account key from:\n' +
+            '    Firebase Console → Project Settings → Service Accounts → Generate new private key\n' +
+            '  → Save it as: <project-root>/service-account.json\n' +
+            '  → Make sure it is listed in .gitignore (already done).'
+        );
+        process.exit(1);
+    }
+
     initializeApp({
-        credential: cert({
-            projectId:   process.env.FIREBASE_PROJECT_ID,
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-        }),
+        credential: cert(serviceAccount),
     });
 }
 
@@ -24,7 +41,6 @@ class FirestoreDatabase {
     // ─── Collection References ────────────────────────────────────────────
     get usersCol()           { return firestore.collection('users'); }
     get productsCol()        { return firestore.collection('products'); }
-    get recommendationsCol() { return firestore.collection('recommendations'); }
 
     // ═══════════════════════════════════════════════════════════════════════
     // USERS
@@ -167,59 +183,6 @@ class FirestoreDatabase {
         }
 
         await docRef.update(safeUpdates);
-        const updated = await docRef.get();
-        return { id: updated.id, ...updated.data() };
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // RECOMMENDATIONS (Intelligent Product Acquisition)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /**
-     * Get all product acquisition recommendations.
-     * @returns {Promise<Object[]>}
-     */
-    async getRecommendations() {
-        const snap = await this.recommendationsCol.orderBy('timestamp', 'desc').get();
-        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-
-    /**
-     * Add a new acquisition recommendation.
-     * @param {Object} reco
-     * @returns {Promise<Object>}
-     */
-    async addRecommendation(reco) {
-        const docRef = await this.recommendationsCol.add({
-            ...reco,
-            status: 'pending',
-            timestamp: FieldValue.serverTimestamp(),
-        });
-
-        return {
-            id: docRef.id,
-            status: 'pending',
-            timestamp: new Date().toISOString(),
-            ...reco,
-        };
-    }
-
-    /**
-     * Update the status of a recommendation (e.g., 'approved' or 'ignored').
-     * @param {string} id
-     * @param {Object} updates
-     * @returns {Promise<Object|null>}
-     */
-    async updateRecommendation(id, updates) {
-        const docRef = this.recommendationsCol.doc(id);
-        const existing = await docRef.get();
-        if (!existing.exists) return null;
-
-        await docRef.update({
-            ...updates,
-            updatedAt: FieldValue.serverTimestamp(),
-        });
-
         const updated = await docRef.get();
         return { id: updated.id, ...updated.data() };
     }

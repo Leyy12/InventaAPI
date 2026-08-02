@@ -56,7 +56,7 @@ async function setupAdmin() {
     }, { merge: true });
 
     console.log(`\n✅ Successfully configured Firestore Admin Document!`);
-    console.log(`You can now log in at http://localhost:3000/admin/login using:`);
+    console.log(`You can now log in at http://localhost:3000/ using:`);
     console.log(`Email: ${email}`);
     console.log(`Password: ${password}`);
 }

@@ -1,0 +1,201 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIRESTORE SECURITY RULES - InventaAPI (inventaapi-db)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// FINAL VERSION v2 — Ready to Publish
+// Date: July 27, 2026
+//
+// Changes from v1:
+// - users.update: locked plan, apiRequestLimit, subscriptionExpiresAt fields
+//   (these are now exclusively managed by the backend webhook via Admin SDK)
+// - Added transactions collection: admin read-only, no client writes
+//
+// ALL agreements satisfied:
+// ✅ No bootstrap-via-email branch
+// ✅ Strict create: role == 'Developer', plan == 'Starter', apiRequestLimit == 50
+// ✅ update: role, plan, apiRequestLimit, subscriptionExpiresAt all locked
+// ✅ isAdmin() uses .lower() for case-insensitive check
+// ✅ products collection protected (admin write only)
+// ✅ product_requests collection protected
+// ✅ api_keys collection: user owns their own keys
+// ✅ transactions collection: admin read, NO client writes
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────────────────────────────────────────────────────────────────────
+    // HELPER FUNCTIONS
+    // ───────────────────────────────────────────────────────────────────────
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is the document owner
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Check if user has admin role (case-insensitive)
+    // Uses Admin SDK-written Firestore document as source of truth.
+    function isAdmin() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.lower() == 'admin';
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // USERS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      // PRIVACY FIX: Users can only read their own document; Admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Signup: Must provide exact Developer/Starter/50 values.
+      // Prevents privilege escalation at registration.
+      // No bootstrap-via-email branch exists here.
+      allow create: if isAuthenticated()
+                    && request.auth.uid == userId
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.role == 'Developer'
+                    && request.resource.data.plan == 'Starter'
+                    && request.resource.data.apiRequestLimit == 50;
+
+      // Users can update their own document but CANNOT change:
+      //   - uid         (identity)
+      //   - role        (privilege — prevent self-escalation)
+      //   - plan        (subscription tier — managed by webhook via Admin SDK)
+      //   - apiRequestLimit (quota — managed by webhook via Admin SDK)
+      //   - subscriptionExpiresAt (expiry date — managed by webhook via Admin SDK)
+      //
+      // Using .get() ensures this rule doesn't crash if the field is missing.
+      // Admin SDK writes (webhook, scheduled downgrade) bypass these rules entirely.
+      allow update: if isOwner(userId)
+                    && request.resource.data.uid == resource.data.uid
+                    && request.resource.data.role == resource.data.role
+                    && request.resource.data.get('plan', '') == resource.data.get('plan', '')
+                    && request.resource.data.get('apiRequestLimit', 0) == resource.data.get('apiRequestLimit', 0)
+                    && request.resource.data.get('subscriptionExpiresAt', '') == resource.data.get('subscriptionExpiresAt', '');
+
+      // Only admins can delete user documents
+      allow delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // PRODUCTS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+
+    match /products/{productId} {
+      // Anyone authenticated can read products
+      allow read: if isAuthenticated();
+
+      // Only admins can create/update/delete products
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // PRODUCT REQUESTS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+
+    match /product_requests/{requestId} {
+      // Users can read their own requests; admins can read all
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+
+      // Users can create requests with their own userId
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid;
+
+      // Users can update their own pending requests;
+      // Admins can update any request (approve/reject)
+      allow update: if isOwner(resource.data.userId) || isAdmin();
+
+      // Only admins can delete requests
+      allow delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // API KEYS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // NOTE: All current operations go through the backend (Admin SDK),
+    // so these rules are defense-in-depth for any future client-side access.
+
+    match /api_keys/{keyId} {
+      // Users can read their own API keys; admins can read all
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+
+      // Users can create their own API keys
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid;
+
+      // Users can update their own API keys (e.g. rename, revoke)
+      allow update: if isOwner(resource.data.userId) || isAdmin();
+
+      // Users can delete their own API keys
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // TRANSACTIONS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // Created exclusively by the PayMongo webhook handler (Admin SDK).
+    // No client-side writes are ever permitted.
+    //
+    // Schema per document:
+    //   userId, userEmail, amount (centavos), currency, paymentMethod,
+    //   paymongoReferenceId, paymongoPaymentIntentId, plan,
+    //   subscriptionPeriodStart, subscriptionPeriodEnd,
+    //   status, createdAt, webhookEventId
+
+    match /transactions/{transactionId} {
+      // Only admins can read transaction history
+      allow read: if isAdmin();
+
+      // No client-side writes — EVER. Admin SDK (webhook) handles all writes.
+      allow create, update, delete: if false;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // ENTERPRISE INQUIRIES COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // Submitted via the Enterprise Contact Sales form.
+    // Authenticated users can submit inquiries; only admins can view/manage.
+
+    match /enterprise_inquiries/{inquiryId} {
+      // Only admins can read enterprise inquiries
+      allow read: if isAdmin();
+
+      // Any authenticated user can create an inquiry
+      // Validate required fields are present and non-empty
+      allow create: if isAuthenticated()
+                    && request.resource.data.fullName is string
+                    && request.resource.data.fullName.size() > 0
+                    && request.resource.data.email is string
+                    && request.resource.data.email.size() > 0
+                    && request.resource.data.company is string
+                    && request.resource.data.company.size() > 0
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() > 0;
+
+      // Only admins can update inquiries (e.g., change status to 'contacted')
+      allow update: if isAdmin();
+
+      // Only admins can delete inquiries
+      allow delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // DEFAULT DENY
+    // ───────────────────────────────────────────────────────────────────────
+
+    // Deny all other reads/writes not matched above
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

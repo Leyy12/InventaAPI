@@ -3,49 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DaaS API Developer Portal</title>
+    <title>InventaAPI - Developer Portal</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script>
+        // Redirect to Next.js landing page
+        window.location.href = 'http://localhost:3000/';
+    </script>
 </head>
 <body>
-
     <div class="container">
-        <h1>Developer Portal</h1>
-        <p class="subtitle">API-Based Data-as-a-Service (DaaS) Engine for Multi-Business Sales and Inventory Management.</p>
-
-        <div class="endpoint-grid">
-            <div class="endpoint-card">
-                <span class="method get">GET</span>
-                <div class="path">/api/v1/products</div>
-                <div class="desc">Retrieve products catalog. Supports pagination and businessType filtering.</div>
-            </div>
-
-            <div class="endpoint-card">
-                <span class="method get">GET</span>
-                <div class="path">/api/v1/recommendations</div>
-                <div class="desc">Intelligent product acquisition recommendations for unknown barcodes.</div>
-            </div>
-
-            <div class="endpoint-card">
-                <span class="method post">POST</span>
-                <div class="path">/api/v1/auth/login</div>
-                <div class="desc">Authenticate user and receive a JWT token for protected routes.</div>
-            </div>
-
-            <div class="endpoint-card">
-                <span class="method get">GET</span>
-                <div class="path">/daas/v1/catalog</div>
-                <div class="desc">DaaS secured catalog access. Requires <code>x-api-key</code> header.</div>
-            </div>
-        </div>
-
-        <div style="text-align: center;">
-            <div class="status">
-                <div class="dot"></div>
-                System is Online & Secure
-            </div>
-        </div>
+        <h1>Redirecting to InventaAPI...</h1>
+        <p class="subtitle">If you are not redirected automatically, <a href="http://localhost:3000/">click here</a>.</p>
     </div>
-
 </body>
 </html>
