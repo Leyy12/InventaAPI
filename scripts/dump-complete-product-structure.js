@@ -65,9 +65,9 @@ async function dumpProductStructures() {
     console.log(`   Products with top-level source_url: ${hasTopLevelSourceUrl}`);
     console.log(`   Products with metadata.source_url: ${hasNestedSourceUrl}\n`);
     
-    // Now check ALL 315 products for nested source_url
+    // Now check all products for nested source_url
     console.log('═══════════════════════════════════════════════════════════════\n');
-    console.log('🔎 CHECKING ALL 315 PRODUCTS FOR NESTED source_url...\n');
+    console.log(`🔎 CHECKING ALL ${allSnapshot.size} PRODUCTS FOR NESTED source_url...\n`);
     
     const allSnapshot = await productsRef.get();
     let totalWithNestedSourceUrl = 0;
@@ -100,7 +100,7 @@ async function dumpProductStructures() {
             console.log(`    metadata.source_url: ${product.source_url}\n`);
         });
     } else {
-        console.log('✅ NO nested metadata.source_url fields found in any of 315 products\n');
+        console.log(`✅ NO nested metadata.source_url fields found in any of ${allSnapshot.size} products\n`);
     }
 }
 

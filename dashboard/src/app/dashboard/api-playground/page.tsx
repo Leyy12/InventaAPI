@@ -33,7 +33,7 @@ export default function ApiPlaygroundPage() {
 
   // State Management
   const [apiKey, setApiKey] = useState("");
-  const [endpoint, setEndpoint] = useState("/api/v1/products");
+  const [endpoint, setEndpoint] = useState("/daas/v1/catalog");
   const [method, setMethod] = useState("GET");
   const [queryParams, setQueryParams] = useState({
     segment: "",
@@ -88,7 +88,7 @@ export default function ApiPlaygroundPage() {
       const res = await fetch(apiUrl, {
         method,
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'x-api-key': apiKey,
           'Content-Type': 'application/json',
         }
       });
@@ -137,7 +137,7 @@ export default function ApiPlaygroundPage() {
 fetch('${url}', {
   method: '${method}',
   headers: {
-    'Authorization': 'Bearer ${apiKey}',
+    'x-api-key': '${apiKey}',
     'Content-Type': 'application/json'
   }
 })
@@ -150,7 +150,7 @@ import requests
 
 url = '${url}'
 headers = {
-    'Authorization': 'Bearer ${apiKey}',
+    'x-api-key': '${apiKey}',
     'Content-Type': 'application/json'
 }
 
@@ -160,14 +160,14 @@ print(data)`,
 
       curl: `# cURL Command
 curl -X ${method} '${url}' \\
-  -H 'Authorization: Bearer ${apiKey}' \\
+  -H 'x-api-key: ${apiKey}' \\
   -H 'Content-Type: application/json'`,
 
       php: `<?php
 // PHP (cURL)
 $url = '${url}';
 $headers = [
-    'Authorization: Bearer ${apiKey}',
+    'x-api-key: ${apiKey}',
     'Content-Type: application/json'
 ];
 
@@ -253,9 +253,13 @@ print_r($data);
                 onChange={(e) => setEndpoint(e.target.value)}
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
               >
-                <option value="/api/v1/products">GET /api/v1/products</option>
-                <option value="/api/v1/products/stats">GET /api/v1/products/stats</option>
+                <option value="/daas/v1/catalog">GET /daas/v1/catalog (Product Catalog)</option>
+                <option value="/daas/v1/health">GET /daas/v1/health (Health Check)</option>
+                <option value="/api/v1/products">GET /api/v1/products (Admin)</option>
               </select>
+              <p className="text-xs text-slate-500 mt-1">
+                Use <code className="text-indigo-400">/daas/v1/catalog</code> — the primary endpoint that returns only products linked to your API key.
+              </p>
             </div>
 
             {/* Query Parameters */}
@@ -457,6 +461,18 @@ print_r($data);
                         <span className="text-slate-300 font-medium">{response.pagination.limit}</span>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Schema Note */}
+                {response.products && response.products.length > 0 && (
+                  <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-4 py-3 text-xs text-indigo-300">
+                    <p className="font-bold mb-1">📦 Response Schema Note</p>
+                    <p className="text-indigo-300/70 leading-relaxed">
+                      Each product includes a <code className="bg-indigo-500/20 px-1 rounded">variants</code> array with the full list of options (flavor, size, price, SKU, expirationDate).
+                      The root-level <code className="bg-indigo-500/20 px-1 rounded">price</code> and <code className="bg-indigo-500/20 px-1 rounded">size</code> fields reflect the{' '}
+                      <strong>lowest-priced variant</strong> for convenience — use the <code className="bg-indigo-500/20 px-1 rounded">variants</code> array for the full options list.
+                    </p>
                   </div>
                 )}
 

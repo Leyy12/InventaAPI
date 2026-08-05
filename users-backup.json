@@ -1,0 +1,168 @@
+[
+  {
+    "id": "7pwJlJW8gGf4o9iwW9KaoUmvwxB3",
+    "role": "Developer",
+    "businessName": "SME Store",
+    "subscription_status": "inactive",
+    "apiRequestsUsed": 0,
+    "plan": "Starter",
+    "uid": "7pwJlJW8gGf4o9iwW9KaoUmvwxB3",
+    "businessSegment": "Hardware Store",
+    "fullName": "Developer",
+    "apiRequestLimit": 50,
+    "email": "delarosaleah38@gmail.com"
+  },
+  {
+    "id": "FINAL_1785556046349",
+    "uid": "FINAL_1785556046349",
+    "fullName": "FINAL TEST",
+    "email": "final@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "createdAt": "2026-08-01T03:47:26.350Z"
+  },
+  {
+    "id": "RelxZhFCCaZccxP0xaqNr7rgzix2",
+    "uid": "RelxZhFCCaZccxP0xaqNr7rgzix2",
+    "fullName": "Flicker Test User",
+    "email": "flicker-test-debug@example.com",
+    "businessName": "nina grocery",
+    "businessSegment": "Grocery / SME Retail",
+    "plan": "Starter",
+    "role": "Developer",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "createdAt": {
+      "_seconds": 1785641470,
+      "_nanoseconds": 443000000
+    },
+    "lastLogin": {
+      "_seconds": 1785641470,
+      "_nanoseconds": 443000000
+    }
+  },
+  {
+    "id": "VpDeXopPT5cm7EtrgjfCrJ60Gjr2",
+    "uid": "VpDeXopPT5cm7EtrgjfCrJ60Gjr2",
+    "email": "superadmin@inventaapi.com",
+    "fullName": "Super Admin",
+    "role": "admin",
+    "plan": "Unlimited",
+    "businessName": "InventaAPI",
+    "createdAt": "2026-07-26T13:51:33.470Z",
+    "isActive": true
+  },
+  {
+    "id": "cWAaV3QZF8X7FHJ8J1WlgwNDLcq1",
+    "email": "test@example.com",
+    "fullName": "Test Admin",
+    "role": "admin",
+    "username": "testadmin"
+  },
+  {
+    "id": "clean_final_1785556596914",
+    "uid": "clean_final_1785556596914",
+    "fullName": "Clean Final Test",
+    "email": "cleanfinal@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "createdAt": "2026-08-01T03:56:36.914Z"
+  },
+  {
+    "id": "clean_test_1785554819424",
+    "uid": "clean_test_1785554819424",
+    "fullName": "Clean Test User",
+    "email": "clean@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "createdAt": "2026-08-01T03:26:59.424Z"
+  },
+  {
+    "id": "debug_test_1785555690028",
+    "uid": "debug_test_1785555690028",
+    "fullName": "Debug Test",
+    "email": "debug@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "createdAt": "2026-08-01T03:41:30.029Z"
+  },
+  {
+    "id": "enterprise_test_1785557023680",
+    "uid": "enterprise_test_1785557023680",
+    "fullName": "Enterprise Test User",
+    "email": "enterprise@test.local",
+    "plan": "Enterprise",
+    "apiRequestLimit": null,
+    "role": "Developer",
+    "createdAt": "2026-08-01T04:03:43.680Z"
+  },
+  {
+    "id": "final_test_1785555131846",
+    "uid": "final_test_1785555131846",
+    "fullName": "Final Test User",
+    "email": "final@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "createdAt": "2026-08-01T03:32:11.846Z"
+  },
+  {
+    "id": "sequential_test_1785555386095",
+    "uid": "sequential_test_1785555386095",
+    "fullName": "Sequential Test",
+    "email": "seq@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "createdAt": "2026-08-01T03:36:26.096Z"
+  },
+  {
+    "id": "test_free_user_1785553784546",
+    "uid": "test_free_user_1785553784546",
+    "fullName": "Test Free User",
+    "email": "testfree@example.com",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "createdAt": "2026-08-01T03:09:44.547Z"
+  },
+  {
+    "id": "test_limit_verify_1785554581914",
+    "uid": "test_limit_verify_1785554581914",
+    "fullName": "Rate Limit Test User",
+    "email": "ratelimit@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "createdAt": "2026-08-01T03:23:01.914Z"
+  },
+  {
+    "id": "test_pro_user_1785553786039",
+    "uid": "test_pro_user_1785553786039",
+    "fullName": "Test Pro User",
+    "email": "testpro@example.com",
+    "plan": "Pro",
+    "apiRequestLimit": 5000,
+    "apiRequestsUsed": 0,
+    "role": "Developer",
+    "subscription_status": "active",
+    "createdAt": "2026-08-01T03:09:46.040Z"
+  },
+  {
+    "id": "verify_1785556289627",
+    "uid": "verify_1785556289627",
+    "fullName": "Verify Test",
+    "email": "verify@test.local",
+    "plan": "Starter",
+    "apiRequestLimit": 50,
+    "createdAt": "2026-08-01T03:51:29.628Z"
+  }
+]

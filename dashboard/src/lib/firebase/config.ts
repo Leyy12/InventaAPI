@@ -16,6 +16,14 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
+
+// Log current auth persistence setting
+if (typeof window !== 'undefined') {
+  console.log('[🔍 FIREBASE CONFIG] Auth persistence:', auth.app.options);
+  console.log('[🔍 FIREBASE CONFIG] Auth SDK version:', '10.x (v10 modular)');
+  console.log('[🔍 FIREBASE CONFIG] Default persistence: browserLocalPersistence (not explicitly set)');
+}
+
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 

@@ -73,9 +73,13 @@ router.get('/health', (req, res) => {
 router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res) => {
     try {
         const linkedProductIds = req.apiKeyData.linkedProductIds || [];
+        const linkedVariantSelections = req.apiKeyData.linkedVariantSelections || {};
         const searchQuery = req.query.search || req.query.q || '';
 
-        if (linkedProductIds.length === 0) {
+        // Combine full products and partial products to fetch them all
+        const allProductIdsToFetch = Array.from(new Set([...linkedProductIds, ...Object.keys(linkedVariantSelections)]));
+
+        if (allProductIdsToFetch.length === 0) {
             return res.json({
                 status: "success",
                 message: "No products are linked to this API key. Please select products from the Product Catalog.",
@@ -93,7 +97,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
         }
 
         // Fetch products from Firebase by IDs
-        const productPromises = linkedProductIds.map(async (productId) => {
+        const productPromises = allProductIdsToFetch.map(async (productId) => {
             const doc = await adminDb.collection('products').doc(productId).get();
             if (doc.exists) {
                 return { id: doc.id, ...doc.data() };
@@ -107,7 +111,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
         // Apply search filter if query provided
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
-            products = products.filter(p => 
+            products = products.filter(p =>
                 p.name?.toLowerCase().includes(query) ||
                 p.description?.toLowerCase().includes(query) ||
                 p.sku?.toLowerCase().includes(query) ||
@@ -134,20 +138,48 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
             }
         }
 
-        // Format products for DaaS response
-        const formattedProducts = products.map(p => ({
-            id: p.id,
-            sku: p.sku,
-            name: p.name,
-            description: p.description || '',
-            category: p.category,
-            segment: p.segment,
-            price: p.price,
-            size: p.size || null,
-            image_url: p.image_url || '',
-            metadata: p.metadata || {},
-            tags: p.tags || []
-        }));
+        // Format products for DaaS response.
+        // variants array is the SINGLE SOURCE OF TRUTH for price/size/sku/expirationDate.
+        // Stale root-level fields (from old flat schema) are intentionally ignored.
+        const formattedProducts = products.map(p => {
+            // Check if this product has a partial variant selection
+            const partialSelections = linkedVariantSelections[p.id];
+            
+            // If partial selections exist for this product, filter its variants
+            let finalVariants = p.variants || [];
+            if (partialSelections && Array.isArray(partialSelections) && partialSelections.length > 0) {
+                finalVariants = finalVariants.filter(v => {
+                    const identifier = `${v.flavor || ''}|${v.size || ''}`;
+                    return partialSelections.includes(identifier);
+                });
+            }
+
+            let baseVariant = {};
+            if (finalVariants.length > 0) {
+                // Always use the lowest-priced variant as base — ignore old root-level fields
+                baseVariant = finalVariants.reduce((prev, curr) => {
+                    const prevPrice = typeof prev.price === 'number' ? prev.price : parseFloat(prev.price) || Infinity;
+                    const currPrice = typeof curr.price === 'number' ? curr.price : parseFloat(curr.price) || Infinity;
+                    return (currPrice < prevPrice) ? curr : prev;
+                }, finalVariants[0]);
+            }
+            return {
+                id: p.id,
+                sku: baseVariant.sku || null,
+                name: p.name,
+                description: p.description || '',
+                category: p.category,
+                segment: p.segment,
+                // Always derive price/size from lowest-price variant (not stale root fields)
+                price: typeof baseVariant.price === 'number' ? baseVariant.price : (parseFloat(baseVariant.price) || null),
+                size: baseVariant.size || null,
+                image_url: p.image_url || '',
+                metadata: p.metadata || {},
+                tags: p.tags || [],
+                variants: finalVariants,
+                expirationDate: baseVariant.expirationDate || null
+            };
+        });
 
         res.json({
             status: "success",
@@ -164,9 +196,9 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
         });
     } catch (err) {
         console.error('[DaaS Catalog] Error:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Internal Server Error',
-            message: 'Failed to fetch catalog: ' + err.message 
+            message: 'Failed to fetch catalog: ' + err.message
         });
     }
 });

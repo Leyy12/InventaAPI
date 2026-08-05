@@ -1,26 +1,14 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Database, ShoppingCart, Check, Package, Key, Sparkles } from "lucide-react";
+import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProductNotFound, ProductRequestModal, ConfirmationModal } from "@/components/product-request";
+import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 
-// ==================== TYPES ====================
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  segment: "Pharmacy" | "Hardware" | "Grocery";
-  price: number;
-  size?: string | null;
-  description: string;
-  image_url: string;
-  image?: string;
-  stock?: number;
-}
+// Product type now imported from products-service (matches new variants schema)
+// CartSummary local type
 
 interface CartSummary {
   totalProducts: number;
@@ -42,6 +30,7 @@ export default function ProductCatalogPage() {
   // Core State
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
   const [loading, setLoading] = useState(true);
   const [activeSegment, setActiveSegment] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -103,7 +92,7 @@ export default function ProductCatalogPage() {
   const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
 
   const cartSummary = useMemo((): CartSummary => {
-    const selectedItems = products.filter(p => selectedProducts.has(p.id));
+    const selectedItems = products.filter(p => selectedProducts.has(p.id!));
     const bySegment = selectedItems.reduce((acc, p) => {
       acc[p.segment] = (acc[p.segment] || 0) + 1;
       return acc;
@@ -118,28 +107,84 @@ export default function ProductCatalogPage() {
 
   // ==================== PRODUCT SELECTION ====================
 
-  const toggleProduct = useCallback((productId: string) => {
-    setSelectedProducts((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(productId)) {
-        newSet.delete(productId);
+  const toggleProduct = useCallback((product: Product) => {
+    const productId = product.id!;
+    setSelectedProducts((prevProds) => {
+      const newProds = new Set(prevProds);
+      const isCurrentlySelected = newProds.has(productId);
+      
+      if (isCurrentlySelected) {
+        newProds.delete(productId);
       } else {
-        newSet.add(productId);
+        newProds.add(productId);
       }
-      return newSet;
+      
+      setSelectedVariants((prevVars) => {
+        const newVars = { ...prevVars };
+        if (isCurrentlySelected) {
+          delete newVars[productId];
+        } else if (product.variants && product.variants.length > 0) {
+          newVars[productId] = new Set(product.variants.map(v => `${v.flavor || ''}|${v.size || ''}`));
+        }
+        return newVars;
+      });
+      
+      return newProds;
+    });
+  }, []);
+
+  const toggleVariant = useCallback((e: React.MouseEvent, productId: string, variantId: string) => {
+    e.stopPropagation();
+    
+    setSelectedVariants((prevVars) => {
+      const newMap = { ...prevVars };
+      const productVars = new Set(newMap[productId] || []);
+      
+      if (productVars.has(variantId)) {
+        productVars.delete(variantId);
+      } else {
+        productVars.add(variantId);
+      }
+      
+      const hasVariants = productVars.size > 0;
+      if (hasVariants) {
+        newMap[productId] = productVars;
+      } else {
+        delete newMap[productId];
+      }
+      
+      // Sync selectedProducts
+      setSelectedProducts((prevProds) => {
+        const newProds = new Set(prevProds);
+        if (hasVariants) newProds.add(productId);
+        else newProds.delete(productId);
+        return newProds;
+      });
+      
+      return newMap;
     });
   }, []);
 
   const selectAllInView = useCallback(() => {
-    setSelectedProducts((prev) => {
-      const newSet = new Set(prev);
-      filteredProducts.forEach(p => newSet.add(p.id));
-      return newSet;
+    setSelectedProducts((prevProds) => {
+      const newProds = new Set(prevProds);
+      filteredProducts.forEach(p => newProds.add(p.id!));
+      return newProds;
+    });
+    setSelectedVariants((prevVars) => {
+      const newVars = { ...prevVars };
+      filteredProducts.forEach(p => {
+        if (p.variants && p.variants.length > 0) {
+          newVars[p.id!] = new Set(p.variants.map(v => `${v.flavor || ''}|${v.size || ''}`));
+        }
+      });
+      return newVars;
     });
   }, [filteredProducts]);
 
   const clearSelection = useCallback(() => {
     setSelectedProducts(new Set());
+    setSelectedVariants({});
   }, []);
 
   // ==================== API KEY GENERATION ====================
@@ -162,8 +207,23 @@ export default function ProductCatalogPage() {
       }
 
       const selectedProductsList = products
-        .filter(p => selectedProducts.has(p.id))
-        .map(p => ({ id: p.id, name: p.name, sku: p.sku, segment: p.segment }));
+        .filter(p => selectedProducts.has(p.id!))
+        .map(p => ({ id: p.id!, name: p.name, sku: p.sku || '', segment: p.segment }));
+
+      const finalLinkedProductIds: string[] = [];
+      const finalLinkedVariantSelections: Record<string, string[]> = {};
+
+      selectedProducts.forEach(productId => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return;
+        
+        const selectedVars = selectedVariants[productId];
+        if (product.variants && product.variants.length > 0 && selectedVars && selectedVars.size > 0 && selectedVars.size < product.variants.length) {
+          finalLinkedVariantSelections[productId] = Array.from(selectedVars);
+        } else {
+          finalLinkedProductIds.push(productId);
+        }
+      });
 
       const response = await fetch(`${API_URL}/api/v1/api-keys/generate`, {
         method: 'POST',
@@ -174,7 +234,8 @@ export default function ProductCatalogPage() {
           keyName: keyName.trim(),
           plan: "Professional",
           linkedProducts: selectedProductsList,
-          linkedProductIds: Array.from(selectedProducts),
+          linkedProductIds: finalLinkedProductIds,
+          linkedVariantSelections: finalLinkedVariantSelections
         })
       });
 
@@ -483,11 +544,15 @@ DAAS_API_KEY=${generatedKey}
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredProducts.map((product) => {
-            const isSelected = selectedProducts.has(product.id);
+            const isSelected = selectedProducts.has(product.id!);
+            const productVars = selectedVariants[product.id!] || new Set();
+            const totalVars = product.variants ? product.variants.length : 0;
+            const isPartial = isSelected && totalVars > 0 && productVars.size > 0 && productVars.size < totalVars;
+            
             return (
               <div
                 key={product.id}
-                onClick={() => toggleProduct(product.id)}
+                onClick={() => toggleProduct(product)}
                 className={`glass-card rounded-xl cursor-pointer transition-all hover:scale-[1.02] overflow-hidden ${
                   isSelected
                     ? "border-2 border-indigo-500 shadow-lg shadow-indigo-500/20"
@@ -520,7 +585,11 @@ DAAS_API_KEY=${generatedKey}
                         ? "bg-indigo-500 border-indigo-500"
                         : "bg-slate-900/70 border-slate-500 backdrop-blur-sm"
                     }`}>
-                      {isSelected && <Check className="w-4 h-4 text-white" />}
+                      {isPartial ? (
+                        <Minus className="w-4 h-4 text-white" />
+                      ) : isSelected ? (
+                        <Check className="w-4 h-4 text-white" />
+                      ) : null}
                     </div>
 
                     {/* Segment badge */}
@@ -543,9 +612,54 @@ DAAS_API_KEY=${generatedKey}
                 <div className="p-4">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{product.description}</p>
+
+                  {/* Variant chips */}
+                  {product.variants && product.variants.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 mt-2" onClick={e => e.stopPropagation() /* Prevent double toggle if clicking container */}>
+                      {product.variants.map((v, i) => {
+                        const variantId = `${v.flavor || ''}|${v.size || ''}`;
+                        const isVarSelected = selectedVariants[product.id!]?.has(variantId);
+                        return (
+                          <button
+                            key={i}
+                            onClick={(e) => toggleVariant(e, product.id!, variantId)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
+                              isVarSelected 
+                                ? 'bg-indigo-500 text-white border border-indigo-600'
+                                : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-300'
+                            }`}
+                          >
+                            {isVarSelected && <Check className="w-2.5 h-2.5" />}
+                            {[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}
+                          </button>
+                        );
+                      })}
+                      {hasNearExpiry(product) && (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5" /> Expiring soon
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    getBaseSize(product) ? (
+                      <div className="mt-2">
+                        <span className="px-2 py-0.5 rounded bg-slate-700/50 border border-slate-600/50 text-[10px] text-slate-300 font-medium">
+                          Size: {getBaseSize(product)}
+                        </span>
+                      </div>
+                    ) : null
+                  )}
+
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/60">
-                    <span className="text-xs text-slate-500 font-mono">SKU: {product.sku}</span>
-                    <span className="text-sm font-bold text-white">₱{product.price?.toFixed(2)}</span>
+                    <span className="text-xs text-slate-500">
+                      {product.variants && product.variants.length > 0
+                        ? `${product.variants.length} variant${product.variants.length !== 1 ? 's' : ''}`
+                        : <span className="font-mono">{product.sku || '—'}</span>
+                      }
+                    </span>
+                    <span className="text-sm font-bold text-white">
+                      {getBasePrice(product) > 0 ? `from ₱${getBasePrice(product).toFixed(2)}` : '—'}
+                    </span>
                   </div>
                 </div>
               </div>

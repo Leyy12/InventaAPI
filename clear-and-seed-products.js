@@ -1,6 +1,13 @@
 /**
  * Clear existing products and re-seed with fresh data
  * Run: node clear-and-seed-products.js
+ * 
+ * ⚠️ WARNING: This script DELETES ALL existing products before seeding!
+ * Only run this if you want to reset the database to the sample 28-product set.
+ * 
+ * NOTE: This script uses the OLD 28-product schema (without variants/expirationDate).
+ * For current production use, the database has 15 high-quality products with variants.
+ * Consider this script ARCHIVED - do not run unless intentionally resetting to old schema.
  */
 
 import { initializeApp } from 'firebase/app';

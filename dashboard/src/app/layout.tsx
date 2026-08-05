@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import "./globals.css";
 import LayoutWrapper from "@/components/layout/LayoutWrapper";
 import { AuthProvider } from "@/lib/firebase/auth-context";
-import AuthDebugPanel from "@/components/debug/AuthDebugPanel";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -31,9 +30,6 @@ export default function RootLayout({
             <LayoutWrapper>
               {children}
             </LayoutWrapper>
-
-            {/* TEMPORARY: Debug panel for flicker bug investigation */}
-            <AuthDebugPanel />
           </AuthProvider>
         </Suspense>
       </body>

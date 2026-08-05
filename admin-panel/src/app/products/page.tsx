@@ -1,479 +1,1149 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
-import { 
-  Package, Plus, Edit2, Trash2, ShieldAlert, CheckCircle2, 
-  Search, Filter, Download, Upload, Archive, XCircle
+import { useState, useEffect, useMemo } from "react";
+import {
+  Package, Edit2, Archive, Search, Download, Upload,
+  Eye, RotateCcw, X, Layers, ShoppingCart, Wrench, Pill,
+  FolderArchive, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, ChevronRight
 } from "lucide-react";
-import { collection, getDocs, deleteDoc, doc, query, orderBy, where, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 
-// A robust client-side CSV export function
-const exportCSV = (data: any[], filename: string) => {
-  if (data.length === 0) return;
-  const headers = ["Barcode", "Name", "Brand", "Category", "Price", "Stock", "Status", "Size", "Color", "Weight", "Description"];
-  
-  const csvRows = [];
-  csvRows.push(headers.join(","));
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface ProductVariant {
+  flavor?: string;
+  size?: string;
+  price?: number | string;
+  value?: string;
+  sku?: string;
+  expirationDate?: string; // YYYY-MM-DD
+}
 
-  for (const row of data) {
-    const values = [
-      `"${row.barcode || ''}"`,
-      `"${(row.name || '').replace(/"/g, '""')}"`,
-      `"${(row.attributes?.brand || '').replace(/"/g, '""')}"`,
-      `"${(row.category || '').replace(/"/g, '""')}"`,
-      row.price || 0,
-      row.stock || 0,
-      `"${row.status || 'Active'}"`,
-      `"${row.size || 'N/A'}"`,
-      `"${row.color || 'N/A'}"`,
-      `"${row.weight || 'N/A'}"`,
-      `"${(row.description || '').replace(/"/g, '""')}"`
-    ];
-    csvRows.push(values.join(","));
-  }
-
-  const csvString = csvRows.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.setAttribute("hidden", "");
-  a.setAttribute("href", url);
-  a.setAttribute("download", filename);
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+// Returns true if a variant expires within 30 days from today
+const isExpiringSoon = (dateStr?: string): boolean => {
+  if (!dateStr) return false;
+  const exp = new Date(dateStr);
+  const now = new Date();
+  const diff = exp.getTime() - now.getTime();
+  return diff > 0 && diff <= 30 * 24 * 60 * 60 * 1000;
 };
 
+// Returns true if any variant of a product expires within 30 days
+const hasExpiryWarning = (p: Product): boolean =>
+  (p.variants ?? []).some(v => isExpiringSoon(v.expirationDate));
+
+// Returns true if category should show expiry date field
+const categoryNeedsExpiry = (cat: string): boolean => {
+  const c = cat.toLowerCase();
+  return c.includes("grocery") || c.includes("food") || c.includes("snack") ||
+    c.includes("beverage") || c.includes("drink") || c.includes("dairy") ||
+    c.includes("medicine") || c.includes("pharma") || c.includes("first aid") ||
+    c.includes("cold") || c.includes("flu") || c.includes("pain") ||
+    c.includes("canned") || c.includes("instant") || c.includes("milk");
+};
+
+interface Product {
+  id: string;
+  name?: string;
+  brand?: string;
+  product?: string;
+  category?: string;
+  segment?: string;
+  price?: number | string;
+  size?: string;
+  flavor?: string;
+  variant?: string;
+  image_url?: string;
+  image?: string;
+  description?: string;
+  is_active?: boolean;
+  status?: string;
+  createdAt?: any;
+  updatedAt?: any;
+  variants?: ProductVariant[];
+  sku?: string;
+  attributes?: { brand?: string; flavor?: string; size?: string; variant?: string; price?: number | string };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const getProductName = (p: Product) => p.name || p.product || "Unnamed Product";
+const getBrand   = (p: Product) => p.brand || p.attributes?.brand || "";
+const getStatus  = (p: Product) => p.status || (p.is_active === false ? "Archived" : "Active");
+
+const getFlavors = (p: Product): string[] => {
+  const list: string[] = [];
+  if (p.variants?.length) {
+    list.push(...p.variants.map(v => v.flavor || v.value || ""));
+  } else {
+    if (p.flavor) list.push(p.flavor);
+    if (p.variant) list.push(p.variant);
+    if (p.attributes?.flavor) list.push(p.attributes.flavor);
+    if (p.attributes?.variant) list.push(p.attributes.variant);
+  }
+  const sizes = getSizes(p);
+  return [...new Set(list.filter(Boolean).filter(f => !sizes.includes(f)))];
+};
+
+const getSizes = (p: Product): string[] => {
+  const list: string[] = [];
+  if (p.variants?.length) {
+    list.push(...p.variants.map(v => v.size || ""));
+  } else {
+    if (p.size) list.push(p.size);
+    if (p.attributes?.size) list.push(p.attributes.size);
+  }
+  return [...new Set(list.filter(Boolean))];
+};
+
+const parseNum = (val: any): number | null => {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const parsed = parseFloat(val.replace(/[^0-9.]/g, ''));
+    if (!isNaN(parsed)) return parsed;
+  }
+  return null;
+};
+
+const getPricing = (p: Product): string => {
+  const prices: number[] = [];
+  if (p.variants?.length) {
+    p.variants.forEach(v => {
+      const num = parseNum(v.price);
+      if (num !== null) prices.push(num);
+    });
+  } else {
+    const num = parseNum(p.price) ?? parseNum(p.attributes?.price);
+    if (num !== null) prices.push(num);
+  }
+  
+  if (prices.length) {
+    const mn = Math.min(...prices);
+    return `₱${mn.toFixed(2)}`;
+  }
+  return "—";
+};
+
+const categoryStyle = (cat?: string) => {
+  if (!cat) return "bg-slate-700/60 text-slate-400 border-slate-600/60";
+  const c = cat.toLowerCase();
+  if (c.includes("noodle") || c.includes("instant")) return "bg-cyan-500/15 text-cyan-300 border-cyan-500/25";
+  if (c.includes("canned") || c.includes("sardine") || c.includes("tuna") || c.includes("meat")) return "bg-red-500/15 text-red-300 border-red-500/25";
+  if (c.includes("beverage") || c.includes("drink") || c.includes("water") || c.includes("juice") || c.includes("coffee") || c.includes("tea")) return "bg-teal-500/15 text-teal-300 border-teal-500/25";
+  if (c.includes("dairy") || c.includes("milk") || c.includes("cream") || c.includes("cheese")) return "bg-pink-500/15 text-pink-300 border-pink-500/25";
+  if (c.includes("snack") || c.includes("chip") || c.includes("cracker") || c.includes("cookie") || c.includes("candy") || c.includes("chocolate") || c.includes("gum")) return "bg-green-500/15 text-green-300 border-green-500/25";
+  if (c.includes("condiment") || c.includes("sauce") || c.includes("seasoning") || c.includes("oil")) return "bg-yellow-500/15 text-yellow-300 border-yellow-500/25";
+  if (c.includes("rice") || c.includes("grain") || c.includes("flour") || c.includes("sugar")) return "bg-amber-500/15 text-amber-300 border-amber-500/25";
+  return "bg-indigo-500/15 text-indigo-300 border-indigo-500/25";
+};
+
+const segmentStyle = (seg?: string) => {
+  if (seg === "Grocery")  return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+  if (seg === "Hardware") return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+  if (seg === "Pharmacy") return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+  return "bg-slate-700/50 text-slate-400 border-slate-600/50";
+};
+
+const exportCSV = (data: Product[]) => {
+  if (!data.length) return;
+  const rows = data.map(p => [
+    `"${(getProductName(p)).replace(/"/g,'""')}"`, `"${getBrand(p)}"`,
+    `"${p.segment||""}"`, `"${p.category||""}"`,
+    `"${getFlavors(p).join(", ")}"`, `"${getSizes(p).join(", ")}"`,
+    `"${getPricing(p)}"`, `"${getStatus(p)}"`,
+  ].join(","));
+  const csv = ["Name,Brand,Segment,Category,Flavors,Specs,Pricing,Status", ...rows].join("\n");
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
+    download: "master_catalog.csv"
+  });
+  a.click();
+};
+
+// ─── Expand More Button ───────────────────────────────────────────────────────
+function ExpandMore({ items, label }: { items: string[]; label: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1 text-[12px] text-indigo-400/70 font-medium hover:text-indigo-300 transition-colors"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
+        {label}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-30 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-2 min-w-[120px] space-y-0.5">
+          {items.map((item, i) => (
+            <p key={i} className="text-[12px] text-slate-300 px-2 py-1 rounded hover:bg-slate-700 whitespace-nowrap">{item}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const cfg: Record<string, { bg: string; dot: string }> = {
+    Active:   { bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25", dot: "bg-emerald-400" },
+    Archived: { bg: "bg-slate-500/15 text-slate-400 border-slate-500/25",       dot: "bg-slate-400" },
+    Pending:  { bg: "bg-amber-500/10 text-amber-400 border-amber-500/25",        dot: "bg-amber-400" },
+    Rejected: { bg: "bg-red-500/10 text-red-400 border-red-500/25",             dot: "bg-red-400" },
+  };
+  const c = cfg[status] ?? cfg.Active;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-bold uppercase tracking-wider whitespace-nowrap ${c.bg}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      {status}
+    </span>
+  );
+}
+
+// ─── View Detail Modal ────────────────────────────────────────────────────────
+function ViewModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  const flavors = getFlavors(product);
+  const sizes   = getSizes(product);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl shadow-black/50 overflow-hidden">
+        {/* Modal Header */}
+        <div className="flex items-start justify-between p-5 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3">
+            {product.image_url || product.image ? (
+              <img src={product.image_url || product.image} alt={product.name}
+                className="w-14 h-14 rounded-xl object-cover border border-white/10" />
+            ) : (
+              <div className="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10">
+                <Package className="w-7 h-7 text-slate-600" />
+              </div>
+            )}
+            <div>
+              <h2 className="text-base font-bold text-white leading-snug">{getProductName(product)}</h2>
+              {getBrand(product) && <p className="text-xs text-indigo-400 mt-0.5">{getBrand(product)}</p>}
+              <div className="mt-1.5 flex gap-1.5">
+                <StatusBadge status={getStatus(product)} />
+                {product.segment && (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${segmentStyle(product.segment)}`}>
+                    {product.segment}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Key info */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {[
+              ["Category", product.category, false],
+              ["Pricing",  getPricing(product),     true],
+              ["Variants", `${product.variants?.length ?? 0}`,  false],
+              ["SKU",      product.sku,       false],
+            ].map(([l, v, green]) => (
+              <div key={l as string} className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{l as string}</p>
+                {v && v !== "—" ? (
+                  <p className={`text-sm font-semibold ${green ? "text-emerald-400" : "text-slate-200"}`}>{v as string}</p>
+                ) : (
+                  <p className="text-sm text-slate-600">—</p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Flavors */}
+          {flavors.length > 0 && (
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Flavors / Variants</p>
+              <div className="flex flex-wrap gap-1.5">
+                {flavors.map((f, i) => (
+                  <span key={i} className="text-xs px-2 py-1 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Variant table with SKU + Expiry */}
+          {product.variants && product.variants.length > 0 && (
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Variant Breakdown</p>
+              <div className="rounded-lg overflow-hidden border border-slate-800">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-800/70">
+                    <tr>
+                      <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">Flavor</th>
+                      <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">Size</th>
+                      <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">SKU</th>
+                      <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">Exp. Date</th>
+                      <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-right">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {product.variants.map((v, i) => {
+                      const expiring = isExpiringSoon(v.expirationDate);
+                      return (
+                        <tr key={i} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="px-3 py-2 text-slate-300">{v.flavor || v.value || <span className="text-slate-600">—</span>}</td>
+                          <td className="px-3 py-2 text-slate-400 font-mono">{v.size || <span className="text-slate-600">—</span>}</td>
+                          <td className="px-3 py-2 text-slate-500 font-mono">{v.sku || <span className="text-slate-600">—</span>}</td>
+                          <td className="px-3 py-2">
+                            {v.expirationDate ? (
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                expiring
+                                  ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                                  : "bg-slate-700/60 text-slate-400 border border-slate-600/50"
+                              }`}>
+                                {expiring && <AlertTriangle className="w-2.5 h-2.5" />}
+                                {v.expirationDate}
+                              </span>
+                            ) : <span className="text-slate-600">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right text-emerald-400 font-bold">
+                            {parseNum(v.price) != null ? `₱${parseNum(v.price)!.toFixed(2)}` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit Product Modal ───────────────────────────────────────────────────────
+function EditModal({
+  product,
+  onClose,
+  onSaved,
+}: {
+  product: Product;
+  onClose: () => void;
+  onSaved: (updated: Product) => void;
+}) {
+  const seedVariants = (): ProductVariant[] => {
+    if (product.variants?.length) return product.variants.map(v => ({ ...v }));
+    if (product.flavor || product.size || product.price != null) {
+      return [{ flavor: product.flavor || "", size: product.size || "", price: parseNum(product.price) ?? 0 }];
+    }
+    return [{ flavor: "", size: "", price: 0 }];
+  };
+
+  const [name,     setName]     = useState(getProductName(product));
+  const [brand,    setBrand]    = useState(getBrand(product));
+  const [category, setCategory] = useState(product.category || "");
+  const [segment,  setSegment]  = useState(product.segment  || "");
+  const [status,   setStatus]   = useState(getStatus(product));
+  const [variants, setVariants] = useState<ProductVariant[]>(seedVariants);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+
+  const updateVariant = (i: number, field: keyof ProductVariant, val: string) => {
+    setVariants(prev => prev.map((v, idx) =>
+      idx === i ? { ...v, [field]: field === "price" ? (val === "" ? "" : val) : val } : v
+    ));
+  };
+
+  const addVariant = () => setVariants(prev => [...prev, { flavor: "", size: "", price: 0 }]);
+  const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError("Product name is required."); return; }
+    setSaving(true); setError("");
+    try {
+      const cleaned = variants
+        .filter(v => v.flavor || v.size || v.price)
+        .map(v => ({
+          flavor: (v.flavor || "").trim(),
+          size:   (v.size   || "").trim(),
+          price:  parseNum(v.price) ?? 0,
+          ...(v.sku            ? { sku: v.sku.trim() }           : {}),
+          ...(v.expirationDate ? { expirationDate: v.expirationDate } : {}),
+        }));
+
+      const payload: Record<string, any> = {
+        name:      name.trim(),
+        brand:     brand.trim(),
+        category:  category.trim(),
+        segment,
+        status,
+        is_active: status === "Active",
+        variants:  cleaned,
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "products", product.id), payload);
+      onSaved({ ...product, ...payload, updatedAt: undefined });
+      onClose();
+    } catch (e: any) {
+      setError(e.message || "Failed to save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const showExpiry = categoryNeedsExpiry(category);
+  const inputCls = "w-full bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/20 transition-colors";
+  const labelCls = "block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center">
+              <Edit2 className="w-4 h-4 text-indigo-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white leading-snug">Edit Product</h2>
+              <p className="text-[11px] text-slate-500 truncate max-w-xs">{getProductName(product)}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+          {/* Base fields */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className={labelCls}>Product Name *</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Product name" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Brand</label>
+              <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="Brand" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Segment</label>
+              <select value={segment} onChange={e => setSegment(e.target.value)} className={inputCls}>
+                <option value="">— Select Segment —</option>
+                <option value="Grocery">Grocery</option>
+                <option value="Hardware">Hardware</option>
+                <option value="Pharmacy">Pharmacy</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Category</label>
+              <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Canned Goods" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Status</label>
+              <select value={status} onChange={e => setStatus(e.target.value)} className={inputCls}>
+                <option value="Active">Active</option>
+                <option value="Archived">Archived</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Variants */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className={labelCls + " mb-0"}>Variants</p>
+              <button onClick={addVariant}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/10 transition-colors">
+                <Plus className="w-3 h-3" /> Add Variant
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
+              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
+                {["Flavor / Variant", "Size", "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price", ""].map(h => (
+                  <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
+                ))}
+              </div>
+
+              <div className="divide-y divide-slate-800/60">
+                {variants.length === 0 && (
+                  <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
+                )}
+                {variants.map((v, i) => (
+                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
+                    <input value={v.flavor || ""} onChange={e => updateVariant(i, "flavor", e.target.value)}
+                      placeholder="e.g. Original" className={inputCls + " py-1.5 text-xs"} />
+                    <input value={v.size || ""} onChange={e => updateVariant(i, "size", e.target.value)}
+                      placeholder="e.g. 150g" className={inputCls + " py-1.5 text-xs"} />
+                    <input value={v.sku || ""} onChange={e => updateVariant(i, "sku", e.target.value)}
+                      placeholder="e.g. ABC-001" className={inputCls + " py-1.5 text-xs"} />
+                    {showExpiry && (
+                      <input type="date" value={v.expirationDate || ""}
+                        onChange={e => updateVariant(i, "expirationDate", e.target.value)}
+                        className={inputCls + " py-1.5 text-xs"} />
+                    )}
+                    <input type="number" min="0" step="0.01"
+                      value={v.price !== undefined && v.price !== "" ? v.price : ""}
+                      onChange={e => updateVariant(i, "price", e.target.value)}
+                      placeholder="0.00" className={inputCls + " py-1.5 text-xs"} />
+                    <button onClick={() => removeVariant(i)}
+                      className="w-8 h-8 flex items-center justify-center rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {showExpiry && (
+              <p className="text-[10px] text-slate-600 mt-1.5 ml-0.5">* Expiration Date applies to perishable/medicine categories only.</p>
+            )}
+          </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-500/10 border border-red-500/25 px-4 py-2.5 text-xs text-red-400">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-800 bg-slate-900/80 shrink-0">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Product Modal ───────────────────────────────────────────────────────
+function AddProductModal({
+  onClose,
+  onAdded,
+  existingProducts,
+}: {
+  onClose: () => void;
+  onAdded: (result: { product: Product; isUpdate: boolean }) => void;
+  existingProducts: Product[];
+}) {
+  const [name,     setName]     = useState("");
+  const [brand,    setBrand]    = useState("");
+  const [category, setCategory] = useState("");
+  const [segment,  setSegment]  = useState("");
+  const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "", price: 0 }]);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+
+  const updateVariant = (i: number, field: keyof ProductVariant, val: string) => {
+    setVariants(prev => prev.map((v, idx) =>
+      idx === i ? { ...v, [field]: field === "price" ? (val === "" ? "" : val) : val } : v
+    ));
+  };
+
+  const addVariant    = () => setVariants(prev => [...prev, { flavor: "", size: "", price: 0 }]);
+  const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
+
+  const handleAdd = async () => {
+    if (!name.trim()) { setError("Product name is required."); return; }
+    setSaving(true); setError("");
+    try {
+      const nameTrimmed  = name.trim().toLowerCase();
+      const brandTrimmed = brand.trim().toLowerCase();
+
+      // Check for existing product with same Name + Brand (case-insensitive)
+      const existing = existingProducts.find(p =>
+        getProductName(p).trim().toLowerCase() === nameTrimmed &&
+        getBrand(p).trim().toLowerCase() === brandTrimmed
+      );
+
+      const cleaned: ProductVariant[] = variants
+        .filter(v => v.flavor || v.size || v.price)
+        .map(v => ({
+          flavor: (v.flavor || "").trim(),
+          size:   (v.size   || "").trim(),
+          price:  parseNum(v.price) ?? 0,
+          ...(v.sku            ? { sku: v.sku.trim() }           : {}),
+          ...(v.expirationDate ? { expirationDate: v.expirationDate } : {}),
+        }));
+
+      if (existing) {
+        // APPEND variants to existing product
+        const mergedVariants = [...(existing.variants ?? []), ...cleaned];
+        await updateDoc(doc(db, "products", existing.id), {
+          variants: mergedVariants,
+          updatedAt: serverTimestamp(),
+        });
+        const updatedProduct: Product = { ...existing, variants: mergedVariants };
+        onAdded({ product: updatedProduct, isUpdate: true });
+      } else {
+        // CREATE new product document
+        const payload = {
+          name:      name.trim(),
+          brand:     brand.trim(),
+          category:  category.trim(),
+          segment,
+          status:    "Active",
+          is_active: true,
+          variants:  cleaned,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        const ref = await addDoc(collection(db, "products"), payload);
+        onAdded({ product: { id: ref.id, ...payload }, isUpdate: false });
+      }
+      onClose();
+    } catch (e: any) {
+      setError(e.message || "Failed to save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const showExpiry = categoryNeedsExpiry(category);
+  const inputCls = "w-full bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/20 transition-colors";
+  const labelCls = "block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5";
+
+  // Detect matching existing product for preview
+  const matchedProduct = existingProducts.find(p =>
+    getProductName(p).trim().toLowerCase() === name.trim().toLowerCase() &&
+    getBrand(p).trim().toLowerCase() === brand.trim().toLowerCase()
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+              <Plus className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Add New Product</h2>
+              <p className="text-[11px] text-slate-500">Variants will be appended if Product + Brand already exists.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+          {/* Duplicate warning */}
+          {matchedProduct && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-4 py-3 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-amber-300">Product already exists</p>
+                <p className="text-[11px] text-amber-400/80 mt-0.5">
+                  Saving will <strong>append</strong> new variant(s) to "{getProductName(matchedProduct)}" instead of creating a duplicate document.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Base fields */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className={labelCls}>Product Name *</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Piattos Cheese" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Brand</label>
+              <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Jack 'n Jill" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Segment</label>
+              <select value={segment} onChange={e => setSegment(e.target.value)} className={inputCls}>
+                <option value="">— Select Segment —</option>
+                <option value="Grocery">Grocery</option>
+                <option value="Hardware">Hardware</option>
+                <option value="Pharmacy">Pharmacy</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Category</label>
+              <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Snacks" className={inputCls} />
+            </div>
+          </div>
+
+          {/* Variants */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className={labelCls + " mb-0"}>Variants</p>
+              <button onClick={addVariant}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/10 transition-colors">
+                <Plus className="w-3 h-3" /> Add Variant
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
+              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
+                {["Flavor / Variant", "Size", "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price", ""].map(h => (
+                  <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
+                ))}
+              </div>
+              <div className="divide-y divide-slate-800/60">
+                {variants.length === 0 && (
+                  <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
+                )}
+                {variants.map((v, i) => (
+                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
+                    <input value={v.flavor || ""} onChange={e => updateVariant(i, "flavor", e.target.value)}
+                      placeholder="e.g. Cheese" className={inputCls + " py-1.5 text-xs"} />
+                    <input value={v.size || ""} onChange={e => updateVariant(i, "size", e.target.value)}
+                      placeholder="e.g. 85g" className={inputCls + " py-1.5 text-xs"} />
+                    <input value={v.sku || ""} onChange={e => updateVariant(i, "sku", e.target.value)}
+                      placeholder="e.g. ABC-001" className={inputCls + " py-1.5 text-xs"} />
+                    {showExpiry && (
+                      <input type="date" value={v.expirationDate || ""}
+                        onChange={e => updateVariant(i, "expirationDate", e.target.value)}
+                        className={inputCls + " py-1.5 text-xs"} />
+                    )}
+                    <input type="number" min="0" step="0.01"
+                      value={v.price !== undefined && v.price !== "" ? v.price : ""}
+                      onChange={e => updateVariant(i, "price", e.target.value)}
+                      placeholder="0.00" className={inputCls + " py-1.5 text-xs"} />
+                    <button onClick={() => removeVariant(i)}
+                      className="w-8 h-8 flex items-center justify-center rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {showExpiry && (
+              <p className="text-[10px] text-slate-600 mt-1.5 ml-0.5">* Expiration Date applies to perishable/medicine categories only.</p>
+            )}
+          </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-500/10 border border-red-500/25 px-4 py-2.5 text-xs text-red-400">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-800 bg-slate-900/80 shrink-0">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleAdd} disabled={saving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {saving ? "Saving…" : "Save Product"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MasterProductCatalogPage() {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [products, setProducts]       = useState<Product[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState("");
+  const [statusFilter, setStatusFilter] = useState("Active");
   const [segmentFilter, setSegmentFilter] = useState("All");
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Form State for Add/Edit
-  const [isEditing, setIsEditing] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    name: "", barcode: "", brand: "", category: "", price: 0, stock: 0, image: "", 
-    size: "Standard", color: "Assorted", weight: "N/A", uom: "pcs", description: "", status: "Active", segment: "Hardware"
-  });
-
-  useEffect(() => {
-    fetchProducts();
-  }, []);
+  useEffect(() => { fetchProducts(); }, []);
 
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, "products"));
-      const dataList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      dataList.sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
-      setProducts(dataList);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-    } finally {
-      setLoading(false);
+      const snap = await getDocs(collection(db, "products"));
+      const data: Product[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as Product));
+      data.sort((a, b) => (getProductName(a)).localeCompare(getProductName(b)));
+      setProducts(data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  const handleArchive = async (p: Product) => {
+    if (!confirm(`Archive "${getProductName(p)}"? It will be hidden from the catalog but can be restored.`)) return;
+    await updateDoc(doc(db, "products", p.id), { status: "Archived", is_active: false, updatedAt: serverTimestamp() });
+    setProducts(prev => prev.map(x => x.id === p.id ? { ...x, status: "Archived", is_active: false } : x));
+  };
+
+  const handleRestore = async (p: Product) => {
+    await updateDoc(doc(db, "products", p.id), { status: "Active", is_active: true, updatedAt: serverTimestamp() });
+    setProducts(prev => prev.map(x => x.id === p.id ? { ...x, status: "Active", is_active: true } : x));
+  };
+
+  const handleSaved = (updated: Product) => {
+    setProducts(prev => prev.map(x => x.id === updated.id ? updated : x));
+  };
+
+  const handleAdded = ({ product, isUpdate }: { product: Product; isUpdate: boolean }) => {
+    if (isUpdate) {
+      setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+    } else {
+      setProducts(prev => [product, ...prev].sort((a, b) => getProductName(a).localeCompare(getProductName(b))));
     }
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
-    try {
-      await updateDoc(doc(db, "products", id), {
-        status: newStatus,
-        is_active: newStatus === "Active",
-        updatedAt: serverTimestamp()
-      });
-      fetchProducts();
-    } catch (err) {
-      console.error("Error updating status:", err);
-    }
-  };
+  const filtered = useMemo(() => products.filter(p => {
+    const q = search.toLowerCase();
+    const matchSearch = !search ||
+      getProductName(p).toLowerCase().includes(q) ||
+      getBrand(p).toLowerCase().includes(q) ||
+      (p.sku || "").toLowerCase().includes(q) ||
+      (p.category || "").toLowerCase().includes(q);
+    const matchStatus = statusFilter === "All" || getStatus(p) === statusFilter;
+    const matchSeg    = segmentFilter === "All" || p.segment === segmentFilter;
+    return matchSearch && matchStatus && matchSeg;
+  }), [products, search, statusFilter, segmentFilter]);
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to completely delete this product?")) {
-      try {
-        await deleteDoc(doc(db, "products", id));
-        fetchProducts();
-      } catch (error) {
-        console.error("Error deleting product:", error);
-      }
-    }
-  };
-
-  const handleSaveProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const payload = {
-        name: formData.name,
-        nameLower: formData.name.toLowerCase(),
-        barcode: formData.barcode,
-        segment: formData.segment,
-        businessType: formData.segment.toLowerCase(), // keep for backward compatibility
-        category: formData.category,
-        description: formData.description,
-        price: Number(formData.price),
-        stock: Number(formData.stock),
-        image_url: formData.image,
-        image: formData.image,
-        size: formData.size,
-        color: formData.color,
-        weight: formData.weight,
-        uom: formData.uom,
-        status: formData.status,
-        is_active: formData.status === "Active",
-        attributes: { brand: formData.brand },
-        updatedAt: serverTimestamp()
-      };
-
-      if (isEditing && editId) {
-        await updateDoc(doc(db, "products", editId), payload);
-      } else {
-        await addDoc(collection(db, "products"), {
-          ...payload,
-          createdAt: serverTimestamp(),
-          variations: []
-        });
-      }
-
-      setShowAddModal(false);
-      setIsEditing(false);
-      setEditId(null);
-      fetchProducts();
-    } catch (err) {
-      console.error("Error saving product:", err);
-    }
-  };
-
-  const openEdit = (p: any) => {
-    setIsEditing(true);
-    setEditId(p.id);
-    setFormData({
-      name: p.name || "",
-      barcode: p.barcode || "",
-      brand: p.attributes?.brand || "",
-      category: p.category || "",
-      price: p.price || 0,
-      stock: p.stock || 0,
-      image: p.image_url || p.image || "",
-      size: p.size || "",
-      color: p.color || "",
-      weight: p.weight || "",
-      uom: p.uom || "pcs",
-      description: p.description || "",
-      status: p.status || "Active",
-      segment: p.segment || (p.businessType ? p.businessType.charAt(0).toUpperCase() + p.businessType.slice(1) : "Hardware")
-    });
-    setShowAddModal(true);
-  };
-
-  const openAdd = () => {
-    setIsEditing(false);
-    setEditId(null);
-    setFormData({
-      name: "", barcode: "", brand: "", category: "", price: 0, stock: 0, image: "", 
-      size: "Standard", color: "Assorted", weight: "N/A", uom: "pcs", description: "", status: "Active", segment: "Hardware"
-    });
-    setShowAddModal(true);
-  };
-
-  const handleExport = () => {
-    exportCSV(products, `master_catalog.csv`);
-  };
-
-  const filteredProducts = products.filter(p => {
-    const matchesSearch = (p.name || "").toLowerCase().includes(search.toLowerCase()) || 
-                          (p.barcode || "").includes(search);
-    const matchesStatus = statusFilter === "All" || p.status === statusFilter;
-    const matchesSegment = segmentFilter === "All" || p.segment === segmentFilter || (p.businessType && p.businessType.toLowerCase() === segmentFilter.toLowerCase());
-    return matchesSearch && matchesStatus && matchesSegment;
-  });
+  const total    = products.length;
+  const active   = products.filter(p => getStatus(p) === "Active").length;
+  const archived = products.filter(p => getStatus(p) === "Archived").length;
+  const grocery  = products.filter(p => getStatus(p) === "Active" && p.segment === "Grocery").length;
+  const hardware = products.filter(p => getStatus(p) === "Active" && p.segment === "Hardware").length;
+  const pharmacy = products.filter(p => getStatus(p) === "Active" && p.segment === "Pharmacy").length;
+  const pct = (n: number) => total ? `${Math.round(n / total * 100)}% of total` : "0%";
 
   return (
-    <div className="space-y-8 pb-10">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="space-y-5 pb-8">
+
+      {/* ── Page Header ── */}
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
-            <Package className="w-8 h-8 text-indigo-500" />
+          <h1 className="text-xl font-bold text-white flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center shrink-0">
+              <Package className="w-4 h-4 text-indigo-400" />
+            </div>
             Master Product Catalog
           </h1>
-          <p className="text-slate-400">Manage all products, variations, and approvals across all segments.</p>
+          <p className="text-xs text-slate-500 mt-1 ml-[42px]">Manage all products, variations, and approvals across all segments.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleExport} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-200 transition-colors flex items-center gap-2 border border-slate-700">
-            <Download className="w-4 h-4" /> Export CSV
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Add Product */}
+          <button onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white border border-emerald-500/50 transition-colors shadow-sm shadow-emerald-900/30">
+            <Plus className="w-3.5 h-3.5" /> Add Product
           </button>
-          <button className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-200 transition-colors flex items-center gap-2 border border-slate-700 opacity-50 cursor-not-allowed" title="Coming soon">
-            <Upload className="w-4 h-4" /> Import CSV
+          <button onClick={() => exportCSV(filtered)}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
+            <Download className="w-3.5 h-3.5" /> Export CSV
           </button>
-          <button 
-            onClick={openAdd}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/20 ml-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Product
+          <button className="px-3 py-1.5 rounded-lg bg-slate-800/50 text-xs font-medium text-slate-600 border border-slate-700/50 flex items-center gap-1.5 cursor-not-allowed" title="Coming soon">
+            <Upload className="w-3.5 h-3.5" /> Import CSV
           </button>
         </div>
       </div>
 
-      <div className="glass-card rounded-xl overflow-hidden mt-8 border border-white/5">
-        <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center bg-slate-900/50 gap-4">
-          <div className="flex gap-2 flex-wrap">
-            <select
-              value={segmentFilter}
-              onChange={(e) => setSegmentFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-slate-800 border border-slate-700 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              <option value="All">All Segments</option>
-              <option value="Hardware">Hardware</option>
-              <option value="Grocery">Grocery</option>
-              <option value="Pharmacy">Pharmacy</option>
-            </select>
-            {["All", "Active", "Pending", "Rejected", "Archived"].map(status => (
-              <button 
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${statusFilter === status ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-transparent'}`}
-              >
-                {status}
+      {/* ── Stats Row ── */}
+      <div className="grid grid-cols-5 gap-3">
+        {[
+          { icon: <Package className="w-4 h-4 text-slate-300" />,    bg: "bg-slate-700/70",       label: "Total Products", value: total.toLocaleString(),    sub: `${active} active · ${archived} archived`, color: "text-white" },
+          { icon: <ShoppingCart className="w-4 h-4 text-blue-300" />,bg: "bg-blue-500/20",        label: "Grocery",        value: grocery.toLocaleString(),   sub: pct(grocery),   color: "text-blue-400" },
+          { icon: <Wrench className="w-4 h-4 text-orange-300" />,    bg: "bg-orange-500/20",      label: "Hardware",       value: hardware.toLocaleString(),  sub: pct(hardware),  color: "text-orange-400" },
+          { icon: <Pill className="w-4 h-4 text-emerald-300" />,     bg: "bg-emerald-500/20",     label: "Pharmacy",       value: pharmacy.toLocaleString(),  sub: pct(pharmacy),  color: "text-emerald-400" },
+          { icon: <FolderArchive className="w-4 h-4 text-slate-400" />, bg: "bg-slate-600/40",    label: "Archived",       value: archived.toLocaleString(),  sub: pct(archived),  color: "text-slate-400" },
+        ].map(c => (
+          <div key={c.label} className="flex items-center gap-3 rounded-xl p-3.5 border border-white/5 bg-slate-800/40">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${c.bg}`}>{c.icon}</div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-slate-500 mb-0.5 truncate">{c.label}</p>
+              <p className={`text-xl font-bold leading-none ${c.color}`}>{c.value}</p>
+              <p className="text-[10px] text-slate-600 mt-0.5 truncate">{c.sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Table Card ── */}
+      <div className="rounded-xl border border-white/5 bg-slate-900/50 backdrop-blur-sm overflow-hidden">
+
+        {/* Toolbar */}
+        <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/60">
+          <div className="flex items-center gap-2">
+            {/* Segment selector */}
+            <div className="relative">
+              <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)}
+                className="appearance-none pl-3 pr-6 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800 border border-slate-700 text-slate-300 focus:outline-none focus:border-indigo-500/60 cursor-pointer">
+                <option value="All">All Segments</option>
+                <option value="Hardware">Hardware</option>
+                <option value="Grocery">Grocery</option>
+                <option value="Pharmacy">Pharmacy</option>
+              </select>
+              <ChevronDown className="w-3 h-3 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+            {/* Status pills */}
+            {["All", "Active", "Archived"].map(s => (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  statusFilter === s
+                    ? "bg-slate-700 text-white border border-slate-600"
+                    : "text-slate-500 hover:text-slate-300 border border-transparent hover:border-slate-700"
+                }`}>
+                {s}
               </button>
             ))}
           </div>
-          <div className="flex gap-3 w-full md:w-auto">
-            <div className="relative w-full md:w-72">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input 
-                type="text" 
-                placeholder={`Search products by name or barcode...`}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-md pl-9 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
-              />
-            </div>
+
+          {/* Search */}
+          <div className="relative w-64">
+            <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input type="text" placeholder="Search by name, brand, SKU…" value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/15" />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
-        
+
+        {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
+          <table className="w-full text-left table-fixed" style={{ minWidth: "900px" }}>
+            <colgroup>
+              <col style={{ width: "25%" }} /> {/* Product */}
+              <col style={{ width: "20%" }} /> {/* Flavors */}
+              <col style={{ width: "10%" }} /> {/* Specs */}
+              <col style={{ width: "12%" }} /> {/* Pricing */}
+              <col style={{ width: "8%" }}  /> {/* Variants */}
+              <col style={{ width: "10%" }} /> {/* Status */}
+              <col style={{ width: "15%" }} /> {/* Actions */}
+            </colgroup>
             <thead>
-              <tr className="bg-slate-900/30 border-b border-slate-800/60">
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Info</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Specs (Size/Color/Wt)</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Pricing & Stock</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+              <tr className="border-b border-slate-800/80 bg-slate-900/50">
+                <th className="pl-6 pr-4 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-left">PRODUCT</th>
+                <th className="px-4 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-left">FLAVORS / VARIANTS</th>
+                <th className="px-4 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">SPECS</th>
+                <th className="px-4 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">PRICING</th>
+                <th className="px-4 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">VARIANTS</th>
+                <th className="px-4 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">STATUS</th>
+                <th className="pl-4 pr-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap text-center sticky right-0 z-10 bg-slate-900/50 border-l border-slate-800/40">
+                  ACTIONS
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-800/40">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500 mx-auto mb-2"></div>
-                    <p className="text-xs">Loading catalog...</p>
+                  <td colSpan={7} className="py-16 text-center text-slate-500">
+                    <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2.5" />
+                    <p className="text-xs">Loading catalog…</p>
                   </td>
                 </tr>
-              ) : filteredProducts.length === 0 ? (
+              ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-slate-500">
-                    <Package className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-                    <p className="text-sm">No products found matching your criteria.</p>
+                  <td colSpan={7} className="py-16 text-center text-slate-500">
+                    <Package className="w-10 h-10 text-slate-700 mx-auto mb-2.5" />
+                    <p className="text-sm font-medium text-slate-400">No products match your criteria</p>
+                    <p className="text-xs mt-1">Adjust filters or clear the search</p>
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-slate-800/30 transition-colors group">
-                    <td className="p-4">
-                      <div className="flex items-center gap-4">
-                        {product.image_url || product.image ? (
-                          <img src={product.image_url || product.image} alt={product.name} className="w-12 h-12 rounded-lg object-cover border border-white/10 shadow-sm" />
-                        ) : (
-                          <div className="w-12 h-12 rounded-lg bg-slate-800 border border-white/10 flex items-center justify-center">
-                            <Package className="w-6 h-6 text-slate-600" />
+                filtered.map(product => {
+                  const flavors      = getFlavors(product);
+                  const sizes        = getSizes(product);
+                  const pricing      = getPricing(product);
+                  const status       = getStatus(product);
+                  const isArchived   = status === "Archived";
+                  const varCount     = product.variants?.length ?? 0;
+                  const expiryWarn   = hasExpiryWarning(product);
+
+                  const FLAVOR_MAX   = 3;
+                  const shownFlavors = flavors.slice(0, FLAVOR_MAX);
+                  const extraFlavors = flavors.length - FLAVOR_MAX;
+
+                  const SIZE_MAX   = 3;
+                  const shownSizes = sizes.slice(0, SIZE_MAX);
+                  const extraSizes = sizes.length - SIZE_MAX;
+
+                  return (
+                    <tr key={product.id}
+                      className={`group hover:bg-slate-800/20 transition-colors duration-150 ${isArchived ? "opacity-50" : ""} ${expiryWarn ? "border-l-2 border-amber-500/60" : ""}`}>
+
+                      {/* Product Column */}
+                      <td className="pl-6 pr-4 py-4 overflow-hidden align-middle">
+                        <div className="flex items-center gap-3">
+                          {/* Thumbnail */}
+                          <div className="w-10 h-10 rounded-lg bg-slate-800 border border-white/8 flex items-center justify-center shrink-0">
+                            <Package className="w-5 h-5 text-slate-600" />
                           </div>
-                        )}
-                        <div>
-                          <p className="text-sm font-bold text-slate-200">{product.name}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                             <span className="text-xs text-slate-500 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">{product.barcode}</span>
-                             <span className="text-[10px] uppercase text-indigo-400 font-medium">{product.attributes?.brand || 'Generic'}</span>
-                             <span className="text-[10px] uppercase bg-slate-800 px-1.5 rounded text-slate-300 ml-1">{product.segment || product.businessType}</span>
+                          {/* Info */}
+                          <div className="min-w-0 flex-1 flex flex-col gap-1">
+                            {expiryWarn && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded w-fit">
+                                <AlertTriangle className="w-2.5 h-2.5" /> Expiring soon
+                              </span>
+                            )}
+                            <p className="text-[15px] font-semibold text-slate-100 truncate leading-snug" title={getProductName(product)}>{getProductName(product)}</p>
+                            {getBrand(product) ? (
+                              <p className="text-[13px] text-indigo-400/80 font-medium truncate" title={getBrand(product)}>
+                                {getBrand(product)}
+                              </p>
+                            ) : (
+                              <p className="text-[13px] text-slate-600">—</p>
+                            )}
+                            {product.category ? (
+                              <div className="mt-1">
+                                <span className={`inline-block text-[12px] font-semibold px-2.5 py-0.5 rounded-full border ${categoryStyle(product.category)}`}>
+                                  {product.category}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="mt-1"><span className="text-[13px] text-slate-600">—</span></div>
+                            )}
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="p-4 align-top">
-                       <div className="flex flex-col gap-1">
-                          <span className="text-xs text-slate-400"><span className="text-slate-600">Size:</span> {product.size || 'N/A'}</span>
-                          <span className="text-xs text-slate-400"><span className="text-slate-600">Color:</span> {product.color || 'N/A'}</span>
-                          <span className="text-xs text-slate-400"><span className="text-slate-600">Wt:</span> {product.weight || 'N/A'}</span>
-                       </div>
-                    </td>
-                    <td className="p-4 align-top">
-                       <p className="text-sm text-emerald-400 font-bold">₱{Number(product.price).toFixed(2)}</p>
-                       <p className="text-xs text-slate-400 mt-1">{product.stock} {product.uom || 'pcs'} left</p>
-                    </td>
-                    <td className="p-4 align-top">
-                      <span className={`text-[10px] px-2 py-1 rounded-full border uppercase font-bold tracking-wider
-                        ${product.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                          product.status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
-                          product.status === 'Archived' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' : 
-                          'bg-red-500/10 text-red-400 border-red-500/20'}
-                      `}>
-                        {product.status || 'Active'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right align-top">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        
-                        {product.status !== 'Active' && (
-                          <button onClick={() => handleStatusChange(product.id, 'Active')} className="p-1.5 rounded hover:bg-emerald-500/20 text-emerald-400 transition-colors" title="Approve/Activate">
-                            <CheckCircle2 className="w-4 h-4" />
-                          </button>
-                        )}
-                        {product.status === 'Pending' && (
-                          <button onClick={() => handleStatusChange(product.id, 'Rejected')} className="p-1.5 rounded hover:bg-orange-500/20 text-orange-400 transition-colors" title="Reject">
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        )}
-                        {product.status !== 'Archived' && (
-                          <button onClick={() => handleStatusChange(product.id, 'Archived')} className="p-1.5 rounded hover:bg-amber-500/20 text-amber-400 transition-colors" title="Archive">
-                            <Archive className="w-4 h-4" />
-                          </button>
-                        )}
+                      </td>
 
-                        <div className="w-px h-4 bg-slate-700 mx-1"></div>
+                      {/* Flavors */}
+                      <td className="px-4 py-4 overflow-hidden align-middle text-left">
+                        {flavors.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {shownFlavors.map((f, i) => (
+                              <p key={i} className="text-[14px] text-slate-300 truncate leading-snug" title={f}>{f}</p>
+                            ))}
+                            {extraFlavors > 0 && (
+                              <ExpandMore items={flavors.slice(FLAVOR_MAX)} label={`+${extraFlavors} more`} />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[14px] text-slate-600">—</span>
+                        )}
+                      </td>
 
-                        <button onClick={() => openEdit(product)} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors" title="Edit">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDelete(product.id)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400 transition-colors" title="Delete">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      {/* Specs */}
+                      <td className="px-4 py-4 overflow-hidden align-middle text-center">
+                        {sizes.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {shownSizes.map((s, i) => (
+                              <p key={i} className="text-[14px] text-slate-300 font-mono truncate leading-snug" title={s}>{s}</p>
+                            ))}
+                            {extraSizes > 0 && (
+                              <ExpandMore items={sizes.slice(SIZE_MAX)} label={`+${extraSizes} more`} />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[14px] text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* Pricing */}
+                      <td className="px-4 py-4 align-middle text-center">
+                        {pricing !== "—" ? (
+                          <span className="text-[14px] font-bold text-emerald-400 whitespace-nowrap">{pricing}</span>
+                        ) : (
+                          <span className="text-[14px] text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* Variant Count */}
+                      <td className="px-4 py-4 align-middle text-center">
+                        {varCount > 0 ? (
+                          <span title={`${varCount} Total Variant${varCount > 1 ? 's' : ''}`}
+                            className="inline-flex items-center gap-1.5 text-[12px] font-bold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-full cursor-help">
+                            <Layers className="w-3.5 h-3.5" /> {varCount} {varCount > 1 ? 'Variants' : 'Variant'}
+                          </span>
+                        ) : (
+                          <span className="text-[14px] text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-4 align-middle text-center">
+                        <StatusBadge status={status} />
+                      </td>
+
+                      {/* Actions — sticky, transparent bg to match row */}
+                      <td className="pl-4 pr-6 py-4 sticky right-0 z-10 border-l border-slate-800/30 align-middle">
+                        <div className="flex items-center justify-center gap-3">
+                          {/* View */}
+                          <button onClick={() => setViewProduct(product)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                              text-slate-400 hover:text-white hover:bg-slate-700/70 border border-transparent
+                              hover:border-slate-600/80 transition-all duration-150 whitespace-nowrap">
+                            <Eye className="w-3.5 h-3.5" /> View
+                          </button>
+                          {/* Edit */}
+                          <button onClick={() => setEditProduct(product)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                              text-indigo-400 hover:text-white hover:bg-indigo-500/20 border border-transparent
+                              hover:border-indigo-500/40 transition-all duration-150 whitespace-nowrap">
+                            <Edit2 className="w-3.5 h-3.5" /> Edit
+                          </button>
+                          {/* Archive / Restore */}
+                          {isArchived ? (
+                            <button onClick={() => handleRestore(product)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                                text-emerald-400 hover:bg-emerald-500/15 border border-transparent
+                                hover:border-emerald-500/30 transition-all duration-150 whitespace-nowrap">
+                              <RotateCcw className="w-3.5 h-3.5" /> Restore
+                            </button>
+                          ) : (
+                            <button onClick={() => handleArchive(product)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium
+                                text-amber-400 hover:bg-amber-500/15 border border-transparent
+                                hover:border-amber-500/30 transition-all duration-150 whitespace-nowrap">
+                              <Archive className="w-3.5 h-3.5" /> Archive
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Footer */}
+        {!loading && filtered.length > 0 && (
+          <div className="px-4 py-2.5 border-t border-slate-800/60 bg-slate-900/30 flex items-center justify-between">
+            <p className="text-[11px] text-slate-500">
+              Showing <span className="text-slate-300 font-semibold">{filtered.length.toLocaleString()}</span>
+              {filtered.length !== products.length && (
+                <> of <span className="text-slate-300 font-semibold">{products.length.toLocaleString()}</span></>
+              )}{" "}products
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Add/Edit Product Modal */}
+      {/* View Modal */}
+      {viewProduct && <ViewModal product={viewProduct} onClose={() => setViewProduct(null)} />}
+
+      {/* Edit Modal */}
+      {editProduct && (
+        <EditModal
+          product={editProduct}
+          onClose={() => setEditProduct(null)}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {/* Add Product Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-          <div className="glass-card w-full max-w-3xl rounded-2xl p-6 relative border-indigo-500/30 shadow-2xl my-8">
-            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-               <Package className="w-5 h-5 text-indigo-400" /> {isEditing ? 'Edit Product' : 'Add New Product'}
-            </h2>
-            <form onSubmit={handleSaveProduct} className="space-y-6">
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Basic Info */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold text-indigo-400 border-b border-slate-800 pb-2">Basic Info</h3>
-                  
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-300">Product Name *</label>
-                    <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Barcode / SKU *</label>
-                      <input type="text" required value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Brand</label>
-                      <input type="text" value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Segment</label>
-                      <select value={formData.segment} onChange={e => setFormData({...formData, segment: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
-                        <option value="Hardware">Hardware</option>
-                        <option value="Pharmacy">Pharmacy</option>
-                        <option value="Grocery">Grocery</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Sub-Category</label>
-                      <input type="text" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Status</label>
-                      <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
-                        <option value="Active">Active</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Archived">Archived</option>
-                        <option value="Rejected">Rejected</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-300">Description</label>
-                    <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 resize-none" />
-                  </div>
-                </div>
-
-                {/* Specs & Pricing */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold text-indigo-400 border-b border-slate-800 pb-2">Specs & Pricing</h3>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Price (₱) *</label>
-                      <input type="number" required min="0" step="0.01" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Stock *</label>
-                      <input type="number" required min="0" value={formData.stock} onChange={e => setFormData({...formData, stock: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Size / Dimension</label>
-                      <input type="text" value={formData.size} onChange={e => setFormData({...formData, size: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Color</label>
-                      <input type="text" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Weight</label>
-                      <input type="text" value={formData.weight} onChange={e => setFormData({...formData, weight: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300">Unit of Measure</label>
-                      <input type="text" value={formData.uom} onChange={e => setFormData({...formData, uom: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5 pt-2">
-                    <label className="text-xs font-medium text-slate-300">Image URL</label>
-                    <input type="url" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" placeholder="https://..." />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-6 border-t border-slate-800">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-sm font-medium text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-colors">
-                  {isEditing ? 'Save Changes' : 'Add Product'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AddProductModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={handleAdded}
+          existingProducts={products}
+        />
       )}
     </div>
   );

@@ -1,0 +1,200 @@
+﻿{
+  "users": [
+    {
+      "id": "u1",
+      "username": "balquinkevinconeal27@gmail.com",
+      "passwordHash": "$2a$10$95XvNsw.d8r/1.C1B8VlA.sS2i2lqZpXF4W5vjYn2.D7E0rXjZtXG",
+      "role": "admin",
+      "name": "Lead System Administrator"
+    },
+    {
+      "id": "u2",
+      "username": "cashier",
+      "passwordHash": "$2a$10$tZ92E7nF7b8bC8W5e6d6GeM79s2Yn2H6W5E3.D7E0rXjZtXG",
+      "role": "cashier",
+      "name": "Jane Doe (Cashier)"
+    }
+  ],
+  "products": [
+    {
+      "id": "prod_hardware_100001",
+      "sku": "SKU-HAR-100001",
+      "barcode": "1000000000001",
+      "name": "Davies Latex Paint MDL-1778",
+      "brand": "Davies",
+      "category": "Power Tools",
+      "subcategory": "Power Tools Accessories",
+      "businessType": "hardware",
+      "description": "High-quality Davies Latex Paint MDL-1778 for your hardware business.",
+      "specifications": "Size: 500mg, Color: White, Model: MDL-1778",
+      "price": 851.54,
+      "stock": 43,
+      "image_url": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "image": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "size": "500mg",
+      "capacity": "Standard",
+      "uom": "unit",
+      "variations": [
+        {
+          "type": "Color",
+          "value": "White"
+        },
+        {
+          "type": "Size",
+          "value": "500mg"
+        }
+      ],
+      "status": "Active",
+      "dateCreated": "2026-06-14T19:41:55.839Z",
+      "lastUpdated": "2026-07-13T01:06:22.928Z"
+    },
+    {
+      "id": "prod_hardware_100002",
+      "sku": "SKU-HAR-100002",
+      "barcode": "1000000000002",
+      "name": "Makita Screwdriver MDL-1732",
+      "brand": "Makita",
+      "category": "Electrical",
+      "subcategory": "Electrical Accessories",
+      "businessType": "hardware",
+      "description": "High-quality Makita Screwdriver MDL-1732 for your hardware business.",
+      "specifications": "Size: XL, Color: White, Model: MDL-1732",
+      "price": 968.58,
+      "stock": 241,
+      "image_url": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "image": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "size": "XL",
+      "capacity": "Standard",
+      "uom": "unit",
+      "variations": [
+        {
+          "type": "Color",
+          "value": "White"
+        },
+        {
+          "type": "Size",
+          "value": "XL"
+        }
+      ],
+      "status": "Active",
+      "dateCreated": "2026-05-15T11:56:08.540Z",
+      "lastUpdated": "2026-07-13T01:06:22.928Z"
+    },
+    {
+      "id": "prod_hardware_100003",
+      "sku": "SKU-HAR-100003",
+      "barcode": "1000000000003",
+      "name": "Stanley PVC Pipe MDL-7852",
+      "brand": "Stanley",
+      "category": "Paints",
+      "subcategory": "Paints Accessories",
+      "businessType": "hardware",
+      "description": "High-quality Stanley PVC Pipe MDL-7852 for your hardware business.",
+      "specifications": "Size: 500ml, Color: Clear, Model: MDL-7852",
+      "price": 843.25,
+      "stock": 281,
+      "image_url": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "image": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "size": "500ml",
+      "capacity": "Standard",
+      "uom": "unit",
+      "variations": [
+        {
+          "type": "Color",
+          "value": "Clear"
+        },
+        {
+          "type": "Size",
+          "value": "500ml"
+        }
+      ],
+      "status": "Active",
+      "dateCreated": "2026-07-07T20:48:25.310Z",
+      "lastUpdated": "2026-07-13T01:06:22.928Z"
+    },
+    {
+      "id": "prod_hardware_100004",
+      "sku": "SKU-HAR-100004",
+      "barcode": "1000000000004",
+      "name": "Stanley Steel Bar MDL-5172",
+      "brand": "Stanley",
+      "category": "Plumbing",
+      "subcategory": "Plumbing Accessories",
+      "businessType": "hardware",
+      "description": "High-quality Stanley Steel Bar MDL-5172 for your hardware business.",
+      "specifications": "Size: 250mg, Color: Blue, Model: MDL-5172",
+      "price": 397.73,
+      "stock": 446,
+      "image_url": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "image": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "size": "250mg",
+      "capacity": "Standard",
+      "uom": "unit",
+      "variations": [
+        {
+          "type": "Color",
+          "value": "Blue"
+        },
+        {
+          "type": "Size",
+          "value": "250mg"
+        }
+      ],
+      "status": "Active",
+      "dateCreated": "2026-05-02T05:34:04.430Z",
+      "lastUpdated": "2026-07-13T01:06:22.928Z"
+    },
+    {
+      "id": "prod_hardware_100005",
+      "sku": "SKU-HAR-100005",
+      "barcode": "1000000000005",
+      "name": "Davies Wrench MDL-2167",
+      "brand": "Davies",
+      "category": "Electrical",
+      "subcategory": "Electrical Accessories",
+      "businessType": "hardware",
+      "description": "High-quality Davies Wrench MDL-2167 for your hardware business.",
+      "specifications": "Size: 1L, Color: Black, Model: MDL-2167",
+      "price": 736.58,
+      "stock": 314,
+      "image_url": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "image": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "size": "1L",
+      "capacity": "Standard",
+      "uom": "unit",
+      "variations": [
+        {
+          "type": "Color",
+          "value": "Black"
+        },
+        {
+          "type": "Size",
+          "value": "1L"
+        }
+      ],
+      "status": "Active",
+      "dateCreated": "2026-06-12T05:02:51.778Z",
+      "lastUpdated": "2026-07-13T01:06:22.928Z"
+    },
+    {
+      "id": "prod_hardware_100006",
+      "sku": "SKU-HAR-100006",
+      "barcode": "1000000000006",
+      "name": "Pag-asa Latex Paint MDL-3967",
+      "brand": "Pag-asa",
+      "category": "Structural Steel",
+      "subcategory": "Structural Steel Accessories",
+      "businessType": "hardware",
+      "description": "High-quality Pag-asa Latex Paint MDL-3967 for your hardware business.",
+      "specifications": "Size: XL, Color: Blue, Model: MDL-3967",
+      "price": 22.14,
+      "stock": 52,
+      "image_url": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "image": "https://images.unsplash.com/photo-1531403009284-440f080d1e12?q=80&w=300&auto=format&fit=crop",
+      "size": "XL",
+      "capacity": "Standard",
+      "uom": "unit",
+      "variations": [
+        {
+          "type": "Color",
+          "value": "Blue"

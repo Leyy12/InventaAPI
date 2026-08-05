@@ -55,7 +55,12 @@ export default async function AdminDashboard() {
 
       {/* Stats Cards */}
       <Suspense fallback={<StatsLoadingSkeleton />}>
-        <AdminStats productsCount={products.length} />
+        <AdminStats 
+          productsCount={products.length}
+          groceryCount={products.filter((p: any) => p.segment === 'Grocery').length}
+          hardwareCount={products.filter((p: any) => p.segment === 'Hardware').length}
+          pharmacyCount={products.filter((p: any) => p.segment === 'Pharmacy').length}
+        />
       </Suspense>
 
       {/* Product Table */}

@@ -32,7 +32,17 @@ export default function ConsumersPage() {
   const filteredUsers = users.filter(u => {
     const matchesSearch = (u.email || "").toLowerCase().includes(search.toLowerCase()) || 
                           (u.fullName || "").toLowerCase().includes(search.toLowerCase());
-    const matchesRole = roleFilter === "All" || u.role === (roleFilter === "Customers" ? "customer" : "admin");
+    const isAdmin = (u.role || "").toUpperCase() === "ADMIN";
+    
+    let matchesRole = false;
+    if (roleFilter === "Admins") {
+      matchesRole = isAdmin;
+    } else if (roleFilter === "Customers") {
+      matchesRole = !isAdmin;
+    } else { // "All"
+      matchesRole = !isAdmin; // Exclude admins from "All" view as well
+    }
+    
     return matchesSearch && matchesRole;
   });
 

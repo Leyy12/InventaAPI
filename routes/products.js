@@ -1,37 +1,44 @@
 import express from 'express';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const router = express.Router();
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SECURITY NOTICE: ENDPOINTS DISABLED
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// These product management endpoints were exposed without authentication
-// and are now DISABLED pending proper Firebase Admin auth implementation.
-//
-// CURRENT ARCHITECTURE:
-// - Admin product operations go directly from the dashboard to Firestore
-//   using Firebase Client SDK, secured by Firestore Security Rules.
-// - These backend routes were orphaned (no client calls them).
-//
-// IF YOU NEED BACKEND CRUD LATER:
-// - Implement Firebase Admin token verification middleware
-// - Update frontend to send Firebase ID tokens in Authorization header
-// - Re-enable routes with proper auth
-//
-// ALTERNATIVE FOR IMMEDIATE USE:
-// - Use the admin dashboard: /dashboard (requires admin role)
-// - Firestore rules enforce admin-only write access
-//
-// ═══════════════════════════════════════════════════════════════════════════
+router.get('/', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db.collection('products').get();
+    const products = [];
+    snapshot.forEach(doc => {
+      products.push({ id: doc.id, ...doc.data() });
+    });
+    res.json({ products });
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: 'Failed to fetch products' });
+  }
+});
 
+router.get('/:id', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const doc = await db.collection('products').doc(req.params.id).get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    res.json({ product: { id: doc.id, ...doc.data() } });
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    res.status(500).json({ error: 'Failed to fetch product' });
+  }
+});
+
+// Disable mutating endpoints
 router.all('*', (req, res) => {
-  res.status(410).json({ 
+  res.status(410).json({
     error: 'Endpoint Disabled',
-    message: 'Product management endpoints are deprecated and have been disabled for security reasons. Use the admin dashboard for product operations.',
-    details: 'These endpoints were exposed without authentication. Admin operations now use Firestore directly with proper security rules.',
+    message: 'Product management mutation endpoints are deprecated and have been disabled for security reasons.',
+    details: 'Admin operations now use Firestore directly with proper security rules.',
     alternative: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`,
-    documentation: 'Contact the development team if you need backend API access.'
   });
 });
 

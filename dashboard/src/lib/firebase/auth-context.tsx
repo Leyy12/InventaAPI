@@ -6,59 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./config";
 import { useRouter, usePathname } from "next/navigation";
 
-// PERSISTENT LOGGING via localStorage (survives page reloads)
-function persistentLog(category: string, data: any) {
-  const timestamp = new Date().toISOString();
-  const entry = {
-    timestamp,
-    category,
-    data
-  };
-  
-  // Log to console
-  console.log(`[📝 ${category}]`, data);
-  
-  // Store in localStorage
-  if (typeof window !== 'undefined') {
-    try {
-      const key = 'auth-debug-log';
-      const existing = localStorage.getItem(key);
-      const logs = existing ? JSON.parse(existing) : [];
-      logs.push(entry);
-      
-      // Keep last 100 entries
-      if (logs.length > 100) {
-        logs.shift();
-      }
-      
-      localStorage.setItem(key, JSON.stringify(logs));
-    } catch (e) {
-      // Ignore localStorage errors
-    }
-  }
-}
 
-// Helper to export logs
-if (typeof window !== 'undefined') {
-  (window as any).exportAuthLogs = () => {
-    const logs = localStorage.getItem('auth-debug-log');
-    if (logs) {
-      console.log('========== AUTH DEBUG LOGS ==========');
-      const parsed = JSON.parse(logs);
-      parsed.forEach((entry: any, idx: number) => {
-        console.log(`${idx + 1}. [${entry.timestamp}] ${entry.category}:`, entry.data);
-      });
-      console.log('=====================================');
-      return parsed;
-    }
-    return [];
-  };
-  
-  (window as any).clearAuthLogs = () => {
-    localStorage.removeItem('auth-debug-log');
-    console.log('Auth logs cleared');
-  };
-}
 
 interface AppUser {
   uid: string;
@@ -96,58 +44,78 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
 
-  // DIAGNOSTIC LOGGING: Track every appUser state change
-  useEffect(() => {
-    const logData = {
-      exists: !!appUser,
-      fullName: appUser?.fullName,
-      plan: appUser?.plan,
-      email: appUser?.email,
-      uid: appUser?.uid
-    };
-    
-    console.log("[🔍 FLICKER DEBUG] appUser changed:", logData);
-    persistentLog('appUser-changed', logData);
+  // Track current appUser value for logging (avoid stale closure in logs)
+  const appUserRef = React.useRef<AppUser | null>(null);
+  React.useEffect(() => {
+    appUserRef.current = appUser;
   }, [appUser]);
 
+  // Track tab visibility changes (critical for throttling hypothesis)
+  React.useEffect(() => {
+    const handleVisibilityChange = () => {
+      const timestamp = new Date().toISOString();
+      const timeOnly = timestamp.substring(11, 23);
+      console.log(`\n[🔍 TAB VISIBILITY @ ${timeOnly}] Document became: ${document.visibilityState}`);
+      console.log(`  Window focused: ${document.hasFocus()}`);
+      console.log(`  Current auth.currentUser: ${auth.currentUser ? `EXISTS (${auth.currentUser.email})` : '❌ NULL'}`);
+      console.log(`  Current appUser: ${appUserRef.current ? `EXISTS (${appUserRef.current.fullName})` : '❌ NULL'}`);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', () => {
+      const timestamp = new Date().toISOString();
+      const timeOnly = timestamp.substring(11, 23);
+      console.log(`[🔍 WINDOW FOCUS @ ${timeOnly}] Window regained focus`);
+    });
+    window.addEventListener('blur', () => {
+      const timestamp = new Date().toISOString();
+      const timeOnly = timestamp.substring(11, 23);
+      console.log(`[🔍 WINDOW BLUR @ ${timeOnly}] Window lost focus`);
+    });
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   useEffect(() => {
-    console.log("[🔍 FLICKER DEBUG] onAuthStateChanged listener initialized");
-    persistentLog('listener-init', { timestamp: new Date().toISOString() });
+    console.log('[🔍 AUTH DIAGNOSTIC] Listener mounted at:', new Date().toISOString());
+    console.log('[🔍 AUTH DIAGNOSTIC] React Strict Mode may cause double-mount in dev');
+    console.log('[🔍 AUTH DIAGNOSTIC] Document visibility:', document.visibilityState);
+    console.log('[🔍 AUTH DIAGNOSTIC] Window focused:', document.hasFocus());
     
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      const authFireData = {
-        hasUser: !!currentUser,
-        userEmail: currentUser?.email
-      };
-      console.log("[🔍 FLICKER DEBUG] onAuthStateChanged fired:", authFireData);
-      persistentLog('auth-fired', authFireData);
+      const timestamp = new Date().toISOString();
+      const timeOnly = timestamp.substring(11, 23); // HH:MM:SS.mmm
+      
+      console.log(`\n[🔍 AUTH DIAGNOSTIC @ ${timeOnly}] onAuthStateChanged FIRED`);
+      console.log(`  TRIGGER CONTEXT:`);
+      console.log(`    - Document visibility: ${document.visibilityState}`);
+      console.log(`    - Window focused: ${document.hasFocus()}`);
+      console.log(`    - Network online: ${navigator.onLine}`);
+      console.log(`  AUTH STATE:`);
+      console.log(`    - currentUser (callback param): ${currentUser ? `EXISTS (${currentUser.email})` : '❌ NULL'}`);
+      console.log(`    - existing appUser (ref): ${appUserRef.current ? `EXISTS (${appUserRef.current.fullName}, ${appUserRef.current.plan})` : '❌ NULL'}`);
+      console.log(`    - auth.currentUser (direct): ${auth.currentUser ? `EXISTS (${auth.currentUser.email})` : '❌ NULL'}`);
       
       setUser(currentUser);
       
       let currentAppUser: AppUser | null = null;
       
       if (currentUser) {
+        console.log(`  [🔍 ${timeOnly}] Branch: currentUser EXISTS - fetching Firestore doc...`);
         try {
           const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          console.log("[AUTH DEBUG] Firestore userDoc exists:", userDoc.exists());
+          console.log(`  [🔍 ${timeOnly}] Firestore read completed, doc exists: ${userDoc.exists()}`);
           
           if (userDoc.exists()) {
             const userData = userDoc.data();
-            console.log("[AUTH DEBUG] Raw Firestore data:", userData);
-            console.log("[AUTH DEBUG] Firestore role value:", userData.role);
-            console.log("[AUTH DEBUG] Firestore role type:", typeof userData.role);
-            console.log("[AUTH DEBUG] Role === 'Admin':", userData.role === "Admin");
-            console.log("[AUTH DEBUG] Role === 'admin':", userData.role === "admin");
             
             currentAppUser = userData as AppUser;
+            console.log(`  [🔍 ${timeOnly}] ✅ Setting appUser from Firestore: ${currentAppUser.fullName} (${currentAppUser.plan})`);
             setAppUser(currentAppUser);
-            const setData = {
-              fullName: currentAppUser.fullName,
-              plan: currentAppUser.plan
-            };
-            console.log("[🔍 FLICKER DEBUG] setAppUser called with Firestore data:", setData);
-            persistentLog('setAppUser-data', setData);
           } else {
+            console.log(`  [🔍 ${timeOnly}] ⚠️  Firestore doc does NOT exist - checking superadmin/auto-heal...`);
             console.warn("User document not found in Firestore.");
             
             // Check if this is the superadmin account (by UID, not email)
@@ -216,37 +184,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
+          console.log(`  [🔍 ${timeOnly}] ❌ Firestore read ERROR:`, error);
         }
       } else {
+        console.log(`  [🔍 ${timeOnly}] Branch: currentUser is NULL`);
+        console.log(`  [🔍 ${timeOnly}] Had existing appUser before this?: ${appUserRef.current ? `YES (${appUserRef.current.fullName})` : 'NO'}`);
+        console.log(`  [🔍 ${timeOnly}] ❌ Calling setAppUser(null) now...`);
         setAppUser(null);
-        console.log("[🔍 FLICKER DEBUG] setAppUser(null) - user logged out");
-        persistentLog('setAppUser-null', { reason: 'user logged out' });
+        console.log(`  [🔍 ${timeOnly}] setAppUser(null) completed\n`);
       }
       
       setLoading(false);
       
-      // ========== DEBUG LOGGING START ==========
-      // Read pathname at execution time (always current value)
+      // Protected routes logic
       const currentPathname = window.location.pathname;
       const currentSearchParams = new URLSearchParams(window.location.search);
       const isLandingBypass = currentSearchParams.get("view") === "landing";
-      
-      console.log("[AUTH DEBUG] ==========================================");
-      console.log("[AUTH DEBUG] Pathname:", currentPathname);
-      console.log("[AUTH DEBUG] currentUser exists:", !!currentUser);
-      console.log("[AUTH DEBUG] currentUser email:", currentUser?.email);
-      console.log("[AUTH DEBUG] currentAppUser exists:", !!currentAppUser);
-      console.log("[AUTH DEBUG] currentAppUser data:", currentAppUser);
-      console.log("[AUTH DEBUG] currentAppUser.role:", currentAppUser?.role);
-      console.log("[AUTH DEBUG] ==========================================");
-      // ========== DEBUG LOGGING END ==========
-      
-      // Protected routes logic - read current pathname, not captured one
       const isDashboardRoute = currentPathname.startsWith("/dashboard");
       const isAuthRoute = currentPathname === "/signup";
       const isLandingRoute = currentPathname === "/";
-      
-      console.log("[AUTH DEBUG] Route checks:", { isDashboardRoute, isAuthRoute, isLandingRoute, isLandingBypass });
       
       const hasActiveSubscription =
         currentAppUser?.subscription_status === "active" ||
@@ -259,58 +215,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         currentAppUser?.role === "admin" ||        // Admin users always have access
         currentAppUser?.role === "Admin";          // Admin users always have access
       
-      console.log("[AUTH DEBUG] hasActiveSubscription:", hasActiveSubscription);
-      
       // BYPASS: If user is explicitly viewing landing page with ?view=landing, skip all redirects
       if (isLandingBypass && isLandingRoute) {
-        console.log("[AUTH DEBUG] 🟢 BYPASS: User viewing landing page with ?view=landing - allowing access");
         return; // Exit early, no redirects
       }
       
       if (!currentUser) {
-        console.log("[AUTH DEBUG] No currentUser - checking routes...");
         // Not logged in - only allow landing and signup
         if (isDashboardRoute) {
-          console.log("[AUTH DEBUG] 🔴 REDIRECT #1: No user, protected route -> redirecting to /");
           router.push("/"); // Redirect to landing page with login modal
         }
       } else if (currentAppUser) {
-        console.log("[AUTH DEBUG] currentUser AND currentAppUser both exist");
         // Logged in AND user data loaded (IMPORTANT: wait for currentAppUser before making decisions)
         if (isAuthRoute) {
-          console.log("[AUTH DEBUG] On signup route while logged in...");
           // Already logged in, trying to access signup - redirect to appropriate page
           if (hasActiveSubscription) {
-            console.log("[AUTH DEBUG] 🔴 REDIRECT #2: User with subscription on signup -> redirecting to /dashboard");
             router.push("/dashboard");
           } else {
-            console.log("[AUTH DEBUG] 🔴 REDIRECT #3: User without subscription on signup -> redirecting to /");
             router.push("/");
           }
         } else if (isDashboardRoute) {
-          console.log("[AUTH DEBUG] Accessing dashboard route...");
           // Trying to access dashboard
           if (!hasActiveSubscription) {
-            console.warn("[AUTH DEBUG] 🔴 REDIRECT #4: Access Denied - Active subscription required.");
             router.push("/");
-          } else {
-            console.log("[AUTH DEBUG] ✅ Dashboard access granted - staying on", currentPathname);
           }
           // If customer with subscription, stay on dashboard
         }
         // If on landing page - do nothing, let user stay there
-      } else {
-        console.log("[AUTH DEBUG] ⏳ currentUser exists but currentAppUser still loading - waiting...");
       }
       // If currentUser exists but currentAppUser is still loading, do nothing (wait for data)
     });
 
-    return () => unsubscribe();
+    return () => {
+      console.log('[🔍 AUTH DIAGNOSTIC] Cleanup: unsubscribing listener at:', new Date().toISOString());
+      unsubscribe();
+    };
   }, []); // Empty array: mount once, never re-run (no more flicker!)
 
   const logout = async () => {
     try {
-      console.log("[AUTH] 🚪 Logging out...");
       setLoading(true);
       
       // 1. Clear local state immediately
@@ -320,14 +263,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // 2. Sign out from Firebase
       await firebaseSignOut(auth);
       
-      console.log("[AUTH] ✅ Signed out from Firebase");
-      
       // 3. Force router refresh to clear cached state
       router.push("/");
       router.refresh(); // This forces Next.js to re-render the page with fresh state
       
     } catch (error) {
-      console.error("[AUTH] ❌ Error logging out:", error);
+      console.error("Error logging out:", error);
     } finally {
       setLoading(false);
     }

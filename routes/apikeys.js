@@ -8,12 +8,12 @@ const router = express.Router();
 
 /**
  * POST /api/v1/api-keys/generate
- * Body: { userId, userEmail, keyName, plan, linkedProducts, linkedProductIds }
+ * Body: { userId, userEmail, keyName, plan, linkedProducts, linkedProductIds, linkedVariantSelections }
  * 
  * Uses Firebase Admin SDK to bypass Firestore client-side security rules.
  */
 router.post('/generate', async (req, res) => {
-    const { userId, userEmail, keyName, plan, linkedProducts, linkedProductIds } = req.body;
+    const { userId, userEmail, keyName, plan, linkedProducts, linkedProductIds, linkedVariantSelections } = req.body;
 
     if (!userId || !keyName) {
         return res.status(400).json({ error: 'userId and keyName are required.' });
@@ -38,6 +38,7 @@ router.post('/generate', async (req, res) => {
             status: 'active',
             linkedProducts: linkedProducts || [],
             linkedProductIds: linkedProductIds || [],
+            linkedVariantSelections: linkedVariantSelections || {},
         };
 
         // Use Admin SDK — bypasses all Firestore client security rules

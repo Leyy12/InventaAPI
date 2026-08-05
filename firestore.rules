@@ -92,8 +92,10 @@ service cloud.firestore {
     // ───────────────────────────────────────────────────────────────────────
 
     match /products/{productId} {
-      // Anyone authenticated can read products
-      allow read: if isAuthenticated();
+      // Products are publicly readable (this is a Data-as-a-Service API)
+      // DaaS consumers access product data via API keys (for rate limiting),
+      // not for access control. The catalog itself is public.
+      allow read: if true;
 
       // Only admins can create/update/delete products
       allow create, update, delete: if isAdmin();
