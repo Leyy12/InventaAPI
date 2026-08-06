@@ -2,41 +2,37 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 // ─── Firebase Initialization ────────────────────────────────────────────────
-// Supports two modes:
-//   1. Local dev: reads from service-account.json (git-ignored, must be present locally)
-//   2. Production (Vercel): reads from individual environment variables
-//      Set these in Vercel Dashboard → Project Settings → Environment Variables:
-//        FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+// Mode 1 (Production/Vercel): uses environment variables
+// Mode 2 (Local dev): reads service-account.json from project root
 
 if (!getApps().length) {
-    // Mode 1: Try environment variables first (production / Vercel)
     if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+        // Production: initialize from env vars
         initializeApp({
             credential: cert({
                 projectId: process.env.FIREBASE_PROJECT_ID,
                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                // Vercel stores multi-line strings with literal \n — replace them back
+                // Vercel stores \n as literal \\n — convert back to real newlines
                 privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
             }),
         });
-        console.log('[Firebase] ✅ Initialized via environment variables.');
-
+        console.log('[Firebase] Initialized via environment variables.');
     } else {
-        // Mode 2: Fall back to service-account.json (local dev)
+        // Local dev: load from service-account.json
         try {
             const { createRequire } = await import('module');
-            const { fileURLToPath } = await import('url');
             const path = await import('path');
-            const __dirname = path.default.dirname(fileURLToPath(import.meta.url));
+            const { fileURLToPath } = await import('url');
+            const __dir = path.default.dirname(fileURLToPath(import.meta.url));
             const require = createRequire(import.meta.url);
-            const serviceAccount = require(path.default.resolve(__dirname, '../service-account.json'));
-            initializeApp({ credential: cert(serviceAccount) });
-            console.log('[Firebase] ✅ Initialized via service-account.json.');
+            const sa = require(path.default.resolve(__dir, '../service-account.json'));
+            initializeApp({ credential: cert(sa) });
+            console.log('[Firebase] Initialized via service-account.json.');
         } catch (err) {
             console.error(
-                '[Firebase] ERROR: No Firebase credentials found.\n' +
-                '  → For local dev: place service-account.json in project root.\n' +
-                '  → For Vercel: set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY env vars.'
+                '[Firebase] ERROR: No credentials found.\n' +
+                '  For Vercel: set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY env vars.\n' +
+                '  For local dev: place service-account.json in project root.'
             );
             process.exit(1);
         }
