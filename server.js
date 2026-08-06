@@ -181,11 +181,15 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Start Server
-app.listen(PORT, () => {
-    console.log(`========================================================================`);
-    console.log(` SUCCESS: DaaS sales & inventory service running on http://localhost:${PORT}`);
-    console.log(` Compliance Level: Data Privacy Act of 2012 / GDPR Standard`);
-    console.log(` Architecture: Security-Hardened API-based Data-as-a-Service (DaaS)`);
-    console.log(`========================================================================`);
-});
+// Start Server (only when running locally, not on Vercel Serverless)
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`========================================================================`);
+        console.log(` SUCCESS: DaaS sales & inventory service running on http://localhost:${PORT}`);
+        console.log(` Compliance Level: Data Privacy Act of 2012 / GDPR Standard`);
+        console.log(` Architecture: Security-Hardened API-based Data-as-a-Service (DaaS)`);
+        console.log(`========================================================================`);
+    });
+}
+
+export default app;
