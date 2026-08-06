@@ -156,31 +156,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               return;
             }
             
-            console.log("Auto-healing regular user document...");
+            console.log("Waiting to avoid race condition with signup form...");
             
-            // Auto-heal: Create Firestore document for regular users only
-            // Admins MUST be created via Admin SDK scripts (proper privilege escalation)
-            const newDoc = {
-              uid: currentUser.uid,
-              fullName: "Developer",
-              email: currentUser.email || "",
-              businessName: "SME Store",
-              businessSegment: "Hardware Store",
-              plan: "Starter",
-              role: "Developer",
-              apiRequestLimit: 50,              // Required by Firestore rules
-              apiRequestsUsed: 0,
-              subscription_status: "inactive",
-            };
-            
-            import("firebase/firestore").then(({ setDoc, doc }) => {
-              setDoc(doc(db, "users", currentUser.uid), newDoc).then(() => {
-                console.log("✅ Auto-heal successful");
-                setAppUser(newDoc as AppUser);
-              }).catch((error) => {
-                console.error("❌ Auto-heal failed:", error);
+            setTimeout(() => {
+              import("firebase/firestore").then(async ({ getDoc, setDoc, doc }) => {
+                try {
+                  const retryDoc = await getDoc(doc(db, "users", currentUser.uid));
+                  if (retryDoc.exists()) {
+                    console.log("✅ Document created by signup form, skipping auto-heal.");
+                    setAppUser(retryDoc.data() as AppUser);
+                    return;
+                  }
+                  
+                  console.log("Auto-healing regular user document...");
+                  const newDoc = {
+                    uid: currentUser.uid,
+                    fullName: currentUser.displayName || "Developer",
+                    email: currentUser.email || "",
+                    businessName: "SME Store",
+                    businessSegment: "Hardware Store",
+                    plan: "free",
+                    role: "Developer",
+                    apiRequestLimit: 50,
+                    apiRequestsUsed: 0,
+                    subscription_status: "inactive",
+                  };
+                  
+                  await setDoc(doc(db, "users", currentUser.uid), newDoc);
+                  console.log("✅ Auto-heal successful");
+                  setAppUser(newDoc as AppUser);
+                } catch (error) {
+                  console.error("❌ Auto-heal failed:", error);
+                }
               });
-            });
+            }, 2000);
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
@@ -210,7 +219,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         currentAppUser?.plan === "Unlimited" ||
         currentAppUser?.plan === "Professional" || // Legacy name (backward compat)
         currentAppUser?.plan === "Enterprise" ||
-        currentAppUser?.plan === "Starter" ||      // Starter plan: can access dashboard with limited features
+        currentAppUser?.plan === "Starter" ||      // Legacy Starter plan
+        currentAppUser?.plan === "free" ||         // Free plan: can access dashboard with limited features
         currentAppUser?.plan === "Developer" ||    // Developer auto-heal accounts
         currentAppUser?.role === "admin" ||        // Admin users always have access
         currentAppUser?.role === "Admin";          // Admin users always have access

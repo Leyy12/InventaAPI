@@ -119,8 +119,18 @@ export default function ConsumersPage() {
                            <span className="text-sm font-bold text-slate-300">{(user.fullName || user.email || "?").charAt(0).toUpperCase()}</span>
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-200">{user.fullName || "N/A"}</p>
-                          <p className="text-xs text-slate-500">{user.email}</p>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <p className="text-sm font-bold text-slate-200">{user.fullName || "N/A"}</p>
+                            {user.businessSegment && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-medium tracking-wide">
+                                {user.businessSegment}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            {user.email} 
+                            {user.businessName && <span className="ml-1 text-slate-400">• {user.businessName}</span>}
+                          </p>
                         </div>
                       </div>
                     </td>

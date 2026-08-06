@@ -60,7 +60,7 @@ export default function SignupPage() {
         email: formData.email,
         businessName: formData.businessName,
         businessSegment: formData.businessSegment,
-        plan: "Starter",
+        plan: "free",
         role: "Developer",  // All signups are Developer role
         apiRequestLimit: 50,
         apiRequestsUsed: 0,
