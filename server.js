@@ -50,16 +50,25 @@ app.use(helmet({
 // 2. CORS: Restrict cross-origin communications to approved origins
 // Allow both customer dashboard (3000) and admin panel (3001)
 const allowedOrigins = [
-    'http://localhost:3000',  // Customer Dashboard
-    'http://localhost:3001',  // Admin Panel
+    'http://localhost:3000',  // Customer Dashboard (local)
+    'http://localhost:3001',  // Admin Panel (local)
+    // Production Vercel domains
+    /\.vercel\.app$/,         // Any *.vercel.app subdomain
+    /^https:\/\/inventa/,     // Any custom inventa* domain
 ];
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps, Postman, curl)
+        // Allow requests with no origin (mobile apps, Postman, curl, server-to-server)
         if (!origin) return callback(null, true);
         
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        const allowed = allowedOrigins.some(o => {
+            if (typeof o === 'string') return o === origin;
+            if (o instanceof RegExp) return o.test(origin);
+            return false;
+        });
+        
+        if (allowed) {
             callback(null, true);
         } else {
             console.warn('[CORS] Blocked request from origin:', origin);
@@ -125,9 +134,21 @@ app.use('/daas/v1', daasRouter);
 // --- Serve static assets (CSS, images, etc.) ---
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Base / Root Endpoint — Redirect to Next.js Landing Page ---
+// --- Base / Root Endpoint — API Info (production-safe) ---
 app.get('/', (req, res) => {
-    res.redirect('http://localhost:3000/');
+    res.json({
+        name: "InventaAPI DaaS Engine",
+        status: "online",
+        version: "1.0.0",
+        message: "API-Based Data-as-a-Service Sales & Inventory Management System is running.",
+        endpoints: {
+            api_info:        "/api",
+            auth:            "/api/v1/auth/login",
+            products:        "/api/v1/products",
+            product_requests:"/api/v1/product-requests",
+            daas_catalog:    "/daas/v1/catalog (x-api-key required)"
+        }
+    });
 });
 
 // --- Developer Portal Route ---
