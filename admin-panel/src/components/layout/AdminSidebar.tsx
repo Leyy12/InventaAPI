@@ -75,8 +75,12 @@ export default function AdminSidebar() {
             {adminUser?.fullName?.charAt(0) || adminUser?.email?.charAt(0) || "A"}
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-slate-200 truncate w-32">{adminUser?.fullName || "Admin"}</span>
-            <span className="text-xs text-slate-500 truncate w-32">{adminUser?.plan || "Unlimited"}</span>
+            <span className="text-sm font-medium text-slate-200 truncate w-32">
+              {adminUser?.fullName ?? "—"}
+            </span>
+            <span className="text-xs text-slate-500 truncate w-32 capitalize">
+              {adminUser?.role ?? ""}
+            </span>
           </div>
         </div>
         <button
