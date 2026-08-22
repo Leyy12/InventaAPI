@@ -4,7 +4,13 @@ import { requirePlan, enforceRequestLimit } from '../middleware/planGate.js';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getFirestore() is always ready here.
-const adminDb = getFirestore();
+let adminDb = null;
+function getDb() {
+  if (!adminDb) {
+    adminDb = getFirestore();
+  }
+  return adminDb;
+}
 const router = express.Router();
 
 // Middleware: Authenticate API Key from Firebase
@@ -20,7 +26,7 @@ const authenticateApiKey = async (req, res, next) => {
 
     try {
         // Query Firebase for the API key
-        const snapshot = await adminDb.collection('api_keys')
+        const snapshot = await getDb().collection('api_keys')
             .where('key', '==', apiKey)
             .where('status', '==', 'active')
             .limit(1)
@@ -37,7 +43,7 @@ const authenticateApiKey = async (req, res, next) => {
         const keyData = keyDoc.data();
 
         // Update last used timestamp (do NOT increment requestsUsed here - that's handled by enforceRequestLimit)
-        await adminDb.collection('api_keys').doc(keyDoc.id).update({
+        await getDb().collection('api_keys').doc(keyDoc.id).update({
             lastUsed: new Date().toISOString()
         });
 

@@ -11,7 +11,7 @@ import Link from "next/link";
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-8 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
       {/* Welcome Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

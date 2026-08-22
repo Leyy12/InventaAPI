@@ -70,7 +70,7 @@ curl_close($ch);
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] w-full overflow-hidden">
+    <div className="w-full px-6 lg:px-8 flex flex-col h-[calc(100vh-6rem)] overflow-hidden">
       
       {/* 1. Header & Top Navigation (Fixed, Non-Scrolling) */}
       <div className="flex-shrink-0 pt-2 pb-4 border-b border-slate-800/60 mb-6">

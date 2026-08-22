@@ -28,9 +28,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         {/* Subscription expiry warning — appears for Pro users within 3 days of expiry */}
         <SubscriptionExpiryBanner />
         <main className="flex-1 overflow-y-auto p-6 lg:p-10">
-          <div className="max-w-7xl mx-auto">
-            {children}
-          </div>
+          {children}
         </main>
       </div>
     </div>

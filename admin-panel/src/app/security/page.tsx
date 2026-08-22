@@ -33,7 +33,7 @@ export default function SecurityCenterPage() {
   );
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
@@ -67,7 +67,6 @@ export default function SecurityCenterPage() {
 
       <div className="glass-card rounded-xl overflow-hidden mt-8 border border-white/5">
         <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-          <h2 className="text-lg font-bold text-white">Active API Keys</h2>
           <div className="relative w-full md:w-64">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
@@ -78,6 +77,7 @@ export default function SecurityCenterPage() {
               className="w-full bg-slate-950 border border-slate-800 rounded-md pl-9 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
             />
           </div>
+          <h2 className="text-lg font-bold text-white">Active API Keys</h2>
         </div>
         
         <div className="overflow-x-auto">
@@ -108,7 +108,10 @@ export default function SecurityCenterPage() {
                       <span className="text-sm font-bold text-slate-200">{k.keyName || "Unnamed Key"}</span>
                       <p className="text-xs font-mono text-slate-500 mt-1">{k.key ? `***${k.key.slice(-4)}` : "N/A"}</p>
                     </td>
-                    <td className="p-4 text-sm text-slate-400 font-mono text-xs">{k.userId || "Unknown"}</td>
+                    <td className="p-4">
+                      <div className="text-sm font-medium text-slate-200">{k.userEmail || "No Email"}</div>
+                      <div className="text-[10px] text-slate-500 font-mono mt-1">{k.userId || "Unknown"}</div>
+                    </td>
                     <td className="p-4 text-sm text-slate-400">
                       {k.linkedProductIds ? k.linkedProductIds.length : 0} items
                     </td>

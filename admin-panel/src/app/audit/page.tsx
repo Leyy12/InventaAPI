@@ -48,7 +48,7 @@ export default function AuditLogsPage() {
   );
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">

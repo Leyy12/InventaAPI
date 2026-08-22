@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { notifyAdminNewRequest } from "@/lib/firebase/notifications";
 
 interface ProductRequestModalProps {
   isOpen: boolean;
@@ -30,7 +31,7 @@ export default function ProductRequestModal({
   productName,
   onSuccess
 }: ProductRequestModalProps) {
-  const { user } = useAuth();
+  const { user, appUser } = useAuth();
   const [formData, setFormData] = useState({
     product_name: productName,
     category: "",
@@ -95,7 +96,7 @@ export default function ProductRequestModal({
     setIsSubmitting(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
       const response = await fetch(`${apiUrl}/api/v1/product-requests`, {
         method: 'POST',
         headers: {
@@ -106,18 +107,37 @@ export default function ProductRequestModal({
           category: formData.category,
           notes: formData.notes.trim(),
           requested_by: user?.email || 'anonymous',
-          requested_by_name: user?.displayName || 'Anonymous User'
+          requested_by_name: user?.displayName || 'Anonymous User',
+          requested_by_uid: user?.uid || 'anonymous'
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        // 409 = duplicate: already have a pending request for this product
+        if (response.status === 409 && data.error === 'duplicate') {
+          throw new Error(data.message);
+        }
         throw new Error(data.error || 'Failed to submit request');
       }
 
       setSubmitSuccess(true);
-      
+
+      // ── Write admin notification ────────────────────────────────────────
+      try {
+        await notifyAdminNewRequest({
+          requestId: data.id || data.request_id || "",
+          productName: formData.product_name.trim(),
+          category: formData.category,
+          requestedByName: user?.displayName || appUser?.fullName || "A customer",
+          requestedByEmail: user?.email || "",
+        });
+      } catch (notifErr) {
+        // Non-fatal – don't break the UX if notification write fails
+        console.warn("Notification write failed:", notifErr);
+      }
+
       // Call success callback after a short delay
       setTimeout(() => {
         onSuccess?.();

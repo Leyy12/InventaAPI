@@ -3,7 +3,13 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getFirestore() is always ready here.
-const adminDb = getFirestore();
+let adminDb = null;
+function getDb() {
+  if (!adminDb) {
+    adminDb = getFirestore();
+  }
+  return adminDb;
+}
 const router = express.Router();
 
 // =====================================================
@@ -21,7 +27,7 @@ router.get('/', async (req, res) => {
     }
 
     try {
-        let query = adminDb.collection('notifications')
+        let query = getDb().collection('notifications')
             .where('user_email', '==', user_email);
 
         // Filter by unread
@@ -68,7 +74,7 @@ router.put('/:id/read', async (req, res) => {
     const { id } = req.params;
 
     try {
-        const docRef = adminDb.collection('notifications').doc(id);
+        const docRef = getDb().collection('notifications').doc(id);
         const doc = await docRef.get();
 
         if (!doc.exists) {
@@ -112,12 +118,12 @@ router.put('/mark-all-read', async (req, res) => {
     }
 
     try {
-        const snapshot = await adminDb.collection('notifications')
+        const snapshot = await getDb().collection('notifications')
             .where('user_email', '==', user_email)
             .where('is_read', '==', false)
             .get();
 
-        const batch = adminDb.batch();
+        const batch = getDb().batch();
         snapshot.docs.forEach(doc => {
             batch.update(doc.ref, {
                 is_read: true,
@@ -149,7 +155,7 @@ router.delete('/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        const docRef = adminDb.collection('notifications').doc(id);
+        const docRef = getDb().collection('notifications').doc(id);
         const doc = await docRef.get();
 
         if (!doc.exists) {

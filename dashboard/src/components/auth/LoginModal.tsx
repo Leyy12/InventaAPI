@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
-import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff } from "lucide-react";
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
   // Reset all state when modal opens/closes
@@ -28,6 +29,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       setSuccess("");
       setEmail("");
       setPassword("");
+      setShowPassword(false);
       setLoading(false);
     }
   }, [isOpen]);
@@ -80,15 +82,31 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         }, 2000);
         
       } else {
-        // Normal customer login - show success and stay on landing
-        console.log("[LOGIN] ✅ Customer login successful");
-        setSuccess("Login successful! Welcome back.");
-        
-        // Wait 3 seconds before closing modal so user can see success message
-        setTimeout(() => {
-          onClose();
-          setLoading(false);
-        }, 3000);
+        // Normal customer login - check if they have an active subscription
+        const plan = userData?.plan;
+        const hasSubscription = userData?.subscription_status === "active"
+          || plan === "Free"         // Standard Free tier
+          || plan === "Pro"
+          || plan === "Unlimited"
+          || plan === "Professional"
+          || plan === "Enterprise"
+          || plan === "Starter";
+
+        console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "hasSubscription:", hasSubscription);
+
+        if (hasSubscription) {
+          // Has a plan — just close modal and stay on landing page
+          setSuccess("Login successful!");
+          setTimeout(() => {
+            onClose();
+          }, 1500);
+        } else {
+          // No plan yet — stay on landing page
+          setSuccess("Login successful! Please choose a subscription plan to continue.");
+          setTimeout(() => {
+            onClose();
+          }, 1500);
+        }
       }
       
     } catch (err: unknown) {
@@ -212,13 +230,20 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
               <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input 
                 id="password"
-                type="password" 
+                type={showPassword ? "text" : "password"} 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
             </div>
           </div>
 

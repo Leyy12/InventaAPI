@@ -2,7 +2,13 @@ import express from 'express';
 import crypto from 'crypto';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const adminDb = getFirestore();
+let adminDb = null;
+function getDb() {
+  if (!adminDb) {
+    adminDb = getFirestore();
+  }
+  return adminDb;
+}
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
@@ -187,7 +193,7 @@ router.post('/paymongo', async (req, res) => {
 
     // --- 4. Idempotency check — prevent double-processing same event ---
     try {
-        const existingTx = await adminDb
+        const existingTx = await getFirestore()
             .collection('transactions')
             .where('webhookEventId', '==', webhookEventId)
             .limit(1)
@@ -208,7 +214,7 @@ router.post('/paymongo', async (req, res) => {
 
     // --- 6. Update user document via Admin SDK (bypasses Firestore rules) ---
     try {
-        const userRef = adminDb.collection('users').doc(userId);
+        const userRef = getDb().collection('users').doc(userId);
         const userSnap = await userRef.get();
 
         if (!userSnap.exists) {
@@ -256,7 +262,7 @@ router.post('/paymongo', async (req, res) => {
             webhookEventId,
         };
 
-        await adminDb.collection('transactions').add(transactionData);
+        await getDb().collection('transactions').add(transactionData);
         console.log(`[WEBHOOK] ✅ Transaction recorded for user ${userId}.`);
     } catch (err) {
         // Non-fatal — subscription is already activated; log but don't fail the response

@@ -21,10 +21,8 @@ export default function AdminLayoutWrapper({ children }: { children: React.React
       <AdminSidebar />
       <div className="flex-1 flex flex-col overflow-hidden relative z-10">
         <AdminNavbar />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <div className={pathname === "/products" ? "w-full" : "max-w-7xl mx-auto"}>
-            {children}
-          </div>
+        <main className="flex-1 overflow-y-auto p-3 lg:p-4 custom-scrollbar">
+          {children}
         </main>
       </div>
     </div>

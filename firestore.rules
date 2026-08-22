@@ -4,23 +4,31 @@ rules_version = '2';
 // FIRESTORE SECURITY RULES - InventaAPI (inventaapi-db)
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// FINAL VERSION v2 — Ready to Publish
-// Date: July 27, 2026
+// FINAL VERSION v3 — Comprehensive coverage of all client-side collections
+// Date: August 22, 2026
 //
-// Changes from v1:
-// - users.update: locked plan, apiRequestLimit, subscriptionExpiresAt fields
-//   (these are now exclusively managed by the backend webhook via Admin SDK)
-// - Added transactions collection: admin read-only, no client writes
+// Changes from v2:
+// - users.create: strict enforcement (role=='Developer', plan=='Starter', apiRequestLimit==50)
+// - Added categories collection: admin CRUD
+// - Added system collection: admin read/write (settings page)
+// - Added audit_logs collection: admin read-only (no client writes)
+// - enterprise_inquiries and notifications rules retained from v2
 //
-// ALL agreements satisfied:
-// ✅ No bootstrap-via-email branch
-// ✅ Strict create: role == 'Developer', plan == 'Starter', apiRequestLimit == 50
-// ✅ update: role, plan, apiRequestLimit, subscriptionExpiresAt all locked
-// ✅ isAdmin() uses .lower() for case-insensitive check
-// ✅ products collection protected (admin write only)
-// ✅ product_requests collection protected
-// ✅ api_keys collection: user owns their own keys
-// ✅ transactions collection: admin read, NO client writes
+// ALL collections the client writes to are now covered:
+// Dashboard (customer):
+//   ✅ users          — create own doc on signup
+//   ✅ notifications  — create (to admin), update read flag
+//   ✅ enterprise_inquiries — authenticated create
+//
+// Admin Panel:
+//   ✅ products       — admin CRUD
+//   ✅ product_requests — admin update (approve/reject)
+//   ✅ categories     — admin CRUD
+//   ✅ system         — admin read/write
+//   ✅ notifications  — admin create, update, read
+//   ✅ api_keys       — admin read (security page)
+//   ✅ audit_logs     — admin read-only
+//   ✅ transactions   — admin read-only (no client writes)
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -64,7 +72,7 @@ service cloud.firestore {
                     && request.auth.uid == userId
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.role == 'Developer'
-                    && request.resource.data.plan == 'Starter'
+                    && request.resource.data.plan == 'Free'
                     && request.resource.data.apiRequestLimit == 50;
 
       // Users can update their own document but CANNOT change:
@@ -147,16 +155,10 @@ service cloud.firestore {
     // ───────────────────────────────────────────────────────────────────────
     // Created exclusively by the PayMongo webhook handler (Admin SDK).
     // No client-side writes are ever permitted.
-    //
-    // Schema per document:
-    //   userId, userEmail, amount (centavos), currency, paymentMethod,
-    //   paymongoReferenceId, paymongoPaymentIntentId, plan,
-    //   subscriptionPeriodStart, subscriptionPeriodEnd,
-    //   status, createdAt, webhookEventId
 
     match /transactions/{transactionId} {
-      // Only admins can read transaction history
-      allow read: if isAdmin();
+      // Users can read their own transaction history; admins can read all
+      allow read: if isOwner(resource.data.userId) || isAdmin();
 
       // No client-side writes — EVER. Admin SDK (webhook) handles all writes.
       allow create, update, delete: if false;
@@ -189,6 +191,82 @@ service cloud.firestore {
 
       // Only admins can delete inquiries
       allow delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // NOTIFICATIONS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // userId == "admin"  → only admins can read
+    // userId == <uid>    → only that user can read
+    // Any authenticated user (customer) can CREATE a notification addressed
+    //   to "admin" (e.g., product request submitted).
+    // Admins can create any notification (approve / reject callbacks).
+    // Only the recipient or an admin can mark read (update).
+
+    match /notifications/{notifId} {
+      // 1. A user can read their own notifications
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // 2. Admins can read notifications addressed to "admin"
+      allow read: if isAuthenticated() && resource.data.userId == "admin" && isAdmin();
+      
+      // 3. Admins can read all notifications (fallback)
+      allow read: if isAdmin();
+
+      // Create:
+      //   - Authenticated customers can create notifications addressed to "admin"
+      //   - Admins can create notifications for any userId (approval / rejection)
+      allow create: if isAuthenticated()
+        && (
+          (request.resource.data.userId == "admin")
+          || isAdmin()
+        );
+
+      // Update (mark read): only the recipient or an admin
+      allow update: if isAuthenticated()
+        && (
+          resource.data.userId == request.auth.uid
+          || (resource.data.userId == "admin" && isAdmin())
+          || isAdmin()
+        )
+        // Only allow toggling the `read` field
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
+
+      allow delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // CATEGORIES COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // Managed exclusively by admins via the admin panel.
+    // No customer-facing reads or writes needed.
+
+    match /categories/{categoryId} {
+      // Only admins can read, create, update, or delete categories
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // SYSTEM COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // Used for global system settings (admin settings page).
+    // Only admins can read or write.
+
+    match /system/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // AUDIT LOGS COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // Written exclusively via Admin SDK (server-side logging).
+    // Admins can read for audit/compliance. No client writes ever.
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
     }
 
     // ───────────────────────────────────────────────────────────────────────

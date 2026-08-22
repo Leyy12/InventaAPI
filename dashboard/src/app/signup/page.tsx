@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, setDoc, serverTimestamp, writeBatch, collection } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
@@ -23,7 +23,8 @@ export default function SignupPage() {
     password: "",
     confirmPassword: "",
     businessName: "",
-    businessSegment: BUSINESS_SEGMENTS[0]
+    businessSegment: BUSINESS_SEGMENTS[0],
+    privacyConsent: false
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -38,6 +39,12 @@ export default function SignupPage() {
 
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
+      setLoading(false);
+      return;
+    }
+
+    if (!formData.privacyConsent) {
+      setError("You must agree to the Privacy Policy to create an account.");
       setLoading(false);
       return;
     }
@@ -60,24 +67,31 @@ export default function SignupPage() {
         email: formData.email,
         businessName: formData.businessName,
         businessSegment: formData.businessSegment,
-        plan: "free",
+        plan: "Free",
         role: "Developer",  // All signups are Developer role
         apiRequestLimit: 50,
         apiRequestsUsed: 0,
         createdAt: serverTimestamp(),
-        lastLogin: serverTimestamp()
+        lastLogin: serverTimestamp(),
+        privacyConsent: true,
+        privacyConsentTimestamp: serverTimestamp()
       });
 
       // Remove Firestore seeding to prevent permission errors
       // Dashboard now fetches products directly from the DaaS API (data.json)
 
-      router.push("/dashboard");
+      // Sign out immediately — Firebase auto-logs in after createUser,
+      // but we want the user to explicitly log in themselves.
+      await signOut(auth);
+      router.push("/?registered=true");
     } catch (err: any) {
-      console.error(err);
+      console.error("Signup error:", err);
       if (err.code === "auth/email-already-in-use") {
         setError("This email is already registered. Please sign in.");
+      } else if (err.code === "permission-denied" || err.message?.includes("permission")) {
+        setError("Account setup failed due to a permission error. Please contact support.");
       } else {
-        setError("Failed to create account. Please try again.");
+        setError(err.message || "Failed to create account. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -85,8 +99,13 @@ export default function SignupPage() {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData(prev => ({ ...prev, [name]: checked }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   return (
@@ -231,6 +250,22 @@ export default function SignupPage() {
                 </select>
               </div>
             </div>
+          </div>
+
+          <div className="flex items-start gap-3 mt-6 mb-2">
+            <div className="flex items-center h-5">
+              <input
+                id="privacyConsent"
+                name="privacyConsent"
+                type="checkbox"
+                checked={formData.privacyConsent}
+                onChange={handleChange}
+                className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500/50 focus:ring-offset-0 transition-all cursor-pointer"
+              />
+            </div>
+            <label htmlFor="privacyConsent" className="text-sm text-slate-400 cursor-pointer select-none">
+              I have read and agree to the <Link href="/privacy-policy" target="_blank" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">Privacy Policy</Link>. I understand my data will be processed in accordance with RA 10173.
+            </label>
           </div>
 
           <button 

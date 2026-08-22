@@ -1,6 +1,13 @@
 import { getFirestore } from 'firebase-admin/firestore';
 
-const adminDb = getFirestore();
+// Defer Firestore initialization until needed
+let adminDb = null;
+function getDb() {
+  if (!adminDb) {
+    adminDb = getFirestore();
+  }
+  return adminDb;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PLAN HIERARCHY
@@ -51,7 +58,7 @@ export function requirePlan(allowedPlans) {
       }
 
       // Fetch user's plan from Firestore (trusted source - Admin SDK)
-      const userDoc = await adminDb.collection('users').doc(req.apiKeyData.userId).get();
+      const userDoc = await getDb().collection('users').doc(req.apiKeyData.userId).get();
       
       if (!userDoc.exists) {
         return res.status(404).json({
@@ -134,7 +141,7 @@ export async function enforceRequestLimit(req, res, next) {
     }
 
     // Fetch user's plan and limit from Firestore (trusted source)
-    const userDoc = await adminDb.collection('users').doc(req.apiKeyData.userId).get();
+    const userDoc = await getDb().collection('users').doc(req.apiKeyData.userId).get();
     
     if (!userDoc.exists) {
       return res.status(404).json({ 
@@ -161,7 +168,7 @@ export async function enforceRequestLimit(req, res, next) {
     }
 
     // Fetch current API key document
-    const keyDoc = await adminDb.collection('api_keys').doc(req.apiKeyData.id).get();
+    const keyDoc = await getDb().collection('api_keys').doc(req.apiKeyData.id).get();
     
     if (!keyDoc.exists) {
       return res.status(401).json({ 
@@ -185,7 +192,7 @@ export async function enforceRequestLimit(req, res, next) {
       const tomorrow = new Date(now);
       tomorrow.setUTCHours(24, 0, 0, 0); // Next midnight UTC
 
-      await adminDb.collection('api_keys').doc(req.apiKeyData.id).set({
+      await getDb().collection('api_keys').doc(req.apiKeyData.id).set({
         requestsUsed: 1,  // This request counts as first of new day
         resetAt: tomorrow.toISOString(),
         lastUsed: now.toISOString()
@@ -222,7 +229,7 @@ export async function enforceRequestLimit(req, res, next) {
     // Increment counter (MUST be synchronous to ensure accurate limit enforcement)
     // NOTE: Still not atomic under true concurrency - see function docstring for race condition details
     try {
-      await adminDb.collection('api_keys').doc(req.apiKeyData.id).update({
+      await getDb().collection('api_keys').doc(req.apiKeyData.id).update({
         requestsUsed: requestsUsed + 1,
         lastUsed: now.toISOString()
       });

@@ -41,7 +41,7 @@ export default function ApiKeysPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
       const response = await fetch(`${apiUrl}/api/v1/api-keys?userId=${user.uid}`);
       const data = await response.json();
       
@@ -217,7 +217,7 @@ DAAS_API_KEY=${keyStr}
   };
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-6 pb-10">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

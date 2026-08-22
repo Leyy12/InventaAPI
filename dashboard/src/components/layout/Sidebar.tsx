@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -10,7 +11,8 @@ import {
   Package,
   BarChart3,
   LogOut,
-  Home
+  Home,
+  Shield
 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 
@@ -20,30 +22,26 @@ const dashboardRoutes = [
   { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
   { name: "Documentation", href: "/dashboard/docs", icon: BookOpen },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
+  { name: "Privacy", href: "/dashboard/privacy", icon: Shield },
 ];
 
 // Helper: Map legacy plan values to correct display names
 function getPlanDisplayName(plan: string | undefined): string {
   if (!plan) return "Free";
   const planLower = plan.toLowerCase();
-  if (planLower === "starter") return "Free";
+  if (planLower === "starter" || planLower === "free") return "Free";
   if (planLower === "pro" || planLower === "professional") return "Pro";
   if (planLower === "enterprise" || planLower === "unlimited") return "Enterprise";
-  return plan; // fallback to original if no match
+  return plan.charAt(0).toUpperCase() + plan.slice(1); // fallback with capitalized first letter
 }
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, appUser, logout } = useAuth();
+  const { user, appUser, logout, loading } = useAuth();
 
-  // DIAGNOSTIC LOGGING: Track sidebar re-renders
-  const renderTime = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
-  console.log(`[🔍 SIDEBAR RENDER @ ${renderTime}]`, {
-    hasAppUser: !!appUser,
-    fullName: appUser?.fullName,
-    plan: appUser?.plan,
-    displayName: getPlanDisplayName(appUser?.plan)
-  });
+  // Prevent SSR/hydration mismatch: only render real user info after client mounts
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => { setIsMounted(true); }, []);
 
   return (
     <aside className="w-64 glass border-r border-slate-800/60 hidden md:flex flex-col relative z-20">
@@ -69,9 +67,18 @@ export default function Sidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
                 isActive
-                  ? "bg-indigo-500/10 text-indigo-400"
+                  ? "text-indigo-400"
                   : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
               )}
+              style={
+                isActive
+                  ? {
+                      background: "rgba(99,102,241,0.12)",
+                      borderLeft: "2px solid #6366f1",
+                      paddingLeft: "10px",
+                    }
+                  : {}
+              }
             >
               <route.icon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300")} />
               {route.name}
@@ -96,15 +103,27 @@ export default function Sidebar() {
 
       {/* User profile snippet at bottom */}
       <div className="p-4 border-t border-slate-800/60 flex flex-col gap-2">
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 border border-slate-500/30 flex items-center justify-center text-xs font-bold uppercase">
-            {appUser?.fullName?.charAt(0) || user?.email?.charAt(0) || "U"}
+        {(!isMounted || loading || !user) ? (
+          <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
+            <div className="w-8 h-8 rounded-full bg-slate-800/80 animate-pulse"></div>
+            <div className="flex flex-col gap-1">
+              <div className="h-3.5 w-24 bg-slate-800/80 rounded animate-pulse"></div>
+              <div className="h-2.5 w-16 bg-slate-800/80 rounded animate-pulse"></div>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-slate-200 truncate w-32">{appUser?.fullName || user?.email || "Developer"}</span>
-            <span className="text-xs text-slate-500 truncate w-32">{getPlanDisplayName(appUser?.plan)} Plan</span>
+        ) : (
+          <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 border border-slate-500/30 flex items-center justify-center text-xs font-bold uppercase text-slate-100">
+              {user?.email?.charAt(0) || "U"}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-slate-200 truncate w-32" title={user?.email || "User"}>
+                {user?.email || "User"}
+              </span>
+              <span className="text-xs text-slate-500 truncate w-32">{getPlanDisplayName(appUser?.plan)} Plan</span>
+            </div>
           </div>
-        </div>
+        )}
         <button
           onClick={() => logout()}
           className="flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors w-full"

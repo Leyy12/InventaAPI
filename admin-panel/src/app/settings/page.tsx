@@ -54,7 +54,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
           <Settings className="w-8 h-8 text-indigo-500" />
@@ -139,6 +139,54 @@ export default function SettingsPage() {
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Right Column: System Information & Quick Actions */}
+        <div className="space-y-6">
+          {/* System Information */}
+          <div className="glass-card rounded-xl border border-white/5 p-6">
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Server className="w-5 h-5 text-indigo-400" />
+              System Information
+            </h2>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center py-2 border-b border-slate-800">
+                <span className="text-sm text-slate-400">API Version</span>
+                <span className="text-sm font-semibold text-white">v1.0.0</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-slate-800">
+                <span className="text-sm text-slate-400">Database</span>
+                <span className="text-sm font-semibold text-emerald-400">Connected</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-slate-800">
+                <span className="text-sm text-slate-400">Environment</span>
+                <span className="text-sm font-semibold text-amber-400">Development</span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-sm text-slate-400">Uptime</span>
+                <span className="text-sm font-semibold text-white">—</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="glass-card rounded-xl border border-white/5 p-6">
+            <h2 className="text-lg font-bold text-white mb-4">Quick Actions</h2>
+            <div className="space-y-3">
+              <button className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700">
+                <span>View System Logs</span>
+                <span className="text-slate-500">→</span>
+              </button>
+              <button className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700">
+                <span>Clear Cache</span>
+                <span className="text-slate-500">→</span>
+              </button>
+              <button className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700">
+                <span>Restart Server</span>
+                <span className="text-slate-500">→</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

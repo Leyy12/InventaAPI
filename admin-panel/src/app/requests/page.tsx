@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Inbox, CheckCircle, XCircle, Clock, User, Package, Tag, Calendar, AlertCircle, Sparkles, ChevronRight } from "lucide-react";
 import { collection, query, orderBy, getDocs, doc, updateDoc, serverTimestamp, addDoc, where } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase/config";
+import { notifyCustomerApproved, notifyCustomerRejected } from "@/lib/firebase/notifications";
 
 interface ProductRequest {
   id: string;
@@ -94,40 +95,60 @@ export default function ProductRequestsPage() {
 
     setProcessing(group.id);
     try {
-      // 1. Add to products collection once for the group
-      await addDoc(collection(db, "products"), {
-        name: group.productName,
-        category: group.category,
-        sku: `AUTO-${Date.now()}`,
-        price: 0,
-        size: null,
-        image_url: group.imageUrl || "https://via.placeholder.com/400x400?text=Image+Needed",
-        description: group.details || "Product added via crowdsourcing. Details pending.",
-        createdAt: serverTimestamp(),
-        addedVia: "crowdsourcing",
-        requestId: group.id
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      if (!token) throw new Error("Not authenticated");
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+      const adminEmail = auth.currentUser?.email || "admin";
+
+      // Approve the primary doc (creates the product)
+      const res = await fetch(`${apiUrl}/api/v1/product-requests/${group.id}/approve`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          reviewed_by: adminEmail,
+          review_notes: "Approved and added to product catalog",
+          create_product: true,
+          product_data: {
+            name: group.productName,
+            category: group.category,
+            image_url: group.imageUrl,
+            description: group.details || "Product added via crowdsourcing. Details pending."
+          }
+        })
       });
 
-      // 2. Update status for ALL duplicate requests in this group
-      const timestamp = serverTimestamp();
-      const adminEmail = auth.currentUser?.email || "admin";
-      
-      const updatePromises = [group.id, ...group.duplicateIds].map(id => 
-        updateDoc(doc(db, "product_requests", id), {
-          status: "approved",
-          reviewed_at: timestamp,
-          reviewed_by: adminEmail,
-          review_notes: "Approved and added to product catalog"
-        })
-      );
-      
-      await Promise.all(updatePromises);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to approve request via API");
+      }
+
+      // Also reject all duplicate docs (same product submitted multiple times)
+      // so they don't remain stuck as phantom pending records
+      if (group.duplicateIds.length > 0) {
+        await Promise.all(group.duplicateIds.map(dupId =>
+          fetch(`${apiUrl}/api/v1/product-requests/${dupId}/reject`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              reviewed_by: adminEmail,
+              review_notes: "Duplicate request — resolved via primary approval"
+            })
+          })
+        ));
+      }
 
       await fetchRequests();
       alert("Product approved and added to catalog!");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error approving request:", error);
-      alert("Failed to approve request. Please try again.");
+      alert(error.message || "Failed to approve request. Please try again.");
     } finally {
       setProcessing(null);
     }
@@ -139,25 +160,52 @@ export default function ProductRequestsPage() {
 
     setProcessing(group.id);
     try {
-      const timestamp = serverTimestamp();
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      if (!token) throw new Error("Not authenticated");
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
       const adminEmail = auth.currentUser?.email || "admin";
-      
-      const updatePromises = [group.id, ...group.duplicateIds].map(id => 
-        updateDoc(doc(db, "product_requests", id), {
-          status: "rejected",
-          reviewed_at: timestamp,
+
+      // Reject the primary doc
+      const res = await fetch(`${apiUrl}/api/v1/product-requests/${group.id}/reject`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
           reviewed_by: adminEmail,
           review_notes: reason
         })
-      );
-      
-      await Promise.all(updatePromises);
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to reject request via API");
+      }
+
+      // Also reject all duplicate docs so none remain as phantom pending records
+      if (group.duplicateIds.length > 0) {
+        await Promise.all(group.duplicateIds.map(dupId =>
+          fetch(`${apiUrl}/api/v1/product-requests/${dupId}/reject`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              reviewed_by: adminEmail,
+              review_notes: `Duplicate request — ${reason}`
+            })
+          })
+        ));
+      }
 
       await fetchRequests();
       alert("Product request rejected.");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error rejecting request:", error);
-      alert("Failed to reject request. Please try again.");
+      alert(error.message || "Failed to reject request. Please try again.");
     } finally {
       setProcessing(null);
     }
@@ -206,7 +254,7 @@ export default function ProductRequestsPage() {
   };
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-6 pb-10">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
@@ -224,10 +272,10 @@ export default function ProductRequestsPage() {
       {/* Filter Tabs */}
       <div className="flex gap-2 border-b border-slate-800 pb-px">
         {[
+          { key: "all", label: "All", icon: Package, count: counts.all },
           { key: "pending", label: "Pending", icon: Clock, count: counts.pending },
           { key: "approved", label: "Approved", icon: CheckCircle, count: counts.approved },
           { key: "rejected", label: "Rejected", icon: XCircle, count: counts.rejected },
-          { key: "all", label: "All", icon: Package, count: counts.all }
         ].map(({ key, label, icon: Icon, count }) => {
           const isActive = filter === key;
           return (

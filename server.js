@@ -23,6 +23,7 @@ import productRequestsRouter from './routes/product-requests.js';
 import notificationsRouter from './routes/notifications.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
+import adminRouter from './routes/admin.js';
 
 
 dotenv.config();
@@ -124,6 +125,7 @@ app.use('/api/v1/api-keys', apiKeysRouter);
 app.use('/api/v1/product-requests', productRequestsRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/checkout', checkoutRouter);
+app.use('/api/v1/admin', adminRouter);
 
 // --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
 app.use('/api/webhooks', webhooksRouter);

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "./config";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -38,8 +38,19 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [appUser, setAppUser] = useState<AppUser | null>(null);
+  // Read cache synchronously — safe because Sidebar uses isMounted to prevent SSR flash
+  const readCache = <T,>(key: string): T | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const stored = localStorage.getItem(key);
+      return stored ? (JSON.parse(stored) as T) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const [user, setUser] = useState<User | null>(() => readCache<User>("userCache"));
+  const [appUser, setAppUser] = useState<AppUser | null>(() => readCache<AppUser>("appUserCache"));
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -49,6 +60,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   React.useEffect(() => {
     appUserRef.current = appUser;
   }, [appUser]);
+
+  // Prevent duplicate login audit log writes on page refresh
+  const loginLoggedRef = React.useRef<string | null>(null);
 
   // Track tab visibility changes (critical for throttling hypothesis)
   React.useEffect(() => {
@@ -99,6 +113,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.log(`    - auth.currentUser (direct): ${auth.currentUser ? `EXISTS (${auth.currentUser.email})` : '❌ NULL'}`);
       
       setUser(currentUser);
+      if (currentUser && typeof window !== 'undefined') {
+        localStorage.setItem("userCache", JSON.stringify({ uid: currentUser.uid, email: currentUser.email }));
+      }
       
       let currentAppUser: AppUser | null = null;
       
@@ -114,6 +131,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             currentAppUser = userData as AppUser;
             console.log(`  [🔍 ${timeOnly}] ✅ Setting appUser from Firestore: ${currentAppUser.fullName} (${currentAppUser.plan})`);
             setAppUser(currentAppUser);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem("appUserCache", JSON.stringify(currentAppUser));
+            }
+
+            // Write Customer Login audit log ONCE per session (not on every page refresh)
+            if (loginLoggedRef.current !== currentUser.uid) {
+              loginLoggedRef.current = currentUser.uid;
+              try {
+                await addDoc(collection(db, "audit_logs"), {
+                  action: "Customer Login",
+                  userId: currentUser.uid,
+                  userEmail: currentUser.email || 'unknown@email.com',
+                  timestamp: serverTimestamp(),
+                  details: 'User logged in successfully',
+                  userAgent: navigator.userAgent || null,
+                  ipAddress: null
+                });
+                console.log(`  [🔍 ${timeOnly}] ✅ Customer Login audit log written`);
+              } catch (auditErr) {
+                console.warn("[Audit] Failed to write login log:", auditErr);
+              }
+            } else {
+              console.log(`  [🔍 ${timeOnly}] ⏭️  Login already logged this session, skipping duplicate`);
+            }
           } else {
             console.log(`  [🔍 ${timeOnly}] ⚠️  Firestore doc does NOT exist - checking superadmin/auto-heal...`);
             console.warn("User document not found in Firestore.");
@@ -175,7 +216,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     email: currentUser.email || "",
                     businessName: "SME Store",
                     businessSegment: "Hardware Store",
-                    plan: "free",
+                    plan: "Free",
                     role: "Developer",
                     apiRequestLimit: 50,
                     apiRequestsUsed: 0,
@@ -200,6 +241,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.log(`  [🔍 ${timeOnly}] Had existing appUser before this?: ${appUserRef.current ? `YES (${appUserRef.current.fullName})` : 'NO'}`);
         console.log(`  [🔍 ${timeOnly}] ❌ Calling setAppUser(null) now...`);
         setAppUser(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem("userCache");
+          localStorage.removeItem("appUserCache");
+        }
+        // Reset login tracking so next login writes a fresh audit log
+        loginLoggedRef.current = null;
         console.log(`  [🔍 ${timeOnly}] setAppUser(null) completed\n`);
       }
       
@@ -215,13 +262,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       const hasActiveSubscription =
         currentAppUser?.subscription_status === "active" ||
-        currentAppUser?.plan === "Pro" ||          // New canonical Pro plan name
+        currentAppUser?.plan === "Free" ||         // Standard Free tier
+        currentAppUser?.plan === "Pro" ||          // Pro plan
         currentAppUser?.plan === "Unlimited" ||
         currentAppUser?.plan === "Professional" || // Legacy name (backward compat)
         currentAppUser?.plan === "Enterprise" ||
         currentAppUser?.plan === "Starter" ||      // Legacy Starter plan
-        currentAppUser?.plan === "free" ||         // Free plan: can access dashboard with limited features
-        currentAppUser?.plan === "Developer" ||    // Developer auto-heal accounts
         currentAppUser?.role === "admin" ||        // Admin users always have access
         currentAppUser?.role === "Admin";          // Admin users always have access
       
@@ -239,11 +285,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Logged in AND user data loaded (IMPORTANT: wait for currentAppUser before making decisions)
         if (isAuthRoute) {
           // Already logged in, trying to access signup - redirect to appropriate page
-          if (hasActiveSubscription) {
-            router.push("/dashboard");
-          } else {
-            router.push("/");
-          }
+          // IMPORTANT: Do NOT redirect here. The signup page handles its own auth flow
+          // (including the automatic sign-out after creation). Redirecting here causes
+          // a race condition where the user is thrown to the landing page prematurely.
         } else if (isDashboardRoute) {
           // Trying to access dashboard
           if (!hasActiveSubscription) {
@@ -265,18 +309,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = async () => {
     try {
       setLoading(true);
-      
-      // 1. Clear local state immediately
+
+      // 1. Capture identity BEFORE clearing state (auth token still valid here)
+      const uid   = user?.uid ?? null;
+      const email = user?.email ?? appUser?.email ?? null;
+
+      // 2. Write audit log BEFORE signOut — once signed out the write would fail
+      if (uid) {
+        try {
+          await addDoc(collection(db, "audit_logs"), {
+            action: "Customer Logout",
+            userId: uid,
+            userEmail: email || 'unknown@email.com',
+            timestamp: serverTimestamp(),
+            details: 'User logged out successfully',
+            userAgent: navigator.userAgent || null,
+            ipAddress: null
+          });
+        } catch (auditErr) {
+          // Non-fatal — log but don't block logout
+          console.warn("[Audit] Failed to write logout log:", auditErr);
+        }
+      }
+
+      // 3. Clear local state and cache
       setUser(null);
       setAppUser(null);
-      
-      // 2. Sign out from Firebase
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem("userCache");
+        localStorage.removeItem("appUserCache");
+      }
+
+      // 4. Sign out from Firebase
       await firebaseSignOut(auth);
-      
-      // 3. Force router refresh to clear cached state
+
+      // 5. Force router refresh to clear cached state
       router.push("/");
-      router.refresh(); // This forces Next.js to re-render the page with fresh state
-      
+      router.refresh();
+
     } catch (error) {
       console.error("Error logging out:", error);
     } finally {

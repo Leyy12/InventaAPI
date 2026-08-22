@@ -18,6 +18,7 @@ function LandingPageInner() {
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("pro");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   console.log("[LANDING PAGE] Rendered - user:", !!user, "loading:", loading);
 
@@ -40,6 +41,19 @@ function LandingPageInner() {
       
       // Auto-clear after 6 seconds
       setTimeout(() => setErrorMessage(null), 6000);
+    }
+
+    // Show success banner when coming from signup
+    if (searchParams.get("registered") === "true") {
+      setSuccessMessage("✅ Account created successfully! Please log in to continue.");
+      setTimeout(() => setSuccessMessage(null), 8000);
+      setShowLoginModal(true); // Explicitly open modal
+    }
+
+    // Auto-open subscription modal when coming from login without a plan
+    if (searchParams.get("choosePlan") === "true") {
+      setSelectedPlan("pro");
+      setShowSubscriptionModal(true);
     }
   }, [searchParams]);
 
@@ -77,6 +91,23 @@ function LandingPageInner() {
           </div>
         </div>
       )}
+
+      {/* Success Toast Notification (e.g. after signup) */}
+      {successMessage && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[150] animate-in slide-in-from-top duration-300">
+          <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-xl px-6 py-4 flex items-center gap-3 shadow-2xl backdrop-blur-md min-w-[400px]">
+            <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse flex-shrink-0"></div>
+            <span className="text-emerald-100 font-medium text-sm flex-1">{successMessage}</span>
+            <button 
+              onClick={() => setSuccessMessage(null)}
+              className="ml-2 text-emerald-300 hover:text-white transition-colors text-lg font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="fixed w-full z-50 top-0 border-b border-white/5 bg-[#020617]/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

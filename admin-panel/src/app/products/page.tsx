@@ -762,6 +762,7 @@ export default function MasterProductCatalogPage() {
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => { fetchProducts(); }, []);
 
@@ -820,7 +821,7 @@ export default function MasterProductCatalogPage() {
   const pct = (n: number) => total ? `${Math.round(n / total * 100)}% of total` : "0%";
 
   return (
-    <div className="space-y-5 pb-8">
+    <div className="w-full px-6 lg:px-8 space-y-5 pb-8">
 
       {/* ── Page Header ── */}
       <div className="flex items-center justify-between gap-4">
@@ -843,7 +844,8 @@ export default function MasterProductCatalogPage() {
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
             <Download className="w-3.5 h-3.5" /> Export CSV
           </button>
-          <button className="px-3 py-1.5 rounded-lg bg-slate-800/50 text-xs font-medium text-slate-600 border border-slate-700/50 flex items-center gap-1.5 cursor-not-allowed" title="Coming soon">
+          <button onClick={() => setShowImportModal(true)}
+            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white border border-blue-500/50 flex items-center gap-1.5 transition-colors shadow-sm shadow-blue-900/30">
             <Upload className="w-3.5 h-3.5" /> Import CSV
           </button>
         </div>
@@ -874,6 +876,19 @@ export default function MasterProductCatalogPage() {
 
         {/* Toolbar */}
         <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/60">
+          {/* Search (Moved to left) */}
+          <div className="relative w-64">
+            <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input type="text" placeholder="Search by name, brand, SKU…" value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/15" />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             {/* Segment selector */}
             <div className="relative">
@@ -898,32 +913,19 @@ export default function MasterProductCatalogPage() {
               </button>
             ))}
           </div>
-
-          {/* Search */}
-          <div className="relative w-64">
-            <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input type="text" placeholder="Search by name, brand, SKU…" value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full bg-slate-950/60 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/15" />
-            {search && (
-              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left table-fixed" style={{ minWidth: "900px" }}>
             <colgroup>
-              <col style={{ width: "25%" }} /> {/* Product */}
-              <col style={{ width: "20%" }} /> {/* Flavors */}
-              <col style={{ width: "10%" }} /> {/* Specs */}
-              <col style={{ width: "12%" }} /> {/* Pricing */}
-              <col style={{ width: "8%" }}  /> {/* Variants */}
-              <col style={{ width: "10%" }} /> {/* Status */}
-              <col style={{ width: "15%" }} /> {/* Actions */}
+              <col style={{ width: "25%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "8%" }}  />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "15%" }} />
             </colgroup>
             <thead>
               <tr className="border-b border-slate-800/80 bg-slate-900/50">
@@ -1145,6 +1147,352 @@ export default function MasterProductCatalogPage() {
           existingProducts={products}
         />
       )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <ImportCSVModal
+          onClose={() => setShowImportModal(false)}
+          onImported={(imported) => {
+            setProducts(prev => [...imported, ...prev].sort((a, b) => getProductName(a).localeCompare(getProductName(b))));
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── CSV Import Modal ─────────────────────────────────────────────────────────
+function ImportCSVModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: (products: Product[]) => void;
+}) {
+  const [dragging, setDragging]   = useState(false);
+  const [fileName, setFileName]   = useState("");
+  const [rows, setRows]           = useState<any[]>([]);
+  const [errors, setErrors]       = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [done, setDone]           = useState(false);
+  const [imported, setImported]   = useState(0);
+  const inputRef                  = React.useRef<HTMLInputElement>(null);
+
+  // ── CSV parsing ────────────────────────────────────────────────────────────
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) {
+      setErrors(["CSV must have a header row and at least one data row."]);
+      return;
+    }
+    const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim().toLowerCase());
+    const required = ["name", "segment"];
+    const missing  = required.filter(r => !headers.includes(r));
+    if (missing.length) {
+      setErrors([`Missing required columns: ${missing.join(", ")}. Required: name, segment`]);
+      return;
+    }
+
+    const parsed: any[] = [];
+    const errs:   string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      // Handle quoted commas
+      const cols = lines[i].match(/(?:"[^"]*"|[^,])+/g) ?? [];
+      const row: Record<string, string> = {};
+      headers.forEach((h, idx) => {
+        row[h] = (cols[idx] ?? "").replace(/^"|"$/g, "").trim();
+      });
+
+      const rowNum = i + 1;
+      if (!row["name"]) { errs.push(`Row ${rowNum}: missing name`); continue; }
+      if (!row["segment"]) { errs.push(`Row ${rowNum}: missing segment`); continue; }
+      if (!["Grocery", "Hardware", "Pharmacy"].includes(row["segment"])) {
+        errs.push(`Row ${rowNum}: segment must be Grocery, Hardware, or Pharmacy (got "${row["segment"]}")`);
+        continue;
+      }
+
+      const price = row["price"] ? parseFloat(row["price"]) : null;
+      parsed.push({
+        _row: rowNum,
+        name:        row["name"],
+        brand:       row["brand"]    || "",
+        segment:     row["segment"],
+        category:    row["category"] || "",
+        description: row["description"] || "",
+        sku:         row["sku"]      || "",
+        status:      "Active",
+        is_active:   true,
+        variants: [{
+          flavor: row["flavor"] || "",
+          size:   row["size"]   || "",
+          price:  isNaN(price!) ? 0 : price,
+          sku:    row["sku"]    || "",
+          expirationDate: row["expiration_date"] || row["expirationdate"] || "",
+        }],
+      });
+    }
+    setErrors(errs);
+    setRows(parsed);
+  };
+
+  const handleFile = (file: File) => {
+    if (!file.name.endsWith(".csv")) { setErrors(["Please upload a .csv file."]); return; }
+    setFileName(file.name);
+    setRows([]);
+    setErrors([]);
+    setDone(false);
+    const reader = new FileReader();
+    reader.onload = e => parseCSV(e.target?.result as string);
+    reader.readAsText(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  // ── Firestore write ────────────────────────────────────────────────────────
+  const handleImport = async () => {
+    if (!rows.length) return;
+    setImporting(true);
+    const created: Product[] = [];
+    try {
+      for (const row of rows) {
+        const { _row, ...payload } = row;
+        const ref = await addDoc(collection(db, "products"), {
+          ...payload,
+          createdAt:  serverTimestamp(),
+          updatedAt:  serverTimestamp(),
+        });
+        created.push({ id: ref.id, ...payload });
+      }
+      setImported(created.length);
+      setDone(true);
+      onImported(created);
+    } catch (e: any) {
+      setErrors(prev => [...prev, `Import failed: ${e.message}`]);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // ── Template download ──────────────────────────────────────────────────────
+  const downloadTemplate = () => {
+    const csv = [
+      "name,brand,segment,category,flavor,size,price,sku,expiration_date,description",
+      '"Lucky Me Pancit Canton","Monde Nissin","Grocery","Instant Noodles","Original","60g","14.00","LM-PANC-60","","Classic instant noodles"',
+      '"Amoxicillin 500mg","Pharex","Pharmacy","Antibiotics","","500mg","18.50","AMX-500","2026-12-31","Broad-spectrum antibiotic"',
+      '"Bosny Spray Paint","Bosny","Hardware","Paints","White","400ml","95.00","BSN-SPR-WHT","","General purpose spray paint"',
+    ].join("\n");
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
+      download: "import_template.csv",
+    });
+    a.click();
+  };
+
+  const inputCls = "w-full bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+      <div className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/15 border border-blue-500/25 flex items-center justify-center">
+              <Upload className="w-4 h-4 text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Import Products via CSV</h2>
+              <p className="text-[11px] text-slate-500">Upload a CSV file to batch-import products into the Master Catalog</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+          {done ? (
+            /* ── Success state ── */
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center mb-4">
+                <CheckCircle className="w-8 h-8 text-emerald-400" />
+              </div>
+              <h3 className="text-lg font-bold text-white mb-1">Import Complete!</h3>
+              <p className="text-sm text-slate-400">
+                Successfully imported <span className="text-emerald-400 font-semibold">{imported} products</span> into the Master Catalog.
+              </p>
+              <button onClick={onClose}
+                className="mt-6 px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition-colors">
+                Done
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Template download */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-blue-500/8 border border-blue-500/20">
+                <div className="flex items-center gap-2.5">
+                  <Download className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-blue-300">Need a template?</p>
+                    <p className="text-[10px] text-slate-500">Required columns: <code className="text-slate-400">name, segment</code> · Optional: brand, category, flavor, size, price, sku, expiration_date</p>
+                  </div>
+                </div>
+                <button onClick={downloadTemplate}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-blue-300 border border-blue-500/30 hover:bg-blue-500/15 transition-colors whitespace-nowrap">
+                  Download Template
+                </button>
+              </div>
+
+              {/* Drop zone */}
+              <div
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => inputRef.current?.click()}
+                className={`relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 cursor-pointer transition-all ${
+                  dragging
+                    ? "border-blue-400 bg-blue-500/8"
+                    : fileName
+                    ? "border-emerald-500/50 bg-emerald-500/5"
+                    : "border-slate-700 hover:border-slate-500 hover:bg-slate-800/30"
+                }`}
+              >
+                <input ref={inputRef} type="file" accept=".csv" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                {fileName ? (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                      <Download className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <p className="text-sm font-semibold text-emerald-300">{fileName}</p>
+                    <p className="text-xs text-slate-500">{rows.length} valid rows detected · Click to change file</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
+                      <Upload className="w-6 h-6 text-slate-500" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-slate-300">Drag &amp; drop your CSV here</p>
+                      <p className="text-xs text-slate-500 mt-1">or click to browse · .csv files only</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Validation errors */}
+              {errors.length > 0 && (
+                <div className="rounded-xl bg-red-500/8 border border-red-500/25 p-4">
+                  <p className="text-xs font-semibold text-red-400 mb-2 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" /> {errors.length} validation error{errors.length > 1 ? "s" : ""}
+                  </p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto custom-scrollbar">
+                    {errors.map((e, i) => (
+                      <p key={i} className="text-[11px] text-red-300/80 font-mono">{e}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Preview table */}
+              {rows.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-slate-300">
+                      Preview — <span className="text-blue-400">{rows.length} products</span> ready to import
+                    </p>
+                    <button onClick={() => { setRows([]); setFileName(""); setErrors([]); }}
+                      className="text-[10px] text-slate-600 hover:text-red-400 transition-colors">
+                      Clear
+                    </button>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 overflow-hidden">
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto custom-scrollbar">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-800/80 sticky top-0">
+                          <tr>
+                            {["#", "Name", "Brand", "Segment", "Category", "Flavor", "Size", "Price", "SKU"].map(h => (
+                              <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {rows.map((row, i) => (
+                            <tr key={i} className="hover:bg-slate-800/30 transition-colors">
+                              <td className="px-3 py-2 text-slate-600">{row._row}</td>
+                              <td className="px-3 py-2 text-slate-200 font-medium max-w-[160px] truncate">{row.name}</td>
+                              <td className="px-3 py-2 text-slate-400 max-w-[100px] truncate">{row.brand || "—"}</td>
+                              <td className="px-3 py-2">
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${segmentStyle(row.segment)}`}>
+                                  {row.segment}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-slate-400">{row.category || "—"}</td>
+                              <td className="px-3 py-2 text-slate-400">{row.variants?.[0]?.flavor || "—"}</td>
+                              <td className="px-3 py-2 text-slate-400 font-mono">{row.variants?.[0]?.size || "—"}</td>
+                              <td className="px-3 py-2 text-emerald-400 font-bold">
+                                {row.variants?.[0]?.price != null && row.variants[0].price !== 0
+                                  ? `₱${Number(row.variants[0].price).toFixed(2)}`
+                                  : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-slate-500 font-mono">{row.variants?.[0]?.sku || "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!done && (
+          <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+            <p className="text-[11px] text-slate-600">
+              {rows.length > 0
+                ? `${rows.length} rows will be written to Firestore`
+                : "Upload a CSV to begin"}
+            </p>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose}
+                className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={importing || rows.length === 0 || errors.length > 0}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors"
+              >
+                {importing ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</>
+                ) : (
+                  <><Upload className="w-3.5 h-3.5" /> Import {rows.length > 0 ? `${rows.length} Products` : "Products"}</>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// helper used inside ImportCSVModal
+import React from 'react';
+function CheckCircle({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
   );
 }

@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased bg-slate-950 text-slate-50 overflow-x-hidden`}>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased bg-[#090d16] text-slate-50 overflow-x-hidden`}>
         <Suspense fallback={null}>
           <AdminAuthProvider>
             {/* Ambient background blobs */}

@@ -1,7 +1,13 @@
 import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const adminDb = getFirestore();
+let adminDb = null;
+function getDb() {
+  if (!adminDb) {
+    adminDb = getFirestore();
+  }
+  return adminDb;
+}
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
@@ -48,7 +54,7 @@ router.post('/create-gcash', async (req, res) => {
 
     // --- Verify user exists before creating a payment ---
     try {
-        const userSnap = await adminDb.collection('users').doc(userId).get();
+        const userSnap = await getDb().collection('users').doc(userId).get();
         if (!userSnap.exists) {
             return res.status(404).json({ error: 'User not found.' });
         }
@@ -200,7 +206,7 @@ router.get('/subscription-status', async (req, res) => {
     }
 
     try {
-        const userRef = adminDb.collection('users').doc(userId);
+        const userRef = getDb().collection('users').doc(userId);
         const userSnap = await userRef.get();
 
         if (!userSnap.exists) {

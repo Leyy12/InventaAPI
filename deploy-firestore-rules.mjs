@@ -87,8 +87,11 @@ async function deployRules() {
     console.log('🔄 Making ruleset active...\n');
     
     const releasePayload = JSON.stringify({
-      name: `projects/${PROJECT_ID}/releases/cloud.firestore`,
-      rulesetName: rulesetName
+      release: {
+        name: `projects/${PROJECT_ID}/releases/cloud.firestore`,
+        rulesetName: rulesetName
+      },
+      updateMask: 'rulesetName'
     });
     
     const releaseOptions = {

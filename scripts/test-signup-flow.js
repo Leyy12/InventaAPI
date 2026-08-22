@@ -54,7 +54,7 @@ async function testSignup() {
             email: testEmail,
             businessName: "Test Business",
             businessSegment: "Hardware Store",
-            plan: "Starter",
+            plan: "Free",
             role: "Developer",
             apiRequestLimit: 50,
             apiRequestsUsed: 0,

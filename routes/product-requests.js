@@ -1,10 +1,16 @@
 import express from 'express';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { verifyFirebaseToken, requireAdmin } from '../middleware/auth.js';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getFirestore() is always ready here.
-const adminDb = getFirestore();
+let adminDb = null;
+function getDb() {
+  if (!adminDb) {
+    adminDb = getFirestore();
+  }
+  return adminDb;
+}
 const router = express.Router();
 
 // =====================================================
@@ -15,7 +21,7 @@ router.get('/', async (req, res) => {
     const { status, limit, requested_by } = req.query;
     
     try {
-        let query = adminDb.collection('product_requests');
+        let query = getDb().collection('product_requests');
         
         // Filter by status
         if (status) {
@@ -67,7 +73,7 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     
     try {
-        const doc = await adminDb.collection('product_requests').doc(id).get();
+        const doc = await getDb().collection('product_requests').doc(id).get();
         
         if (!doc.exists) {
             return res.status(404).json({
@@ -104,7 +110,7 @@ router.get('/:id', async (req, res) => {
 // Submit a new product request
 // =====================================================
 router.post('/', async (req, res) => {
-    const { product_name, category, notes, requested_by, requested_by_name } = req.body;
+    const { product_name, category, notes, requested_by, requested_by_name, requested_by_uid } = req.body;
     
     // Validation
     if (!product_name || !category) {
@@ -115,6 +121,30 @@ router.post('/', async (req, res) => {
     }
     
     try {
+        // ── Duplicate Prevention ───────────────────────────────────────────
+        // Check if this user already has a PENDING request for the same product.
+        // Comparison is case-insensitive to catch "dove" vs "Dove" etc.
+        const uid = requested_by_uid || 'anonymous';
+        const normalizedName = product_name.trim().toLowerCase();
+
+        const existingSnap = await getDb().collection('product_requests')
+            .where('requested_by_uid', '==', uid)
+            .where('status', '==', 'pending')
+            .get();
+
+        const alreadyExists = existingSnap.docs.some(
+            d => (d.data().product_name || '').trim().toLowerCase() === normalizedName
+        );
+
+        if (alreadyExists) {
+            return res.status(409).json({
+                success: false,
+                error: 'duplicate',
+                message: `You already have a pending request for "${product_name}". Please wait for it to be reviewed before submitting again.`
+            });
+        }
+        // ── End Duplicate Prevention ───────────────────────────────────────
+
         const requestData = {
             product_name: product_name.trim(),
             category: category.trim(),
@@ -122,6 +152,7 @@ router.post('/', async (req, res) => {
             status: 'pending',
             requested_by: requested_by || 'anonymous',
             requested_by_name: requested_by_name || 'Anonymous User',
+            requested_by_uid: uid,
             reviewed_by: null,
             review_notes: null,
             approved_at: null,
@@ -131,10 +162,10 @@ router.post('/', async (req, res) => {
             updated_at: FieldValue.serverTimestamp()
         };
         
-        const docRef = await adminDb.collection('product_requests').add(requestData);
+        const docRef = await getDb().collection('product_requests').add(requestData);
         
         // Create notification for user
-        await adminDb.collection('notifications').add({
+        await getDb().collection('notifications').add({
             user_email: requested_by || 'anonymous',
             type: 'request_received',
             title: 'Product Request Received',
@@ -167,16 +198,17 @@ router.post('/', async (req, res) => {
     }
 });
 
+
 // =====================================================
 // PUT /api/v1/product-requests/:id/approve
 // Approve a product request and optionally create the product
 // =====================================================
-router.put('/:id/approve', async (req, res) => {
+router.put('/:id/approve', verifyFirebaseToken, requireAdmin, async (req, res) => {
     const { id } = req.params;
     const { reviewed_by, review_notes, create_product, product_data } = req.body;
     
     try {
-        const docRef = adminDb.collection('product_requests').doc(id);
+        const docRef = getDb().collection('product_requests').doc(id);
         const doc = await docRef.get();
         
         if (!doc.exists) {
@@ -191,7 +223,7 @@ router.put('/:id/approve', async (req, res) => {
         
         // Create the product if requested
         if (create_product && product_data) {
-            const productRef = await adminDb.collection('products').add({
+            const productRef = await getDb().collection('products').add({
                 ...product_data,
                 name: product_data.name || requestData.product_name,
                 category: product_data.category || requestData.category,
@@ -216,7 +248,7 @@ router.put('/:id/approve', async (req, res) => {
         });
         
         // Create notification for user
-        await adminDb.collection('notifications').add({
+        await getDb().collection('notifications').add({
             user_email: requestData.requested_by,
             type: 'product_approved',
             title: 'Product Request Approved',
@@ -247,12 +279,12 @@ router.put('/:id/approve', async (req, res) => {
 // PUT /api/v1/product-requests/:id/reject
 // Reject a product request
 // =====================================================
-router.put('/:id/reject', async (req, res) => {
+router.put('/:id/reject', verifyFirebaseToken, requireAdmin, async (req, res) => {
     const { id } = req.params;
     const { reviewed_by, review_notes } = req.body;
     
     try {
-        const docRef = adminDb.collection('product_requests').doc(id);
+        const docRef = getDb().collection('product_requests').doc(id);
         const doc = await docRef.get();
         
         if (!doc.exists) {
@@ -274,7 +306,7 @@ router.put('/:id/reject', async (req, res) => {
         });
         
         // Create notification for user
-        await adminDb.collection('notifications').add({
+        await getDb().collection('notifications').add({
             user_email: requestData.requested_by,
             type: 'product_rejected',
             title: 'Product Request Not Approved',
@@ -319,7 +351,7 @@ router.put('/:id/status', async (req, res) => {
     }
     
     try {
-        const docRef = adminDb.collection('product_requests').doc(id);
+        const docRef = getDb().collection('product_requests').doc(id);
         const doc = await docRef.get();
         
         if (!doc.exists) {
@@ -352,11 +384,11 @@ router.put('/:id/status', async (req, res) => {
 // DELETE /api/v1/product-requests/:id
 // Delete (cancel) a product request
 // =====================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', verifyFirebaseToken, requireAdmin, async (req, res) => {
     const { id } = req.params;
     
     try {
-        const docRef = adminDb.collection('product_requests').doc(id);
+        const docRef = getDb().collection('product_requests').doc(id);
         const doc = await docRef.get();
         
         if (!doc.exists) {
@@ -398,7 +430,7 @@ router.delete('/:id', async (req, res) => {
 // =====================================================
 router.get('/stats/summary', async (req, res) => {
     try {
-        const snapshot = await adminDb.collection('product_requests').get();
+        const snapshot = await getDb().collection('product_requests').get();
         
         const stats = {
             total: 0,

@@ -47,7 +47,7 @@ export default function ConsumersPage() {
   });
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
@@ -60,17 +60,6 @@ export default function ConsumersPage() {
 
       <div className="glass-card rounded-xl overflow-hidden mt-8 border border-white/5">
         <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center bg-slate-900/50 gap-4">
-          <div className="flex gap-2">
-            {["All", "Customers", "Admins"].map(role => (
-              <button 
-                key={role}
-                onClick={() => setRoleFilter(role)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${roleFilter === role ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-transparent'}`}
-              >
-                {role}
-              </button>
-            ))}
-          </div>
           <div className="flex gap-3 w-full md:w-auto">
             <div className="relative w-full md:w-72">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -82,6 +71,17 @@ export default function ConsumersPage() {
                 className="w-full bg-slate-950 border border-slate-800 rounded-md pl-9 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
               />
             </div>
+          </div>
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
+            {['All', 'Admin', 'Merchant', 'Developer'].map(role => (
+              <button 
+                key={role}
+                onClick={() => setRoleFilter(role)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${roleFilter === role ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-transparent'}`}
+              >
+                {role}
+              </button>
+            ))}
           </div>
         </div>
         

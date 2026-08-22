@@ -6,6 +6,7 @@ import {
   Code, Download, RefreshCw, Sparkles, Zap, ChevronDown, ChevronRight
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/firebase/auth-context";
 
 interface ApiResponse {
   success: boolean;
@@ -30,6 +31,7 @@ interface ApiResponse {
 export default function ApiPlaygroundPage() {
   const searchParams = useSearchParams();
   const preselectedProducts = searchParams.get('products');
+  const { user } = useAuth();
 
   // State Management
   const [apiKey, setApiKey] = useState("");
@@ -49,17 +51,34 @@ export default function ApiPlaygroundPage() {
   const [copied, setCopied] = useState(false);
   const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
 
-  // Auto-generate demo API key if products are preselected
+  // Auto-fetch the user's first active API key
   useEffect(() => {
-    if (preselectedProducts && !apiKey) {
-      const demoKey = `daas_demo_${Math.random().toString(36).substring(2, 15)}`;
-      setApiKey(demoKey);
+    const fetchKey = async () => {
+      if (!user) return;
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
+        const res = await fetch(`${apiUrl}/api/v1/api-keys?userId=${user.uid}`);
+        const data = await res.json();
+        
+        if (data.success && data.keys && data.keys.length > 0) {
+          const activeKey = data.keys.find((k: any) => k.status === 'active');
+          if (activeKey) {
+            setApiKey(activeKey.key);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch auto-fill API key:", err);
+      }
+    };
+    
+    if (!apiKey) {
+      fetchKey();
     }
-  }, [preselectedProducts]);
+  }, [user, apiKey]);
 
   // Build full API URL with query params
   const buildApiUrl = () => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
     const url = new URL(`${baseUrl}${endpoint}`);
     
     Object.entries(queryParams).forEach(([key, value]) => {

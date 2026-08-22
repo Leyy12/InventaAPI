@@ -1,25 +1,42 @@
-import { Bell, Terminal, ShieldAlert } from "lucide-react";
+"use client";
+
+import { Terminal } from "lucide-react";
+import NotificationBell from "@/components/shared/NotificationBell";
 
 export default function AdminNavbar() {
   return (
-    <header className="h-16 glass border-b border-slate-800/60 px-6 flex items-center justify-between sticky top-0 z-30">
-      <div className="flex items-center gap-4 flex-1">
-        <div className="flex items-center gap-2 text-indigo-400 text-sm font-medium">
-          <ShieldAlert className="w-4 h-4" />
-          <span>Super Admin Control Panel</span>
-        </div>
+    <header
+      className="h-14 px-5 flex items-center justify-between sticky top-0 z-30"
+      style={{
+        background: "rgba(7,16,42,0.85)",
+        backdropFilter: "blur(20px)",
+        borderBottom: "1px solid rgba(59,130,246,0.1)",
+      }}
+    >
+      {/* Left */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-slate-500">
+          Super Admin Control Panel
+        </span>
       </div>
 
-      <div className="flex items-center gap-4">
-        <button className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-800/50 border border-slate-700/50 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors">
-          <Terminal className="w-3.5 h-3.5" />
-          API Status: <span className="text-emerald-400 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Operational</span>
-        </button>
+      {/* Right */}
+      <div className="flex items-center gap-3">
+        {/* API Status pill */}
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-slate-400 border border-blue-900/30"
+          style={{ background: "rgba(59,130,246,0.06)" }}
+        >
+          <Terminal className="w-3 h-3 text-blue-500" />
+          API Status:
+          <span className="text-green-400 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+            Operational
+          </span>
+        </div>
 
-        <button className="relative p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 border-2 border-slate-950"></span>
-        </button>
+        {/* Notification Bell — listens to userId="admin" */}
+        <NotificationBell userId="admin" accentColor="blue" />
       </div>
     </header>
   );

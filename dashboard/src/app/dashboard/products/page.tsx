@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus } from "lucide-react";
+import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProductNotFound, ProductRequestModal, ConfirmationModal } from "@/components/product-request";
@@ -61,9 +61,9 @@ export default function ProductCatalogPage() {
       const { getAllProducts } = await import('@/lib/firebase/products-service');
       const productsData = await getAllProducts();
       setProducts(productsData as unknown as Product[]);
+      setLoading(false);
     } catch (error) {
       console.error("[Products] Error fetching:", error);
-    } finally {
       setLoading(false);
     }
   };
@@ -360,7 +360,7 @@ DAAS_API_KEY=${generatedKey}
   // ==================== RENDER ====================
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="w-full px-6 lg:px-8 space-y-6 pb-10">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -506,7 +506,7 @@ DAAS_API_KEY=${generatedKey}
 
       {/* Product Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2048px]:grid-cols-6 gap-4">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="glass-card rounded-xl p-6 animate-pulse">
               <div className="w-full h-32 bg-slate-800 rounded-lg mb-4" />
@@ -542,7 +542,7 @@ DAAS_API_KEY=${generatedKey}
           />
         </>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2048px]:grid-cols-6 gap-4">
           {filteredProducts.map((product) => {
             const isSelected = selectedProducts.has(product.id!);
             const productVars = selectedVariants[product.id!] || new Set();
@@ -671,7 +671,13 @@ DAAS_API_KEY=${generatedKey}
       {/* Generate API Key Modal */}
       {showGenModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
-          <div className="w-full max-w-md glass-card rounded-2xl border border-slate-700 shadow-2xl p-8 animate-in fade-in zoom-in duration-200">
+          <div className="w-full max-w-md glass-card rounded-2xl border border-slate-700 shadow-2xl p-8 animate-in fade-in zoom-in duration-200 relative">
+            <button
+              onClick={() => setShowGenModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
             {!generatedKey ? (
               <>
                 <div className="w-14 h-14 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center mx-auto mb-5">

@@ -27,7 +27,7 @@ export const authenticateToken = (req, res, next) => {
     });
 };
 
-// Role-based access control (RBAC) authorization helper
+// Role-based access control (RBAC) authorization helper (Legacy - JWT based)
 export const requireRole = (allowedRoles) => {
     return (req, res, next) => {
         if (!req.user || !allowedRoles.includes(req.user.role)) {
@@ -37,6 +37,55 @@ export const requireRole = (allowedRoles) => {
         }
         next();
     };
+};
+
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+
+// Firebase ID Token verification middleware
+export const verifyFirebaseToken = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: "Access token missing. Firebase verification failed." });
+    }
+
+    try {
+        const decodedToken = await getAuth().verifyIdToken(token);
+        req.firebaseUser = decodedToken;
+        next();
+    } catch (error) {
+        console.error("[Auth] Firebase token verification failed:", error);
+        return res.status(403).json({ error: "Invalid or expired Firebase token." });
+    }
+};
+
+// Admin role check using Firestore
+export const requireAdmin = async (req, res, next) => {
+    if (!req.firebaseUser || !req.firebaseUser.uid) {
+        return res.status(401).json({ error: "Unauthorized. User identity not found." });
+    }
+
+    try {
+        const userDoc = await getFirestore().collection("users").doc(req.firebaseUser.uid).get();
+        
+        if (!userDoc.exists) {
+            return res.status(403).json({ error: "Forbidden. User profile not found." });
+        }
+
+        const userData = userDoc.data();
+        const role = userData.role ? userData.role.toLowerCase() : "";
+        
+        if (role !== "admin") {
+            return res.status(403).json({ error: "Forbidden. Admin privileges required." });
+        }
+
+        next();
+    } catch (error) {
+        console.error("[Auth] Admin check failed:", error);
+        return res.status(500).json({ error: "Internal server error during authorization check." });
+    }
 };
 
 // DaaS Integration API Key guard for third-party consumers

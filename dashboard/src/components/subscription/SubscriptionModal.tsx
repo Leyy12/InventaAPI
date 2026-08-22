@@ -64,6 +64,7 @@ export default function SubscriptionModal({
     onClose();
     // Show success message (could be a toast/notification in production)
     alert("Thank you! Your inquiry has been submitted. Our team will contact you within 24 hours.");
+    router.push('/dashboard');
   };
 
   const handleProCheckout = async () => {

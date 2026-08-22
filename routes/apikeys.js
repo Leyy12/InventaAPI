@@ -1,9 +1,5 @@
 import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
-
-// Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
-// server.js imports database/firebase.js first, so getFirestore() is always ready here.
-const adminDb = getFirestore();
 const router = express.Router();
 
 /**
@@ -42,7 +38,7 @@ router.post('/generate', async (req, res) => {
         };
 
         // Use Admin SDK — bypasses all Firestore client security rules
-        const docRef = await adminDb.collection('api_keys').add(keyData);
+        const docRef = await getFirestore().collection('api_keys').add(keyData);
 
         console.log(`[API KEYS] Generated key "${keyName}" for user ${userId}. Doc ID: ${docRef.id}`);
 
@@ -73,7 +69,7 @@ router.get('/', async (req, res) => {
     }
 
     try {
-        const snapshot = await adminDb.collection('api_keys')
+        const snapshot = await getFirestore().collection('api_keys')
             .where('userId', '==', userId)
             .where('status', '==', 'active')
             .get();
@@ -95,7 +91,7 @@ router.delete('/:id', async (req, res) => {
     const { userId } = req.body;
 
     try {
-        const docRef = adminDb.collection('api_keys').doc(id);
+        const docRef = getFirestore().collection('api_keys').doc(id);
         const doc = await docRef.get();
 
         if (!doc.exists) {
