@@ -101,7 +101,7 @@ export default function AdminDashboardClient({
     const pendingQ = query(collection(db, "product_requests"), where("status", "==", "pending"));
     const pendingUnsub = onSnapshot(pendingQ, (snap) => {
       setRealPendingCount(snap.size);
-      const reqs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const reqs: any[] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       // Sort by created_at desc manually since we can't easily compound index right now
       reqs.sort((a, b) => {
         const tA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;

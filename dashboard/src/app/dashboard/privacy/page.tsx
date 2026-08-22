@@ -34,7 +34,7 @@ export default function PrivacySettingsPage() {
       }
 
       // 2. Fetch Product Requests
-      let productRequests = [];
+      let productRequests: any[] = [];
       try {
         const reqQuery = query(collection(db, "product_requests"), where("requested_by_uid", "==", user.uid));
         const reqSnap = await getDocs(reqQuery);
