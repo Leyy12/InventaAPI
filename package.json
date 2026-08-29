@@ -4,6 +4,9 @@
   "description": "API-based Data-as-a-Service (DaaS) Engine for Multi-Business Sales and Inventory Management",
   "main": "server.js",
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
