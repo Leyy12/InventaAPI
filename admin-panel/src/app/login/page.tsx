@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
-import { KeyRound, Mail, AlertCircle, Loader2, Shield, Eye, EyeOff } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, Loader2, Eye, EyeOff } from "lucide-react";
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
@@ -84,10 +85,17 @@ export default function AdminLoginPage() {
           
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-br from-red-500 to-red-700 mb-4 shadow-lg shadow-indigo-500/20">
-              <Shield className="w-8 h-8 text-white" />
+            <div className="inline-flex items-center justify-center mb-4">
+              <Image
+                src="/inventa-logo.png"
+                alt="InventaAPI Logo"
+                width={160}
+                height={160}
+                className="object-contain drop-shadow-lg"
+                priority
+              />
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Admin Panel</h1>
+            <h1 className="text-2xl font-bold text-white tracking-tight mt-4">Admin Panel</h1>
             <p className="text-slate-400 text-sm mt-2">Secure authentication required</p>
           </div>
 

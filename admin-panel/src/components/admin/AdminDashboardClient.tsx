@@ -78,10 +78,22 @@ export default function AdminDashboardClient({
   pendingCount?: number;
   recentAuditLogs?: any[];
 }) {
-  const [trafficData] = useState(generateTrafficData);
+  const [trafficData, setTrafficData] = useState<any[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
+  const [realProductsCount, setRealProductsCount] = useState(productsCount);
+  const [realHardwareCount, setRealHardwareCount] = useState(hardwareCount);
+  const [realPharmacyCount, setRealPharmacyCount] = useState(pharmacyCount);
+  const [realGroceryCount, setRealGroceryCount] = useState(groceryCount);
+
+  const [todaysCalls, setTodaysCalls] = useState(0);
+  const [totalRequests, setTotalRequests] = useState(0);
+  const [avgLatency, setAvgLatency] = useState(0);
+  const [successRate, setSuccessRate] = useState(0);
+  const [errorRate, setErrorRate] = useState(0);
+
   const [realUsersCount, setRealUsersCount] = useState(usersCount);
+  const [activeConsumersCount, setActiveConsumersCount] = useState(0);
   const [realPendingCount, setRealPendingCount] = useState(pendingCount);
   const [realPendingRequests, setRealPendingRequests] = useState<any[]>([]);
   const [realAuditLogs, setRealAuditLogs] = useState<any[]>(recentAuditLogs);
@@ -112,17 +124,18 @@ export default function AdminDashboardClient({
     });
 
     // 3. Listen to recent audit logs
-    const auditQ = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(10));
+    const auditQ = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(20));
     const auditUnsub = onSnapshot(auditQ, (snap) => {
       const logs = snap.docs.map(doc => {
         const d = doc.data();
         let color = "text-cyan-400";
         if (d.action?.includes("Logout")) color = "text-slate-400";
-        if (d.action?.includes("Approved")) color = "text-green-400";
-        if (d.action?.includes("Deleted")) color = "text-red-400";
+        if (d.action?.includes("Approved") || d.action?.includes("Generated")) color = "text-green-400";
+        if (d.action?.includes("Deleted") || d.action?.includes("Failed") || d.action?.includes("Failure") || d.action?.includes("Invalid") || d.action?.includes("Revoked")) color = "text-red-400";
         
         let timeStr = "N/A";
         if (d.timestamp) {
+          // Handle both Firestore Timestamp objects and Date objects
           const date = d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp);
           timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         }
@@ -130,17 +143,101 @@ export default function AdminDashboardClient({
         return {
           id: doc.id,
           time: timeStr,
-          message: `${d.action} by ${d.email || d.userId || 'System'}`,
+          // Login events store 'userEmail', DaaS events store 'email'
+          message: `${d.action}${d.endpoint ? ` [${d.endpoint}]` : ''} — ${d.email || d.userEmail || d.userId || 'System'}`,
           color
         };
       });
       setRealAuditLogs(logs);
     });
 
+    // 3b. Listen to api_keys to count distinct active API consumers
+    const apiKeysUnsub = onSnapshot(collection(db, "api_keys"), (snap) => {
+      const distinctUsers = new Set<string>();
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (data.status === 'active' && data.userId) {
+          distinctUsers.add(data.userId);
+        }
+      });
+      setActiveConsumersCount(distinctUsers.size);
+    });
+
+    // 4. Listen to master catalog (products)
+    const productsUnsub = onSnapshot(collection(db, "products"), (snap) => {
+      setRealProductsCount(snap.size);
+      let hw = 0, ph = 0, gr = 0;
+      snap.docs.forEach(d => {
+        const seg = (d.data().segment || "").toLowerCase();
+        if (seg === "hardware") hw++;
+        else if (seg === "pharmacy") ph++;
+        else if (seg === "grocery") gr++;
+      });
+      setRealHardwareCount(hw);
+      setRealPharmacyCount(ph);
+      setRealGroceryCount(gr);
+    });
+
+    // 5. Listen to API telemetry for Today's Calls and Traffic metrics
+    const startOfDay = new Date();
+    startOfDay.setHours(0,0,0,0);
+    
+    // Listen to the last 500 telemetry events to calculate metrics.
+    const telemetryQ = query(collection(db, "api_telemetry"), orderBy("timestamp", "desc"), limit(500));
+    const telemetryUnsub = onSnapshot(telemetryQ, (snap) => {
+      let todayCount = 0;
+      let total = snap.size;
+      let successCount = 0;
+      let totalLatency = 0;
+      
+      const hourlyData: Record<string, { current: number }> = {};
+      
+      snap.docs.forEach(doc => {
+        const d = doc.data();
+        // CRITICAL: Firestore Timestamp objects must be converted via .toDate()
+        // not via new Date(d.timestamp) which only works for ISO strings.
+        const ts = d.timestamp?.toDate ? d.timestamp.toDate() : new Date(d.timestamp);
+        
+        if (ts >= startOfDay) todayCount++;
+        if (d.success) successCount++;
+        if (typeof d.latencyMs === 'number') totalLatency += d.latencyMs;
+        
+        // Group by time for traffic chart
+        const timeKey = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (!hourlyData[timeKey]) hourlyData[timeKey] = { current: 0 };
+        hourlyData[timeKey].current += 1;
+      });
+
+      setTodaysCalls(todayCount);
+      setTotalRequests(total);
+      
+      if (total > 0) {
+        setAvgLatency(Math.round(totalLatency / total));
+        const sRate = Math.round((successCount / total) * 100);
+        setSuccessRate(sRate);
+        setErrorRate(100 - sRate);
+      } else {
+        setAvgLatency(0);
+        setSuccessRate(0);
+        setErrorRate(0);
+      }
+      
+      // Format chart data — last 15 time buckets, sorted chronologically
+      const tData = Object.keys(hourlyData).sort().slice(-15).map(k => ({
+         name: k,
+         current: hourlyData[k].current,
+         previous: Math.max(0, hourlyData[k].current - 1)
+      }));
+      setTrafficData(tData);
+    });
+
     return () => {
       usersUnsub();
       pendingUnsub();
       auditUnsub();
+      apiKeysUnsub();
+      productsUnsub();
+      telemetryUnsub();
     };
   }, []);
 
@@ -233,9 +330,11 @@ export default function AdminDashboardClient({
             <Package className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-white">{productsCount || 0}</div>
+            <div className="text-2xl font-bold text-white">{realProductsCount}</div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Master Catalog</div>
-            <div className="text-sm text-slate-500 font-medium mt-0.5">Real-time sync</div>
+            <div className="text-sm text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
+               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div> Real-time sync
+            </div>
           </div>
         </div>
 
@@ -251,15 +350,17 @@ export default function AdminDashboardClient({
           </div>
         </div>
 
-        {/* Card 3 */}
+        {/* Card 3 — API Consumers: counted from active api_keys distinct userId */}
         <div className="bg-[#0f172a] border border-[#1e293b] rounded-lg p-5 flex items-center gap-4 shadow-lg">
           <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white shrink-0 shadow-md shadow-blue-500/20">
             <Users className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-white">{realUsersCount}</div>
+            <div className="text-2xl font-bold text-white">{activeConsumersCount}</div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">API Consumers</div>
-            <div className="text-sm text-slate-500 font-medium mt-0.5">Registered accounts</div>
+            <div className="text-sm text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
+               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div> Active key holders
+            </div>
           </div>
         </div>
 
@@ -269,9 +370,11 @@ export default function AdminDashboardClient({
             <Activity className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-white">0</div>
+            <div className="text-2xl font-bold text-white">{todaysCalls}</div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Today&apos;s API Calls</div>
-            <div className="text-sm text-slate-500 font-medium mt-0.5">No traffic yet</div>
+            <div className="text-sm text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
+               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div> Live traffic
+            </div>
           </div>
         </div>
 
@@ -346,7 +449,7 @@ export default function AdminDashboardClient({
             <div>
               <div className="flex justify-between text-slate-400 mb-1">
                 <span>Total Catalog Size</span>
-                <span className="font-bold text-white">{productsCount} items</span>
+                <span className="font-bold text-white">{realProductsCount} items</span>
               </div>
               <div className="w-full bg-[#1b2a4a] h-1.5 rounded-full overflow-hidden">
                 <div className="bg-blue-500 h-full w-[100%]"></div>
@@ -356,7 +459,7 @@ export default function AdminDashboardClient({
             <div>
               <div className="flex justify-between text-slate-400 mb-1">
                 <span>Active API Consumers</span>
-                <span className="font-bold text-white">{realUsersCount} users</span>
+                <span className="font-bold text-white">{activeConsumersCount} key holders</span>
               </div>
               <div className="w-full bg-[#1b2a4a] h-1.5 rounded-full overflow-hidden">
                 <div className="bg-cyan-400 h-full w-[100%]"></div>
@@ -374,22 +477,22 @@ export default function AdminDashboardClient({
         <div className="grid grid-cols-2 sm:grid-cols-4 border-t border-[#1e293b] bg-[#0b1329] p-4 text-center">
           <div className="border-r border-[#1e293b] last:border-0">
             <div className="text-slate-500 font-bold text-xs">-</div>
-            <div className="text-slate-300 font-extrabold text-lg">0</div>
+            <div className="text-slate-300 font-extrabold text-lg">{totalRequests}</div>
             <div className="text-slate-500 text-xs font-semibold uppercase">Total Requests</div>
           </div>
           <div className="border-r border-[#1e293b] last:border-0">
             <div className="text-slate-500 font-bold text-xs">-</div>
-            <div className="text-slate-300 font-extrabold text-lg">0ms</div>
+            <div className="text-slate-300 font-extrabold text-lg">{avgLatency}ms</div>
             <div className="text-slate-500 text-xs font-semibold uppercase">Avg Latency</div>
           </div>
           <div className="border-r border-[#1e293b] last:border-0">
             <div className="text-slate-500 font-bold text-xs">-</div>
-            <div className="text-slate-300 font-extrabold text-lg">N/A</div>
+            <div className="text-slate-300 font-extrabold text-lg">{successRate}%</div>
             <div className="text-slate-500 text-xs font-semibold uppercase">Success Rate</div>
           </div>
           <div>
             <div className="text-slate-500 font-bold text-xs">-</div>
-            <div className="text-slate-300 font-extrabold text-lg">0%</div>
+            <div className="text-slate-300 font-extrabold text-lg">{errorRate}%</div>
             <div className="text-slate-500 text-xs font-semibold uppercase">Error Rate</div>
           </div>
         </div>
@@ -408,8 +511,18 @@ export default function AdminDashboardClient({
           <div className="h-48 my-2">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={segmentData} cx="50%" cy="50%" innerRadius="60%" outerRadius="85%" paddingAngle={0} dataKey="value" stroke="none">
-                  {segmentData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                <Pie 
+                  data={[
+                    { name: "Hardware", value: realHardwareCount, color: "#3b82f6" },
+                    { name: "Pharmacy", value: realPharmacyCount, color: "#22d3ee" },
+                    { name: "Grocery",  value: realGroceryCount, color: "#60a5fa" },
+                  ]} 
+                  cx="50%" cy="50%" innerRadius="60%" outerRadius="85%" paddingAngle={0} dataKey="value" stroke="none">
+                  {[
+                    { name: "Hardware", value: realHardwareCount, color: "#3b82f6" },
+                    { name: "Pharmacy", value: realPharmacyCount, color: "#22d3ee" },
+                    { name: "Grocery",  value: realGroceryCount, color: "#60a5fa" },
+                  ].map((e, i) => <Cell key={i} fill={e.color} />)}
                 </Pie>
                 <Tooltip content={<ChartTooltip />} />
               </PieChart>
@@ -419,15 +532,15 @@ export default function AdminDashboardClient({
           <div className="space-y-1.5 text-xs border-t border-[#1e293b] pt-3 text-slate-300">
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Hardware</span>
-              <span className="font-bold text-white">{hardwareCount || 0} items</span>
+              <span className="font-bold text-white">{realHardwareCount} items</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Pharmacy</span>
-              <span className="font-bold text-white">{pharmacyCount || 0} items</span>
+              <span className="font-bold text-white">{realPharmacyCount} items</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span> Grocery</span>
-              <span className="font-bold text-white">{groceryCount || 0} items</span>
+              <span className="font-bold text-white">{realGroceryCount} items</span>
             </div>
           </div>
         </div>

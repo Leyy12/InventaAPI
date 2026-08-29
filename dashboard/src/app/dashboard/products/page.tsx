@@ -5,6 +5,7 @@ import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, M
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProductNotFound, ProductRequestModal, ConfirmationModal } from "@/components/product-request";
+import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 
 // Product type now imported from products-service (matches new variants schema)
@@ -20,12 +21,13 @@ interface CartSummary {
 
 const SEGMENTS = ["All", "Pharmacy", "Hardware", "Grocery"] as const;
 const COPY_REDIRECT_DELAY = 1500;
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
 
 // ==================== MAIN COMPONENT ====================
 
 export default function ProductCatalogPage() {
   const router = useRouter();
+  const { appUser } = useAuth();
   
   // Core State
   const [products, setProducts] = useState<Product[]>([]);
@@ -53,6 +55,13 @@ export default function ProductCatalogPage() {
     fetchProducts();
   }, []);
 
+  // Sync segment for Free users
+  useEffect(() => {
+    if (appUser?.plan === "Free" && appUser?.selectedSegment) {
+      setActiveSegment(appUser.selectedSegment);
+    }
+  }, [appUser]);
+
   // ==================== DATA FETCHING ====================
 
   const fetchProducts = async () => {
@@ -73,7 +82,10 @@ export default function ProductCatalogPage() {
   const getFilteredProducts = useCallback(() => {
     let filtered = products;
     
-    if (activeSegment !== "All") {
+    // Strict segment filter for Free users
+    if (appUser?.plan === "Free" && appUser?.selectedSegment) {
+      filtered = filtered.filter(p => p.segment === appUser.selectedSegment);
+    } else if (activeSegment !== "All") {
       filtered = filtered.filter(p => p.segment === activeSegment);
     }
     
@@ -87,7 +99,7 @@ export default function ProductCatalogPage() {
     }
     
     return filtered;
-  }, [products, activeSegment, searchQuery]);
+  }, [products, activeSegment, searchQuery, appUser]);
 
   const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
 
@@ -205,6 +217,7 @@ export default function ProductCatalogPage() {
         alert("You must be logged in to generate an API key.");
         return;
       }
+      const idToken = await currentUser.getIdToken();
 
       const selectedProductsList = products
         .filter(p => selectedProducts.has(p.id!))
@@ -227,12 +240,15 @@ export default function ProductCatalogPage() {
 
       const response = await fetch(`${API_URL}/api/v1/api-keys/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
         body: JSON.stringify({
           userId: currentUser.uid,
           userEmail: currentUser.email || "",
           keyName: keyName.trim(),
-          plan: "Professional",
+          // SECURITY: Do NOT send plan - let backend determine from user's actual Firestore data
           linkedProducts: selectedProductsList,
           linkedProductIds: finalLinkedProductIds,
           linkedVariantSelections: finalLinkedVariantSelections
@@ -242,13 +258,16 @@ export default function ProductCatalogPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to generate API key via backend");
+        throw new Error(data.message || data.error || "Unable to create your API key. Please try again later.");
       }
 
       setGeneratedKey(data.key);
     } catch (error) {
       console.error("Error generating API key:", error);
-      alert("Failed to generate API key. Please try again.");
+      const message = error instanceof TypeError && error.message === "Failed to fetch"
+        ? "Unable to connect to InventaAPI. Please check that the API server is running and try again."
+        : error instanceof Error ? error.message : "Unable to create your API key. Please try again later.";
+      alert(message);
     } finally {
       setGenerating(false);
     }
@@ -477,13 +496,20 @@ DAAS_API_KEY=${generatedKey}
             id="category-filter"
             value={activeSegment}
             onChange={(e) => setActiveSegment(e.target.value)}
-            className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px]"
+            disabled={appUser?.plan === "Free"}
+            className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px] disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Filter products by category"
           >
-            <option value="All">All Categories</option>
-            <option value="Hardware">Hardware</option>
-            <option value="Grocery">Grocery</option>
-            <option value="Pharmacy">Pharmacy</option>
+            {appUser?.plan === "Free" ? (
+              <option value={appUser.selectedSegment}>{appUser.selectedSegment}</option>
+            ) : (
+              <>
+                <option value="All">All Categories</option>
+                <option value="Hardware">Hardware</option>
+                <option value="Grocery">Grocery</option>
+                <option value="Pharmacy">Pharmacy</option>
+              </>
+            )}
           </select>
           <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
             <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -83,10 +83,12 @@ const auditLogs = [
 
 export default function ModernAdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const updateTime = () => setCurrentTime(new Date());
+    updateTime(); // Set initial time after component mounts
+    const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -115,7 +117,7 @@ export default function ModernAdminDashboard() {
           <div className="flex items-center space-x-4">
             <div className="text-right hidden md:block">
               <p className="text-xs text-slate-400">Current Time</p>
-              <p className="text-sm font-mono">{currentTime.toLocaleTimeString()}</p>
+              <p className="text-sm font-mono">{currentTime ? currentTime.toLocaleTimeString() : "--:--:--"}</p>
             </div>
             <div className="relative">
               <Bell className="w-5 h-5 text-slate-400 hover:text-white cursor-pointer transition-colors" />

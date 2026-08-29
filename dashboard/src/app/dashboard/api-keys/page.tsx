@@ -13,6 +13,7 @@ interface ApiKey {
   userEmail: string;
   plan: string;
   requestsUsed: number;
+  requestLimit?: number;  // Dynamic limit based on user's plan
   createdAt: any;
   lastUsed: any | null;
   status: "active" | "revoked";
@@ -65,22 +66,30 @@ export default function ApiKeysPage() {
 
     setGeneratingKey(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      if (!user) {
+        throw new Error("You must be logged in to generate an API key.");
+      }
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
+      const idToken = await user.getIdToken();
       const response = await fetch(`${apiUrl}/api/v1/api-keys/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
         body: JSON.stringify({
-          userId: user?.uid || "anonymous",
-          userEmail: user?.email || "anonymous",
+          userEmail: user.email || "",
           keyName: newKeyName.trim(),
-          plan: "Professional",
+          // SECURITY: Do NOT send plan - let backend determine from user's actual Firestore data
         })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to generate key");
+        // Show more specific error messages from backend
+        const errorMessage = data.message || data.error || "Unable to create your API key. Please try again later.";
+        throw new Error(errorMessage);
       }
       
       setNewlyGeneratedKey(data.key);
@@ -88,7 +97,16 @@ export default function ApiKeysPage() {
       fetchApiKeys();
     } catch (error) {
       console.error("Error generating new API key:", error);
-      alert("Failed to generate API key. Please try again.");
+      
+      // Display specific error message to user
+      const errorMessage = error instanceof Error ? error.message : "Unable to create your API key. Please try again later.";
+      if (errorMessage.includes('verify your subscription plan')) {
+        alert(`Service temporarily unavailable: ${errorMessage}`);
+      } else if (errorMessage.includes('account information could not be found')) {
+        alert(`Account error: ${errorMessage}`);
+      } else {
+        alert(errorMessage);
+      }
     } finally {
       setGeneratingKey(false);
     }
@@ -105,7 +123,7 @@ export default function ApiKeysPage() {
     if (!confirmed) return;
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
       const response = await fetch(`${apiUrl}/api/v1/api-keys/${id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -164,8 +182,8 @@ DAAS_API_KEY=${keyStr}
               { key: "x-api-key", value: keyStr }
             ],
             url: {
-              raw: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/daas/v1/catalog`,
-              host: [(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001').replace('http://', '')],
+              raw: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog`,
+              host: [(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002').replace('http://', '')],
               path: ["daas", "v1", "catalog"]
             }
           }
@@ -385,7 +403,9 @@ DAAS_API_KEY=${keyStr}
                       </p>
                       <p className="text-lg font-semibold text-white">
                         {apiKey.requestsUsed.toLocaleString()}
-                        <span className="text-xs text-slate-400 font-normal ml-1">/ 5,000</span>
+                        <span className="text-xs text-slate-400 font-normal ml-1">
+                          / {apiKey.requestLimit ? apiKey.requestLimit.toLocaleString() : '50'}
+                        </span>
                       </p>
                     </div>
                     <div>
@@ -424,7 +444,7 @@ DAAS_API_KEY=${keyStr}
                     <div className="mt-4">
                       <CodeSnippet 
                         apiKey={apiKey.key}
-                        apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}
+                        apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}
                       />
                     </div>
                   )}

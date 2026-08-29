@@ -89,7 +89,8 @@ service cloud.firestore {
                     && request.resource.data.role == resource.data.role
                     && request.resource.data.get('plan', '') == resource.data.get('plan', '')
                     && request.resource.data.get('apiRequestLimit', 0) == resource.data.get('apiRequestLimit', 0)
-                    && request.resource.data.get('subscriptionExpiresAt', '') == resource.data.get('subscriptionExpiresAt', '');
+                    && request.resource.data.get('subscriptionExpiresAt', '') == resource.data.get('subscriptionExpiresAt', '')
+                    && (!('selectedSegment' in request.resource.data) || request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']);
 
       // Only admins can delete user documents
       allow delete: if isAdmin();

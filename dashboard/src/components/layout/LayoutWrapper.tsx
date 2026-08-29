@@ -12,7 +12,11 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     pathname === "/" || 
     pathname === "/signup";
 
-  if (isPublicRoute) {
+  // Onboarding (Quick Setup / segment selection) is a fullscreen flow that
+  // must NOT render inside the dashboard shell (sidebar/navbar).
+  const isOnboardingRoute = pathname === "/dashboard/welcome";
+
+  if (isPublicRoute || isOnboardingRoute) {
     return (
       <main className="min-h-screen w-full relative z-10">
         {children}

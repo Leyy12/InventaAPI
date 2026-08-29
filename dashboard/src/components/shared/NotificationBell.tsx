@@ -40,6 +40,12 @@ const iconForType = (type: Notification["type"]) => {
 
 function timeAgo(ts: Notification["createdAt"]): string {
   if (!ts) return "Just now";
+  
+  // HYDRATION FIX: Use client-side only calculation to prevent SSR/CSR mismatch
+  if (typeof window === 'undefined') {
+    return "Just now"; // Server render always shows "Just now"
+  }
+  
   const diff = Date.now() - ts.toDate().getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "Just now";
@@ -53,9 +59,14 @@ export default function NotificationBell({
   userId,
   accentColor = "indigo",
 }: NotificationBellProps) {
+  const [mounted, setMounted] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   /* ── real-time listener ─── */
   useEffect(() => {
@@ -94,6 +105,8 @@ export default function NotificationBell({
     accentColor === "indigo" ? "border-indigo-500/40" : "border-blue-500/40";
   const accentText =
     accentColor === "indigo" ? "text-indigo-400" : "text-blue-400";
+
+  if (!mounted) return null;
 
   return (
     <div className="relative" ref={panelRef}>

@@ -3,3 +3,14 @@ node_modules/
 *.log
 .DS_Store
 service-account.json
+.next/
+
+# build / test artifacts
+test-results/
+.next/
+
+# scratch / temp scripts
+temp-*.mjs
+temp-*.cjs
+verify-*.mjs
+scripts/temp-*.mjs

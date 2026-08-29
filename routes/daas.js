@@ -3,7 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { requirePlan, enforceRequestLimit } from '../middleware/planGate.js';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
-// server.js imports database/firebase.js first, so getFirestore() is always ready here.
+// server.js imports database/firebase.js first, so getDb() is always ready here.
 let adminDb = null;
 function getDb() {
   if (!adminDb) {
@@ -15,9 +15,19 @@ const router = express.Router();
 
 // Middleware: Authenticate API Key from Firebase
 const authenticateApiKey = async (req, res, next) => {
+    req.startTime = Date.now(); // Start timing for telemetry
     const apiKey = req.headers['x-api-key'] || req.query.apiKey;
 
     if (!apiKey) {
+        const ts = new Date();
+        getDb().collection('audit_logs').add({
+            action: 'Authentication Failure',
+            userId: 'Unknown',
+            email: 'Unknown Client',
+            endpoint: req.path,
+            status: 401,
+            timestamp: ts
+        }).catch(console.error);
         return res.status(401).json({
             error: 'Unauthorized',
             message: 'API key is required. Include it in the x-api-key header or apiKey query parameter.'
@@ -33,6 +43,15 @@ const authenticateApiKey = async (req, res, next) => {
             .get();
 
         if (snapshot.empty) {
+            const ts = new Date();
+            getDb().collection('audit_logs').add({
+                action: 'Invalid API Key Attempt',
+                userId: 'Unknown',
+                email: 'Unknown Client',
+                endpoint: req.path,
+                status: 401,
+                timestamp: ts
+            }).catch(console.error);
             return res.status(401).json({
                 error: 'Unauthorized',
                 message: 'Invalid or revoked API key.'
@@ -86,6 +105,32 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
         const allProductIdsToFetch = Array.from(new Set([...linkedProductIds, ...Object.keys(linkedVariantSelections)]));
 
         if (allProductIdsToFetch.length === 0) {
+            const latencyMs = Date.now() - req.startTime;
+            const ts = new Date();
+            
+            // Log telemetry — timestamp must be a Date/Firestore Timestamp (not a string)
+            // so that Firestore orderBy('timestamp') works correctly.
+            getDb().collection('api_telemetry').add({
+                apiKeyId: req.apiKeyData.id,
+                userId: req.apiKeyData.userId,
+                keyName: req.apiKeyData.name,
+                endpoint: '/catalog',
+                method: 'GET',
+                statusCode: 200,
+                success: true,
+                latencyMs,
+                timestamp: ts
+            }).catch(console.error);
+            
+            getDb().collection('audit_logs').add({
+                action: 'API Request',
+                userId: req.apiKeyData.userId,
+                email: req.apiKeyData.userEmail || req.apiKeyData.name,
+                endpoint: '/catalog',
+                status: 200,
+                timestamp: ts
+            }).catch(console.error);
+
             return res.json({
                 status: "success",
                 message: "No products are linked to this API key. Please select products from the Product Catalog.",
@@ -104,7 +149,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 
         // Fetch products from Firebase by IDs
         const productPromises = allProductIdsToFetch.map(async (productId) => {
-            const doc = await adminDb.collection('products').doc(productId).get();
+            const doc = await getDb().collection('products').doc(productId).get();
             if (doc.exists) {
                 return { id: doc.id, ...doc.data() };
             }
@@ -113,6 +158,18 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 
         const productsData = await Promise.all(productPromises);
         let products = productsData.filter(p => p !== null);
+
+        // SECURITY: Enforce segment restriction for Free plan users
+        const userDoc = await getDb().collection('users').doc(req.apiKeyData.userId).get();
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            const userPlan = userData.plan;
+            const isFreePlan = ['free', 'Free', 'Starter'].includes(userPlan);
+            
+            if (isFreePlan && userData.selectedSegment) {
+                products = products.filter(p => p.segment === userData.selectedSegment);
+            }
+        }
 
         // Apply search filter if query provided
         if (searchQuery.trim()) {
@@ -126,6 +183,30 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 
             // If no products found after search, return actionable metadata
             if (products.length === 0) {
+                const latencyMs = Date.now() - req.startTime;
+                const ts = new Date();
+                
+                getDb().collection('api_telemetry').add({
+                    apiKeyId: req.apiKeyData.id,
+                    userId: req.apiKeyData.userId,
+                    keyName: req.apiKeyData.name,
+                    endpoint: '/catalog',
+                    method: 'GET',
+                    statusCode: 200,
+                    success: true,
+                    latencyMs,
+                    timestamp: ts
+                }).catch(console.error);
+                
+                getDb().collection('audit_logs').add({
+                    action: 'API Request',
+                    userId: req.apiKeyData.userId,
+                    email: req.apiKeyData.userEmail || req.apiKeyData.name,
+                    endpoint: '/catalog',
+                    status: 200,
+                    timestamp: ts
+                }).catch(console.error);
+
                 return res.json({
                     status: "error",
                     message: `No products found matching query: "${searchQuery}"`,
@@ -144,9 +225,46 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
             }
         }
 
-        // Format products for DaaS response.
-        // variants array is the SINGLE SOURCE OF TRUTH for price/size/sku/expirationDate.
-        // Stale root-level fields (from old flat schema) are intentionally ignored.
+        // ═══════════════════════════════════════════════════════════════════════════
+        // PAGINATION / FREE 50-PRODUCT CAP
+        // Free-plan consumers may receive at most 50 products per request. To access a
+        // larger catalog they page through it across multiple requests via `?page=N`
+        // (continuation). `?perPage` is accepted but capped at 50 for Free plans.
+        // Pro/Enterprise plans are not capped and receive the full set by default.
+        // ═══════════════════════════════════════════════════════════════════════════
+        let isFreePlan = false;
+        if (userDoc.exists) {
+            isFreePlan = ['free', 'Free', 'Starter'].includes(userDoc.data().plan);
+        }
+
+        const totalBeforePage = products.length;
+        const maxPerPage = isFreePlan ? 50 : null; // null = no cap for paid plans
+        const requestedPage = parseInt(req.query.page, 10);
+        const requestedPerPage = parseInt(req.query.perPage, 10);
+
+        let perPage;
+        if (isFreePlan) {
+            // Free: never more than 50 products in a single response
+            perPage = (!isNaN(requestedPerPage) && requestedPerPage >= 1) ? Math.min(requestedPerPage, maxPerPage) : maxPerPage;
+        } else {
+            // Paid: allow an explicit page size (capped at 250 for safety), else all
+            perPage = (!isNaN(requestedPerPage) && requestedPerPage >= 1) ? Math.min(requestedPerPage, 250) : totalBeforePage;
+        }
+
+        const totalPages = Math.max(1, Math.ceil(totalBeforePage / perPage));
+        const page = (!isNaN(requestedPage) && requestedPage >= 1) ? Math.min(requestedPage, totalPages) : 1;
+        const startIndex = (page - 1) * perPage;
+        const pageSlice = products.slice(startIndex, startIndex + perPage);
+        const hasNextPage = startIndex + pageSlice.length < totalBeforePage;
+
+        products = pageSlice;
+
+        // productAvailability is the consumer-specific authorization timestamp map.
+        // availableToConsumerSince = when THIS consumer gained access to THIS product.
+        // This is authoritative for "new product" detection on the consumer side.
+        // It is NOT the same as the product's catalog createdAt.
+        const productAvailability = req.apiKeyData.productAvailability || {};
+
         const formattedProducts = products.map(p => {
             // Check if this product has a partial variant selection
             const partialSelections = linkedVariantSelections[p.id];
@@ -169,6 +287,16 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                     return (currPrice < prevPrice) ? curr : prev;
                 }, finalVariants[0]);
             }
+
+            // Resolve availableToConsumerSince from productAvailability map.
+            // Convert Firestore Timestamp to ISO string for JSON transport.
+            const availability = productAvailability[p.id];
+            let availableToConsumerSince = null;
+            if (availability?.availableSince) {
+                const ts = availability.availableSince;
+                availableToConsumerSince = ts.toDate ? ts.toDate().toISOString() : new Date(ts).toISOString();
+            }
+
             return {
                 id: p.id,
                 sku: baseVariant.sku || null,
@@ -183,25 +311,87 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                 metadata: p.metadata || {},
                 tags: p.tags || [],
                 variants: finalVariants,
-                expirationDate: baseVariant.expirationDate || null
+                expirationDate: baseVariant.expirationDate || null,
+                // availableToConsumerSince: when this product was authorized for this
+                // specific API key. Use this for consumer-side "new product" detection.
+                // null means this product was linked before availability tracking was introduced.
+                availableToConsumerSince
             };
         });
+
+        const latencyMs = Date.now() - req.startTime;
+        const ts = new Date();
+        
+        getDb().collection('api_telemetry').add({
+            apiKeyId: req.apiKeyData.id,
+            userId: req.apiKeyData.userId,
+            keyName: req.apiKeyData.name,
+            endpoint: '/catalog',
+            method: 'GET',
+            statusCode: 200,
+            success: true,
+            latencyMs,
+            timestamp: ts
+        }).catch(console.error);
+        
+        getDb().collection('audit_logs').add({
+            action: 'API Request',
+            userId: req.apiKeyData.userId,
+            email: req.apiKeyData.userEmail || req.apiKeyData.name,
+            endpoint: '/catalog',
+            status: 200,
+            timestamp: ts
+        }).catch(console.error);
 
         res.json({
             status: "success",
             meta: {
                 count: formattedProducts.length,
+                total: totalBeforePage,
                 keyName: req.apiKeyData.name,
                 plan: req.apiKeyData.plan,
+                plan_cap: maxPerPage,
                 requestsUsed: req.apiKeyData.requestsUsed + 1,
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
-                timestamp: new Date().toISOString()
+                timestamp: ts.toISOString(),
+                pagination: {
+                    page,
+                    perPage,
+                    total: totalBeforePage,
+                    totalPages,
+                    hasNextPage,
+                    nextPage: hasNextPage ? page + 1 : null
+                }
             },
             products: formattedProducts
         });
     } catch (err) {
         console.error('[DaaS Catalog] Error:', err);
+        
+        const latencyMs = Date.now() - (req.startTime || Date.now());
+        const ts = new Date();
+        getDb().collection('api_telemetry').add({
+            apiKeyId: req.apiKeyData?.id || 'unknown',
+            userId: req.apiKeyData?.userId || 'unknown',
+            keyName: req.apiKeyData?.name || 'unknown',
+            endpoint: '/catalog',
+            method: 'GET',
+            statusCode: 500,
+            success: false,
+            latencyMs,
+            timestamp: ts
+        }).catch(console.error);
+        
+        getDb().collection('audit_logs').add({
+            action: 'API Request Failed',
+            userId: req.apiKeyData?.userId || 'unknown',
+            email: req.apiKeyData?.userEmail || req.apiKeyData?.name || 'Unknown',
+            endpoint: '/catalog',
+            status: 500,
+            timestamp: ts
+        }).catch(console.error);
+
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to fetch catalog: ' + err.message
@@ -212,6 +402,30 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 // DaaS Sales Analytics Feed Endpoint (Pro+ Only, Rate Limited)
 // Returns aggregated transaction data for Professional and Enterprise tiers
 router.get('/sales-feed', authenticateApiKey, requirePlan(['pro', 'enterprise']), enforceRequestLimit, (req, res) => {
+    const latencyMs = Date.now() - req.startTime;
+    const ts = new Date();
+    
+    getDb().collection('api_telemetry').add({
+        apiKeyId: req.apiKeyData.id,
+        userId: req.apiKeyData.userId,
+        keyName: req.apiKeyData.name,
+        endpoint: '/sales-feed',
+        method: 'GET',
+        statusCode: 200,
+        success: true,
+        latencyMs,
+        timestamp: ts
+    }).catch(console.error);
+    
+    getDb().collection('audit_logs').add({
+        action: 'API Request',
+        userId: req.apiKeyData.userId,
+        email: req.apiKeyData.userEmail || req.apiKeyData.name,
+        endpoint: '/sales-feed',
+        status: 200,
+        timestamp: ts
+    }).catch(console.error);
+
     // Generate or fetch some clean, mock aggregated sales data for B2B analytics
     res.json({
         summary: {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -42,11 +43,14 @@ export default function AdminSidebar() {
       <div className="h-14 flex items-center px-5 gap-3"
         style={{ borderBottom: "1px solid rgba(59,130,246,0.08)" }}
       >
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg"
-          style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}
-        >
-          IV
-        </div>
+        <Image
+          src="/inventa-logo.png"
+          alt="InventaAPI Logo"
+          width={56}
+          height={56}
+          className="object-contain flex-shrink-0"
+          priority
+        />
         <div>
           <p className="text-lg font-bold text-white leading-tight">InventaAPI</p>
         </div>

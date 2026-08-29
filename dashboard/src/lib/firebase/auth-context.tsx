@@ -19,6 +19,10 @@ interface AppUser {
   subscription_status?: string;
   subscriptionExpiresAt?: string;   // ISO string — set by PayMongo webhook
   apiRequestLimit?: number;
+  // Free-plan segment restriction: which product segment this user may access.
+  // Set during the Welcome/Quick Setup flow after first login.
+  // Only enforced when plan === "Free".
+  selectedSegment?: 'Grocery' | 'Pharmacy' | 'Hardware';
 }
 
 interface AuthContextType {
@@ -26,6 +30,7 @@ interface AuthContextType {
   appUser: AppUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  refreshUserDoc: () => Promise<AppUser | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,6 +38,7 @@ const AuthContext = createContext<AuthContextType>({
   appUser: null,
   loading: true,
   logout: async () => {},
+  refreshUserDoc: async () => null,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -283,6 +289,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
       } else if (currentAppUser) {
         // Logged in AND user data loaded (IMPORTANT: wait for currentAppUser before making decisions)
+
+        // Onboarding gate: Free-plan users must select a business segment before
+        // entering the dashboard. For normal logins the segment is chosen inside the
+        // LoginModal, so this only fires as a safety net when a Free user without a
+        // segment tries to access a protected dashboard route directly.
+        const isFreePlanNoSegment =
+          (currentAppUser.plan || "").toLowerCase() === "free" && !currentAppUser.selectedSegment;
+        const isWelcomeRoute = currentPathname === "/dashboard/welcome";
+
+        if (isFreePlanNoSegment && isDashboardRoute && !isWelcomeRoute) {
+          router.replace("/dashboard/welcome");
+          return;
+        }
+
         if (isAuthRoute) {
           // Already logged in, trying to access signup - redirect to appropriate page
           // IMPORTANT: Do NOT redirect here. The signup page handles its own auth flow
@@ -314,10 +334,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const uid   = user?.uid ?? null;
       const email = user?.email ?? appUser?.email ?? null;
 
-      // 2. Write audit log BEFORE signOut — once signed out the write would fail
+      // 2. Start the audit write without allowing it to block sign-out.
       if (uid) {
-        try {
-          await addDoc(collection(db, "audit_logs"), {
+        void addDoc(collection(db, "audit_logs"), {
             action: "Customer Logout",
             userId: uid,
             userEmail: email || 'unknown@email.com',
@@ -325,11 +344,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             details: 'User logged out successfully',
             userAgent: navigator.userAgent || null,
             ipAddress: null
-          });
-        } catch (auditErr) {
-          // Non-fatal — log but don't block logout
+        }).catch((auditErr) => {
           console.warn("[Audit] Failed to write logout log:", auditErr);
-        }
+        });
       }
 
       // 3. Clear local state and cache
@@ -354,8 +371,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const refreshUserDoc = async (): Promise<AppUser | null> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return null;
+    try {
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const fresh = userDoc.data() as AppUser;
+        setAppUser(fresh);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("appUserCache", JSON.stringify(fresh));
+        }
+        return fresh;
+      }
+      return null;
+    } catch (error) {
+      console.error("[AuthContext] refreshUserDoc failed:", error);
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, appUser, loading, logout }}>
+    <AuthContext.Provider value={{ user, appUser, loading, logout, refreshUserDoc }}>
       {children}
     </AuthContext.Provider>
   );

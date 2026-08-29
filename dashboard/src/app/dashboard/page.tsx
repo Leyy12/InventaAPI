@@ -1,3 +1,5 @@
+"use client";
+
 import { 
   Activity, 
   CreditCard, 
@@ -8,8 +10,29 @@ import {
   Code
 } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/lib/firebase/auth-context";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function DashboardPage() {
+  const { appUser, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && appUser?.plan === "Free" && !appUser?.selectedSegment) {
+      router.replace("/dashboard/welcome");
+    }
+  }, [loading, appUser, router]);
+
+  if (loading || (appUser?.plan === "Free" && !appUser?.selectedSegment)) {
+    return (
+      <div className="w-full px-6 lg:px-8 space-y-8 animate-pulse">
+        <div className="h-10 w-48 bg-slate-800 rounded"></div>
+        <div className="h-64 glass-card rounded-xl"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
       {/* Welcome Section */}

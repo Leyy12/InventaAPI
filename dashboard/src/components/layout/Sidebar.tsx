@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -12,7 +13,8 @@ import {
   BarChart3,
   LogOut,
   Home,
-  Shield
+  Shield,
+  Settings
 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 
@@ -23,6 +25,7 @@ const dashboardRoutes = [
   { name: "Documentation", href: "/dashboard/docs", icon: BookOpen },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Privacy", href: "/dashboard/privacy", icon: Shield },
+  { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 // Helper: Map legacy plan values to correct display names
@@ -47,8 +50,15 @@ export default function Sidebar() {
     <aside className="w-64 glass border-r border-slate-800/60 hidden md:flex flex-col relative z-20">
       <div className="h-16 flex items-center px-6 border-b border-slate-800/60">
         <div className="flex items-center gap-2 text-indigo-400 font-bold text-lg tracking-tight">
-          <div className="w-6 h-6 rounded bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs shadow-lg shadow-indigo-500/20">
-            IV
+          <div className="flex-shrink-0">
+            <Image
+              src="/inventa-logo.png"
+              alt="InventaAPI Logo"
+              width={56}
+              height={56}
+              className="object-contain"
+              priority
+            />
           </div>
           InventaAPI
         </div>
@@ -73,10 +83,10 @@ export default function Sidebar() {
               style={
                 isActive
                   ? {
-                      background: "rgba(99,102,241,0.12)",
-                      borderLeft: "2px solid #6366f1",
-                      paddingLeft: "10px",
-                    }
+                    background: "rgba(99,102,241,0.12)",
+                    borderLeft: "2px solid #6366f1",
+                    paddingLeft: "10px",
+                  }
                   : {}
               }
             >

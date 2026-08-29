@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 const BUSINESS_SEGMENTS = [
   "Hardware Store",
@@ -115,10 +116,17 @@ export default function SignupPage() {
       
       <div className="w-full max-w-xl glass-card rounded-2xl p-8 relative z-10 shadow-2xl">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-4 shadow-lg shadow-indigo-500/20">
-            <span className="text-white font-bold text-xl">IV</span>
+          <div className="inline-flex items-center justify-center mb-4">
+            <Image
+              src="/inventa-logo.png"
+              alt="InventaAPI Logo"
+              width={160}
+              height={160}
+              className="object-contain"
+              priority
+            />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Create an Account</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight mt-2">Create an Account</h1>
           <p className="text-slate-400 text-sm mt-2">Join InventaAPI to manage your centralized product data</p>
         </div>
 
@@ -288,7 +296,7 @@ export default function SignupPage() {
         </form>
 
         <p className="text-center text-sm text-slate-500 mt-8">
-          Already have an account? <Link href="/" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
+          Already have an account? <Link href="/?login=true" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
         </p>
       </div>
     </div>

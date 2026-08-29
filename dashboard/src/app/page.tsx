@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import Image from "next/image";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-react";
 import LoginModal from "@/components/auth/LoginModal";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
@@ -9,14 +10,14 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
 
 function LandingPageInner() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const isLandingBypass = searchParams.get("view") === "landing";
 
-  // Start hidden — never flash the login modal before auth resolves
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("pro");
+  const [pendingPlan, setPendingPlan] = useState<PlanId | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -43,11 +44,17 @@ function LandingPageInner() {
       setTimeout(() => setErrorMessage(null), 6000);
     }
 
-    // Show success banner when coming from signup
+    // Auto-open login modal when a visitor clicks "Login" on the signup page.
+    if (searchParams.get("login") === "true") {
+      setShowLoginModal(true);
+    }
+
+    // Show success banner when coming from signup and auto-open the login modal
+    // so the user can log in their freshly created account and enter the dashboard.
     if (searchParams.get("registered") === "true") {
       setSuccessMessage("✅ Account created successfully! Please log in to continue.");
       setTimeout(() => setSuccessMessage(null), 8000);
-      setShowLoginModal(true); // Explicitly open modal
+      setShowLoginModal(true);
     }
 
     // Auto-open subscription modal when coming from login without a plan
@@ -58,20 +65,35 @@ function LandingPageInner() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!loading) {
-      // Only show login if: auth has resolved AND user is NOT logged in
-      // Never show login if user deliberately came via ?view=landing (they're already logged in)
-      if (!user && !isLandingBypass) {
-        setShowLoginModal(true);
-      } else {
-        setShowLoginModal(false);
+    if (user && pendingPlan) {
+      // Free plan needs no upgrade — the LoginModal handles onboarding
+      // (segment selection) and routes the user straight into the dashboard.
+      if (pendingPlan === "free") {
+        setPendingPlan(null);
+        return; // keep the login modal open — do NOT open the subscription modal
       }
+      setSelectedPlan(pendingPlan);
+      setPendingPlan(null);
+      setShowLoginModal(false);
+      setShowSubscriptionModal(true);
     }
-  }, [user, loading, isLandingBypass, searchParams]);
+  }, [user, pendingPlan]);
 
   const openSubscription = (plan: PlanId) => {
     setSelectedPlan(plan);
-    setShowSubscriptionModal(true);
+    if (user) {
+      // Logged in already. Free plan users just go straight to the dashboard;
+      // paid plans open the subscription/upgrade modal.
+      if (plan === "free") {
+        router.push("/dashboard");
+        return;
+      }
+      setShowSubscriptionModal(true);
+      return;
+    }
+
+    setPendingPlan(plan);
+    setShowLoginModal(true);
   };
 
   return (
@@ -113,9 +135,14 @@ function LandingPageInner() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-sm shadow-lg shadow-indigo-500/20">
-                IV
-              </div>
+              <Image
+                src="/inventa-logo.png"
+                alt="InventaAPI Logo"
+                width={52}
+                height={52}
+                className="object-contain"
+                priority
+              />
               <span className="font-bold text-xl tracking-tight">InventaAPI</span>
             </div>
             <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
@@ -124,18 +151,6 @@ function LandingPageInner() {
               <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
               <a href="#" className="hover:text-white transition-colors">API Docs</a>
               
-              {/* Show Logout button only when logged in */}
-              {user && !loading && (
-                <button 
-                  onClick={async () => {
-                    console.log("[NAVBAR] Logout button clicked");
-                    await logout();
-                  }}
-                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-all"
-                >
-                  Logout
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -343,7 +358,13 @@ function LandingPageInner() {
       <footer className="border-t border-white/10 bg-slate-950 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-indigo-500 flex items-center justify-center font-bold text-[10px]">IV</div>
+            <Image
+              src="/inventa-logo.png"
+              alt="InventaAPI Logo"
+              width={52}
+              height={52}
+              className="object-contain"
+            />
             <span className="font-bold text-slate-300">InventaAPI DaaS</span>
           </div>
           
@@ -358,8 +379,13 @@ function LandingPageInner() {
         </div>
       </footer>
 
-      {/* Floating Login Modal - Auto-open & Mandatory when not logged in */}
-      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+      {/* Login is required only when a visitor chooses a pricing plan. */}
+      <LoginModal 
+        isOpen={showLoginModal} 
+        onClose={() => setShowLoginModal(false)}
+        pendingPlan={pendingPlan}
+        onOpenSubscription={(plan) => { setSelectedPlan(plan); setShowSubscriptionModal(true); }}
+      />
       
       {/* Subscription Modal */}
       <SubscriptionModal 
