@@ -24,18 +24,16 @@ async function getDashboardData() {
     };
   }
 
-  // --- Admin Stats (users, pending, audit logs) ---
+  // --- Admin Stats (users, audit logs) ---
   let usersCount = 0;
-  let pendingCount = 0;
   let recentAuditLogs: any[] = [];
   if (statsRes.status === "fulfilled" && statsRes.value.ok) {
     const stats = await statsRes.value.json();
     usersCount      = stats.usersCount      ?? 0;
-    pendingCount    = stats.pendingCount    ?? 0;
     recentAuditLogs = stats.recentAuditLogs ?? [];
   }
 
-  return { productStats, usersCount, pendingCount, recentAuditLogs };
+  return { productStats, usersCount, recentAuditLogs };
 }
 
 
@@ -50,7 +48,6 @@ export default async function AdminDashboard() {
         hardwareCount={data.productStats.hardware}
         pharmacyCount={data.productStats.pharmacy}
         usersCount={data.usersCount}
-        pendingCount={data.pendingCount}
         recentAuditLogs={data.recentAuditLogs}
       />
     </Suspense>

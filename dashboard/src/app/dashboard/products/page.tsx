@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus, X } from "lucide-react";
+import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ProductNotFound, ProductRequestModal, ConfirmationModal } from "@/components/product-request";
+import { ProductNotFound } from "@/components/product-request";
+import AddProductModal from "@/components/products/AddProductModal";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 
@@ -43,11 +44,11 @@ export default function ProductCatalogPage() {
   const [generating, setGenerating] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Add Product (to existing API key) Modal State
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
   
-  // Product Request State
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
+
 
   // ==================== EFFECTS ====================
 
@@ -336,45 +337,7 @@ DAAS_API_KEY=${generatedKey}
     URL.revokeObjectURL(url);
   }, [generatedKey]);
 
-  // ==================== PRODUCT REQUEST ====================
 
-  const handleOpenRequestModal = () => {
-    setShowRequestModal(true);
-  };
-
-  const handleRequestSuccess = () => {
-    // Optionally store request ID here if returned from modal
-    setShowRequestModal(false);
-    setShowConfirmationModal(true);
-    // Optionally refetch products
-    fetchProducts();
-  };
-
-  const handleCancelRequest = async () => {
-    if (!lastRequestId) return;
-    
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${apiUrl}/api/v1/product-requests/${lastRequestId}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to cancel request');
-      }
-      
-      setShowConfirmationModal(false);
-      setLastRequestId(null);
-    } catch (error) {
-      console.error('Error cancelling request:', error);
-      throw error;
-    }
-  };
-
-  const handleReturnToCatalog = () => {
-    setShowConfirmationModal(false);
-    setSearchQuery("");
-  };
 
   // ==================== RENDER ====================
 
@@ -386,21 +349,31 @@ DAAS_API_KEY=${generatedKey}
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Product Catalog</h1>
           <p className="text-slate-400">Select products to include in your custom API endpoint</p>
         </div>
-        {selectedProducts.size > 0 && (
+        <div className="flex items-center gap-3">
+          {selectedProducts.size > 0 && (
+            <button
+              onClick={() => { 
+                setShowGenModal(true); 
+                setGeneratedKey(null); 
+                setKeyName(""); 
+                setCopied(false); 
+              }}
+              className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+              aria-label={`Generate API Key for ${selectedProducts.size} selected products`}
+            >
+              <Key className="w-4 h-4" />
+              Generate API Key ({selectedProducts.size} products)
+            </button>
+          )}
           <button
-            onClick={() => { 
-              setShowGenModal(true); 
-              setGeneratedKey(null); 
-              setKeyName(""); 
-              setCopied(false); 
-            }}
-            className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
-            aria-label={`Generate API Key for ${selectedProducts.size} selected products`}
+            onClick={() => setShowAddProductModal(true)}
+            className="px-5 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+            aria-label="Add existing products to an API key"
           >
-            <Key className="w-4 h-4" />
-            Generate API Key ({selectedProducts.size} products)
+            <Plus className="w-4 h-4" />
+            Add Product
           </button>
-        )}
+        </div>
       </div>
 
       {/* Shopping Cart Summary - Sticky */}
@@ -546,25 +519,7 @@ DAAS_API_KEY=${generatedKey}
           {/* Product Not Found Component */}
           <ProductNotFound
             searchQuery={searchQuery}
-            onRequestProduct={handleOpenRequestModal}
-          />
-
-          {/* Product Request Modal */}
-          <ProductRequestModal
-            isOpen={showRequestModal}
-            onClose={() => setShowRequestModal(false)}
-            productName={searchQuery}
-            onSuccess={handleRequestSuccess}
-          />
-
-          {/* Confirmation Modal */}
-          <ConfirmationModal
-            isOpen={showConfirmationModal}
-            onClose={() => setShowConfirmationModal(false)}
-            productName={searchQuery}
-            requestId={lastRequestId || undefined}
-            onReturnToCatalog={handleReturnToCatalog}
-            onCancelRequest={handleCancelRequest}
+            onClearSearch={() => setSearchQuery("")}
           />
         </>
       ) : (
@@ -603,21 +558,8 @@ DAAS_API_KEY=${generatedKey}
                     <Database className="w-14 h-14 text-slate-600" />
                   </div>
 
-                  {/* Top overlay row: checkbox + segment badge */}
-                  <div className="absolute top-0 left-0 right-0 flex items-start justify-between p-3">
-                    {/* Checkbox */}
-                    <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all shadow-md ${
-                      isSelected
-                        ? "bg-indigo-500 border-indigo-500"
-                        : "bg-slate-900/70 border-slate-500 backdrop-blur-sm"
-                    }`}>
-                      {isPartial ? (
-                        <Minus className="w-4 h-4 text-white" />
-                      ) : isSelected ? (
-                        <Check className="w-4 h-4 text-white" />
-                      ) : null}
-                    </div>
-
+                  {/* Top overlay row: segment badge only */}
+                  <div className="absolute top-0 left-0 right-0 flex items-start justify-end p-3">
                     {/* Segment badge */}
                     <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold backdrop-blur-sm shadow-md ${
                       product.segment === "Pharmacy" ? "bg-green-500/80 text-white" :
@@ -797,6 +739,12 @@ DAAS_API_KEY=${generatedKey}
           </div>
         </div>
       )}
+
+      {/* Add Product to existing API key modal */}
+      <AddProductModal
+        open={showAddProductModal}
+        onClose={() => setShowAddProductModal(false)}
+      />
     </div>
   );
 }

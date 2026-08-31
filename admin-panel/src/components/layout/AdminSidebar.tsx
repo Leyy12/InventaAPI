@@ -20,9 +20,9 @@ import { useAdminAuth } from "@/lib/firebase/admin-auth-context";
 const adminRoutes = [
   { name: "Dashboard",              href: "/",          icon: LayoutDashboard },
   { name: "Master Product Catalog", href: "/products",  icon: Package         },
-  { name: "Pending Requests",       href: "/requests",  icon: FileText        },
+
   { name: "API Consumers",          href: "/consumers", icon: Key             },
-  { name: "Categories",             href: "/categories",icon: BookOpen        },
+
   { name: "Security Center",        href: "/security",  icon: ShieldCheck     },
   { name: "Audit Logs",             href: "/audit",     icon: ShieldAlert     },
   { name: "System Settings",        href: "/settings",  icon: Settings        },
@@ -119,7 +119,11 @@ export default function AdminSidebar() {
         </div>
 
         <button
-          onClick={() => logout()}
+          onClick={() => {
+            if (window.confirm("Are you sure you want to logout?")) {
+              logout();
+            }
+          }}
           className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 hover:text-blue-300 hover:bg-blue-950/30 transition-colors"
         >
           <LogOut className="w-3 h-3" />

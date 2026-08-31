@@ -135,7 +135,11 @@ export default function Sidebar() {
           </div>
         )}
         <button
-          onClick={() => logout()}
+          onClick={() => {
+            if (window.confirm("Are you sure you want to logout?")) {
+              logout();
+            }
+          }}
           className="flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors w-full"
         >
           <LogOut className="w-4 h-4" />

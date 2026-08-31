@@ -33,21 +33,12 @@ export default function PrivacySettingsPage() {
         console.error("Failed to fetch API keys for export:", err);
       }
 
-      // 2. Fetch Product Requests
-      let productRequests: any[] = [];
-      try {
-        const reqQuery = query(collection(db, "product_requests"), where("requested_by_uid", "==", user.uid));
-        const reqSnap = await getDocs(reqQuery);
-        productRequests = reqSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err) {
-        console.error("Failed to fetch product requests for export:", err);
-      }
+
 
       // Compile Data
       const exportData = {
         profile: appUser,
         apiKeys,
-        productRequests,
         exportedAt: new Date().toISOString(),
         compliance: "Data Privacy Act of 2012 (RA 10173)"
       };
@@ -146,7 +137,7 @@ export default function PrivacySettingsPage() {
           </div>
           
           <p className="text-slate-300 mb-6 text-sm leading-relaxed">
-            Get a complete machine-readable (JSON) copy of your personal profile, subscription details, generated API keys, and crowdsourced product requests.
+            Get a complete machine-readable (JSON) copy of your personal profile, subscription details, and generated API keys.
           </p>
 
           <button

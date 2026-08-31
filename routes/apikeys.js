@@ -250,6 +250,49 @@ router.patch('/:id/products', async (req, res) => {
             return res.status(403).json({ error: 'Forbidden: You do not own this API key.' });
         }
 
+        // --- SECURITY: Free-plan segment restriction ---
+        // Free consumers may only link products from their selectedSegment.
+        // Enforced server-side (not just frontend) so the restriction holds no
+        // matter how the request is constructed. Paid plans are unaffected.
+        try {
+            const userDoc = await getDb().collection('users').doc(userId).get();
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                const isFreePlan = ['free', 'Free', 'Starter'].includes(userData.plan);
+                if (isFreePlan && userData.selectedSegment) {
+                    const requestedIds = Array.from(new Set([
+                        ...(newProductIds || []),
+                        ...Object.keys(newVariantSelections || {})
+                    ]));
+                    if (requestedIds.length > 0) {
+                        const productSnaps = await Promise.all(
+                            requestedIds.map(pid => getDb().collection('products').doc(pid).get())
+                        );
+                        const disallowed = [];
+                        productSnaps.forEach((snap, i) => {
+                            if (!snap.exists) return;
+                            const productSegment = snap.data().segment;
+                            if (productSegment !== userData.selectedSegment) {
+                                disallowed.push({ id: requestedIds[i], name: snap.data().name });
+                            }
+                        });
+                        if (disallowed.length > 0) {
+                            console.log(`[API KEYS] Rejected segment-restricted product link for free user ${userId}: ${disallowed.map(d => d.name).join(', ')}`);
+                            return res.status(403).json({
+                                success: false,
+                                error: 'PLAN_SEGMENT_RESTRICTION',
+                                message: `Your ${userData.selectedSegment} Free plan only allows adding products from ${userData.selectedSegment}.`,
+                                disallowed: disallowed.map(d => d.name)
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (segmentErr) {
+            console.error('[API KEYS] Error enforcing segment restriction:', segmentErr);
+            return res.status(500).json({ error: 'Failed to verify product segment restrictions.' });
+        }
+
         // --- Build the new productAvailability map ---
         // Start from the existing map so we never lose historical timestamps.
         const existingAvailability = existing.productAvailability || {};

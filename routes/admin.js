@@ -17,13 +17,6 @@ router.get('/stats', verifyFirebaseToken, requireAdmin, async (req, res) => {
     const usersSnap = await db.collection('users').count().get();
     const usersCount = usersSnap.data().count;
 
-    // Count only pending product requests
-    const pendingSnap = await db.collection('product_requests')
-      .where('status', '==', 'pending')
-      .count()
-      .get();
-    const pendingCount = pendingSnap.data().count;
-
     // Fetch the 10 most recent audit log entries
     const auditSnap = await db.collection('audit_logs')
       .orderBy('timestamp', 'desc')
@@ -41,7 +34,7 @@ router.get('/stats', verifyFirebaseToken, requireAdmin, async (req, res) => {
       };
     });
 
-    res.json({ usersCount, pendingCount, recentAuditLogs });
+    res.json({ usersCount, recentAuditLogs });
   } catch (error) {
     console.error('[Admin Stats] Error:', error);
     res.status(500).json({ error: 'Failed to fetch admin stats' });

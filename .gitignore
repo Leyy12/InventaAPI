@@ -14,3 +14,6 @@ temp-*.mjs
 temp-*.cjs
 verify-*.mjs
 scripts/temp-*.mjs
+
+.vercel
+.env*.local

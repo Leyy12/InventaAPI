@@ -19,7 +19,6 @@ import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
 import daasRouter from './routes/daas.js';
 import apiKeysRouter from './routes/apikeys.js';
-import productRequestsRouter from './routes/product-requests.js';
 import notificationsRouter from './routes/notifications.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
@@ -122,7 +121,6 @@ app.use((req, res, next) => {
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/products', productsRouter);
 app.use('/api/v1/api-keys', apiKeysRouter);
-app.use('/api/v1/product-requests', productRequestsRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/checkout', checkoutRouter);
 app.use('/api/v1/admin', adminRouter);
@@ -147,7 +145,6 @@ app.get('/', (req, res) => {
             api_info:        "/api",
             auth:            "/api/v1/auth/login",
             products:        "/api/v1/products",
-            product_requests:"/api/v1/product-requests",
             daas_catalog:    "/daas/v1/catalog (x-api-key required)"
         }
     });
@@ -168,7 +165,6 @@ app.get('/api', (req, res) => {
         endpoints: {
             auth: "/api/v1/auth/login",
             products: "/api/v1/products",
-            product_requests: "/api/v1/product-requests",
             daas_catalog: "/daas/v1/catalog (x-api-key required)"
         }
     });
