@@ -266,14 +266,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const isAuthRoute = currentPathname === "/signup";
       const isLandingRoute = currentPathname === "/";
       
+      // Case-insensitive + legacy-tolerant: the DB may hold "Free"/"free",
+      // "Starter", etc. (scripts like update-leah-plan write lowercase values),
+      // so exact `=== "Free"` checks wrongly classified those as "no plan" and
+      // bounced subscribers away from the dashboard.
+      const normalizedPlan = String(currentAppUser?.plan ?? "").toLowerCase();
       const hasActiveSubscription =
         currentAppUser?.subscription_status === "active" ||
-        currentAppUser?.plan === "Free" ||         // Standard Free tier
-        currentAppUser?.plan === "Pro" ||          // Pro plan
-        currentAppUser?.plan === "Unlimited" ||
-        currentAppUser?.plan === "Professional" || // Legacy name (backward compat)
-        currentAppUser?.plan === "Enterprise" ||
-        currentAppUser?.plan === "Starter" ||      // Legacy Starter plan
+        normalizedPlan === "free" ||         // Standard Free tier
+        normalizedPlan === "deleted" ||      // Churned/reset Free accounts — still Free-tier access
+        normalizedPlan === "starter" ||      // Legacy Starter plan
+        normalizedPlan === "pro" ||          // Pro plan
+        normalizedPlan === "unlimited" ||
+        normalizedPlan === "professional" || // Legacy name (backward compat)
+        normalizedPlan === "enterprise" ||
         currentAppUser?.role === "admin" ||        // Admin users always have access
         currentAppUser?.role === "Admin";          // Admin users always have access
       
@@ -290,18 +296,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else if (currentAppUser) {
         // Logged in AND user data loaded (IMPORTANT: wait for currentAppUser before making decisions)
 
-        // Onboarding gate: Free-plan users must select a business segment before
-        // entering the dashboard. For normal logins the segment is chosen inside the
-        // LoginModal, so this only fires as a safety net when a Free user without a
-        // segment tries to access a protected dashboard route directly.
-        const isFreePlanNoSegment =
-          (currentAppUser.plan || "").toLowerCase() === "free" && !currentAppUser.selectedSegment;
-        const isWelcomeRoute = currentPathname === "/dashboard/welcome";
-
-        if (isFreePlanNoSegment && isDashboardRoute && !isWelcomeRoute) {
-          router.replace("/dashboard/welcome");
-          return;
-        }
 
         if (isAuthRoute) {
           // Already logged in, trying to access signup - redirect to appropriate page
@@ -328,13 +322,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     try {
-      setLoading(true);
-
       // 1. Capture identity BEFORE clearing state (auth token still valid here)
       const uid   = user?.uid ?? null;
       const email = user?.email ?? appUser?.email ?? null;
 
-      // 2. Start the audit write without allowing it to block sign-out.
+      // 2. Clear local cache immediately so nothing stale is read after signout
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem("userCache");
+        localStorage.removeItem("appUserCache");
+      }
+
+      // 3. Clear React state immediately
+      setUser(null);
+      setAppUser(null);
+
+      // 4. Fire-and-forget audit log — do NOT await (never block sign-out on this)
       if (uid) {
         void addDoc(collection(db, "audit_logs"), {
             action: "Customer Logout",
@@ -349,25 +351,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
-      // 3. Clear local state and cache
-      setUser(null);
-      setAppUser(null);
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem("userCache");
-        localStorage.removeItem("appUserCache");
-      }
-
-      // 4. Sign out from Firebase
+      // 5. Sign out from Firebase — this triggers onAuthStateChanged(null) which
+      //    sets loading=false on its own. Do NOT call setLoading(true/false) here
+      //    as that races with the listener and causes the double-click bug.
       await firebaseSignOut(auth);
 
-      // 5. Force router refresh to clear cached state
-      router.push("/");
-      router.refresh();
+      // 6. Hard redirect to landing page — use window.location.href instead of
+      //    router.push() to guarantee a full-page reload that clears all Next.js
+      //    route cache and React state. router.push can be silently intercepted by
+      //    the auth guard, causing the redirect to fail on the first attempt.
+      window.location.href = "/";
 
     } catch (error) {
       console.error("Error logging out:", error);
-    } finally {
-      setLoading(false);
+      // On error, still try to get to landing page
+      window.location.href = "/";
     }
   };
 

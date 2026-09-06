@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Check, ArrowLeft, Loader2, ExternalLink } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -11,6 +11,7 @@ interface SubscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedPlan?: PlanId;
+  initialError?: string;
 }
 
 // No local plan details needed - using shared config from @/config/plans
@@ -22,6 +23,7 @@ export default function SubscriptionModal({
   isOpen,
   onClose,
   selectedPlan = "pro",
+  initialError,
 }: SubscriptionModalProps) {
   const { user, appUser } = useAuth();
   const router = useRouter();
@@ -33,6 +35,27 @@ export default function SubscriptionModal({
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [errorMessage, setErrorMessage] = useState("");
   const [showEnterpriseForm, setShowEnterpriseForm] = useState(false);
+
+  // Initialize with error if provided
+  useEffect(() => {
+    if (isOpen) {
+      if (initialError) {
+        setErrorMessage(initialError);
+        // Show step 3 (Error state) or just step 1 with error? 
+        // User asked for "inline message", so maybe just step 1?
+        // Wait, SubscriptionModal displays errorMessage in step 3 (error state).
+        // Let's set step to 3 to display the error, or add inline error to step 1.
+        // Let's check step 1 UI for error. No error in step 1.
+        // Let's just set step to 3. The error screen has a "Try Again" button.
+        // The instruction says: "Show a brief inline message in the reopened modal (not a full dashboard banner) like 'Payment was not completed. You can try again below.'"
+        // If we set step to 3, it says "Something Went Wrong" -> "Payment was not completed. You can try again below." -> "Try Again" button. That is perfectly inline.
+        setStep(3);
+      } else {
+        setStep(1);
+        setErrorMessage("");
+      }
+    }
+  }, [isOpen, initialError]);
 
   if (!isOpen) return null;
 
@@ -101,6 +124,10 @@ export default function SubscriptionModal({
                   })
                 : "a future date"
             }.`
+          );
+        } else if (data.code === "paymongo_auth_failed") {
+          setErrorMessage(
+            "Payment service is not configured yet. Please notify the system administrator."
           );
         } else {
           setErrorMessage(data.error || "Could not create payment session. Please try again.");
@@ -175,92 +202,128 @@ export default function SubscriptionModal({
           </div>
         )}
 
-        {/* ── STEP 1: Plan Selection ── */}
+        {/* ── STEP 1: Plan Selection / Defense-in-depth Check ── */}
         {step === 1 && (
           <div className="p-6">
-            {/* Single selected plan display */}
-            <div className="mb-6">
-              {(() => {
-                const plan = SUBSCRIPTION_PLANS[selectedPlan];
-                const Icon = plan.icon;
-                const cumulativeFeatures = getCumulativeFeatures(selectedPlan);
+            {(() => {
+              // DEFENSE IN DEPTH: If this modal is somehow opened for a user
+              // who is ALREADY on an active paid plan (e.g. race condition bypass),
+              // do not show the payment UI at all. 
+              const activePaidPlans = ["Pro", "Enterprise", "Professional", "Unlimited"];
+              const currentPlan = appUser?.plan ?? "";
+              const isCurrentlyPaid = activePaidPlans.includes(currentPlan);
+              
+              let isExpired = false;
+              if (isCurrentlyPaid) {
+                const expiresAt = appUser?.subscriptionExpiresAt;
+                isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
+              }
 
+              // If they have an active paid plan, completely replace the checkout UI.
+              if (isCurrentlyPaid && !isExpired && selectedPlan !== "free") {
                 return (
-                  <div
-                    className={`w-full text-left p-4 rounded-xl border-2 ${plan.accent} border-opacity-100 shadow-lg ring-1 ring-indigo-500/30`}
-                  >
-                    <div className="flex items-start gap-4">
-                      {/* Icon */}
-                      <div
-                        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${plan.gradient} flex items-center justify-center flex-shrink-0 shadow-md`}
-                      >
-                        <Icon className="w-5 h-5 text-white" aria-hidden="true" />
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="font-bold text-white text-sm">{plan.name}</span>
-                          {plan.id === "pro" && (
-                            <span className="text-[10px] font-bold bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-wide">
-                              Popular
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400 mb-1">{plan.tagline}</p>
-                        <p className={`text-xs font-medium ${plan.badgeColor}`}>{plan.requestLimitDisplay}</p>
-                      </div>
-
-                      {/* Price */}
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-lg font-extrabold text-white">{plan.priceDisplay}</div>
-                        <div className="text-xs text-slate-500">{plan.billingCycle}</div>
-                      </div>
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Check className="w-8 h-8 text-emerald-400" />
                     </div>
-
-                    {/* Features (always shown for the selected plan) */}
-                    <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 gap-1">
-                      {cumulativeFeatures.header && (
-                        <div className="text-[11px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">
-                          {cumulativeFeatures.header}
-                        </div>
-                      )}
-                      {cumulativeFeatures.features.map((feature: string) => (
-                        <div key={feature} className="flex items-center gap-2">
-                          <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden="true" />
-                          <span className="text-xs text-slate-300">{feature}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">You're already subscribed</h3>
+                    <p className="text-sm text-slate-400 mb-8">
+                      Your account already has an active Pro subscription. You don't need to pay again.
+                    </p>
+                    <button
+                      onClick={() => { onClose(); router.push("/dashboard"); }}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg"
+                    >
+                      Go to Dashboard →
+                    </button>
                   </div>
                 );
-              })()}
-            </div>
+              }
 
-            {/* CTA */}
-            <button
-              onClick={handleContinue}
-              id="subscription-modal-continue-btn"
-              className={`
-                w-full font-bold py-3.5 rounded-xl transition-all shadow-lg text-white
-                ${selectedPlan === "pro"
-                  ? "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-indigo-500/30"
-                  : selectedPlan === "enterprise"
-                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
-                  : "bg-slate-700 hover:bg-slate-600"
-                }
-              `}
-            >
-              {selectedPlan === "pro" && "Pay with GCash →"}
-              {selectedPlan === "free" && "Use Free Plan"}
-              {selectedPlan === "enterprise" && "Contact Sales →"}
-            </button>
+              // Normal Plan Selection UI
+              const plan = SUBSCRIPTION_PLANS[selectedPlan];
+              const Icon = plan.icon;
+              const cumulativeFeatures = getCumulativeFeatures(selectedPlan);
 
-            {selectedPlan === "pro" && (
-              <p className="text-xs text-slate-500 text-center mt-3">
-                🔒 Secure checkout via PayMongo · GCash · DPA 2012 Compliant
-              </p>
-            )}
+              return (
+                <>
+                  <div className="mb-6">
+                    <div
+                      className={`w-full text-left p-4 rounded-xl border-2 ${plan.accent} border-opacity-100 shadow-lg ring-1 ring-indigo-500/30`}
+                    >
+                      <div className="flex items-start gap-4">
+                        {/* Icon */}
+                        <div
+                          className={`w-10 h-10 rounded-xl bg-gradient-to-br ${plan.gradient} flex items-center justify-center flex-shrink-0 shadow-md`}
+                        >
+                          <Icon className="w-5 h-5 text-white" aria-hidden="true" />
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="font-bold text-white text-sm">{plan.name}</span>
+                            {plan.id === "pro" && (
+                              <span className="text-[10px] font-bold bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-wide">
+                                Popular
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400 mb-1">{plan.tagline}</p>
+                          <p className={`text-xs font-medium ${plan.badgeColor}`}>{plan.requestLimitDisplay}</p>
+                        </div>
+
+                        {/* Price */}
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-lg font-extrabold text-white">{plan.priceDisplay}</div>
+                          <div className="text-xs text-slate-500">{plan.billingCycle}</div>
+                        </div>
+                      </div>
+
+                      {/* Features (always shown for the selected plan) */}
+                      <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 gap-1">
+                        {cumulativeFeatures.header && (
+                          <div className="text-[11px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">
+                            {cumulativeFeatures.header}
+                          </div>
+                        )}
+                        {cumulativeFeatures.features.map((feature: string) => (
+                          <div key={feature} className="flex items-center gap-2">
+                            <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden="true" />
+                            <span className="text-xs text-slate-300">{feature}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CTA */}
+                  <button
+                    onClick={handleContinue}
+                    id="subscription-modal-continue-btn"
+                    className={`
+                      w-full font-bold py-3.5 rounded-xl transition-all shadow-lg text-white
+                      ${selectedPlan === "pro"
+                        ? "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-indigo-500/30"
+                        : selectedPlan === "enterprise"
+                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
+                        : "bg-slate-700 hover:bg-slate-600"
+                      }
+                    `}
+                  >
+                    {selectedPlan === "pro" && "Pay with GCash →"}
+                    {selectedPlan === "free" && "Use Free Plan"}
+                    {selectedPlan === "enterprise" && "Contact Sales →"}
+                  </button>
+
+                  {selectedPlan === "pro" && (
+                    <p className="text-xs text-slate-500 text-center mt-3">
+                      🔒 Secure checkout via PayMongo · GCash · DPA 2012 Compliant
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 

@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -23,9 +23,11 @@ import notificationsRouter from './routes/notifications.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
 import adminRouter from './routes/admin.js';
+import contactRouter from './routes/contact.js';
 
 
-dotenv.config();
+
+
 
 const app = express();
 const PORT = process.env.API_PORT || 5000;
@@ -124,6 +126,7 @@ app.use('/api/v1/api-keys', apiKeysRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/checkout', checkoutRouter);
 app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/contact', contactRouter);
 
 // --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
 app.use('/api/webhooks', webhooksRouter);

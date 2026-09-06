@@ -22,7 +22,7 @@ const dashboardRoutes = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Products", href: "/dashboard/products", icon: Package },
   { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
-  { name: "Documentation", href: "/dashboard/docs", icon: BookOpen },
+  { name: "Documentation", href: "/docs", icon: BookOpen },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Privacy", href: "/dashboard/privacy", icon: Shield },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -32,7 +32,7 @@ const dashboardRoutes = [
 function getPlanDisplayName(plan: string | undefined): string {
   if (!plan) return "Free";
   const planLower = plan.toLowerCase();
-  if (planLower === "starter" || planLower === "free") return "Free";
+  if (planLower === "starter" || planLower === "free" || planLower === "deleted") return "Free";
   if (planLower === "pro" || planLower === "professional") return "Pro";
   if (planLower === "enterprise" || planLower === "unlimited") return "Enterprise";
   return plan.charAt(0).toUpperCase() + plan.slice(1); // fallback with capitalized first letter
@@ -130,7 +130,20 @@ export default function Sidebar() {
               <span className="text-sm font-medium text-slate-200 truncate w-32" title={user?.email || "User"}>
                 {user?.email || "User"}
               </span>
-              <span className="text-xs text-slate-500 truncate w-32">{getPlanDisplayName(appUser?.plan)} Plan</span>
+              {(() => {
+                const planName = getPlanDisplayName(appUser?.plan);
+                const isPro = planName === "Pro" || planName === "Enterprise";
+                return (
+                  <span className={cn(
+                    "text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded-full w-fit mt-1 border",
+                    isPro 
+                      ? "bg-indigo-500/15 text-indigo-400 border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]" 
+                      : "bg-slate-800/80 text-slate-400 border-slate-700"
+                  )}>
+                    {planName} Plan
+                  </span>
+                );
+              })()}
             </div>
           </div>
         )}

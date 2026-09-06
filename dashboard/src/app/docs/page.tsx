@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { 
-  BookOpen, 
+  BookOpen,
   Copy, 
   CheckCircle2,
   Zap,
@@ -10,7 +10,6 @@ import {
   Code,
   AlertCircle,
   ExternalLink,
-  Terminal
 } from "lucide-react";
 
 export default function DocsPage() {
@@ -70,20 +69,19 @@ curl_close($ch);
   };
 
   return (
-    <div className="w-full px-6 lg:px-8 flex flex-col h-[calc(100vh-6rem)] overflow-hidden">
-      
-      {/* 1. Header & Top Navigation (Fixed, Non-Scrolling) */}
-      <div className="flex-shrink-0 pt-2 pb-4 border-b border-slate-800/60 mb-6">
-        {/* Title & Subtitle */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold flex items-center gap-3 text-white">
-            <span className="text-4xl">📖</span> API Documentation
-          </h1>
-          <p className="text-slate-400 mt-2">Complete guide to integrate InventaAPI into your application</p>
+    <div className="w-full px-6 lg:px-8 pb-10 space-y-8">
+
+        {/* Header */}
+        <div>
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 mb-6">
+            <BookOpen className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-2">API Documentation</h1>
+          <p className="text-slate-400">Complete guide to integrate InventaAPI into your application</p>
         </div>
 
-        {/* Top Navigation Buttons */}
-        <div className="flex flex-wrap items-center gap-3 pb-6 border-b border-slate-800/60">
+        {/* Section Navigation */}
+        <div className="flex flex-wrap items-center gap-3">
           {sections.map((section) => {
             const Icon = section.icon;
             return (
@@ -102,10 +100,9 @@ curl_close($ch);
             );
           })}
         </div>
-      </div>
 
-      {/* 2. Main Content Area (Isolated Internal Scroll without visual scrollbar) */}
-      <div className="flex-1 overflow-y-auto pr-4 pb-12 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        {/* 2. Main Content Area */}
+        <div className="space-y-6">
 
         {/* Quick Start Section */}
         {activeSection === "quick-start" && (
@@ -619,7 +616,7 @@ curl_close($ch);
 
 
       {/* 3. Bottom Footer Link */}
-      <div className="mt-12 pt-6 border-t border-slate-900 text-center">
+      <div className="mt-12 pt-8 border-t border-slate-900 text-center">
         <span className="text-xs text-slate-500 uppercase tracking-wider mr-2">Need Help?</span>
         <a href="mailto:support@inventaapi.com" className="text-xs text-indigo-400 hover:underline inline-flex items-center gap-1">
           Contact Support <ExternalLink className="w-3 h-3" />

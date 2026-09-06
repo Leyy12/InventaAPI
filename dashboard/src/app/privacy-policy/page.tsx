@@ -4,13 +4,13 @@ import { ArrowLeft, Shield, FileText, Database, Lock } from "lucide-react";
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-[#020817] text-slate-300 py-12 px-6">
-      <div className="max-w-3xl mx-auto space-y-8">
+      <div className="w-full max-w-7xl mx-auto space-y-8">
         
         {/* Header */}
         <div>
-          <Link href="/signup" className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 mb-6 transition-colors">
+          <Link href="/#footer" className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 mb-6 transition-colors">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Sign Up
+            Back to Home
           </Link>
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 mb-6">
             <Shield className="w-6 h-6 text-indigo-400" />

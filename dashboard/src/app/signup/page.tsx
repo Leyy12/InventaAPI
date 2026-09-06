@@ -1,23 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, setDoc, serverTimestamp, writeBatch, collection } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
 const BUSINESS_SEGMENTS = [
-  "Hardware Store",
-  "Grocery / SME Retail",
-  "Pharmacy / Drugstore",
-  "Clothing / Boutique",
-  "General Merchandise"
+  "Grocery",
+  "Pharmacy",
+  "Hardware"
 ];
 
-export default function SignupPage() {
+function SignupPageInner() {
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -32,6 +30,10 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Preserve any pending plan intent from the landing page (e.g. pendingPlan=pro)
+  // so after signup the user is immediately taken to the plan chooser.
+  const pendingPlan = searchParams.get("pendingPlan");
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +86,13 @@ export default function SignupPage() {
       // Sign out immediately — Firebase auto-logs in after createUser,
       // but we want the user to explicitly log in themselves.
       await signOut(auth);
-      router.push("/?registered=true");
+      // Forward the pending plan intent back to the landing page.
+      // ?registered=true auto-opens the LoginModal; ?choosePlan=true then
+      // opens the SubscriptionModal after the user logs in.
+      const redirectUrl = pendingPlan && pendingPlan !== "free"
+        ? `/?registered=true&choosePlan=true`
+        : `/?registered=true`;
+      router.push(redirectUrl);
     } catch (err: any) {
       console.error("Signup error:", err);
       if (err.code === "auth/email-already-in-use") {
@@ -250,12 +258,15 @@ export default function SignupPage() {
                   value={formData.businessSegment}
                   onChange={handleChange}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-8 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all appearance-none"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-10 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all appearance-none cursor-pointer"
                 >
                   {BUSINESS_SEGMENTS.map(segment => (
                     <option key={segment} value={segment}>{segment}</option>
                   ))}
                 </select>
+                <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
               </div>
             </div>
           </div>
@@ -300,5 +311,13 @@ export default function SignupPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupPageInner />
+    </Suspense>
   );
 }

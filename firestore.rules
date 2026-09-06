@@ -195,6 +195,21 @@ service cloud.firestore {
     }
 
     // ───────────────────────────────────────────────────────────────────────
+    // CONTACT INQUIRIES COLLECTION
+    // ───────────────────────────────────────────────────────────────────────
+    // Submitted via the public /contact form. Writes go through the backend
+    // /api/v1/contact endpoint (Admin SDK) so anonymous visitors can submit.
+    // Only admins can view/manage; no client-side writes are permitted.
+
+    match /contact_inquiries/{inquiryId} {
+      // Only admins can read contact inquiries
+      allow read: if isAdmin();
+
+      // No client writes — Admin SDK (routes/contact.js) handles all writes.
+      allow create, update, delete: if false;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
     // NOTIFICATIONS COLLECTION
     // ───────────────────────────────────────────────────────────────────────
     // userId == "admin"  → only admins can read

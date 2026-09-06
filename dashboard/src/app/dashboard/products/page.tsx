@@ -20,9 +20,18 @@ interface CartSummary {
 
 // ==================== CONSTANTS ====================
 
-const SEGMENTS = ["All", "Pharmacy", "Hardware", "Grocery"] as const;
 const COPY_REDIRECT_DELAY = 1500;
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
+
+// Treat 'deleted', 'free', 'starter' all as Free plan.
+// The DB may store 'deleted' for churned/reset free accounts — they still
+// only have access to their selected segment, same as a normal Free user.
+function isFreePlan(plan: string | undefined): boolean {
+  if (!plan) return true; // no plan at all = Free-tier access
+  const p = plan.toLowerCase();
+  return p === "free" || p === "starter" || p === "deleted";
+}
+
 
 // ==================== MAIN COMPONENT ====================
 
@@ -58,7 +67,7 @@ export default function ProductCatalogPage() {
 
   // Sync segment for Free users
   useEffect(() => {
-    if (appUser?.plan === "Free" && appUser?.selectedSegment) {
+    if (isFreePlan(appUser?.plan) && appUser?.selectedSegment) {
       setActiveSegment(appUser.selectedSegment);
     }
   }, [appUser]);
@@ -84,7 +93,7 @@ export default function ProductCatalogPage() {
     let filtered = products;
     
     // Strict segment filter for Free users
-    if (appUser?.plan === "Free" && appUser?.selectedSegment) {
+    if (isFreePlan(appUser?.plan) && appUser?.selectedSegment) {
       filtered = filtered.filter(p => p.segment === appUser.selectedSegment);
     } else if (activeSegment !== "All") {
       filtered = filtered.filter(p => p.segment === activeSegment);
@@ -469,12 +478,12 @@ DAAS_API_KEY=${generatedKey}
             id="category-filter"
             value={activeSegment}
             onChange={(e) => setActiveSegment(e.target.value)}
-            disabled={appUser?.plan === "Free"}
+            disabled={isFreePlan(appUser?.plan)}
             className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px] disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Filter products by category"
           >
-            {appUser?.plan === "Free" ? (
-              <option value={appUser.selectedSegment}>{appUser.selectedSegment}</option>
+            {isFreePlan(appUser?.plan) ? (
+              <option value={appUser?.selectedSegment}>{appUser?.selectedSegment}</option>
             ) : (
               <>
                 <option value="All">All Categories</option>

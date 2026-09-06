@@ -32,18 +32,19 @@ function getPayMongoAuthHeader() {
 // POST /api/v1/checkout/create-gcash
 // ---------------------------------------------------------------------------
 /**
- * Creates a PayMongo Payment Link for GCash.
+ * Creates a PayMongo Checkout Session for GCash.
  * The dashboard calls this endpoint, then redirects the user to the returned URL.
  *
  * Body: { userId: string, userEmail: string }
- * Response: { checkoutUrl: string, linkId: string }
+ * Response: { checkoutUrl: string, sessionId: string }
  *
  * Flow:
- *   1. Dashboard calls this → gets checkoutUrl
+ *   1. Dashboard calls this → gets checkoutUrl (checkout_sessions API)
  *   2. User is redirected to checkoutUrl (PayMongo hosted GCash page)
  *   3. User pays via GCash
- *   4. PayMongo fires "payment.paid" webhook → /api/webhooks/paymongo
- *   5. Webhook verifies and updates Firestore
+ *   4. PayMongo fires "payment.paid" / "checkout_session.payment.paid"
+ *      webhook → /api/webhooks/paymongo
+ *   5. Webhook verifies HMAC signature, dedupes, and updates Firestore
  */
 router.post('/create-gcash', async (req, res) => {
     const { userId, userEmail } = req.body;
@@ -75,111 +76,88 @@ router.post('/create-gcash', async (req, res) => {
         return res.status(500).json({ error: 'Failed to verify user.' });
     }
 
-    // --- Create PayMongo Payment Link ---
+    // --- Create PayMongo Checkout Session (hosted GCash page) ---
     try {
         const authHeader = getPayMongoAuthHeader();
 
         // Determine redirect URLs
         const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
         const successUrl = `${dashboardUrl}/dashboard?payment=success`;
-        const failedUrl = `${dashboardUrl}/dashboard?payment=failed`;
+        const failedUrl = `${dashboardUrl}/?payment=cancelled`;
 
+        // PayMongo Checkout Sessions API — works for one-time subscription payments.
+        // Response contains `data.attributes.checkout_url` to redirect the user to.
         const paymongoPayload = {
             data: {
                 attributes: {
-                    amount: PRO_PLAN_AMOUNT_CENTAVOS,
-                    description: 'InventaAPI Pro Plan — 1 Month Subscription',
-                    currency: 'PHP',
-                    payment_method_allowed: ['gcash'],
-                    payment_method_options: {
-                        card: { request_three_d_secure: 'any' },
-                    },
+                    line_items: [
+                        {
+                            currency: 'PHP',
+                            amount: PRO_PLAN_AMOUNT_CENTAVOS,
+                            name: 'InventaAPI Pro Plan',
+                            description: '1 Month Subscription — 5,000 API requests/day',
+                            quantity: 1,
+                        },
+                    ],
+                    payment_method_types: ['gcash'],
+                    success_url: successUrl,
+                    cancel_url: failedUrl,
                     metadata: {
                         userId,
                         userEmail: userEmail || '',
                         plan: 'Pro',
                     },
-                    redirect: {
-                        success: successUrl,
-                        failed: failedUrl,
-                    },
-                    // Expire link after 24 hours if not paid
-                    checkout_session: {
-                        line_items: [
-                            {
-                                currency: 'PHP',
-                                amount: PRO_PLAN_AMOUNT_CENTAVOS,
-                                name: 'InventaAPI Pro Plan',
-                                description: '1 Month Subscription — 5,000 API requests/day',
-                                quantity: 1,
-                            },
-                        ],
-                        payment_method_types: ['gcash'],
-                        success_url: successUrl,
-                        cancel_url: failedUrl,
-                        metadata: {
-                            userId,
-                            userEmail: userEmail || '',
-                        },
-                    },
+                    statement_descriptor: 'InventaAPI Pro Plan',
+                    send_email_receipt: false,
+                    show_description: true,
+                    show_line_items: true,
                 },
             },
         };
 
-        // Use PayMongo Links API (simpler than Payment Intents for one-time payments)
-        const pmResponse = await fetch(`${PAYMONGO_BASE_URL}/links`, {
+        const pmResponse = await fetch(`${PAYMONGO_BASE_URL}/checkout_sessions`, {
             method: 'POST',
             headers: {
                 Authorization: authHeader,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
-            body: JSON.stringify({
-                data: {
-                    attributes: {
-                        amount: PRO_PLAN_AMOUNT_CENTAVOS,
-                        description: 'InventaAPI Pro Plan — 1 Month Subscription (GCash)',
-                        currency: 'PHP',
-                        payment_method_allowed: ['gcash'],
-                        metadata: {
-                            userId,
-                            userEmail: userEmail || '',
-                            plan: 'Pro',
-                        },
-                        redirect: {
-                            success: successUrl,
-                            failed: failedUrl,
-                        },
-                    },
-                },
-            }),
+            body: JSON.stringify(paymongoPayload),
         });
 
         const pmData = await pmResponse.json();
 
         if (!pmResponse.ok) {
             console.error('[CHECKOUT] ❌ PayMongo API error:', JSON.stringify(pmData));
+
+            // Give the frontend a clear, actionable message for common failures.
+            let detail = pmData?.errors?.[0]?.detail || 'Unknown error';
+            if (pmResponse.status === 401) {
+                detail = 'PayMongo authentication failed. The PAYMONGO_SECRET_KEY in .env is invalid or still a placeholder.';
+            }
+
             return res.status(502).json({
                 error: 'PayMongo returned an error.',
-                details: pmData?.errors?.[0]?.detail || 'Unknown error',
+                code: pmResponse.status === 401 ? 'paymongo_auth_failed' : 'paymongo_api_error',
+                details: detail,
             });
         }
 
-        const linkAttributes = pmData?.data?.attributes;
-        const checkoutUrl = linkAttributes?.checkout_url;
-        const linkId = pmData?.data?.id;
+        const sessionData = pmData?.data;
+        const checkoutUrl = sessionData?.attributes?.checkout_url;
+        const sessionId = sessionData?.id;
 
         if (!checkoutUrl) {
             console.error('[CHECKOUT] ❌ No checkout_url in PayMongo response:', JSON.stringify(pmData));
             return res.status(502).json({ error: 'Failed to get checkout URL from PayMongo.' });
         }
 
-        console.log(`[CHECKOUT] ✅ Created payment link for user ${userId}. Link ID: ${linkId}`);
+        console.log(`[CHECKOUT] ✅ Created checkout session for user ${userId}. Session ID: ${sessionId}`);
 
         return res.status(200).json({
             success: true,
             checkoutUrl,
-            linkId,
+            sessionId: sessionId || '',
             amount: PRO_PLAN_AMOUNT_CENTAVOS,
             currency: 'PHP',
         });

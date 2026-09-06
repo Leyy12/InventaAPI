@@ -12,7 +12,11 @@ import {
   PackageSearch,
   Terminal,
   Zap,
-  ChevronRight
+  ChevronRight,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  X
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -22,17 +26,63 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 
 export default function DashboardPage() {
-  const { appUser, loading } = useAuth();
+  const { appUser, loading, refreshUserDoc } = useAuth();
   const router = useRouter();
   
   const [activeKeysCount, setActiveKeysCount] = useState(0);
   const [todaysCalls, setTodaysCalls] = useState(0);
+  const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
 
+
+  // Handle PayMongo redirect result (?payment=success | ?payment=failed).
+  // Runs once on mount; strips the param via history.replaceState so a refresh
+  // does not re-show the banner, then verifies the Pro upgrade in Firestore.
   useEffect(() => {
-    if (!loading && appUser?.plan === "Free" && !appUser?.selectedSegment) {
-      router.replace("/dashboard/welcome");
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("payment");
+    if (status !== "success" && status !== "failed") return;
+
+    window.history.replaceState({}, "", "/dashboard");
+
+    if (status === "failed") {
+      setPaymentStatus("failed");
+      return;
     }
-  }, [loading, appUser, router]);
+
+    setPaymentStatus("verifying");
+
+    let cancelled = false;
+    let tries = 0;
+
+    const pollPlanStatus = async () => {
+      if (cancelled) return;
+
+      const fresh = await refreshUserDoc();
+
+      // Case-insensitive plan check — webhook may write "pro" or "Pro"
+      if (fresh && fresh.plan?.toLowerCase() === "pro") {
+        setPaymentStatus("success");
+        return;
+      }
+
+      tries += 1;
+      if (tries < 10) {
+        // Webhook delivery can lag a few seconds behind the redirect — keep polling.
+        setTimeout(pollPlanStatus, 2000);
+      } else if (!cancelled) {
+        // Payment was confirmed by PayMongo but the Pro flag has not landed yet.
+        // Usually happens in local dev where webhooks can't hit localhost.
+        setPaymentStatus("delayed");
+      }
+    };
+
+    pollPlanStatus();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!appUser?.uid) return;
@@ -81,8 +131,84 @@ export default function DashboardPage() {
 
   const isPro = appUser?.plan === "Pro";
 
+  const paymentBanner =
+    paymentStatus === "verifying" ? (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-5 py-4 flex items-center gap-3">
+        <Loader2 className="w-5 h-5 text-amber-400 animate-spin shrink-0" aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-amber-300">Payment received — confirming your Pro upgrade...</p>
+          <p className="text-xs text-amber-400/80 mt-0.5">
+            Your Pro access should activate within a minute. The page will update automatically.
+          </p>
+        </div>
+        <button
+          onClick={() => setPaymentStatus("none")}
+          className="p-1.5 text-amber-400/70 hover:text-amber-200 rounded-lg hover:bg-amber-500/10 transition-colors"
+          aria-label="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    ) : paymentStatus === "success" ? (
+      <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-5 py-4 flex items-center gap-3">
+        <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-emerald-300">Payment successful — your Pro plan is now active!</p>
+          <p className="text-xs text-emerald-400/80 mt-0.5">
+            5,000 requests/day · GCash · Expires {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "in 30 days"}
+          </p>
+        </div>
+        <button
+          onClick={() => setPaymentStatus("none")}
+          className="p-1.5 text-emerald-400/70 hover:text-emerald-200 rounded-lg hover:bg-emerald-500/10 transition-colors"
+          aria-label="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    ) : paymentStatus === "failed" ? (
+      <div className="rounded-xl border border-rose-500/30 bg-rose-950/40 px-5 py-4 flex items-center gap-3">
+        <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-rose-300">Payment was not completed.</p>
+          <p className="text-xs text-rose-400/80 mt-0.5">
+            You were not charged and your plan was <strong>NOT</strong> upgraded. You can try subscribing again anytime.
+          </p>
+        </div>
+        <button
+          onClick={() => setPaymentStatus("none")}
+          className="p-1.5 text-rose-400/70 hover:text-rose-200 rounded-lg hover:bg-rose-500/10 transition-colors"
+          aria-label="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    ) : paymentStatus === "delayed" ? (
+      <div className="rounded-xl border border-blue-500/30 bg-blue-950/40 px-5 py-4 flex flex-col md:flex-row md:items-center gap-4 justify-between">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-blue-300">Payment received but upgrade is delayed</p>
+            <p className="text-xs text-blue-400/80 mt-0.5">
+              If you are testing locally, PayMongo webhooks cannot reach your localhost to upgrade your account.
+              You must run the test script in your terminal to force the upgrade.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs font-medium rounded-lg transition-colors whitespace-nowrap"
+        >
+          Check Again
+        </button>
+      </div>
+    ) : null;
+
   return (
     <div className="w-full px-6 lg:px-8 pb-12 animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+
+      {/* ─── Payment Status Banner (from PayMongo redirect) ─── */}
+      {paymentBanner}
 
       {/* ─── Header ─── */}
       <div>
@@ -184,7 +310,7 @@ export default function DashboardPage() {
             </Link>
 
             <Link
-              href="/dashboard/docs"
+              href="/docs"
               className="flex items-center gap-4 rounded-xl border border-slate-700/50 bg-[#0d1526] px-5 py-4 hover:border-cyan-500/30 hover:bg-[#101c30] transition-all group"
             >
               <div className="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700/60 flex items-center justify-center shrink-0 text-slate-400 group-hover:text-cyan-400 group-hover:border-cyan-500/30 transition-colors">
