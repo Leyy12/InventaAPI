@@ -30,8 +30,6 @@ function LandingPageInner() {
 
   console.log("[LANDING PAGE] Rendered - user:", !!user, "loading:", loading);
 
-  console.log("[LANDING PAGE] Rendered - user:", !!user, "loading:", loading);
-
   // Check for error query params from admin panel redirects.
   // Each handler runs ONCE, then the consumed params are stripped from the URL
   // so a reload/back-navigation does not re-open the modals or toasts.
@@ -161,28 +159,24 @@ function LandingPageInner() {
       return;
     }
 
-    // Auth is settled: decide NOW (and always reset both modals first, so a second
-    // click after closing re-opens the correct one even if pendingPlan didn't change).
-    setPendingPlan(plan);
+    // Auth is settled: resolve synchronously here — do NOT set pendingPlan before
+    // the auth decision, because that schedules the useEffect (lines 107-152) as a
+    // second actor on the same click. If Firebase local-persistence had a cached
+    // token that makes `user` briefly non-null, the effect's user-path would race
+    // and open SubscriptionModal even for a genuinely logged-out visitor.
+    // Strategy:
+    //   • Logged-in  → clear pendingPlan, open the right modal immediately, return.
+    //   • Logged-out → set pendingPlan (so post-login effect picks it up), open
+    //                  LoginModal, return.
     setShowLoginModal(false);
     setShowSubscriptionModal(false);
 
-    // ── PRE-CHECK: already-active Pro subscription ──────────────────────────
-    // Only applies when the visitor is logged in AND clicking a paid plan CTA.
-    // If their current plan is already Pro (or Enterprise) AND the subscription
-    // has not yet expired, block the checkout flow entirely and show a friendly
-    // informational modal instead.  This prevents the UX anti-pattern where the
-    // user goes all the way through the GCash transition screen only to hit a
-    // 409 "already subscribed" error from the backend.
-    //
-    // Expiry check: subscriptionExpiresAt is an ISO string written by the PayMongo
-    // webhook.  If it's missing (legacy accounts or free trials with no expiry
-    // recorded) we treat the subscription as active — the backend 409 guard is
-    // still the final safety net, but we avoid showing the checkout UI.
-    //
-    // Expired-Pro bypass: if the expiry date is in the past, we let the user
-    // proceed to the normal checkout flow so they can renew/resubscribe.
+    // ── LOGGED-IN PATH ───────────────────────────────────────────────────────
     if (user && plan !== "free") {
+      // Logged-in: no pendingPlan needed — we decide synchronously and return.
+      // Clear any stale pendingPlan from a previous deferred click.
+      setPendingPlan(null);
+
       const currentPlan: string = appUser?.plan ?? "";
       const isCurrentlyPaid = ACTIVE_PAID_PLANS.includes(currentPlan);
 
@@ -192,20 +186,23 @@ function LandingPageInner() {
 
         if (!isExpired) {
           // Active Pro/Enterprise — show the "already subscribed" modal, skip checkout.
-          setPendingPlan(null);
           setShowAlreadyProModal(true);
           return;
         }
         // Expired Pro — fall through to normal checkout so they can renew.
       }
 
-      // Free user (or expired Pro) — open the checkout/subscription modal.
+      // Free user (or expired Pro) logged in — open the checkout/subscription modal.
+      setSelectedPlan(plan);
       setShowSubscriptionModal(true);
       return;
     }
 
-    // Logged out, or the Free plan CTA: open the login modal first; after a
-    // successful login the LoginModal handles onboarding and routing.
+    // ── LOGGED-OUT PATH (or Free plan CTA) ──────────────────────────────────
+    // Set pendingPlan NOW (after the auth check) so the post-login useEffect
+    // knows which plan to open SubscriptionModal for once the user logs in.
+    // This is the ONLY place pendingPlan should be set in the auth-settled path.
+    setPendingPlan(plan);
     setShowLoginModal(true);
   };
 

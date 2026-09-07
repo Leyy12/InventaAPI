@@ -156,11 +156,8 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
 
       // Normal customer login
       const plan = userData?.plan;
-      const existingSegment = (userData?.selectedSegment as SegmentId | undefined) ?? "";
       // Plan checks are case-insensitive and legacy-tolerant: the DB may hold
-      // "free"/"Free", "pro"/"Pro", "Starter", etc. (scripts like update-leah-plan
-      // write lowercase values), so the exact `=== "Free"` checks wrongly classified
-      // those accounts as "no plan" and opened the Pro plan chooser after login.
+      // "free"/"Free", "pro"/"Pro", "Starter", etc.
       const normalizedPlan = String(plan ?? "").toLowerCase();
       const hasSubscription =
         userData?.subscription_status === "active" ||
@@ -172,38 +169,70 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
         normalizedPlan === "professional" ||
         normalizedPlan === "enterprise";
 
-      console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "existingSegment:", existingSegment);
-
-      // Segment handling is plan-aware (post-auth, now that we know the account's plan):
-      // - Pro/Enterprise (and legacy paid tiers) are NOT gated — they have access to
-      //   all segments; the upfront dropdown is hidden again once they're authenticated.
-      // - Free/Starter (or unknown-plan) accounts WITHOUT a saved segment must choose
-      //   one before entering — the dropdown is already visible upfront; login stays
-      //   blocked until a segment is selected and saved.
+      // ── Account Type vs Subscription Plan ────────────────────────────────
+      // These are SEPARATE concerns:
+      //   Account Type (role): "Developer" / "admin" — set at signup, never auto-changed.
+      //   Subscription Plan:   "Free" / "Pro" / etc. — changed only by PayMongo webhook.
+      //
+      // Upgrading to Pro ONLY changes the subscription plan. It does NOT change the
+      // account type and must NOT trigger Business Segment validation.
       const paidPlans = ["pro", "enterprise", "professional", "unlimited"];
       const isPaidPlan = paidPlans.includes(normalizedPlan);
       const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "enterprise";
       const chosenSegment = segment as SegmentId;
+
+      // existingSegment: check selectedSegment first (set by the login flow), then
+      // fall back to businessSegment (always written at signup). This prevents new
+      // Consumer users — who have businessSegment but never set selectedSegment —
+      // from being falsely blocked as "no segment" users.
+      const rawSelectedSegment = userData?.selectedSegment as SegmentId | undefined;
+      const rawBusinessSegment = userData?.businessSegment as SegmentId | undefined;
+      const existingSegment: SegmentId | "" = rawSelectedSegment || rawBusinessSegment || "";
+
+      console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "existingSegment:", existingSegment, "isPaidPlan:", isPaidPlan);
+
+      // ── Business Segment Validation ───────────────────────────────────────
+      // Determine Account Type based on role
+      const roleLower = userData?.role?.toLowerCase() || "developer";
+      const accountType = roleLower === "business" ? "Business" : "Consumer";
       
-      // A segment pick is needed IF:
-      // 1. They are currently on a Free plan AND
-      // 2. They don't already have a segment saved AND
-      // 3. They are NOT currently in the middle of a Pro/Enterprise upgrade flow.
-      // (If they are upgrading, they are about to buy full access, so don't block them).
-      const needsSegmentPick = !isPaidPlan && !existingSegment && !isUpgradeIntent;
+      const isFreePlan = normalizedPlan === "free" || normalizedPlan === "starter" || normalizedPlan === "deleted" || !normalizedPlan;
+      const isProPlan = normalizedPlan === "pro" || normalizedPlan === "professional";
+      const isEnterprisePlan = normalizedPlan === "enterprise" || normalizedPlan === "unlimited";
+
+      let needsSegmentPick = false;
+
+      // Ensure Account Type and Subscription Plan remain separate and follow strict rules
+      if (accountType === "Consumer") {
+        if (isFreePlan) {
+          // IF Account Type = Consumer AND Plan = Free
+          // → Business Segment REQUIRED
+          needsSegmentPick = !existingSegment && !isUpgradeIntent;
+        } else if (isProPlan) {
+          // IF Account Type = Consumer AND Plan = Pro
+          // → Business Segment NOT REQUIRED
+          needsSegmentPick = false;
+        } else if (isEnterprisePlan) {
+          // IF Account Type = Consumer AND Plan = Enterprise
+          // → Follow the intended Enterprise flow (historically, no rigid segment blocks)
+          needsSegmentPick = false; 
+        }
+      } else if (accountType === "Business") {
+        // IF Account Type = Business
+        // → Apply Business Segment validation only if required by the specific Business account flow
+        needsSegmentPick = false; // Default off unless required by specific business flows
+      }
 
       if (needsSegmentPick && !chosenSegment) {
-        // REJECT: A Free/Starter account with no saved segment cannot enter until it
-        // picks one. The dropdown is ALREADY visible upfront (all non-upgrade logins
-        // show it), so no reveal is needed here — just block and keep it on screen.
+        // Block login if no Business Segment
         setSegmentBlocked(true);
+        setShowSegment(true); // ensure dropdown is visible if it wasn't already
         setError("Please select your business segment to continue. Login is blocked until a segment is chosen.");
         setLoading(false);
         return;
       }
 
-      // Persist the segment only for accounts that actually need it (Free without one).
-      // Paid accounts are never written to here — an existing segment (if any) stays untouched.
+      // Persist the segment only if it was required and just picked in this modal.
       if (needsSegmentPick && chosenSegment) {
         try {
           await updateDoc(doc(db, "users", user.uid), { selectedSegment: chosenSegment });

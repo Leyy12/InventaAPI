@@ -271,17 +271,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // so exact `=== "Free"` checks wrongly classified those as "no plan" and
       // bounced subscribers away from the dashboard.
       const normalizedPlan = String(currentAppUser?.plan ?? "").toLowerCase();
+      // A user has access if they are on ANY recognised plan (Free is the default tier
+      // and never requires an "active" subscription_status — that field only applies to
+      // paid plans). Only block access when there is genuinely no plan field at all.
       const hasActiveSubscription =
-        currentAppUser?.subscription_status === "active" ||
-        normalizedPlan === "free" ||         // Standard Free tier
-        normalizedPlan === "deleted" ||      // Churned/reset Free accounts — still Free-tier access
+        normalizedPlan === "free" ||         // Free tier — always allowed
+        normalizedPlan === "deleted" ||      // Churned Free accounts — still Free-tier access
         normalizedPlan === "starter" ||      // Legacy Starter plan
         normalizedPlan === "pro" ||          // Pro plan
         normalizedPlan === "unlimited" ||
         normalizedPlan === "professional" || // Legacy name (backward compat)
         normalizedPlan === "enterprise" ||
-        currentAppUser?.role === "admin" ||        // Admin users always have access
-        currentAppUser?.role === "Admin";          // Admin users always have access
+        currentAppUser?.role === "admin" ||  // Admin users always have access
+        currentAppUser?.role === "Admin" ||
+        currentAppUser?.subscription_status === "active"; // Paid plans with active status
       
       // BYPASS: If user is explicitly viewing landing page with ?view=landing, skip all redirects
       if (isLandingBypass && isLandingRoute) {
