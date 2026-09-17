@@ -54,6 +54,8 @@ app.use(helmet({
 const allowedOrigins = [
     'http://localhost:3000',  // Customer Dashboard (local)
     'http://localhost:3001',  // Admin Panel (local)
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
     // Production Vercel domains
     /\.vercel\.app$/,         // Any *.vercel.app subdomain
     /^https:\/\/inventa/,     // Any custom inventa* domain

@@ -72,11 +72,13 @@ curl_close($ch);
     <div className="w-full px-6 lg:px-8 pb-10 space-y-8">
 
         {/* Header */}
-        <div>
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 mb-6">
-            <BookOpen className="w-6 h-6 text-indigo-400" />
+        <div className="mb-6">
+          <div className="flex items-center gap-4 mb-2">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 shrink-0">
+              <BookOpen className="w-6 h-6 text-indigo-400" />
+            </div>
+            <h1 className="text-3xl font-bold text-white">API Documentation</h1>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">API Documentation</h1>
           <p className="text-slate-400">Complete guide to integrate InventaAPI into your application</p>
         </div>
 

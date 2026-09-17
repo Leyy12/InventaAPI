@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Mail, Send, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
 
 export default function ContactPage() {
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
 
   const [formData, setFormData] = useState({
     fullName: "",

@@ -2,62 +2,15 @@
 
 import { useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
-import { Shield, Download, Trash2, AlertTriangle, FileJson } from "lucide-react";
-import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { Shield, Trash2, AlertTriangle } from "lucide-react";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 
 export default function PrivacySettingsPage() {
-  const { user, appUser, logout } = useAuth();
-  const [downloading, setDownloading] = useState(false);
+  const { user, logout } = useAuth();
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const handleDownloadData = async () => {
-    if (!user || !appUser) return;
-    setDownloading(true);
-    
-    try {
-      // 1. Fetch API Keys
-      let apiKeys = [];
-      try {
-        const token = await user.getIdToken();
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
-        const keysRes = await fetch(`${apiUrl}/api/v1/api-keys?userId=${user.uid}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (keysRes.ok) {
-          const keysData = await keysRes.json();
-          apiKeys = keysData.keys || [];
-        }
-      } catch (err) {
-        console.error("Failed to fetch API keys for export:", err);
-      }
-
-
-
-      // Compile Data
-      const exportData = {
-        profile: appUser,
-        apiKeys,
-        exportedAt: new Date().toISOString(),
-        compliance: "Data Privacy Act of 2012 (RA 10173)"
-      };
-
-      // Trigger Download
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", `inventaapi_data_export_${user.uid}.json`);
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
-    } catch (error) {
-      console.error("Error exporting data:", error);
-      alert("Failed to export your data. Please try again later.");
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   const handleDeleteAccount = async () => {
     if (!user) return;
@@ -123,36 +76,7 @@ export default function PrivacySettingsPage() {
         <p className="text-slate-400">Manage your data in compliance with the Data Privacy Act of 2012</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
-        {/* Download Data Section */}
-        <div className="glass-card rounded-xl p-8 border border-slate-800 bg-slate-900/50">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-              <Download className="w-6 h-6 text-indigo-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">Download My Data</h2>
-              <p className="text-sm text-slate-400">Export a copy of your personal data</p>
-            </div>
-          </div>
-          
-          <p className="text-slate-300 mb-6 text-sm leading-relaxed">
-            Get a complete machine-readable (JSON) copy of your personal profile, subscription details, and generated API keys.
-          </p>
-
-          <button
-            onClick={handleDownloadData}
-            disabled={downloading}
-            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-colors disabled:opacity-50"
-          >
-            {downloading ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-            ) : (
-              <FileJson className="w-5 h-5" />
-            )}
-            {downloading ? "Preparing Export..." : "Download JSON Archive"}
-          </button>
-        </div>
+      <div className="grid grid-cols-1 gap-6 mt-8 max-w-2xl">
 
         {/* Delete Account Section */}
         <div className="glass-card rounded-xl p-8 border border-red-500/20 bg-red-500/5">

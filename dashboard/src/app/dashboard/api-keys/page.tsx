@@ -245,13 +245,6 @@ DAAS_API_KEY=${keyStr}
           </h1>
           <p className="text-slate-400">Manage your authentication credentials for API access</p>
         </div>
-        <button
-          onClick={() => setShowGenerateModal(true)}
-          className="px-4 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          Generate New Key
-        </button>
       </div>
 
       {/* Security Warning Banner */}

@@ -60,7 +60,7 @@ export default function SubscriptionModal({
   if (!isOpen) return null;
 
   const currentPlan = SUBSCRIPTION_PLANS[selectedPlan];
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
 
   // ── HANDLERS ──────────────────────────────────────────────────────────────
 
