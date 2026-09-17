@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test:adviser:phase1": "node scripts/run-adviser-phase1-tests.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

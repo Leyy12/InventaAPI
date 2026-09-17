@@ -1,6 +1,7 @@
 import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
 import { requirePlan, enforceRequestLimit } from '../middleware/planGate.js';
+import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts } from '../services/daas-catalog.js';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getDb() is always ready here.
@@ -97,12 +98,12 @@ router.get('/health', (req, res) => {
 // Returns ONLY products linked to the authenticated API key
 router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res) => {
     try {
-        const linkedProductIds = req.apiKeyData.linkedProductIds || [];
         const linkedVariantSelections = req.apiKeyData.linkedVariantSelections || {};
         const searchQuery = req.query.search || req.query.q || '';
 
-        // Combine full products and partial products to fetch them all
-        const allProductIdsToFetch = Array.from(new Set([...linkedProductIds, ...Object.keys(linkedVariantSelections)]));
+        // Combine current, partial-variant, and stable legacy product IDs.
+        // Legacy embedded product fields never become catalog data.
+        const allProductIdsToFetch = authorizedProductIds(req.apiKeyData);
 
         if (allProductIdsToFetch.length === 0) {
             const latencyMs = Date.now() - req.startTime;
@@ -147,40 +148,22 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
             });
         }
 
-        // Fetch products from Firebase by IDs
-        const productPromises = allProductIdsToFetch.map(async (productId) => {
-            const doc = await getDb().collection('products').doc(productId).get();
-            if (doc.exists) {
-                return { id: doc.id, ...doc.data() };
-            }
-            return null;
-        });
-
-        const productsData = await Promise.all(productPromises);
-        let products = productsData.filter(p => p !== null);
-
-        // SECURITY: Enforce segment restriction for Free plan users
+        // Resolve current documents on every request. API keys authorize product IDs;
+        // they never make embedded product snapshots authoritative.
         const userDoc = await getDb().collection('users').doc(req.apiKeyData.userId).get();
-        if (userDoc.exists) {
-            const userData = userDoc.data();
-            const userPlan = userData.plan;
-            const isFreePlan = ['free', 'Free', 'Starter'].includes(userPlan);
-            
-            if (isFreePlan && userData.selectedSegment) {
-                products = products.filter(p => p.segment === userData.selectedSegment);
+        const userData = userDoc.exists ? userDoc.data() : null;
+        const resolvedCatalog = await resolveCurrentCatalogProducts({
+            apiKeyData: req.apiKeyData,
+            userData,
+            searchQuery,
+            loadProductById: async productId => {
+                const doc = await getDb().collection('products').doc(productId).get();
+                return doc.exists ? doc.data() : null;
             }
-        }
+        });
+        let products = resolvedCatalog.products;
 
-        // Apply search filter if query provided
         if (searchQuery.trim()) {
-            const query = searchQuery.toLowerCase();
-            products = products.filter(p =>
-                p.name?.toLowerCase().includes(query) ||
-                p.description?.toLowerCase().includes(query) ||
-                p.sku?.toLowerCase().includes(query) ||
-                p.category?.toLowerCase().includes(query)
-            );
-
             // If no products found after search, return actionable metadata
             if (products.length === 0) {
                 const latencyMs = Date.now() - req.startTime;
@@ -248,7 +231,9 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
             perPage = (!isNaN(requestedPerPage) && requestedPerPage >= 1) ? Math.min(requestedPerPage, maxPerPage) : maxPerPage;
         } else {
             // Paid: allow an explicit page size (capped at 250 for safety), else all
-            perPage = (!isNaN(requestedPerPage) && requestedPerPage >= 1) ? Math.min(requestedPerPage, 250) : totalBeforePage;
+            perPage = (!isNaN(requestedPerPage) && requestedPerPage >= 1)
+                ? Math.min(requestedPerPage, 250)
+                : Math.max(totalBeforePage, 1);
         }
 
         const totalPages = Math.max(1, Math.ceil(totalBeforePage / perPage));
@@ -265,59 +250,10 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
         // It is NOT the same as the product's catalog createdAt.
         const productAvailability = req.apiKeyData.productAvailability || {};
 
-        const formattedProducts = products.map(p => {
-            // Check if this product has a partial variant selection
-            const partialSelections = linkedVariantSelections[p.id];
-            
-            // If partial selections exist for this product, filter its variants
-            let finalVariants = p.variants || [];
-            if (partialSelections && Array.isArray(partialSelections) && partialSelections.length > 0) {
-                finalVariants = finalVariants.filter(v => {
-                    const identifier = `${v.flavor || ''}|${v.size || ''}`;
-                    return partialSelections.includes(identifier);
-                });
-            }
-
-            let baseVariant = {};
-            if (finalVariants.length > 0) {
-                // Always use the lowest-priced variant as base — ignore old root-level fields
-                baseVariant = finalVariants.reduce((prev, curr) => {
-                    const prevPrice = typeof prev.price === 'number' ? prev.price : parseFloat(prev.price) || Infinity;
-                    const currPrice = typeof curr.price === 'number' ? curr.price : parseFloat(curr.price) || Infinity;
-                    return (currPrice < prevPrice) ? curr : prev;
-                }, finalVariants[0]);
-            }
-
-            // Resolve availableToConsumerSince from productAvailability map.
-            // Convert Firestore Timestamp to ISO string for JSON transport.
-            const availability = productAvailability[p.id];
-            let availableToConsumerSince = null;
-            if (availability?.availableSince) {
-                const ts = availability.availableSince;
-                availableToConsumerSince = ts.toDate ? ts.toDate().toISOString() : new Date(ts).toISOString();
-            }
-
-            return {
-                id: p.id,
-                sku: baseVariant.sku || null,
-                name: p.name,
-                description: p.description || '',
-                category: p.category,
-                segment: p.segment,
-                // Always derive price/size from lowest-price variant (not stale root fields)
-                price: typeof baseVariant.price === 'number' ? baseVariant.price : (parseFloat(baseVariant.price) || null),
-                size: baseVariant.size || null,
-                image_url: p.image_url || '',
-                metadata: p.metadata || {},
-                tags: p.tags || [],
-                variants: finalVariants,
-                expirationDate: baseVariant.expirationDate || null,
-                // availableToConsumerSince: when this product was authorized for this
-                // specific API key. Use this for consumer-side "new product" detection.
-                // null means this product was linked before availability tracking was introduced.
-                availableToConsumerSince
-            };
-        });
+        const formattedProducts = products.map(product => formatDaaSProduct(product, {
+            selectedVariants: linkedVariantSelections[product.id],
+            availability: productAvailability[product.id]
+        }));
 
         const latencyMs = Date.now() - req.startTime;
         const ts = new Date();
