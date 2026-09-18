@@ -84,6 +84,14 @@ app.use(cors({
     credentials: true
 }));
 
+// Apply completely open CORS to the DaaS API endpoints so external websites can use them
+const daasCors = cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+});
+
+
 // 3. Express Rate Limit: Prevent Denial of Service (DoS) and brute-force scanning
 const limiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
@@ -134,7 +142,7 @@ app.use('/api/v1/contact', contactRouter);
 app.use('/api/webhooks', webhooksRouter);
 
 // DaaS Integration Layer (Guarded internally by API Key)
-app.use('/daas/v1', daasRouter);
+app.use('/daas/v1', daasCors, daasRouter);
 
 // --- Serve static assets (CSS, images, etc.) ---
 app.use(express.static(path.join(__dirname, 'public')));
