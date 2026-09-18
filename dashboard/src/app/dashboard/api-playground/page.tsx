@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { 
   Play, Copy, Check, Key, Database, AlertCircle, 
   Code, Download, RefreshCw, Sparkles, Zap, ChevronDown, ChevronRight
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useAuth } from "@/lib/firebase/auth-context";
 
 interface ApiResponse {
   success: boolean;
@@ -31,7 +30,6 @@ interface ApiResponse {
 export default function ApiPlaygroundPage() {
   const searchParams = useSearchParams();
   const preselectedProducts = searchParams.get('products');
-  const { user } = useAuth();
 
   // State Management
   const [apiKey, setApiKey] = useState("");
@@ -51,30 +49,6 @@ export default function ApiPlaygroundPage() {
   const [copied, setCopied] = useState(false);
   const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
 
-  // Auto-fetch the user's first active API key
-  useEffect(() => {
-    const fetchKey = async () => {
-      if (!user) return;
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
-        const res = await fetch(`${apiUrl}/api/v1/api-keys?userId=${user.uid}`);
-        const data = await res.json();
-        
-        if (data.success && data.keys && data.keys.length > 0) {
-          const activeKey = data.keys.find((k: any) => k.status === 'active');
-          if (activeKey) {
-            setApiKey(activeKey.key);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch auto-fill API key:", err);
-      }
-    };
-    
-    if (!apiKey) {
-      fetchKey();
-    }
-  }, [user, apiKey]);
 
   // Build full API URL with query params
   const buildApiUrl = () => {
@@ -254,14 +228,15 @@ print_r($data);
               <div className="relative">
                 <Key className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  type="text"
+                  type="password"
+                  autoComplete="off"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="daas_xxxxxxxxxxxxxxxxxxxxxxxx"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1">Enter your API key to authenticate requests</p>
+              <p className="text-xs text-slate-500 mt-1">Paste your saved API key. Full keys are shown only when created.</p>
             </div>
 
             {/* Endpoint Selection */}

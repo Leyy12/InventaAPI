@@ -2,6 +2,7 @@ import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
 import { requirePlan, enforceRequestLimit } from '../middleware/planGate.js';
 import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts } from '../services/daas-catalog.js';
+import { createDaaSSecurity } from '../services/daas-security.js';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getDb() is always ready here.
@@ -14,74 +15,7 @@ function getDb() {
 }
 const router = express.Router();
 
-// Middleware: Authenticate API Key from Firebase
-const authenticateApiKey = async (req, res, next) => {
-    req.startTime = Date.now(); // Start timing for telemetry
-    const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-
-    if (!apiKey) {
-        const ts = new Date();
-        getDb().collection('audit_logs').add({
-            action: 'Authentication Failure',
-            userId: 'Unknown',
-            email: 'Unknown Client',
-            endpoint: req.path,
-            status: 401,
-            timestamp: ts
-        }).catch(console.error);
-        return res.status(401).json({
-            error: 'Unauthorized',
-            message: 'API key is required. Include it in the x-api-key header or apiKey query parameter.'
-        });
-    }
-
-    try {
-        // Query Firebase for the API key
-        const snapshot = await getDb().collection('api_keys')
-            .where('key', '==', apiKey)
-            .where('status', '==', 'active')
-            .limit(1)
-            .get();
-
-        if (snapshot.empty) {
-            const ts = new Date();
-            getDb().collection('audit_logs').add({
-                action: 'Invalid API Key Attempt',
-                userId: 'Unknown',
-                email: 'Unknown Client',
-                endpoint: req.path,
-                status: 401,
-                timestamp: ts
-            }).catch(console.error);
-            return res.status(401).json({
-                error: 'Unauthorized',
-                message: 'Invalid or revoked API key.'
-            });
-        }
-
-        const keyDoc = snapshot.docs[0];
-        const keyData = keyDoc.data();
-
-        // Update last used timestamp (do NOT increment requestsUsed here - that's handled by enforceRequestLimit)
-        await getDb().collection('api_keys').doc(keyDoc.id).update({
-            lastUsed: new Date().toISOString()
-        });
-
-        // Attach key data to request for downstream use
-        req.apiKeyData = {
-            id: keyDoc.id,
-            ...keyData
-        };
-
-        next();
-    } catch (err) {
-        console.error('[DaaS Auth] Error validating API key:', err);
-        return res.status(500).json({
-            error: 'Internal Server Error',
-            message: 'Failed to authenticate API key.'
-        });
-    }
-};
+const { authenticateApiKey } = createDaaSSecurity({ getDb });
 
 // DaaS Health Check
 router.get('/health', (req, res) => {
@@ -138,7 +72,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                 meta: {
                     count: 0,
                     keyName: req.apiKeyData.name,
-                    plan: req.apiKeyData.plan
+                    plan: req.userPlan
                 },
                 products: [],
                 action_required: {
@@ -150,8 +84,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 
         // Resolve current documents on every request. API keys authorize product IDs;
         // they never make embedded product snapshots authoritative.
-        const userDoc = await getDb().collection('users').doc(req.apiKeyData.userId).get();
-        const userData = userDoc.exists ? userDoc.data() : null;
+        const userData = req.userPlanData;
         const resolvedCatalog = await resolveCurrentCatalogProducts({
             apiKeyData: req.apiKeyData,
             userData,
@@ -196,7 +129,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                     meta: {
                         count: 0,
                         keyName: req.apiKeyData.name,
-                        plan: req.apiKeyData.plan,
+                        plan: req.userPlan,
                         searchQuery: searchQuery
                     },
                     products: [],
@@ -215,10 +148,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
         // (continuation). `?perPage` is accepted but capped at 50 for Free plans.
         // Pro/Enterprise plans are not capped and receive the full set by default.
         // ═══════════════════════════════════════════════════════════════════════════
-        let isFreePlan = false;
-        if (userDoc.exists) {
-            isFreePlan = ['free', 'Free', 'Starter'].includes(userDoc.data().plan);
-        }
+        const isFreePlan = ['free', 'starter'].includes(String(req.userPlan).toLowerCase());
 
         const totalBeforePage = products.length;
         const maxPerPage = isFreePlan ? 50 : null; // null = no cap for paid plans
@@ -285,9 +215,10 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                 count: formattedProducts.length,
                 total: totalBeforePage,
                 keyName: req.apiKeyData.name,
-                plan: req.apiKeyData.plan,
+                plan: req.userPlan,
                 plan_cap: maxPerPage,
-                requestsUsed: req.apiKeyData.requestsUsed + 1,
+                requestsUsed: req.requestUsage.used,
+                quota: req.requestUsage,
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
                 timestamp: ts.toISOString(),

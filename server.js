@@ -61,7 +61,16 @@ const allowedOrigins = [
     /^https:\/\/inventa/,     // Any custom inventa* domain
 ];
 
-app.use(cors({
+// DaaS is a public integration surface. Its wildcard origin policy is
+// intentionally non-credentialed; API authentication still uses x-api-key.
+const daasCors = cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+});
+app.use('/daas/v1', daasCors);
+
+const restrictedCors = cors({
     origin: function(origin, callback) {
         // Allow requests with no origin (mobile apps, Postman, curl, server-to-server)
         if (!origin) return callback(null, true);
@@ -79,18 +88,17 @@ app.use(cors({
             callback(new Error('Not allowed by CORS'));
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
     credentials: true
-}));
-
-// Apply completely open CORS to the DaaS API endpoints so external websites can use them
-const daasCors = cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
 });
 
+// DaaS has already received its route-specific policy. Skipping the restricted
+// policy here prevents it from rejecting external origins before authentication.
+app.use((req, res, next) => {
+    if (req.path === '/daas/v1' || req.path.startsWith('/daas/v1/')) return next();
+    return restrictedCors(req, res, next);
+});
 
 // 3. Express Rate Limit: Prevent Denial of Service (DoS) and brute-force scanning
 const limiter = rateLimit({
@@ -125,7 +133,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // --- Request Logging for Security Auditing ---
 app.use((req, res, next) => {
-    console.log(`[AUDIT] ${new Date().toISOString()} - ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
+    // Legacy consumers may still send apiKey in the query; never log queries.
+    console.log(`[AUDIT] ${new Date().toISOString()} - ${req.method} ${req.path} - IP: ${req.ip}`);
     next();
 });
 
@@ -142,7 +151,7 @@ app.use('/api/v1/contact', contactRouter);
 app.use('/api/webhooks', webhooksRouter);
 
 // DaaS Integration Layer (Guarded internally by API Key)
-app.use('/daas/v1', daasCors, daasRouter);
+app.use('/daas/v1', daasRouter);
 
 // --- Serve static assets (CSS, images, etc.) ---
 app.use(express.static(path.join(__dirname, 'public')));

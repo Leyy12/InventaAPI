@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test:adviser:phase1": "node scripts/run-adviser-phase1-tests.mjs"
+    "test:adviser:phase1": "node scripts/run-adviser-phase1-tests.mjs",
+    "test:adviser:phase2a": "node scripts/run-adviser-phase2a-tests.mjs",
+    "test:adviser:phase2a:rules": "node --test --test-reporter=spec scripts/test-adviser-phase2a-rules.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

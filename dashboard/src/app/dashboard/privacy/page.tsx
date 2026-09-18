@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { Shield, Trash2, AlertTriangle } from "lucide-react";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
+import { apiKeyRequest } from "@/lib/api-keys";
 
 export default function PrivacySettingsPage() {
   const { user, logout } = useAuth();
@@ -27,32 +28,13 @@ export default function PrivacySettingsPage() {
 
       // 2. Revoke API Keys
       try {
-        const token = await user.getIdToken();
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
-        
-        // Fetch keys first
-        const keysRes = await fetch(`${apiUrl}/api/v1/api-keys?userId=${user.uid}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (keysRes.ok) {
-          const keysData = await keysRes.json();
-          const apiKeys = keysData.keys || [];
-          
-          // Delete each key
-          for (const key of apiKeys) {
-            await fetch(`${apiUrl}/api/v1/api-keys/${key.id}`, {
-              method: "DELETE",
-              headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ userId: user.uid })
-            });
-          }
+        const keysData = await apiKeyRequest(user);
+        for (const key of keysData.keys || []) {
+          await apiKeyRequest(user, `/${key.id}`, { method: 'DELETE' });
         }
       } catch (err) {
         console.error("Failed to revoke API keys during deletion:", err);
+        throw new Error('Key revocation was not confirmed. Retry or contact support before signing out.');
       }
 
       // 3. Log out

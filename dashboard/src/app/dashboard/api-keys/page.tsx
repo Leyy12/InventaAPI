@@ -1,19 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Key, Copy, Plus, Trash2, Eye, EyeOff, AlertTriangle, Shield, CheckCircle2, Clock, Activity, Info, Code } from "lucide-react";
+import { Key, Copy, Plus, Trash2, AlertTriangle, Shield, CheckCircle2, Clock, Activity, Info, Code } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import CodeSnippet from "@/components/shared/CodeSnippet";
+import { apiKeyRequest } from "@/lib/api-keys";
 
 interface ApiKey {
   id: string;
-  key: string;
+  keyPrefix: string;
   name: string;
   userId: string;
   userEmail: string;
   plan: string;
   requestsUsed: number;
-  requestLimit?: number;  // Dynamic limit based on user's plan
+  requestLimit: number | null;  // Shared authoritative account allowance
   createdAt: any;
   lastUsed: any | null;
   status: "active" | "revoked";
@@ -22,8 +23,6 @@ interface ApiKey {
 export default function ApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showKey, setShowKey] = useState<{ [key: string]: boolean }>({});
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [generatingKey, setGeneratingKey] = useState(false);
@@ -42,11 +41,9 @@ export default function ApiKeysPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
-      const response = await fetch(`${apiUrl}/api/v1/api-keys?userId=${user.uid}`);
-      const data = await response.json();
+      const data = await apiKeyRequest(user);
       
-      if (response.ok && data.success) {
+      if (data.success) {
         setApiKeys(data.keys as ApiKey[]);
       } else {
         throw new Error(data.error || "Failed to fetch keys");
@@ -123,30 +120,16 @@ export default function ApiKeysPage() {
     if (!confirmed) return;
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
-      const response = await fetch(`${apiUrl}/api/v1/api-keys/${id}`, {
+      if (!user) return;
+      await apiKeyRequest(user, `/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user?.uid })
       });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to revoke key");
-      }
 
       fetchApiKeys();
     } catch (error) {
       console.error("Error revoking API key:", error);
       alert("Failed to revoke API key. Please try again.");
     }
-  };
-
-  const handleCopy = (keyString: string, keyId: string) => {
-    navigator.clipboard.writeText(keyString);
-    setCopiedKey(keyId);
-    setTimeout(() => setCopiedKey(null), 2000);
   };
 
   const handleDownloadEnv = (keyStr: string) => {
@@ -201,24 +184,11 @@ DAAS_API_KEY=${keyStr}
     URL.revokeObjectURL(url);
   };
 
-  const toggleShowKey = (keyId: string) => {
-    setShowKey(prev => ({
-      ...prev,
-      [keyId]: !prev[keyId]
-    }));
-  };
-
   const toggleCodeSnippet = (keyId: string) => {
     setShowCodeSnippet(prev => ({
       ...prev,
       [keyId]: !prev[keyId]
     }));
-  };
-
-  const maskKey = (key: string) => {
-    const prefix = key.substring(0, 10);
-    const suffix = key.substring(key.length - 4);
-    return `${prefix}${'•'.repeat(20)}${suffix}`;
   };
 
   const formatDate = (dateString: string | null) => {
@@ -341,22 +311,6 @@ DAAS_API_KEY=${keyStr}
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleCopy(apiKey.key, apiKey.id)}
-                        className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium transition-all flex items-center gap-2"
-                      >
-                        {copiedKey === apiKey.id ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            <span className="text-emerald-400">Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4" />
-                            Copy
-                          </>
-                        )}
-                      </button>
-                      <button
                         onClick={() => revokeKey(apiKey.id, apiKey.name)}
                         className="px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium transition-all flex items-center gap-2"
                       >
@@ -371,19 +325,8 @@ DAAS_API_KEY=${keyStr}
                     <label className="text-xs font-medium text-slate-400 mb-2 block">API KEY</label>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 font-mono text-sm text-indigo-300">
-                        {showKey[apiKey.id] ? apiKey.key : maskKey(apiKey.key)}
+                        {apiKey.keyPrefix}•••••••• — use your saved secret
                       </div>
-                      <button
-                        onClick={() => toggleShowKey(apiKey.id)}
-                        className="p-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
-                        title={showKey[apiKey.id] ? "Hide key" : "Show key"}
-                      >
-                        {showKey[apiKey.id] ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
                     </div>
                   </div>
 
@@ -392,12 +335,12 @@ DAAS_API_KEY=${keyStr}
                     <div>
                       <p className="text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
                         <Activity className="w-3 h-3" />
-                        REQUESTS USED
+                        ACCOUNT REQUESTS TODAY
                       </p>
                       <p className="text-lg font-semibold text-white">
                         {apiKey.requestsUsed.toLocaleString()}
                         <span className="text-xs text-slate-400 font-normal ml-1">
-                          / {apiKey.requestLimit ? apiKey.requestLimit.toLocaleString() : '50'}
+                          / {apiKey.requestLimit === null ? 'Unlimited' : apiKey.requestLimit.toLocaleString()}
                         </span>
                       </p>
                     </div>
@@ -436,7 +379,7 @@ DAAS_API_KEY=${keyStr}
                   {showCodeSnippet[apiKey.id] && (
                     <div className="mt-4">
                       <CodeSnippet 
-                        apiKey={apiKey.key}
+                        apiKey="YOUR_SAVED_API_KEY"
                         apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}
                       />
                     </div>

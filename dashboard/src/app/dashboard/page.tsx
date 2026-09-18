@@ -24,9 +24,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
+import { apiKeyRequest } from "@/lib/api-keys";
 
 export default function DashboardPage() {
-  const { appUser, loading, refreshUserDoc } = useAuth();
+  const { user, appUser, loading, refreshUserDoc } = useAuth();
   const router = useRouter();
   
   const [activeKeysCount, setActiveKeysCount] = useState(0);
@@ -85,17 +86,13 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!appUser?.uid) return;
-
-    // Fetch Active API Keys
-    const keysQ = query(
-      collection(db, "api_keys"),
-      where("userId", "==", appUser.uid),
-      where("status", "==", "active")
-    );
-    const unsubKeys = onSnapshot(keysQ, (snap) => {
-      setActiveKeysCount(snap.size);
-    });
+    if (!appUser?.uid || !user) return;
+    let cancelled = false;
+    const refreshKeys = () => apiKeyRequest(user)
+      .then(data => { if (!cancelled) setActiveKeysCount(data.keys.length); })
+      .catch(() => { if (!cancelled) setActiveKeysCount(0); });
+    refreshKeys();
+    const keysTimer = setInterval(refreshKeys, 30000);
 
     // Fetch Today's Telemetry (API Calls)
     const startOfDay = new Date();
@@ -110,10 +107,11 @@ export default function DashboardPage() {
     });
 
     return () => {
-      unsubKeys();
+      cancelled = true;
+      clearInterval(keysTimer);
       unsubTelemetry();
     };
-  }, [appUser?.uid]);
+  }, [appUser?.uid, user]);
 
   if (loading || (appUser?.plan === "Free" && !appUser?.selectedSegment)) {
     return (
