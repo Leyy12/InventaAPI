@@ -1,5 +1,5 @@
 "use client";
-import { normalizeProductImageUrl } from '@/lib/product-image-url';
+import { normalizeProductImageUrl, productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 
 import { useState, useEffect, useMemo, useId } from "react";
 import {
@@ -293,14 +293,16 @@ function ViewModal({ product, onClose }: { product: Product; onClose: () => void
         {/* Modal Header */}
         <div className="flex items-start justify-between p-5 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
-            {product.image_url || product.image ? (
-              <img src={product.image_url || product.image} alt={product.name}
-                className="w-14 h-14 rounded-xl object-cover border border-white/10" />
-            ) : (
-              <div className="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10">
+            <div key={productImageSource(product)} className="relative w-14 h-14 shrink-0">
+              {productImageSource(product) ? (
+                <img src={productImageSource(product)} alt={product.name}
+                  referrerPolicy="no-referrer" onError={showProductImageFallback}
+                  className="w-14 h-14 rounded-xl object-cover border border-white/10" />
+              ) : null}
+              <div className={`absolute inset-0 w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10 ${productImageSource(product) ? 'hidden' : ''}`}>
                 <Package className="w-7 h-7 text-slate-600" />
               </div>
-            )}
+            </div>
             <div>
               <h2 className="text-base font-bold text-white leading-snug">{getProductName(product)}</h2>
               {getBrand(product) && <p className="text-xs text-indigo-400 mt-0.5">{getBrand(product)}</p>}

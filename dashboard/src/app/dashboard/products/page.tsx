@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProductNotFound } from "@/components/product-request";
 import AddProductModal from "@/components/products/AddProductModal";
+import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 
@@ -550,20 +551,18 @@ DAAS_API_KEY=${generatedKey}
                 }`}
               >
                 {/* Image Area */}
-                <div className="relative w-full h-44 bg-slate-800 overflow-hidden">
-                  {product.image_url || product.image ? (
+                <div key={productImageSource(product)} className="relative w-full h-44 bg-slate-800 overflow-hidden">
+                  {productImageSource(product) ? (
                     <img
-                      src={product.image_url || product.image}
+                      src={productImageSource(product)}
                       alt={product.name}
                       className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                      }}
+                      referrerPolicy="no-referrer"
+                      onError={showProductImageFallback}
                     />
                   ) : null}
                   {/* Fallback icon (shown if image fails or missing) */}
-                  <div className={`absolute inset-0 flex items-center justify-center ${product.image_url || product.image ? 'hidden' : ''}`}>
+                  <div className={`absolute inset-0 flex items-center justify-center ${productImageSource(product) ? 'hidden' : ''}`}>
                     <Database className="w-14 h-14 text-slate-600" />
                   </div>
 

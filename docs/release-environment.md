@@ -54,7 +54,7 @@ production build.
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Customer + Admin | Yes | Non-placeholder Firebase Web API key. It is not a service-account secret. |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Customer + Admin | Yes | Firebase Auth hostname, without protocol/path. |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Customer + Admin | Yes | Firebase project ID used by the browser SDK. |
-| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Customer + Admin | Yes | Storage bucket hostname. R0 does not enable or deploy the media lifecycle. |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Customer + Admin | Yes | Existing SDK/release-validator configuration value, not evidence of uploads. R2B is URL-only; no bucket objects or Storage rules are deployed for product images. |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Customer + Admin | Yes | Numeric Firebase sender ID. |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Customer + Admin | Yes | Firebase web app ID such as `1:<sender>:web:<id>`. |
 | `NEXT_PUBLIC_SUPERADMIN_UID` | Customer only | Yes | Existing role-logic Firebase Auth UID; maximum 128 characters. Public identifier, not a credential. |

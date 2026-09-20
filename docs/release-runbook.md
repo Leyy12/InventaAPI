@@ -15,7 +15,11 @@ targets from source-code comments or provider-generated environment variables.
 
 It does not represent Firebase Hosting for either frontend or Cloud Storage rules.
 Although `storage.rules` exists, it is not a deployable resource in the current
-`firebase.json`; R0 does not repair media rules or lifecycle behavior.
+`firebase.json`. R2B establishes MODE A — URL-ONLY: no active product-image
+upload workflow. Do NOT deploy `storage.rules` or add a Storage deploy target for
+this release. That dormant file contains incorrect cross-service calls and has
+no Storage emulator certification. See [R2B media architecture and monitoring](adviser-r2b-media-storage.md)
+for reachability evidence, external-image costs and operator monitoring inputs.
 
 No `.firebaserc`, Express backend provider manifest, Customer dashboard deployment
 manifest, Admin panel deployment manifest, or CI deployment workflow is tracked.
@@ -75,4 +79,5 @@ proves the earlier code can safely read the post-migration data.
 - Payment checkout, webhook fulfillment, entitlement writes, and checkout UI are one unit.
 - Customer submission, Admin review, publication rules/indexes, and both frontends are one unit.
 - Quota configuration and backend enforcement are one unit.
-- Future media UI, Storage rules, object lifecycle, and cleanup behavior are one unit.
+- Only if separately approved managed uploads are introduced: media UI, Storage
+  rules, object lifecycle, and cleanup behavior must be one reviewed unit.
