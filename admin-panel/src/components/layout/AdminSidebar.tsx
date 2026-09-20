@@ -20,6 +20,7 @@ import { useAdminAuth } from "@/lib/firebase/admin-auth-context";
 const adminRoutes = [
   { name: "Dashboard",              href: "/",          icon: LayoutDashboard },
   { name: "Master Product Catalog", href: "/products",  icon: Package         },
+  { name: "Product Submissions",    href: "/submissions", icon: FileText       },
 
   { name: "API Consumers",          href: "/consumers", icon: Key             },
 

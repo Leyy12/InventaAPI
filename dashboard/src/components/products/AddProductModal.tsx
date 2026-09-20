@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus, X, AlertTriangle, Check, Save, Loader2, Upload
 } from "lucide-react";
-import { db } from "@/lib/firebase/config";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { normalizeProductImageUrl } from "@/lib/product-image-url";
 import { useAuth } from "@/lib/firebase/auth-context";
-import { notifyAdminNewRequest } from "@/lib/firebase/notifications";
 
 interface AddProductModalProps {
   open: boolean;
@@ -26,7 +24,11 @@ interface VariantRow {
 }
 
 export default function AddProductModal({ open, onClose, onAdded }: AddProductModalProps) {
-  const { appUser } = useAuth();
+  const { user } = useAuth();
+  const busy = useRef(false);
+  const attempt = useRef<{ uid: string; key: string; body: string } | null>(null);
+  const [pending, setPending] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
 
   const [name, setName]             = useState("");
   const [brand, setBrand]           = useState("");
@@ -38,11 +40,11 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   const [error, setError]           = useState("");
   const [success, setSuccess]       = useState("");
 
-  // Reset every time modal opens
+  // Preserve an uncertain operation across close/reopen; retry its exact immutable payload.
   useEffect(() => {
-    if (!open) return;
+    if (!open || attempt.current) return;
     setName(""); setBrand(""); setSegment(""); setCategory("");
-    setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
+    setImageUrl(""); setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
     setError(""); setSuccess("");
   }, [open]);
 
@@ -54,54 +56,43 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
     setVariants(prev => prev.filter((_, idx) => idx !== i));
 
   const handleSave = async () => {
-    if (!name.trim()) { setError("Product name is required."); return; }
+    if (busy.current || success) return;
+    if (!user || typeof user.getIdToken !== "function") { setError("Please sign in again."); return; }
+    if (!name.trim() || !category.trim() || !segment) { setError("Name, category and segment are required."); return; }
+    busy.current = true;
     setSaving(true); setError("");
-
     try {
-      const cleanedVariants = variants
-        .filter(v => v.flavor || v.size || v.sku || v.price)
-        .map(v => ({
-          ...(v.flavor ? { flavor: v.flavor.trim() } : {}),
-          ...(v.size   ? { size:   v.size.trim()   } : {}),
-          ...(v.sku    ? { sku:    v.sku.trim()    } : {}),
-          price: parseFloat(v.price) || 0,
-        }));
-
-      const payload = {
-        name:         name.trim(),
-        brand:        brand.trim(),
-        segment:      segment || "Grocery",
-        category:     category.trim(),
-        description:  description.trim(),
-        status:       "Active",
-        is_active:    true,
-        variants:     cleanedVariants,
-        addedByName:  appUser?.fullName || appUser?.email || "Consumer",
-        addedByEmail: appUser?.email || "",
-        createdAt:    serverTimestamp(),
-        updatedAt:    serverTimestamp(),
-      };
-
-      const ref = await addDoc(collection(db, "products"), payload);
-
-      // Notify admin
-      try {
-        await notifyAdminNewRequest({
-          requestId:        ref.id,
-          productName:      payload.name,
-          category:         payload.category || payload.segment,
-          requestedByName:  payload.addedByName,
-          requestedByEmail: payload.addedByEmail,
+      if (attempt.current && attempt.current.uid !== user.uid) throw new Error("Sign back into the submitting account to retry.");
+      if (!attempt.current) {
+        const cleanedVariants = variants.filter(v => v.flavor || v.size || v.sku || v.price).map(v => {
+          const price = v.price.trim() ? Number(v.price) : 0;
+          if (!Number.isFinite(price) || price < 0) throw new Error("Invalid variant price.");
+          return { flavor: v.flavor.trim(), size: v.size.trim(), sku: v.sku.trim(), price };
         });
-      } catch { /* non-critical */ }
-
-      setSuccess(`"${payload.name}" has been added to the Master Catalog. The admin has been notified.`);
+        const payload = { name: name.trim(), brand: brand.trim(), segment, category: category.trim(),
+          description: description.trim(), variants: cleanedVariants, image_url: normalizeProductImageUrl(imageUrl) };
+        attempt.current = { uid: user.uid, key: crypto.randomUUID(), body: JSON.stringify(payload) };
+      }
+      setPending(true);
+      const token = await user.getIdToken();
+      const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+      const response = await fetch(base + "/api/v1/product-submissions", {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+          "Idempotency-Key": attempt.current.key }, body: attempt.current.body,
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        // A validation failure cannot have committed. Other errors retain the operation for safe retry.
+        if (response.status === 400) { attempt.current = null; setPending(false); }
+        throw new Error(result.error || "Submission failed. Retry the same submission.");
+      }
+      setSuccess(`Submitted for review (reference: ${result.id}). Only Admin approval publishes to the catalog.`);
+      attempt.current = null; setPending(false);
       onAdded?.();
-      setTimeout(() => { setSuccess(""); onClose(); }, 2200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save product.");
+      setError(err instanceof Error ? err.message : "Submission uncertain. Retry the same submission.");
     } finally {
-      setSaving(false);
+      busy.current = false; setSaving(false);
     }
   };
 
@@ -119,7 +110,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             </div>
             <div>
               <h2 className="text-sm font-bold text-white">Add New Product</h2>
-              <p className="text-[11px] text-slate-500">Variants will be appended if Product + Brand already exists.</p>
+              <p className="text-[11px] text-slate-500">Submit product information for Admin review.</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
@@ -147,9 +138,10 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
           {/* Info note */}
           <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-indigo-500/8 border border-indigo-500/20 text-xs text-indigo-300/80">
             <Upload className="w-3.5 h-3.5 mt-0.5 shrink-0 text-indigo-400" />
-            <span>This will directly add the product to the Master Catalog. The admin will be notified with your name and product details.</span>
+            <span>This submits a review request, not a catalog product. Admin approval is required before publication.</span>
           </div>
 
+          <fieldset disabled={saving || pending || !!success} className="space-y-5">
           {/* Base fields */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -161,7 +153,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
               <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Jack 'n Jill" className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Segment</label>
+              <label className={labelCls}>Segment *</label>
               <select value={segment} onChange={e => setSegment(e.target.value)} className={inputCls}>
                 <option value="">— Select Segment —</option>
                 <option value="Grocery">Grocery</option>
@@ -170,13 +162,19 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
               </select>
             </div>
             <div className="col-span-2">
-              <label className={labelCls}>Category</label>
+              <label className={labelCls}>Category *</label>
               <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Snacks" className={inputCls} />
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Description <span className="text-slate-600 normal-case tracking-normal font-normal">(optional)</span></label>
               <textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief product description…" className={inputCls + " resize-none"} />
             </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Image URL (optional, HTTPS)</label>
+            <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)}
+              placeholder="https://example.com/product.jpg" className={inputCls} />
           </div>
 
           {/* Variants */}
@@ -222,6 +220,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
               </div>
             </div>
           </div>
+          </fieldset>
         </div>
 
         {/* ── Footer ── */}
@@ -233,7 +232,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
           <button onClick={handleSave} disabled={saving || !!success}
             className="inline-flex items-center gap-1.5 px-5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {saving ? "Saving…" : "Save Product"}
+            {saving ? "Submitting…" : pending ? "Retry Same Submission" : "Submit for Review"}
           </button>
         </div>
       </div>

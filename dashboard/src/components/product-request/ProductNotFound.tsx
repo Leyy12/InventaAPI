@@ -72,7 +72,7 @@ export default function ProductNotFound({ searchQuery, onClearSearch }: ProductN
                 <ShieldCheck className="w-3.5 h-3.5 text-amber-400/80 shrink-0 mt-0.5" />
                 <p>
                   <span className="font-medium text-amber-300">Strict verification applies.</span>{" "}
-                  Fabricated or misleading details will be rejected and may result in account suspension.
+                  Fabricated or misleading details will be rejected.
                 </p>
               </div>
             </div>

@@ -1,4 +1,5 @@
 "use client";
+import { normalizeProductImageUrl } from '@/lib/product-image-url';
 
 import { useState, useEffect, useMemo, useId } from "react";
 import {
@@ -428,6 +429,7 @@ function EditModal({
   };
 
   const [name, setName] = useState(getProductName(product));
+  const [imageUrl, setImageUrl] = useState(product.image_url ?? product.image ?? "");
   const [brand, setBrand] = useState(getBrand(product));
   const [category, setCategory] = useState(product.category || "");
   const [segment, setSegment] = useState(product.segment || "");
@@ -497,6 +499,9 @@ function EditModal({
         segment,
         status,
         is_active: status === "Active",
+        image_url: normalizeProductImageUrl(imageUrl),
+        // Canonical field wins; clearing must not resurrect a legacy image fallback.
+        ...(product.image !== undefined ? { image: "" } : {}),
         variants: cleaned,
         updatedAt: serverTimestamp(),
       };
@@ -543,6 +548,10 @@ function EditModal({
             <div className="col-span-2">
               <label className={labelCls}>Product Name *</label>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Product name" className={inputCls} />
+            </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Image URL (optional, HTTPS)</label>
+              <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)} className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Brand</label>
@@ -662,6 +671,7 @@ function AddProductModal({
   existingProducts: Product[];
 }) {
   const [name, setName] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [segment, setSegment] = useState("");
@@ -708,6 +718,7 @@ function AddProductModal({
     setSaving(true); setError("");
     try {
       const nameTrimmed = name.trim().toLowerCase();
+      const image_url = normalizeProductImageUrl(imageUrl);
       const brandTrimmed = brand.trim().toLowerCase();
 
       // Check for existing product with same Name + Brand (case-insensitive)
@@ -735,9 +746,10 @@ function AddProductModal({
         const mergedVariants = [...(existing.variants ?? []), ...cleaned];
         await updateDoc(doc(db, "products", existing.id), {
           variants: mergedVariants,
+          ...(image_url ? { image_url } : {}),
           updatedAt: serverTimestamp(),
         });
-        const updatedProduct: Product = { ...existing, variants: mergedVariants };
+        const updatedProduct: Product = { ...existing, variants: mergedVariants, ...(image_url ? { image_url } : {}) };
         onAdded({ product: updatedProduct, isUpdate: true });
       } else {
         // CREATE new product document
@@ -749,6 +761,7 @@ function AddProductModal({
           status: "Active",
           is_active: true,
           variants: cleaned,
+          image_url,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };
@@ -814,6 +827,11 @@ function AddProductModal({
             <div className="col-span-2">
               <label className={labelCls}>Product Name *</label>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Piattos Cheese" className={inputCls} />
+            </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Image URL (optional, HTTPS)</label>
+              <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)} className={inputCls} />
+              <p className="text-xs text-slate-500">When appending variants, blank preserves the existing image.</p>
             </div>
             <div>
               <label className={labelCls}>Brand</label>

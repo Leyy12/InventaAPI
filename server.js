@@ -17,6 +17,7 @@ import './database/firebase.js';
 // Import routers
 import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
+import { customerSubmissionsRouter, adminSubmissionsRouter } from './routes/product-submissions.js';
 import daasRouter from './routes/daas.js';
 import apiKeysRouter from './routes/apikeys.js';
 import notificationsRouter from './routes/notifications.js';
@@ -90,7 +91,7 @@ const restrictedCors = cors({
         }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'Idempotency-Key'],
     credentials: true
 });
 
@@ -142,6 +143,8 @@ app.use((req, res, next) => {
 // --- API Routing Hookup (Version 1) ---
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/products', productsRouter);
+app.use('/api/v1/product-submissions', customerSubmissionsRouter);
+app.use('/api/v1/admin/product-submissions', adminSubmissionsRouter);
 app.use('/api/v1/api-keys', apiKeysRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/checkout', checkoutRouter);
