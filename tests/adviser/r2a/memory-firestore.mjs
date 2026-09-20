@@ -1,6 +1,6 @@
 // Optimistic, atomic transaction model with deterministic fault injection.
 // No SDK/configuration/network. Failed commits publish no staged writes.
-export function memoryFirestore(initial = {}) {
+export function memoryFirestore(initial = {}, { queryConflicts = true } = {}) {
   const records = new Map(Object.entries(initial).map(([path, data]) => [path, { version: 1, data: structuredClone(data) }]));
   let revision = 0;
   const db = { retries: 0, commits: 0, failRead: null, failWrite: null, failCommit: false, userWrites: 0 };
@@ -38,20 +38,22 @@ export function memoryFirestore(initial = {}) {
       const result = await callback({
         get: async ref => {
           if (writes.length) throw new Error('read after write');
-          if (ref.name) { queryRevision = revision; return ref.get(); }
+          if (ref.name) { if (queryConflicts) queryRevision = revision; return ref.get(); }
           if (ref.path.startsWith(db.failRead || '\0')) throw new Error('read unavailable');
           reads.set(ref.path, records.get(ref.path)?.version || 0);
           return snapshot(ref.path);
         },
         set: (ref, data) => writes.push([ref.path, structuredClone(data), false]),
         update: (ref, data) => writes.push([ref.path, structuredClone(data), true]),
+        delete: ref => writes.push([ref.path, null, false, true]),
       });
       await Promise.resolve();
       if (db.beforeCommit) await db.beforeCommit();
       if ((queryRevision !== null && queryRevision !== revision) || [...reads].some(([path, version]) => (records.get(path)?.version || 0) !== version)) { db.retries++; continue; }
       if (db.failCommit || writes.some(([path]) => path.startsWith(db.failWrite || '\0'))) throw new Error('commit unavailable');
       if (writes.some(([path, , update]) => update && !records.has(path))) throw new Error('update missing');
-      for (const [path, data, update] of writes) {
+      for (const [path, data, update, remove] of writes) {
+        if (remove) { records.delete(path); continue; }
         records.set(path, { version: (records.get(path)?.version || 0) + 1,
           data: update ? { ...records.get(path).data, ...data } : data });
         if (path.startsWith('users/')) db.userWrites++;

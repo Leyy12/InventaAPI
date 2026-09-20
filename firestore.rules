@@ -21,7 +21,7 @@ rules_version = '2';
 //   ✅ enterprise_inquiries — authenticated create
 //
 // Admin Panel:
-//   ✅ products       — admin CRUD
+//   ✅ products       — public read; backend-only mutations
 //   ✅ product_requests — backend-only create/review; authorized client reads
 //   ✅ categories     — admin CRUD
 //   ✅ system         — admin read/write
@@ -128,11 +128,10 @@ service cloud.firestore {
       // not for access control. The catalog itself is public.
       allow read: if true;
 
-      // Only admins can create/update/delete products
-      // Validate the complete resulting image even on unrelated updates.
-      // Historical invalid values must be corrected or removed; absent remains valid.
-      allow create, update: if isAdmin() && validProductImage(request.resource.data);
-      allow delete: if isAdmin();
+      // R3: even Admin browsers must use the authoritative backend writer.
+      // Its image validator replaces the old direct-write path. The grammar above
+      // remains reference/defense-in-depth for any separately reviewed future rules.
+      allow create, update, delete: if false;
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -153,6 +152,9 @@ service cloud.firestore {
     match /product_submission_identity/{identityId} {
       allow read, write: if false;
     }
+    match /catalog_control/{id} { allow read, write: if false; }
+    match /catalog_import_previews/{id} { allow read, write: if false; }
+    match /catalog_import_results/{id} { allow read, write: if false; }
 
     // ───────────────────────────────────────────────────────────────────────
     // API KEYS COLLECTION

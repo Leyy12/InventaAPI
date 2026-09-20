@@ -293,3 +293,13 @@ R2A SAFE FOR LOCAL COMMIT
 
 The three local-commit blockers are corrected. Implementation remains uncommitted
 for ChatGPT review; this statement neither creates a commit nor authorizes deployment.
+
+## Subsequent R3 shared-writer closure
+
+The historical CASE B / FUTURE R3 DEPENDENCY above is closed in the R3 implementation:
+Admin Add/Edit/state actions, importer and submission approval all use the protected
+shared catalog transaction; even Admin browser mutations are denied by R3 rules.
+See [R3 contract, tests and required frozen migration](adviser-r3-catalog-import-integrity.md).
+This supersedes only the shared-writer code dependency, not production certification.
+Production still requires complete identity audit, explicit conflict resolution,
+reservation backfill, coordinated provider rollout under write freeze, and browser E2E.

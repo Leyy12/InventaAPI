@@ -37,7 +37,7 @@ router.all('*', (req, res) => {
   res.status(410).json({
     error: 'Endpoint Disabled',
     message: 'Product management mutation endpoints are deprecated and have been disabled for security reasons.',
-    details: 'Admin operations now use Firestore directly with proper security rules.',
+    details: 'Admin catalog mutations require the authenticated /api/v1/admin/catalog writer.',
     alternative: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard`,
   });
 });

@@ -170,10 +170,11 @@ for (const existing of [{ ...content, sku: 'ABC-123', variants: [] }, { product:
   assert.equal(f.db.read(`product_requests/${created.body.id}`).status, 'submitted');
 });
 test('fallback identity conflicts but same Brand+Name with different variants does not overwrite', async () => {
-  const body = { ...content, variants: [{ size: '50g' }] };
+  // R3 publication now requires a real price; zero remains legitimate.
+  const body = { ...content, variants: [{ size: '50g', price: 0 }] };
   const f = fixture({ 'products/existing': { ...body, segment: 'Grocery' } }), created = await f.submit({ body });
   assert.equal((await f.review(created.body.id)).statusCode, 409);
-  const second = await f.submit({ headers: { 'idempotency-key': 'operation-0000000002' }, body: { ...body, variants: [{ size: '100g' }] } });
+  const second = await f.submit({ headers: { 'idempotency-key': 'operation-0000000002' }, body: { ...body, variants: [{ size: '100g', price: 0 }] } });
   assert.equal((await f.review(second.body.id)).statusCode, 200); assert.equal(f.products().length, 2);
 });
 test('concurrent distinct submissions with overlapping SKU cannot both publish', async () => {

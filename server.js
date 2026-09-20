@@ -17,6 +17,7 @@ import './database/firebase.js';
 // Import routers
 import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
+import catalogManagementRouter from './routes/catalog-management.js';
 import { customerSubmissionsRouter, adminSubmissionsRouter } from './routes/product-submissions.js';
 import daasRouter from './routes/daas.js';
 import apiKeysRouter from './routes/apikeys.js';
@@ -143,6 +144,7 @@ app.use((req, res, next) => {
 // --- API Routing Hookup (Version 1) ---
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/products', productsRouter);
+app.use('/api/v1/admin/catalog', catalogManagementRouter);
 app.use('/api/v1/product-submissions', customerSubmissionsRouter);
 app.use('/api/v1/admin/product-submissions', adminSubmissionsRouter);
 app.use('/api/v1/api-keys', apiKeysRouter);

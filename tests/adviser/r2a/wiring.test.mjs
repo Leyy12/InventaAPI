@@ -18,10 +18,11 @@ test('Admin Add and Edit validate and persist canonical image URL without upload
   const add = source.slice(source.indexOf('function AddProductModal'));
   assert.match(edit, /product\.image_url \?\? product\.image \?\? ""/u);
   assert.match(edit, /image_url: normalizeProductImageUrl\(imageUrl\)/u);
-  assert.match(edit, /product\.image !== undefined \? \{ image: "" \}/u);
+  assert.match(read('services/catalog-writer.js'), /product.image = ''/u);
+  assert.match(edit, /catalogRequest/u);
   assert.match(add, /const image_url = normalizeProductImageUrl\(imageUrl\)/u);
-  assert.match(add, /variants: cleaned,\s+image_url,/u);
-  assert.match(add, /image_url \? \{ image_url \} : \{\}/u);
+  assert.match(add, /variants: cleaned, image_url/u);
+  assert.match(add, /catalogRequest/u);
   assert.equal((source.match(/Image URL \(optional, HTTPS\)/gu) || []).length, 2);
   assert.doesNotMatch(edit + add, /uploadBytes|firebase\/storage/u);
 });

@@ -8,7 +8,8 @@ import {
   FolderArchive, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, ChevronRight, Archive,
   type LucideIcon
 } from "lucide-react";
-import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
+import { catalogRequest, catalogPrice, brandNameWarning } from "@/lib/catalog-client";
 import { db } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
 
@@ -51,6 +52,7 @@ const categoryNeedsExpiry = (cat: string): boolean => {
 
 export interface Product {
   id: string;
+  catalogRevision?: number;
   name?: string;
   brand?: string;
   product?: string;
@@ -93,7 +95,6 @@ const FIELD_META: Record<VariantFieldKey, { label: string; placeholder: string; 
   dimensions: { label: "Dimensions", placeholder: "e.g. 10x5x3 in", tableLabel: "DIMENSIONS" },
 };
 
-const SEGMENT_ATTR_KEYS: VariantFieldKey[] = ["flavor", "size", "dosage", "form", "specs", "dimensions"];
 
 const getSegmentPair = (segment?: string): [VariantFieldKey, VariantFieldKey] =>
   SEGMENT_FIELD_PAIRS[segment || ""] || SEGMENT_FIELD_PAIRS.Grocery;
@@ -103,15 +104,7 @@ const getSegmentFields = (segment?: string) => {
   return { field1: { ...FIELD_META[a], key: a }, field2: { ...FIELD_META[b], key: b } };
 };
 
-const remapVariantForSegment = (v: ProductVariant, segment?: string): ProductVariant => {
-  const next = { ...v };
-  SEGMENT_ATTR_KEYS.forEach(k => { delete next[k]; });
-  const [a, b] = getSegmentPair(segment);
-  return { ...next, [a]: "", [b]: "" };
-};
 
-const variantHasData = (v: ProductVariant): boolean =>
-  !!(v.flavor || v.size || v.dosage || v.form || v.specs || v.dimensions || parseNum(v.price) != null);
 
 const getAttrValues = (p: Product, keys: VariantFieldKey[], legacy?: "value"): string[] => {
   const pick = (v: ProductVariant): string =>
@@ -424,7 +417,7 @@ function EditModal({
         form: product.form || "",
         specs: product.specs || "",
         dimensions: product.dimensions || "",
-        price: parseNum(product.price) ?? 0,
+        price: product.price ?? "",
       }];
     }
     return [{ flavor: "", size: "", price: 0 }];
@@ -439,30 +432,15 @@ function EditModal({
   const [variants, setVariants] = useState<ProductVariant[]>(seedVariants);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [isCustomSegment, setIsCustomSegment] = useState(false);
 
   const segFields = getSegmentFields(segment);
 
   const handleSegmentChange = (next: string) => {
-    if (next === "ADD_NEW") {
-      setIsCustomSegment(true);
-      setSegment("");
-      return;
-    }
-    setIsCustomSegment(false);
     setSegment(next);
     setError("");
-    setVariants(prev => prev.map(v => remapVariantForSegment(v, next)));
   };
 
-  // Get unique segments from all products
-  // Default segments: Pharmacy, Grocery, Hardware
-  const uniqueSegments = Array.from(new Set([
-    "Grocery", "Hardware", "Pharmacy",
-    // product might not be in scope for AddProductModal? wait, existingProducts is not passed to EditModal.
-    // EditModal doesn't have existingProducts, but it's fine. We'll just hardcode the 3 + current product's segment.
-    product.segment || ""
-  ])).filter(Boolean).sort();
+  const uniqueSegments = ["Grocery", "Pharmacy", "Hardware"];
 
   const updateVariant = (i: number, field: keyof ProductVariant, val: string) => {
     setVariants(prev => prev.map((v, idx) =>
@@ -480,36 +458,16 @@ function EditModal({
     if (!name.trim()) { setError("Product name is required."); return; }
     setSaving(true); setError("");
     try {
-      const cleaned = variants
-        .filter(variantHasData)
-        .map(v => ({
-          ...(v.flavor ? { flavor: v.flavor.trim() } : {}),
-          ...(v.size ? { size: v.size.trim() } : {}),
-          ...(v.dosage ? { dosage: v.dosage.trim() } : {}),
-          ...(v.form ? { form: v.form.trim() } : {}),
-          ...(v.specs ? { specs: v.specs.trim() } : {}),
-          ...(v.dimensions ? { dimensions: v.dimensions.trim() } : {}),
-          price: parseNum(v.price) ?? 0,
-          ...(v.sku ? { sku: v.sku.trim() } : {}),
-          ...(v.expirationDate ? { expirationDate: v.expirationDate } : {}),
-        }));
-
-      const payload: Record<string, any> = {
-        name: name.trim(),
-        brand: brand.trim(),
-        category: category.trim(),
-        segment,
-        status,
-        is_active: status === "Active",
-        image_url: normalizeProductImageUrl(imageUrl),
-        // Canonical field wins; clearing must not resurrect a legacy image fallback.
-        ...(product.image !== undefined ? { image: "" } : {}),
-        variants: cleaned,
-        updatedAt: serverTimestamp(),
+      const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+      const payload = {
+        name: name.trim(), brand: brand.trim(), category: category.trim(), segment, status,
+        image_url: normalizeProductImageUrl(imageUrl), variants: cleaned,
       };
-
-      await updateDoc(doc(db, "products", product.id), payload);
-      onSaved({ ...product, ...payload, updatedAt: undefined });
+      const result = await catalogRequest<{ product: Product; possibleDuplicates: string[] }>(
+        '/' + encodeURIComponent(product.id), 'PATCH',
+        { product: payload, expectedRevision: product.catalogRevision ?? 0 });
+      onSaved(result.product);
+      if (result.possibleDuplicates.length) alert('Saved. Possible Brand + Product Name duplicates: ' + result.possibleDuplicates.join(', '));
       onClose();
     } catch (e: any) {
       setError(e.message || "Failed to save. Try again.");
@@ -560,22 +518,14 @@ function EditModal({
               <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="Brand" className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Segment</label>
-              {isCustomSegment ? (
-                <div className="flex gap-2">
-                  <input autoFocus value={segment} onChange={e => setSegment(e.target.value)} placeholder="Type new segment..." className={inputCls} />
-                  <button onClick={() => setIsCustomSegment(false)} className="px-3 rounded-lg bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700 transition-colors text-xs">Cancel</button>
-                </div>
-              ) : (
-                <select value={uniqueSegments.includes(segment) ? segment : ""} onChange={e => handleSegmentChange(e.target.value)} className={inputCls}>
-                  <option value="">— Select Segment —</option>
-                  {uniqueSegments.map(seg => <option key={seg} value={seg}>{seg}</option>)}
-                  <option value="ADD_NEW" className="text-indigo-400 font-semibold">+ Add New Segment</option>
-                </select>
-              )}
+              <label className={labelCls}>Segment *</label>
+              <select value={segment} onChange={e => handleSegmentChange(e.target.value)} className={inputCls}>
+                <option value="">— Select Segment —</option>
+                {uniqueSegments.map(seg => <option key={seg} value={seg}>{seg}</option>)}
+              </select>
             </div>
             <div>
-              <label className={labelCls}>Category</label>
+              <label className={labelCls}>Category *</label>
               <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Canned Goods" className={inputCls} />
             </div>
             <div>
@@ -680,27 +630,14 @@ function AddProductModal({
   const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "", price: 0 }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [isCustomSegment, setIsCustomSegment] = useState(false);
 
-  // Dynamically pull all existing segments
-  const uniqueSegments = Array.from(new Set([
-    "Grocery", "Hardware", "Pharmacy",
-    ...existingProducts.map(p => p.segment).filter(Boolean)
-  ])).filter(s => s !== undefined) as string[];
-  uniqueSegments.sort();
+  const uniqueSegments = ["Grocery", "Pharmacy", "Hardware"];
 
   const segFields = getSegmentFields(segment);
 
   const handleSegmentChange = (next: string) => {
-    if (next === "ADD_NEW") {
-      setIsCustomSegment(true);
-      setSegment("");
-      return;
-    }
-    setIsCustomSegment(false);
     setSegment(next);
     setError("");
-    setVariants(prev => prev.map(v => remapVariantForSegment(v, next)));
   };
 
   const updateVariant = (i: number, field: keyof ProductVariant, val: string) => {
@@ -719,57 +656,13 @@ function AddProductModal({
     if (!name.trim()) { setError("Product name is required."); return; }
     setSaving(true); setError("");
     try {
-      const nameTrimmed = name.trim().toLowerCase();
       const image_url = normalizeProductImageUrl(imageUrl);
-      const brandTrimmed = brand.trim().toLowerCase();
-
-      // Check for existing product with same Name + Brand (case-insensitive)
-      const existing = existingProducts.find(p =>
-        getProductName(p).trim().toLowerCase() === nameTrimmed &&
-        getBrand(p).trim().toLowerCase() === brandTrimmed
-      );
-
-      const cleaned: ProductVariant[] = variants
-        .filter(variantHasData)
-        .map(v => ({
-          ...(v.flavor ? { flavor: v.flavor.trim() } : {}),
-          ...(v.size ? { size: v.size.trim() } : {}),
-          ...(v.dosage ? { dosage: v.dosage.trim() } : {}),
-          ...(v.form ? { form: v.form.trim() } : {}),
-          ...(v.specs ? { specs: v.specs.trim() } : {}),
-          ...(v.dimensions ? { dimensions: v.dimensions.trim() } : {}),
-          price: parseNum(v.price) ?? 0,
-          ...(v.sku ? { sku: v.sku.trim() } : {}),
-          ...(v.expirationDate ? { expirationDate: v.expirationDate } : {}),
-        }));
-
-      if (existing) {
-        // APPEND variants to existing product
-        const mergedVariants = [...(existing.variants ?? []), ...cleaned];
-        await updateDoc(doc(db, "products", existing.id), {
-          variants: mergedVariants,
-          ...(image_url ? { image_url } : {}),
-          updatedAt: serverTimestamp(),
-        });
-        const updatedProduct: Product = { ...existing, variants: mergedVariants, ...(image_url ? { image_url } : {}) };
-        onAdded({ product: updatedProduct, isUpdate: true });
-      } else {
-        // CREATE new product document
-        const payload = {
-          name: name.trim(),
-          brand: brand.trim(),
-          category: category.trim(),
-          segment,
-          status: "Active",
-          is_active: true,
-          variants: cleaned,
-          image_url,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-        const ref = await addDoc(collection(db, "products"), payload);
-        onAdded({ product: { id: ref.id, ...payload }, isUpdate: false });
-      }
+      const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+      const result = await catalogRequest<{ product: Product; possibleDuplicates: string[] }>('', 'POST', {
+        product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },
+      });
+      onAdded({ product: result.product, isUpdate: false });
+      if (result.possibleDuplicates.length) alert('Created separately. Possible Brand + Product Name duplicates: ' + result.possibleDuplicates.join(', '));
       onClose();
     } catch (e: any) {
       setError(e.message || "Failed to save. Try again.");
@@ -783,10 +676,10 @@ function AddProductModal({
   const labelCls = "block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5";
 
   // Detect matching existing product for preview
-  const matchedProduct = existingProducts.find(p =>
-    getProductName(p).trim().toLowerCase() === name.trim().toLowerCase() &&
-    getBrand(p).trim().toLowerCase() === brand.trim().toLowerCase()
-  );
+  const warningKey = brandNameWarning(brand, name);
+  const matchedProduct = warningKey ? existingProducts.find(p =>
+    brandNameWarning(getBrand(p), getProductName(p)) === warningKey
+  ) : undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
@@ -800,7 +693,7 @@ function AddProductModal({
             </div>
             <div>
               <h2 className="text-sm font-bold text-white">Add New Product</h2>
-              <p className="text-[11px] text-slate-500">Variants will be appended if Product + Brand already exists.</p>
+              <p className="text-[11px] text-slate-500">Canonical duplicates are blocked; distinct variants are never merged automatically.</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
@@ -816,9 +709,9 @@ function AddProductModal({
             <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-4 py-3 flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs font-semibold text-amber-300">Product already exists</p>
+                <p className="text-xs font-semibold text-amber-300">Possible Brand + Product Name duplicate</p>
                 <p className="text-[11px] text-amber-400/80 mt-0.5">
-                  Saving will <strong>append</strong> new variant(s) to "{getProductName(matchedProduct)}" instead of creating a duplicate document.
+                  Review the variant details of {getProductName(matchedProduct)}. Saving creates a separate product only if canonical identity is different.
                 </p>
               </div>
             </div>
@@ -833,29 +726,21 @@ function AddProductModal({
             <div className="col-span-2">
               <label className={labelCls}>Image URL (optional, HTTPS)</label>
               <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)} className={inputCls} />
-              <p className="text-xs text-slate-500">When appending variants, blank preserves the existing image.</p>
+              <p className="text-xs text-slate-500">Optional external HTTPS URL; no file upload.</p>
             </div>
             <div>
               <label className={labelCls}>Brand</label>
               <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Jack 'n Jill" className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Segment</label>
-              {isCustomSegment ? (
-                <div className="flex gap-2">
-                  <input autoFocus value={segment} onChange={e => setSegment(e.target.value)} placeholder="Type new segment..." className={inputCls} />
-                  <button onClick={() => setIsCustomSegment(false)} className="px-3 rounded-lg bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700 transition-colors text-xs">Cancel</button>
-                </div>
-              ) : (
-                <select value={segment} onChange={e => handleSegmentChange(e.target.value)} className={inputCls}>
-                  <option value="">— Select Segment —</option>
-                  {uniqueSegments.map(seg => <option key={seg} value={seg}>{seg}</option>)}
-                  <option value="ADD_NEW" className="text-emerald-400 font-semibold">+ Add New Segment</option>
-                </select>
-              )}
+              <label className={labelCls}>Segment *</label>
+              <select value={segment} onChange={e => handleSegmentChange(e.target.value)} className={inputCls}>
+                <option value="">— Select Segment —</option>
+                {uniqueSegments.map(seg => <option key={seg} value={seg}>{seg}</option>)}
+              </select>
             </div>
             <div className="col-span-2">
-              <label className={labelCls}>Category</label>
+              <label className={labelCls}>Category *</label>
               <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Snacks" className={inputCls} />
             </div>
           </div>
@@ -1010,26 +895,22 @@ export default function MasterProductCatalogPage() {
     finally { setLoading(false); }
   };
 
-  const handleArchive = async (p: Product) => {
-    if (!confirm(`Are you sure you want to archive "${getProductName(p)}"? It will be hidden from the catalog.`)) return;
-    await updateDoc(doc(db, "products", p.id), { status: "Archived", is_active: false, updatedAt: serverTimestamp() });
-    setProducts(prev => prev.map(x => x.id === p.id ? { ...x, status: "Archived", is_active: false } : x));
-  };
-
-  const handleDelete = async (p: Product) => {
-    if (!confirm(`Are you sure you want to delete "${getProductName(p)}"? This action cannot be undone.`)) return;
+  const changeState = async (p: Product, action: 'archive' | 'restore' | 'delete') => {
     try {
-      await deleteDoc(doc(db, "products", p.id));
-      setProducts(prev => prev.filter(x => x.id !== p.id));
-    } catch (e) {
-      alert("Failed to delete product. Please try again.");
-    }
+      const result = await catalogRequest<{ product: Product | null }>(
+        '/' + encodeURIComponent(p.id) + (action === 'delete' ? '' : '/' + action),
+        action === 'delete' ? 'DELETE' : 'POST', { expectedRevision: p.catalogRevision ?? 0 });
+      setProducts(previous => action === 'delete' ? previous.filter(item => item.id !== p.id)
+        : previous.map(item => item.id === p.id && result.product ? result.product : item));
+    } catch (cause) { alert(cause instanceof Error ? cause.message : 'Catalog change failed. Reload and retry.'); }
   };
-
-  const handleRestore = async (p: Product) => {
-    await updateDoc(doc(db, "products", p.id), { status: "Active", is_active: true, updatedAt: serverTimestamp() });
-    setProducts(prev => prev.map(x => x.id === p.id ? { ...x, status: "Active", is_active: true } : x));
+  const handleArchive = (p: Product) => {
+    if (confirm('Archive ' + getProductName(p) + '?')) void changeState(p, 'archive');
   };
+  const handleDelete = (p: Product) => {
+    if (confirm('Permanently delete ' + getProductName(p) + '? Its canonical identity stays reserved.')) void changeState(p, 'delete');
+  };
+  const handleRestore = (p: Product) => { void changeState(p, 'restore'); };
 
   const handleSaved = (updated: Product) => {
     setProducts(prev => prev.map(x => x.id === updated.id ? updated : x));
@@ -1374,15 +1255,8 @@ export default function MasterProductCatalogPage() {
       {/* Import CSV Modal */}
       {showImportModal && (
         <ImportCsvModal
-          existingProducts={products}
           onClose={() => setShowImportModal(false)}
-          onImported={(imported) => {
-            setProducts(prev => {
-              const updatedIds = new Set(imported.map(p => p.id));
-              const filtered = prev.filter(p => !updatedIds.has(p.id));
-              return [...imported, ...filtered].sort((a, b) => getProductName(a).localeCompare(getProductName(b)));
-            });
-          }}
+          onImported={() => { void fetchProducts(); }}
         />
       )}
     </div>

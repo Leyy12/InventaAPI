@@ -41,7 +41,7 @@ function call(method, document, token, data, updateField = null) {
       res.on('data', value => { body += value; });
       res.on('end', () => resolve({ status: res.statusCode, body: body ? JSON.parse(body) : null }));
     });
-    req.setTimeout(5000, () => req.destroy(new Error('Local emulator request timed out')));
+    req.setTimeout(30000, () => req.destroy(new Error('Local emulator request timed out')));
     req.on('error', reject);
     req.end(data ? JSON.stringify({ fields: Object.fromEntries(Object.entries(data).map(([name, value]) => [name, valueField(value)])) }) : undefined);
   });
@@ -128,11 +128,12 @@ test('Customer reads only own request; Admin can inspect; public read denied', a
   for (const actor of ['customer', 'admin']) assert.equal((await call('GET', path, tokens[actor])).status, 200);
   for (const actor of ['stranger', 'anonymous']) assert.equal((await call('GET', path, tokens[actor])).status, 403);
 });
-test('Admin catalog creation, image editing and deletion preserved', async () => {
+test('R3 Admin browser catalog mutations denied; backend bypass control works', async () => {
   const path = 'products/admin-product';
-  assert.equal((await call('PATCH', path, tokens.admin, { name: 'Product', image_url: 'https://example.invalid/a' })).status, 200);
-  assert.equal((await call('PATCH', path, tokens.admin, { image_url: 'https://example.invalid/b' }, 'image_url')).status, 200);
-  assert.equal((await call('DELETE', path, tokens.admin)).status, 200);
+  assert.equal((await call('PATCH', path, 'owner', { name: 'Existing', image_url: 'https://example.invalid/a' })).status, 200);
+  assert.equal((await call('PATCH', path, tokens.admin, { name: 'Product', image_url: 'https://example.invalid/a' })).status, 403);
+  assert.equal((await call('PATCH', path, tokens.admin, { image_url: 'https://example.invalid/b' }, 'image_url')).status, 403);
+  assert.equal((await call('DELETE', path, tokens.admin)).status, 403);
 });
 for (const collection of ['product_submission_operations', 'product_submission_identity']) {
   for (const actor of ['customer', 'admin', 'anonymous']) test(`${collection} is server-only for ${actor}`, async () => {
@@ -166,13 +167,14 @@ const deniedImages = [
   ['number', 123], ['boolean', true], ['null', null], ['object', { url: 'https://example.invalid/a' }],
 ];
 for (const method of ['create', 'update']) {
-  for (const [name, image] of allowedImages) test(`Admin ${method} image ALLOW ${name}`, async () => {
+  for (const [name, image] of allowedImages) test(`Admin ${method} image previously valid still DENY direct browser ${name}`, async () => {
     const path = `products/image-${method}-${name}`;
     if (method === 'update') assert.equal((await call('PATCH', path, 'owner', { name: 'Original', image_url: 'https://example.invalid/old' })).status, 200);
     const data = { name: 'Allowed', ...(image !== undefined ? { image_url: image } : {}) };
-    assert.equal((await call('PATCH', path, tokens.admin, data)).status, 200);
+    assert.equal((await call('PATCH', path, tokens.admin, data)).status, 403);
     const stored = await call('GET', path, tokens.admin);
-    assert.equal(stored.body.fields.image_url?.stringValue, image);
+    if (method === 'create') assert.equal(stored.status, 404);
+    else assert.equal(stored.body.fields.image_url.stringValue, 'https://example.invalid/old');
   });
   for (const [name, image] of deniedImages) test(`Admin ${method} image DENY ${name}`, async () => {
     const path = `products/image-${method}-${name}`;
@@ -183,28 +185,28 @@ for (const method of ['create', 'update']) {
     else assert.equal(stored.body.fields.image_url.stringValue, 'https://example.invalid/old');
   });
 }
-test('Admin unrelated edit preserves no-image and valid-image legacy compatibility', async () => {
+test('R3 denies direct unrelated edits for no-image and valid-image legacy products', async () => {
   for (const [id, data] of Object.entries({ absent: { name: 'Original' },
     legacy: { name: 'Original', image: 'https://example.invalid/legacy' },
     valid: { name: 'Original', image_url: 'https://example.invalid/valid' } })) {
     const path = 'products/legacy-' + id;
     assert.equal((await call('PATCH', path, 'owner', data)).status, 200);
-    assert.equal((await call('PATCH', path, tokens.admin, { name: 'Edited' }, 'name')).status, 200);
+    assert.equal((await call('PATCH', path, tokens.admin, { name: 'Edited' }, 'name')).status, 403);
     assert.equal((await call('GET', path, tokens.admin)).body.fields.image_url?.stringValue, data.image_url);
   }
 });
-test('invalid historical image must be corrected, cleared or removed; delete remains allowed', async () => {
+test('R3 requires backend even for historical image correction/removal/deletion', async () => {
   const path = 'products/invalid-history';
   const reset = () => call('PATCH', path, 'owner', { name: 'Original', image_url: 'javascript:bad' });
   assert.equal((await reset()).status, 200);
   assert.equal((await call('PATCH', path, tokens.admin, { name: 'Unrelated' }, 'name')).status, 403);
   for (const image of ['https://example.invalid/fixed', '']) {
     await reset();
-    assert.equal((await call('PATCH', path, tokens.admin, { image_url: image }, 'image_url')).status, 200);
+    assert.equal((await call('PATCH', path, tokens.admin, { image_url: image }, 'image_url')).status, 403);
   }
   await reset();
-  assert.equal((await call('PATCH', path, tokens.admin, {}, 'image_url')).status, 200);
-  assert.equal((await call('GET', path, tokens.admin)).body.fields.image_url, undefined);
+  assert.equal((await call('PATCH', path, tokens.admin, {}, 'image_url')).status, 403);
+  assert.equal((await call('GET', path, tokens.admin)).body.fields.image_url.stringValue, 'javascript:bad');
   await reset();
-  assert.equal((await call('DELETE', path, tokens.admin)).status, 200);
+  assert.equal((await call('DELETE', path, tokens.admin)).status, 403);
 });

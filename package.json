@@ -18,7 +18,9 @@
     "test:adviser:phase2b2:rules": "node --test --test-reporter=spec scripts/test-adviser-phase2b2-rules.mjs",
     "test:adviser:r2a": "node scripts/run-adviser-r2a-tests.mjs",
     "test:adviser:r2a:rules": "node --test --test-reporter=spec scripts/test-adviser-r2a-rules.mjs",
-    "test:adviser:r2b": "node scripts/run-adviser-r2b-tests.mjs"
+    "test:adviser:r2b": "node scripts/run-adviser-r2b-tests.mjs",
+    "test:adviser:r3": "node scripts/run-adviser-r3-tests.mjs",
+    "test:adviser:r3:rules": "node --test --test-reporter=spec scripts/test-adviser-r3-rules.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

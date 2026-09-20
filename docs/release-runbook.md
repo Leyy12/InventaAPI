@@ -49,7 +49,7 @@ production target. Those targets remain explicit release inputs documented in
 13. Obtain explicit production authorization for this exact batch.
 14. Merge or fast-forward the reviewed commit into `master` using the approved strategy.
 15. Push the authorized `master` update.
-16. Deploy the complete atomic batch to the verified targets; do not split coupled backend, frontend, rules, indexes, or entitlement changes.
+16. Deploy the complete coordinated batch to the verified targets; do not independently enable coupled backend, frontend, rules, indexes, or entitlement changes. Separate providers are not atomic: use the batch-specific write-freeze/transition plan.
 17. Run immediate, narrow production smoke tests without destructive data or live payment side effects.
 18. Monitor application errors, authentication, quota, rules denials, webhook delivery, latency, and resource usage for the approved observation window.
 19. If acceptance or monitoring fails, execute the reviewed rollback/revert procedure below and record the incident.
@@ -81,3 +81,13 @@ proves the earlier code can safely read the post-migration data.
 - Quota configuration and backend enforcement are one unit.
 - Only if separately approved managed uploads are introduced: media UI, Storage
   rules, object lifecycle, and cleanup behavior must be one reviewed unit.
+
+## R3 catalog transition
+
+Follow the [R3 frozen audit/backfill and coordinated rollout gate](adviser-r3-catalog-import-integrity.md)
+before enabling catalog writes. Stop old privileged writers and browser mutations;
+the new catalog_control flag alone cannot freeze old backends. Resolve historical
+identity conflicts explicitly, backfill/re-audit reservations, deploy all shared writers
+and backend-only rules while frozen, then pass browser E2E before enabling writes.
+Archived/deleted/retired identities remain reserved. Never roll back to an uncoordinated
+direct writer against the new claims. Production migration/deployment was not executed.

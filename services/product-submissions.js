@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
-import { productIdentityKeys } from './product-contract.js';
+import { prepareCatalogWrite } from './catalog-writer.js';
 import { submissionError, validateSubmissionContent } from './product-submission-contract.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -18,7 +18,7 @@ function reviewView(snapshot) {
 }
 
 // Dependencies are injected: isolated tests never import Firebase or configuration.
-export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID }) {
+export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID, deriveReservationId }) {
   const timestamp = () => now().toISOString();
   const wrap = action => async (req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -128,30 +128,13 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       if (data.status !== 'submitted') throw submissionError(409, 'Submission already has a final review decision.');
       const at = timestamp();
       let productId = null;
-      const claims = [];
-      let productRef;
+      let prepared;
       if (decision === 'approved') {
         await account(tx, db, data.userId);
         productId = `submission_${ref.id}`;
-        productRef = db.collection('products').doc(productId);
-        if ((await tx.get(productRef)).exists) throw submissionError(409, 'Product already exists; operator resolution required.');
-        const keys = new Set(productIdentityKeys(content));
-        // Read the existing catalog, including legacy/inactive documents. No fuzzy-name overwrite.
-        const products = await tx.get(db.collection('products'));
-        if (products.docs.some(doc => productIdentityKeys(doc.data()).some(key => keys.has(key)))) {
-          throw submissionError(409, 'Canonical catalog conflict; resolve separately before approval.');
-        }
-        // Shared claim documents serialize competing R2A publications with any overlapping identity.
-        for (const key of keys) {
-          const claim = db.collection('product_submission_identity').doc(hash(key));
-          if ((await tx.get(claim)).exists) throw submissionError(409, 'Canonical identity is already reserved.');
-          claims.push(claim);
-        }
+        prepared = await prepareCatalogWrite({ tx, db, uid, action: 'create', productId, input: content, at, deriveReservationId });
       }
-      if (productRef) {
-        tx.set(productRef, { ...content, status: 'Active', is_active: true, createdAt: at, updatedAt: at });
-        for (const claim of claims) tx.set(claim, { productId, submissionId: ref.id, createdAt: at });
-      }
+      prepared?.apply();
       tx.update(ref, { status: decision, productId, reviewedBy: uid, reviewedAt: at, updatedAt: at });
       return { body: { id: ref.id, status: decision, productId, replayed: false } };
     });

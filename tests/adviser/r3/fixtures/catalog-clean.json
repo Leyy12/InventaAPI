@@ -1,0 +1,6 @@
+{
+  "products": [
+    { "id": "can", "data": { "name": "Coke", "brand": "Coca-Cola", "category": "Drinks", "segment": "Grocery", "status": "Active", "variants": [{ "sku": "CAN-330", "size": "330ml", "price": 20 }] } },
+    { "id": "bottle", "data": { "name": "Coke", "brand": "Coca-Cola", "category": "Drinks", "segment": "Grocery", "status": "Archived", "is_active": false, "variants": [{ "sku": "BOTTLE-15", "size": "1.5L", "price": 50 }] } }
+  ]
+}
