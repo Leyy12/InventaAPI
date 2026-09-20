@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const tests = ['tests/adviser/phase2a/api-key-security.test.mjs', 'tests/adviser/phase2a/rules-and-wiring.test.mjs'];
 const sources = [
+  'functions/subscription-lifecycle.mjs',
   ...tests, 'tests/adviser/phase2a/memory-firestore.mjs',
   'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
   'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js',

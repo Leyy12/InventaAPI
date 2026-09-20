@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { ShieldCheck, Key, Activity, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
+import { useAccountEntitlements } from "@/lib/use-account-entitlements";
 
 export default function SecurityCenterPage() {
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -13,6 +14,7 @@ export default function SecurityCenterPage() {
   const [search, setSearch] = useState("");
 
   const loading = !usersReady || !keysReady;
+  const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId));
 
   useEffect(() => {
     // Listener 1: Users — build lookup map by userId
@@ -141,7 +143,9 @@ export default function SecurityCenterPage() {
                 filteredKeys.map((k) => {
                   // Authoritative user lookup by userId stored on the key
                   const user = usersMap[k.userId] || {};
-                  const usedPct = k.requestLimit ? Math.min(100, ((k.requestsUsed || 0) / k.requestLimit) * 100) : 0;
+                  const entitlement = entitlements[k.userId];
+                  const usedPct = entitlement?.limit && entitlement.used != null
+                    ? Math.min(100, entitlement.used / entitlement.limit * 100) : 0;
                   return (
                     <tr key={k.id} className="hover:bg-slate-800/30 transition-colors">
                       {/* API Key Name + masked secret */}
@@ -170,12 +174,12 @@ export default function SecurityCenterPage() {
                       {/* Plan & Usage bar */}
                       <td className="p-4 align-top min-w-[160px]">
                         <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-medium">
-                          {k.plan || "Free"}
+                          {entitlement?.plan || 'Verifying'} · {entitlement?.status || 'unverified'}
                         </span>
                         <div className="mt-2">
                           <div className="flex justify-between text-[10px] text-slate-500 mb-1">
-                            <span>{k.requestsUsed || 0} used</span>
-                            <span>{k.requestLimit ?? "—"} limit</span>
+                            <span>{entitlement?.used ?? '—'} used</span>
+                            <span>{entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'} limit</span>
                           </div>
                           <div className="w-full bg-slate-800 rounded-full h-1 overflow-hidden">
                             <div

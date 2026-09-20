@@ -47,11 +47,25 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
   };
 
   async function accountContext(db, uid) {
-    const accountDoc = await db.collection('users').doc(uid).get();
+    return db.runTransaction(async tx => {
+    const userRef = db.collection('users').doc(uid);
+    const accountDoc = await tx.get(userRef);
     if (!accountDoc.exists) throw new ApiSecurityError(404, 'ACCOUNT_NOT_FOUND', 'Account not found.');
-    const usageDoc = await db.collection('account_api_usage').doc(uid).get();
+    const usageDoc = await tx.get(db.collection('account_api_usage').doc(uid));
     const account = accountDoc.data();
-    return { account, entitlement: accountEntitlement(account), usage: usageForToday(usageDoc.exists ? usageDoc.data() : null, clock()) };
+    const entitlement = accountEntitlement(account, clock());
+    if (entitlement.normalization) tx.update(userRef, entitlement.normalization);
+    return { account: { ...account, ...entitlement.normalization }, entitlement, usage: usageForToday(usageDoc.exists ? usageDoc.data() : null, clock()) };
+    });
+  }
+
+  async function currentAccount(tx, db, uid, context) {
+    const account = (await tx.get(db.collection('users').doc(uid))).data();
+    const entitlement = accountEntitlement(account, clock());
+    if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment)) {
+      throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
+    }
+    return entitlement;
   }
 
   function refFor(db, id) {
@@ -114,7 +128,12 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         plan: context.entitlement.plan, requestLimit: context.entitlement.limit,
         productAvailability: Object.fromEntries(authorizedProductIds(scope).map(id => [id, { availableSince: now }])),
       };
-      await db.collection('api_keys').doc(issued.id).create(key);
+      await db.runTransaction(async tx => {
+        await currentAccount(tx, db, actor.uid, context);
+        const ref = db.collection('api_keys').doc(issued.id);
+        if ((await tx.get(ref)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key creation.');
+        tx.set(ref, key);
+      });
       await audit(db, 'API Key Generated', actor, issued.id);
       return res.json({ success: true, ...publicKeyMetadata(issued.id, key, context.entitlement, context.usage), key: issued.credential });
     }),
@@ -125,6 +144,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       }
       const ref = refFor(db, req.params.id);
       await db.runTransaction(async tx => {
+        await currentAccount(tx, db, actor.uid);
         assertOwner(await tx.get(ref), actor.uid);
         tx.update(ref, { name });
       });
@@ -138,6 +158,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const scope = scopeFromBody(req.body || {});
       await validateScope(db, scope, context);
       const count = await db.runTransaction(async tx => {
+        await currentAccount(tx, db, actor.uid, context);
         const existing = assertOwner(await tx.get(ref), actor.uid);
         const previousIds = new Set(authorizedProductIds(existing));
         const availability = Object.fromEntries(authorizedProductIds(scope).flatMap(id => {
@@ -154,6 +175,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     revoke: authenticated(async (req, res, actor, db) => {
       const ref = refFor(db, req.params.id);
       await db.runTransaction(async tx => {
+        await currentAccount(tx, db, actor.uid);
         assertOwner(await tx.get(ref), actor.uid);
         tx.update(ref, { status: 'revoked', revokedAt: clock() });
       });

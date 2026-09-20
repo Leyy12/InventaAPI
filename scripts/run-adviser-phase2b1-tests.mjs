@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const tests = ['tests/adviser/phase2b1/payment.test.mjs', 'tests/adviser/phase2b1/wiring.test.mjs'];
-const sources = [...tests, 'tests/adviser/phase2b1/memory-firestore.mjs', 'services/api-key-security.js',
+const sources = [...tests, 'functions/subscription-lifecycle.mjs', 'tests/adviser/phase2b1/memory-firestore.mjs', 'services/api-key-security.js',
   'services/payment-contract.js', 'services/paymongo-checkout.js', 'services/payment-checkout.js', 'services/payment-webhook.js'];
 for (const file of sources) {
   const source = readFileSync(resolve(root, file), 'utf8');

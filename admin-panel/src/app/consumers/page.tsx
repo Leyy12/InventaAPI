@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Users, Search, Activity, CheckCircle2, AlertTriangle } from "lucide-react";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
+import { useAccountEntitlements } from "@/lib/use-account-entitlements";
 
 export default function ConsumersPage() {
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -13,6 +14,7 @@ export default function ConsumersPage() {
   const [search, setSearch] = useState("");
 
   const loading = !usersReady || !keysReady;
+  const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId));
 
   useEffect(() => {
     // Listener 1: Users collection — authoritative customer profile data
@@ -121,9 +123,9 @@ export default function ConsumersPage() {
                 filteredKeys.map((k) => {
                   // Authoritative join: api_key.userId → users/{userId}
                   const user = usersMap[k.userId] || {};
-                  const usedPct = k.requestLimit
-                    ? Math.min(100, ((k.requestsUsed || 0) / k.requestLimit) * 100)
-                    : 0;
+                  const entitlement = entitlements[k.userId];
+                  const usedPct = entitlement?.limit && entitlement.used != null
+                    ? Math.min(100, entitlement.used / entitlement.limit * 100) : 0;
                   const isOverage = usedPct >= 80;
 
                   return (
@@ -150,7 +152,7 @@ export default function ConsumersPage() {
                         <div className="text-sm font-bold text-slate-200">{k.name || "Unnamed Key"}</div>
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-                            {k.plan || "Free"}
+                            {entitlement?.plan || 'Verifying'} · {entitlement?.status || 'unverified'}
                           </span>
                         </div>
                       </td>
@@ -160,7 +162,7 @@ export default function ConsumersPage() {
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs text-slate-400">Requests</span>
                           <span className={`text-xs font-bold ${isOverage ? 'text-red-400' : 'text-white'}`}>
-                            {k.requestsUsed || 0} / {k.requestLimit ?? "∞"}
+                            {entitlement?.used ?? '—'} / {entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'}
                           </span>
                         </div>
                         <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
@@ -169,9 +171,9 @@ export default function ConsumersPage() {
                             style={{ width: `${usedPct}%` }}
                           />
                         </div>
-                        {k.requestLimit && (
+                        {entitlement?.limit != null && entitlement?.used != null && (
                           <div className="text-[10px] text-slate-500 text-right mt-0.5">
-                            {Math.max(0, (k.requestLimit || 0) - (k.requestsUsed || 0))} remaining
+                            {Math.max(0, entitlement.limit - entitlement.used)} remaining
                           </div>
                         )}
                       </td>

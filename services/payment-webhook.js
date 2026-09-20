@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
 import { PRO_PURCHASE, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -54,8 +55,9 @@ export function paymentFromEvent(event, mode) {
     mode, amount: paymentAttrs.amount, currency: paymentAttrs.currency };
 }
 
-export async function fulfillPayment(db, payment, now) {
+export async function fulfillPayment(db, payment, time) {
   return db.runTransaction(async tx => {
+    const now = typeof time === 'function' ? time() : time;
     const binding = (await tx.get(refFor(db, 'sessions', modeKey(payment.mode, payment.sessionId)))).data();
     requirePayment(binding && orderIdValid(binding.orderId), 'UNBOUND_SESSION');
     const orderRef = refFor(db, 'orders', binding.orderId);
@@ -64,7 +66,7 @@ export async function fulfillPayment(db, payment, now) {
       && binding.sessionId === payment.sessionId && binding.mode === payment.mode
       && order.sessionId === payment.sessionId && order.paymentIntentId === payment.paymentIntentId
       && order.mode === payment.mode && matchesPurchase(order), 'ORDER_MISMATCH');
-    requirePayment(order.state === 'pending' || order.state === 'processed', 'INVALID_ORDER_STATE');
+    requirePayment(['pending', 'processed', 'review_required'].includes(order.state), 'INVALID_ORDER_STATE');
     const eventRef = refFor(db, 'events', modeKey(payment.mode, payment.eventId));
     const paymentRef = refFor(db, 'payments', `paymongo_${modeKey(payment.mode, payment.paymentId)}`);
     const eventRecord = (await tx.get(eventRef)).data();
@@ -75,32 +77,43 @@ export async function fulfillPayment(db, payment, now) {
       sessionId: payment.sessionId, mode: payment.mode };
     if (eventRecord || paymentRecord || order.state === 'processed') {
       requirePayment((!eventRecord || same(eventRecord)) && same(paymentRecord)
-        && paymentRecord.status === 'paid' && order.state === 'processed' && order.paymentId === payment.paymentId,
+        && paymentRecord.status === 'paid' && (order.state === 'processed'
+          || order.state === 'review_required' && paymentRecord.entitlementGranted === false) && order.paymentId === payment.paymentId,
       'PAYMENT_ALREADY_CONSUMED');
       if (!eventRecord) tx.set(eventRef, { ...evidence, processedAt: order.processedAt });
-      return { duplicate: true };
+      return { duplicate: true, ...(paymentRecord.entitlementGranted === false ? { reviewRequired: true } : {}) };
     }
     // Read failures never fall back to processing; no metadata/email ownership.
+    requirePayment(order.state === 'pending', 'INVALID_ORDER_STATE');
     const userRef = db.collection('users').doc(order.userId);
     const account = (await tx.get(userRef)).data();
+    // A verified charge racing deletion is retained once for operator resolution.
+    if (account && accountBlocked(account)) {
+      const processedAt = now.toISOString();
+      tx.set(paymentRef, { ...evidence, status: 'paid', amount: order.amount, currency: order.currency,
+        entitlementGranted: false, reviewReason: 'account_disabled', createdAt: processedAt });
+      tx.set(eventRef, { ...evidence, processedAt, reviewRequired: true });
+      tx.update(orderRef, { state: 'review_required', paymentId: payment.paymentId, processedAt,
+        reviewReason: 'account_disabled', entitlementGranted: false });
+      return { duplicate: false, reviewRequired: true };
+    }
     requireCustomer(account, order.userId);
     requirePurchasable(account, now);
-    const start = now.toISOString();
-    const end = new Date(now);
-    // Preserve the existing calendar-day calculation, not a new renewal policy.
-    end.setDate(end.getDate() + order.durationDays);
-    const expiresAt = end.toISOString();
+    const processedAt = now.toISOString();
+    const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
     tx.set(paymentRef, { ...evidence, userEmail: typeof account.email === 'string' ? account.email : '',
       amount: order.amount, currency: order.currency,
       paymentMethod: 'gcash', paymongoReferenceId: payment.paymentId,
       paymongoPaymentIntentId: payment.paymentIntentId, paymongoCheckoutSessionId: payment.sessionId,
       plan: order.plan, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt,
-      status: 'paid', createdAt: start, webhookEventId: payment.eventId });
-    tx.set(eventRef, { ...evidence, processedAt: start });
+      status: 'paid', entitlementGranted: true, createdAt: processedAt, webhookEventId: payment.eventId });
+    tx.set(eventRef, { ...evidence, processedAt });
     tx.update(orderRef, { state: 'processed', paymentId: payment.paymentId, webhookEventId: payment.eventId,
-      processedAt: start, subscriptionPeriodEnd: expiresAt });
+      processedAt, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt });
     tx.update(userRef, { plan: order.plan, apiRequestLimit: order.apiRequestLimit, subscription_status: 'active',
-      subscriptionExpiresAt: expiresAt, lastSubscribedAt: start });
+      subscriptionExpiresAt: expiresAt, lastSubscribedAt: processedAt,
+      subscriptionStartedAt: dateMillis(account.subscriptionExpiresAt) > now.getTime()
+        ? (account.subscriptionStartedAt || account.lastSubscribedAt || processedAt) : processedAt });
     return { duplicate: false };
   });
 }
@@ -119,9 +132,10 @@ export function createPaymentWebhook({ getDb, getConfig, clock = () => new Date(
       verifiedPayment = payment;
       if (!payment) return res.json({ received: true, processed: false, ignored: true,
         ...(['payment.failed', 'checkout_session.payment.failed'].includes(event.data.attributes.type) ? { reason: 'failed' } : {}) });
-      const result = await fulfillPayment(getDb(), payment, now);
+      const result = await fulfillPayment(getDb(), payment, clock);
+      if (result.reviewRequired) report({ code: 'PAYMENT_ACCOUNT_DISABLED', orderPaymentId: payment.paymentId, eventId: payment.eventId });
       // Acknowledge fulfillment only after its durable atomic commit.
-      return res.json({ received: true, processed: !result.duplicate, ...result,
+      return res.json({ received: true, processed: !result.duplicate && !result.reviewRequired, ...result,
         ...(result.duplicate ? { reason: 'duplicate' } : {}) });
     } catch (error) {
       report({ code: error.code || 'PAYMENT_UNAVAILABLE', ...(verifiedPayment ? {

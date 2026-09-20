@@ -113,7 +113,7 @@ test('checkout: unexpected existing session binding cannot be overwritten', asyn
   assert.equal((await invoke(env.checkout)).statusCode, 503);
   assert.equal(env.db.read('payment_sessions/test_cs_abc123').orderId, 'another');
 });
-test('checkout: active Pro, unknown plans and non-customers fail closed', async () => {
+test('checkout: unresolved Pro, unknown plans and non-customers fail closed', async () => {
   for (const override of [{ plan: 'Enterprise' }, { role: 'Admin' }, { uid: 'stranger' }, { plan: 'Pro' },
     { plan: 'Pro', subscriptionExpiresAt: '2099-01-01' }]) {
     const env = setup(); env.db.seed('users/owner', { ...customer, ...override });
@@ -134,10 +134,10 @@ test('status: redirect/order before fulfillment is not payment proof', async () 
   assert.equal((await invoke(env.status, { query: { orderId } })).body.paymentConfirmed, true);
   assert.equal((await invoke(env.status)).body.paymentConfirmed, false);
 });
-test('status: existing expired-status behavior remains, without extending any term', async () => {
+test('status: Phase 2B2 reports effective Free without mutating the account', async () => {
   const env = setup(); env.db.seed('users/owner', { ...customer, plan: 'Pro', subscriptionExpiresAt: '2020-01-01' });
   assert.equal((await invoke(env.status)).body.expired, true);
-  assert.equal(env.db.read('users/owner').plan, 'Free');
+  assert.equal(env.db.read('users/owner').plan, 'Pro');
   assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2020-01-01');
 });
 

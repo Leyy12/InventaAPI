@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { checkoutPayload } from './paymongo-checkout.js';
+import { evaluateEntitlement } from '../functions/subscription-lifecycle.mjs';
 import { PRO_PURCHASE, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -27,12 +28,12 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       requirePayment(body[field] === undefined || body[field] === PRO_PURCHASE[field], 'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     }
     const config = getConfig();
-    const now = clock();
     const id = newOrderId();
     const attemptId = randomUUID();
     requirePayment(orderIdValid(id), 'ORDER_ID', 'Checkout unavailable.', 503);
     const lockRef = refFor(db, 'locks', uid);
     const attempt = await db.runTransaction(async tx => {
+      const now = clock();
       const account = (await tx.get(db.collection('users').doc(uid))).data();
       requireCustomer(account, uid);
       requirePurchasable(account, now);
@@ -113,31 +114,30 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
   const status = authenticate(async (req, res, uid, db) => {
     const orderId = req.query?.orderId;
     requirePayment(orderId === undefined || orderIdValid(orderId), 'INVALID_ORDER', 'Invalid order identifier.', 400);
-    const now = clock();
     const result = await db.runTransaction(async tx => {
+      const now = clock();
       const userRef = db.collection('users').doc(uid);
       const account = (await tx.get(userRef)).data();
       requireCustomer(account, uid);
+      const effective = evaluateEntitlement(account, now);
       let paymentConfirmed = false;
       if (orderId !== undefined) {
         const order = (await tx.get(refFor(db, 'orders', orderId))).data();
         requirePayment(order?.userId === uid, 'ORDER_UNAVAILABLE', 'Order unavailable.', 404);
+        const receipt = order.paymentId ? (await tx.get(refFor(db, 'payments', `paymongo_${modeKey(order.mode, order.paymentId)}`))).data() : null;
+        // Later renewals do not make an earlier receipt appear unpaid.
         paymentConfirmed = order.state === 'processed' && matchesPurchase(order)
-          && account.plan === 'Pro' && account.subscription_status === 'active'
-          && account.lastSubscribedAt === order.processedAt && account.subscriptionExpiresAt === order.subscriptionPeriodEnd;
+          && receipt?.orderId === order.id && receipt.userId === uid && receipt.status === 'paid'
+          && receipt.entitlementGranted !== false;
       }
-      const expiresAt = account.subscriptionExpiresAt;
-      const expired = account.plan === 'Pro' && Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) <= now.getTime();
-      // Existing status-endpoint downgrade is retained, not a new lifecycle.
-      // A transaction prevents this old read/modify/write path racing fulfillment.
-      if (expired) {
-        tx.update(userRef, { plan: 'Free', apiRequestLimit: 50, subscription_status: 'inactive' });
-        return { plan: 'Free', subscription_status: 'inactive', expired: true, expiredAt: expiresAt, paymentConfirmed: false };
-      }
-      return { plan: account.plan || 'Free', subscription_status: account.subscription_status || 'inactive',
-        subscriptionExpiresAt: expiresAt || null, expired: false, paymentConfirmed,
-        ...(account.plan === 'Pro' && Number.isFinite(Date.parse(expiresAt))
-          ? { daysLeft: Math.ceil((Date.parse(expiresAt) - now.getTime()) / 86400000) } : {}) };
+      // Read-only projection. Quota/management and optional scheduler normalize.
+      return { plan: effective.plan, subscription_status: effective.status, activePro: effective.activePro,
+        apiRequestLimit: effective.limit, subscriptionStartedAt: effective.startedAt,
+        subscriptionExpiresAt: effective.expiresAt, lastSubscribedAt: account.lastSubscribedAt || null,
+        expired: effective.expired, ...(effective.expired ? { expiredAt: effective.expiresAt } : {}), paymentConfirmed,
+        canPurchasePro: effective.level < 2, serverTime: now.toISOString(),
+        secondsRemaining: effective.activePro ? Math.max(0, (Date.parse(effective.expiresAt) - now.getTime()) / 1000) : 0,
+        daysLeft: effective.activePro ? Math.ceil((Date.parse(effective.expiresAt) - now.getTime()) / 86400000) : 0 };
     });
     return res.json(result);
   });

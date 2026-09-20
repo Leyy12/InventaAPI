@@ -3,11 +3,14 @@
 import { useAuth } from "@/lib/firebase/auth-context";
 import { Settings2, Building2 } from "lucide-react";
 import Link from "next/link";
+import { useState } from 'react';
+import SubscriptionModal from '@/components/subscription/SubscriptionModal';
 
 export default function SettingsPage() {
-  const { appUser, loading } = useAuth();
+  const { appUser, loading, entitlement } = useAuth();
+  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
 
-  if (loading) {
+  if (loading || !entitlement) {
     return (
       <div className="w-full px-6 lg:px-8 space-y-8 animate-pulse">
         <div className="h-10 w-48 bg-slate-800 rounded"></div>
@@ -30,6 +33,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="glass-card rounded-xl p-6 md:p-8">
+        {entitlement.canPurchasePro && <button onClick={() => setSubscriptionOpen(true)}
+          className="mb-6 text-indigo-400 font-semibold">{entitlement.activePro ? 'Renew Pro — 30 more days' : 'Subscribe to Pro'}</button>}
+        <SubscriptionModal isOpen={subscriptionOpen} onClose={() => setSubscriptionOpen(false)} />
         <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-indigo-400" />
           Business Configuration

@@ -5,6 +5,8 @@ import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/a
 import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "./config";
 import { useRouter, usePathname } from "next/navigation";
+import { readSubscription, type SubscriptionState } from '@/lib/subscription';
+import { createEntitlementPoller } from '@/lib/entitlement-poller';
 
 
 
@@ -17,8 +19,8 @@ interface AppUser {
   role: string;
   plan: string;
   subscription_status?: string;
-  subscriptionExpiresAt?: string;   // ISO string — set by PayMongo webhook
-  apiRequestLimit?: number;
+  subscriptionExpiresAt?: string | null;
+  apiRequestLimit?: number | null;
   // Free-plan segment restriction: which product segment this user may access.
   // Set during the Welcome/Quick Setup flow after first login.
   // Only enforced when plan === "Free".
@@ -31,6 +33,7 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   refreshUserDoc: () => Promise<AppUser | null>;
+  entitlement: SubscriptionState | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -39,6 +42,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: async () => {},
   refreshUserDoc: async () => null,
+  entitlement: null,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -58,6 +62,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => readCache<User>("userCache"));
   const [appUser, setAppUser] = useState<AppUser | null>(() => readCache<AppUser>("appUserCache"));
   const [loading, setLoading] = useState(true);
+  const [entitlement, setEntitlement] = useState<SubscriptionState | null>(null);
+  const entitlementSession = React.useRef<{
+    uid: string;
+    poller: ReturnType<typeof createEntitlementPoller<SubscriptionState>>;
+  } | null>(null);
+  const profileRefreshRequest = React.useRef(0);
+  React.useEffect(() => {
+    if (loading || !user) return;
+    const poller = createEntitlementPoller({ read: () => readSubscription(user),
+      onState: state => { if (auth.currentUser?.uid === user.uid) setEntitlement(state); } });
+    const session = { uid: user.uid, poller };
+    entitlementSession.current = session;
+    poller.start();
+    const visible = () => { if (document.visibilityState === 'visible') void poller.refresh(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      poller.stop();
+      if (entitlementSession.current === session) entitlementSession.current = null;
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [user, loading]);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -118,6 +143,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.log(`    - existing appUser (ref): ${appUserRef.current ? `EXISTS (${appUserRef.current.fullName}, ${appUserRef.current.plan})` : '❌ NULL'}`);
       console.log(`    - auth.currentUser (direct): ${auth.currentUser ? `EXISTS (${auth.currentUser.email})` : '❌ NULL'}`);
       
+      if (entitlementSession.current?.uid !== currentUser?.uid) {
+        entitlementSession.current?.poller.stop();
+        entitlementSession.current = null;
+        setEntitlement(null);
+      }
       setUser(currentUser);
       if (currentUser && typeof window !== 'undefined') {
         localStorage.setItem("userCache", JSON.stringify({ uid: currentUser.uid, email: currentUser.email }));
@@ -276,7 +306,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // paid plans). Only block access when there is genuinely no plan field at all.
       const hasActiveSubscription =
         normalizedPlan === "free" ||         // Free tier — always allowed
-        normalizedPlan === "deleted" ||      // Churned Free accounts — still Free-tier access
         normalizedPlan === "starter" ||      // Legacy Starter plan
         normalizedPlan === "pro" ||          // Pro plan
         normalizedPlan === "unlimited" ||
@@ -324,6 +353,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []); // Empty array: mount once, never re-run (no more flicker!)
 
   const logout = async () => {
+    entitlementSession.current?.poller.stop();
+    entitlementSession.current = null;
     try {
       // 1. Capture identity BEFORE clearing state (auth token still valid here)
       const uid   = user?.uid ?? null;
@@ -338,6 +369,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // 3. Clear React state immediately
       setUser(null);
       setAppUser(null);
+      setEntitlement(null);
 
       // 4. Fire-and-forget audit log — do NOT await (never block sign-out on this)
       if (uid) {
@@ -372,13 +404,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const refreshUserDoc = async (): Promise<AppUser | null> => {
+  const refreshUserDoc = React.useCallback(async (): Promise<AppUser | null> => {
     const currentUser = auth.currentUser;
-    if (!currentUser) return null;
+    const session = entitlementSession.current;
+    if (!currentUser || session?.uid !== currentUser.uid) return null;
+    const request = ++profileRefreshRequest.current;
     try {
-      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-      if (userDoc.exists()) {
-        const fresh = userDoc.data() as AppUser;
+      // Manual/payment refresh uses the same scheduler as background polling.
+      const [userDoc, state] = await Promise.all([
+        getDoc(doc(db, "users", currentUser.uid)), session.poller.refresh(),
+      ]);
+      if (request !== profileRefreshRequest.current || entitlementSession.current !== session
+        || auth.currentUser?.uid !== currentUser.uid) return null;
+      if (userDoc.exists() && state) {
+        const profile = userDoc.data() as AppUser;
+        const fresh: AppUser = { ...profile, ...state };
         setAppUser(fresh);
         if (typeof window !== "undefined") {
           localStorage.setItem("appUserCache", JSON.stringify(fresh));
@@ -390,10 +430,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error("[AuthContext] refreshUserDoc failed:", error);
       return null;
     }
-  };
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, appUser, loading, logout, refreshUserDoc }}>
+    <AuthContext.Provider value={{ user,
+      appUser: appUser ? { ...appUser, plan: entitlement?.plan ?? 'Unavailable',
+        apiRequestLimit: entitlement?.apiRequestLimit ?? (entitlement ? null : 0),
+        subscription_status: entitlement?.subscription_status ?? 'unverified',
+        subscriptionExpiresAt: entitlement?.subscriptionExpiresAt ?? null } : null,
+      entitlement, loading, logout, refreshUserDoc }}>
       {children}
     </AuthContext.Provider>
   );

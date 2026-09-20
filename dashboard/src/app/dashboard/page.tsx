@@ -153,9 +153,9 @@ export default function DashboardPage() {
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-5 py-4 flex items-center gap-3">
         <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" aria-hidden="true" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-emerald-300">Payment successful — your Pro plan is now active!</p>
+          <p className="text-sm font-semibold text-emerald-300">Payment confirmed. Your current subscription is shown below.</p>
           <p className="text-xs text-emerald-400/80 mt-0.5">
-            5,000 requests/day · GCash · Expires {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "in 30 days"}
+            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited' : appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/day · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
           </p>
         </div>
         <button
@@ -246,17 +246,17 @@ export default function DashboardPage() {
       {/* ─── Plan Card (Full Width) ─── */}
       <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] px-6 py-5 flex items-center justify-between">
         <div>
-          <p className="text-white font-semibold text-sm">{isPro ? "Pro plan" : "Free plan"}</p>
+          <p className="text-white font-semibold text-sm">{appUser?.plan || 'Verifying'} plan</p>
           <p className="text-slate-500 text-xs mt-0.5">
-            {isPro ? "Unlimited requests & segments" : `Limited to 1 segment (${appUser?.selectedSegment || "None"})`}
+            {isPro ? `${appUser?.apiRequestLimit?.toLocaleString()} requests/day · All segments` : `${appUser?.apiRequestLimit ?? 'Verifying'} requests/day · ${appUser?.subscription_status || 'Verifying'}`}
           </p>
         </div>
-        {!isPro && (
+        {(
           <Link
             href="/dashboard/settings"
             className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold hover:underline transition-colors"
           >
-            Upgrade plan
+            {isPro ? 'Renew Pro' : 'Upgrade plan'}
           </Link>
         )}
       </div>

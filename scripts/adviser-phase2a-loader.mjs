@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Set([
+  'functions/subscription-lifecycle.mjs',
   'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
   'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js',
   'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/phase2a/api-key-security.test.mjs',

@@ -7,17 +7,13 @@ import NotificationBell from "@/components/shared/NotificationBell";
 import { notifySubscriptionExpiringSoon } from "@/lib/firebase/notifications";
 
 export default function Navbar() {
-  const { user, appUser } = useAuth();
+  const { user, entitlement } = useAuth();
 
   // ── Subscription expiry warning ───────────────────────────────────────────
   // Fires once per session after user + appUser data are loaded
   useEffect(() => {
-    if (!user || !appUser?.subscriptionExpiresAt) return;
-
-    const expiresAt = new Date(appUser.subscriptionExpiresAt);
-    const now = new Date();
-    const diffMs = expiresAt.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    if (!user || !entitlement?.activePro) return;
+    const diffDays = Math.ceil(entitlement.secondsRemaining / 86400);
 
     // Warn if expiry is within 3 days (and hasn't already expired)
     if (diffDays > 0 && diffDays <= 3) {
@@ -26,7 +22,7 @@ export default function Navbar() {
         daysLeft: diffDays,
       });
     }
-  }, [user, appUser]);
+  }, [user, entitlement]);
 
   return (
     <header className="h-16 glass border-b border-slate-800/60 px-6 flex items-center justify-between sticky top-0 z-30">

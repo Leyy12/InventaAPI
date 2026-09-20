@@ -19,11 +19,11 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
   const userRef = db.collection('users').doc(userId);
   const usageRef = db.collection('account_api_usage').doc(userId);
   const result = await db.runTransaction(async transaction => {
-    const now = clock();
     // All reads precede writes. Key, owner, entitlement, and usage participate in retries.
     const keyDoc = await transaction.get(keyRef);
     const userDoc = await transaction.get(userRef);
     const usageDoc = await transaction.get(usageRef);
+    const now = clock();
     const key = keyDoc.exists ? keyDoc.data() : null;
     assertActiveKey(key, now);
     if (key.userId !== userId || !credentialMatches(keyId, key, credential)) {
@@ -31,9 +31,11 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     }
     if (!userDoc.exists) throw new ApiSecurityError(401, 'ACCOUNT_NOT_FOUND', 'API-key account no longer exists.');
     const account = userDoc.data();
-    const entitlement = accountEntitlement(account);
+    const entitlement = accountEntitlement(account, now);
+    if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
+    const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
     if (allowedPlans && entitlement.level < Math.min(...allowedPlans.map(plan => PLAN_LEVELS[plan] ?? Infinity))) {
-      throw new ApiSecurityError(403, 'PLAN_UPGRADE_REQUIRED', 'Your account plan does not include this endpoint.');
+      return { denied: new ApiSecurityError(403, 'PLAN_UPGRADE_REQUIRED', 'Your account plan does not include this endpoint.') };
     }
     const usage = usageForToday(usageDoc.exists ? usageDoc.data() : null, now);
     if (!usageDoc.exists && !provablyPostCutover(userDoc, cutoverAt, now)) {
@@ -45,9 +47,9 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     if (usage.holdUntil) return { pendingCleanWindow: usage.holdUntil };
     const { limit } = entitlement;
     if (limit !== null && usage.used >= limit) {
-      throw new ApiSecurityError(429, 'Rate Limit Exceeded', 'Daily account allowance exhausted. Resets at midnight UTC.', {
+      return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded', 'Daily account allowance exhausted. Resets at midnight UTC.', {
         quota: { used: usage.used, limit, remaining: 0, resetsAt: usage.resetsAt, scope: 'account' },
-      });
+      }) };
     }
     if (usage.used === Number.MAX_SAFE_INTEGER) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Unable to record usage.');
     const used = usage.used + 1;
@@ -57,12 +59,13 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       ? key.requestsUsed : 0;
     transaction.update(keyRef, { lastUsed: now.toISOString(), requestsUsed: Math.min(keyUsed + 1, Number.MAX_SAFE_INTEGER), resetAt: usage.resetsAt });
     return {
-      key: { ...key, id: keyId }, account,
+      key: { ...key, id: keyId }, account: effectiveAccount,
       usage: { used, limit, remaining: limit === null ? null : limit - used, resetsAt: usage.resetsAt, unlimited: limit === null, scope: 'account' },
     };
   });
   // Throw only AFTER committing the hold, otherwise the transaction rolls it
   // back and every retry/next-day request would establish another first hold.
+  if (result.denied) throw result.denied;
   if (result.pendingCleanWindow) {
     throw new ApiSecurityError(503, 'QUOTA_CUTOVER_PENDING', 'Account quota becomes available at the next clean UTC window.', {
       quota: { used: null, remaining: 0, resetsAt: result.pendingCleanWindow, scope: 'account', state: 'pending_clean_window' },

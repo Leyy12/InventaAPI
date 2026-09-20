@@ -1,8 +1,12 @@
 import express from 'express';
+import { getAuth } from 'firebase-admin/auth';
+import { createAdminEntitlements } from '../services/admin-entitlements.js';
 import { getFirestore } from 'firebase-admin/firestore';
 import { verifyFirebaseToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
+router.post('/entitlements', createAdminEntitlements({ getDb: () => getFirestore(),
+  verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked) }));
 
 /**
  * GET /api/v1/admin/stats

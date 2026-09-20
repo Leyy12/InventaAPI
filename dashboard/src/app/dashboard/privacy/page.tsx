@@ -3,9 +3,6 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { Shield, Trash2, AlertTriangle } from "lucide-react";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
-import { apiKeyRequest } from "@/lib/api-keys";
 
 export default function PrivacySettingsPage() {
   const { user, logout } = useAuth();
@@ -18,27 +15,19 @@ export default function PrivacySettingsPage() {
     setDeleting(true);
     
     try {
-      // 1. Mark account as deletion requested
-      const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, {
-        deletionRequested: true,
-        deletionRequestedAt: serverTimestamp(),
-        status: "pending_deletion"
-      });
-
-      // 2. Revoke API Keys
-      try {
-        const keysData = await apiKeyRequest(user);
-        for (const key of keysData.keys || []) {
-          await apiKeyRequest(user, `/${key.id}`, { method: 'DELETE' });
-        }
-      } catch (err) {
-        console.error("Failed to revoke API keys during deletion:", err);
-        throw new Error('Key revocation was not confirmed. Retry or contact support before signing out.');
+      const token = await user.getIdToken();
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
+      const response = await fetch(`${base}/api/v1/account/deletion`, { method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }), cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error('Deletion was not confirmed.');
+      if (!result.deleted) {
+        alert(result.message || 'Access is disabled; cleanup needs a retry or support.');
+        setDeleting(false);
+        return;
       }
-
-      // 3. Log out
-      alert("Your account has been marked for deletion. You will now be signed out.");
+      alert("Account access and sign-in have been deleted. Required payment audit records are retained.");
       await logout();
       
     } catch (error) {
@@ -68,12 +57,12 @@ export default function PrivacySettingsPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white">Delete My Account</h2>
-              <p className="text-sm text-red-400/80">Permanently remove your data</p>
+              <p className="text-sm text-red-400/80">Delete account access and sign-in</p>
             </div>
           </div>
           
           <p className="text-slate-300 mb-6 text-sm leading-relaxed">
-            Initiating deletion will immediately revoke all your active API keys and sign you out. Your profile and associated data will be queued for permanent removal in accordance with our data retention policy.
+            Confirming deletion disables API access before cleanup, revokes keys, and deletes your sign-in. Payment history and a minimal account deletion record are retained for audit. If cleanup is incomplete, access stays disabled and support can resume it.
           </p>
 
           {!showDeleteConfirm ? (

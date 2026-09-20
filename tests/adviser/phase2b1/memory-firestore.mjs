@@ -3,9 +3,24 @@
 export function memoryFirestore(initial = {}) {
   const records = new Map(Object.entries(initial).map(([path, data]) => [path, { version: 1, data: structuredClone(data) }]));
   const db = { retries: 0, commits: 0, failRead: null, failWrite: null, failCommit: false, userWrites: 0 };
-  const snapshot = path => ({ exists: records.has(path), data: () => structuredClone(records.get(path)?.data) });
-  const document = path => ({ path, get: async () => snapshot(path) });
-  db.collection = name => ({ doc: id => document(`${name}/${id}`) });
+  const snapshot = path => ({ id: path.split('/').at(-1), exists: records.has(path), data: () => structuredClone(records.get(path)?.data) });
+  const document = path => ({ path, id: path.split('/').at(-1), get: async () => snapshot(path) });
+  const collection = (name, filters = [], maximum = Infinity) => ({
+    doc: id => document(`${name}/${id}`),
+    add: async data => { const ref = document(`${name}/auto-${records.size}`); await db.runTransaction(async tx => tx.set(ref, data)); return ref; },
+    where: (field, op, value) => {
+      if (op !== '==') throw new Error('Unsupported query');
+      return collection(name, [...filters, [field, value]], maximum);
+    },
+    limit: value => collection(name, filters, value),
+    get: async () => {
+      if (name.startsWith(db.failRead || '\0')) throw new Error('query unavailable');
+      const docs = [...records.keys()].filter(path => path.split('/')[0] === name).map(snapshot)
+        .filter(doc => filters.every(([field, value]) => doc.data()[field] === value)).slice(0, maximum);
+      return { docs, empty: !docs.length, size: docs.length };
+    },
+  });
+  db.collection = name => collection(name);
   db.read = path => snapshot(path).data();
   db.dump = () => Object.fromEntries([...records].map(([path, entry]) => [path, structuredClone(entry.data)]));
   db.seed = (path, data) => records.set(path, { version: (records.get(path)?.version || 0) + 1, data: structuredClone(data) });
@@ -25,6 +40,7 @@ export function memoryFirestore(initial = {}) {
         update: (ref, data) => writes.push([ref.path, structuredClone(data), true]),
       });
       await Promise.resolve();
+      if (db.beforeCommit) await db.beforeCommit();
       if ([...reads].some(([path, version]) => (records.get(path)?.version || 0) !== version)) { db.retries++; continue; }
       if (db.failCommit || writes.some(([path]) => path.startsWith(db.failWrite || '\0'))) throw new Error('commit unavailable');
       if (writes.some(([path, , update]) => update && !records.has(path))) throw new Error('update missing');

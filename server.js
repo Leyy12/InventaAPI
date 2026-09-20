@@ -22,6 +22,7 @@ import apiKeysRouter from './routes/apikeys.js';
 import notificationsRouter from './routes/notifications.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
+import accountRouter from './routes/account.js';
 import adminRouter from './routes/admin.js';
 import contactRouter from './routes/contact.js';
 
@@ -144,6 +145,7 @@ app.use('/api/v1/products', productsRouter);
 app.use('/api/v1/api-keys', apiKeysRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/checkout', checkoutRouter);
+app.use('/api/v1/account', accountRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/contact', contactRouter);
 

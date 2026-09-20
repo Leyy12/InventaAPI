@@ -25,7 +25,7 @@ export default function SubscriptionModal({
   selectedPlan = "pro",
   initialError,
 }: SubscriptionModalProps) {
-  const { user, appUser } = useAuth();
+  const { user, entitlement } = useAuth();
   const router = useRouter();
 
   // Step 1: Plan selection
@@ -193,21 +193,7 @@ export default function SubscriptionModal({
         {step === 1 && (
           <div className="p-6">
             {(() => {
-              // DEFENSE IN DEPTH: If this modal is somehow opened for a user
-              // who is ALREADY on an active paid plan (e.g. race condition bypass),
-              // do not show the payment UI at all. 
-              const activePaidPlans = ["Pro", "Enterprise", "Professional", "Unlimited"];
-              const currentPlan = appUser?.plan ?? "";
-              const isCurrentlyPaid = activePaidPlans.includes(currentPlan);
-              
-              let isExpired = false;
-              if (isCurrentlyPaid) {
-                const expiresAt = appUser?.subscriptionExpiresAt;
-                isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-              }
-
-              // If they have an active paid plan, completely replace the checkout UI.
-              if (isCurrentlyPaid && !isExpired && selectedPlan !== "free") {
+              if (entitlement && !entitlement.canPurchasePro && selectedPlan === "pro") {
                 return (
                   <div className="text-center py-6">
                     <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -215,7 +201,7 @@ export default function SubscriptionModal({
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">You're already subscribed</h3>
                     <p className="text-sm text-slate-400 mb-8">
-                      Your account already has an active Pro subscription. You don't need to pay again.
+                      Your account uses a managed plan. Contact support about subscription changes.
                     </p>
                     <button
                       onClick={() => { onClose(); router.push("/dashboard"); }}
@@ -285,8 +271,12 @@ export default function SubscriptionModal({
                   </div>
 
                   {/* CTA */}
+                  {selectedPlan === 'pro' && entitlement?.activePro && (
+                    <p className="text-xs text-slate-400 mb-3">Renewal adds 30 calendar days to your existing expiry.</p>
+                  )}
                   <button
                     onClick={handleContinue}
+                    disabled={selectedPlan === 'pro' && !entitlement?.canPurchasePro}
                     id="subscription-modal-continue-btn"
                     className={`
                       w-full font-bold py-3.5 rounded-xl transition-all shadow-lg text-white
@@ -298,7 +288,7 @@ export default function SubscriptionModal({
                       }
                     `}
                   >
-                    {selectedPlan === "pro" && "Pay with GCash →"}
+                    {selectedPlan === "pro" && (entitlement?.activePro ? "Renew with GCash →" : "Pay with GCash →")}
                     {selectedPlan === "free" && "Use Free Plan"}
                     {selectedPlan === "enterprise" && "Contact Sales →"}
                   </button>

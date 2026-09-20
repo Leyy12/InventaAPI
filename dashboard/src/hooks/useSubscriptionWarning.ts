@@ -20,26 +20,16 @@ interface SubscriptionWarning {
  * - Returns { showWarning: false } for Free-plan users (no expiry concept)
  * - Returns { showWarning: false } if already expired (they are being downgraded to Free)
  *
- * No extra Firestore field needed — computed purely from subscriptionExpiresAt.
+ * Uses remaining time and active state reported by the authenticated backend.
  */
 export function useSubscriptionWarning(): SubscriptionWarning {
-  const { appUser } = useAuth();
+  const { entitlement } = useAuth();
 
   return useMemo(() => {
     const DEFAULT: SubscriptionWarning = { showWarning: false, daysLeft: 0, hoursLeft: 0 };
 
-    // Only relevant for Pro plan users
-    if (!appUser || appUser.plan !== "Pro") return DEFAULT;
-
-    // Must have an expiry date
-    if (!appUser.subscriptionExpiresAt) return DEFAULT;
-
-    const now = new Date();
-    const expiresAt = new Date(appUser.subscriptionExpiresAt);
-    const msLeft = expiresAt.getTime() - now.getTime();
-
-    // Already expired — do not show "expiring soon" banner
-    // (checkout.js auto-downgrade will handle setting plan back to Free)
+    if (!entitlement?.activePro) return DEFAULT;
+    const msLeft = entitlement.secondsRemaining * 1000;
     if (msLeft <= 0) return DEFAULT;
 
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
@@ -56,5 +46,5 @@ export function useSubscriptionWarning(): SubscriptionWarning {
     }
 
     return DEFAULT;
-  }, [appUser]);
+  }, [entitlement]);
 }

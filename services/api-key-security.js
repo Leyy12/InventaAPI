@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { evaluateEntitlement, PLAN_LEVELS } from '../functions/subscription-lifecycle.mjs';
+export { PLAN_LEVELS };
 
 export class ApiSecurityError extends Error {
   constructor(status, code, message, details = {}) {
@@ -82,18 +84,9 @@ export async function authenticateCredential(db, credential, now = new Date()) {
   return { ...key, id: snapshot.id };
 }
 
-export const PLAN_LEVELS = Object.freeze({ free: 0, starter: 0, pro: 1, professional: 1, enterprise: 2, unlimited: 2 });
-
-export function accountEntitlement(account) {
-  const plan = typeof account?.plan === 'string' ? account.plan.toLowerCase() : '';
-  const level = own(PLAN_LEVELS, plan) ? PLAN_LEVELS[plan] : undefined;
-  const limit = account?.apiRequestLimit;
-  if (level === undefined || !(Number.isSafeInteger(limit) && limit >= 0 || level === 2 && limit === null)) {
-    throw new ApiSecurityError(503, 'ENTITLEMENT_UNAVAILABLE', 'Unable to verify account allowance.');
-  }
-  // Preserve the existing Enterprise/Unlimited policy. This phase changes
-  // counter authority, not subscription entitlements or paid-plan semantics.
-  return { plan: account.plan, level, limit: level === 2 ? null : limit };
+export function accountEntitlement(account, now = new Date()) {
+  try { return evaluateEntitlement(account, now); }
+  catch (error) { throw new ApiSecurityError(error.status || 503, error.code || 'ENTITLEMENT_UNAVAILABLE', error.message); }
 }
 
 export function usageForToday(stored, now = new Date()) {

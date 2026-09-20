@@ -76,7 +76,8 @@ service cloud.firestore {
                     && request.resource.data.apiRequestLimit == 50
                     && request.resource.data.get('subscription_status', 'inactive') == 'inactive'
                     && !request.resource.data.keys().hasAny(['subscriptionExpiresAt', 'lastSubscribedAt',
-                      'subscriptionStartedAt', 'paymentReference']);
+                      'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
+                      'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState']);
 
       // Users can update their own document but CANNOT change:
       //   - uid         (identity)
@@ -88,17 +89,20 @@ service cloud.firestore {
       // Using .get() ensures this rule doesn't crash if the field is missing.
       // Admin SDK writes (webhook, scheduled downgrade) bypass these rules entirely.
       allow update: if isOwner(userId)
+                    && resource.data.get('accountState', 'active') == 'active'
+                    && resource.data.get('deletionRequested', false) == false
                     && request.resource.data.uid == resource.data.uid
                     && request.resource.data.role == resource.data.role
                     && request.resource.data.get('plan', '') == resource.data.get('plan', '')
                     && request.resource.data.get('apiRequestLimit', 0) == resource.data.get('apiRequestLimit', 0)
                     && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
                       'subscriptionExpiresAt', 'subscription_status', 'lastSubscribedAt',
-                      'subscriptionStartedAt', 'paymentReference'])
+                      'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
+                      'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState'])
                     && (!('selectedSegment' in request.resource.data) || request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']);
 
-      // Only admins can delete user documents
-      allow delete: if isAdmin();
+      // Server-controlled deletion retains the tombstone against recreation.
+      allow delete: if false;
     }
 
     // ───────────────────────────────────────────────────────────────────────
