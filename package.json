@@ -4,12 +4,11 @@
   "description": "API-based Data-as-a-Service (DaaS) Engine for Multi-Business Sales and Inventory Management",
   "main": "server.js",
   "type": "module",
-  "engines": {
-    "node": "20.x"
-  },
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "validate:release-config": "node scripts/validate-release-config.mjs",
+    "test:r0:config": "node --test tests/r0/release-config.test.mjs",
     "test:adviser:phase1": "node scripts/run-adviser-phase1-tests.mjs",
     "test:adviser:phase2a": "node scripts/run-adviser-phase2a-tests.mjs",
     "test:adviser:phase2a:rules": "node --test --test-reporter=spec scripts/test-adviser-phase2a-rules.mjs"

@@ -2,12 +2,13 @@
   "name": "inventaapi-functions",
   "description": "Firebase Cloud Functions for InventaAPI — scheduled subscription downgrade",
   "scripts": {
+    "build": "node --check index.js",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {
