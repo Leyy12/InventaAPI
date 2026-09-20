@@ -35,55 +35,57 @@ export default function DashboardPage() {
   const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
 
 
-  // Handle PayMongo redirect result (?payment=success | ?payment=failed).
-  // Runs once on mount; strips the param via history.replaceState so a refresh
-  // does not re-show the banner, then verifies the Pro upgrade in Firestore.
+  // A redirect is only a hint to poll. Only an authenticated, order-specific
+  // backend confirmation can show success; keep the order URL while delayed.
   useEffect(() => {
+    if (loading || !user) return;
     const params = new URLSearchParams(window.location.search);
     const status = params.get("payment");
     if (status !== "success" && status !== "failed") return;
-
-    window.history.replaceState({}, "", "/dashboard");
-
-    if (status === "failed") {
-      setPaymentStatus("failed");
-      return;
-    }
-
-    setPaymentStatus("verifying");
-
+    const orderId = params.get("order");
     let cancelled = false;
     let tries = 0;
-
+    let timer: ReturnType<typeof setTimeout>;
     const pollPlanStatus = async () => {
       if (cancelled) return;
-
-      const fresh = await refreshUserDoc();
-
-      // Case-insensitive plan check — webhook may write "pro" or "Pro"
-      if (fresh && fresh.plan?.toLowerCase() === "pro") {
-        setPaymentStatus("success");
-        return;
+      if (orderId) {
+        try {
+          const token = await user.getIdToken();
+          const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+          const response = await fetch(`${base}/api/v1/checkout/subscription-status?orderId=${encodeURIComponent(orderId)}`, {
+            headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+          });
+          const result = await response.json();
+          if (cancelled) return;
+          if (response.ok && result.paymentConfirmed === true) {
+            setPaymentStatus("success");
+            window.history.replaceState({}, "", "/dashboard");
+            await refreshUserDoc();
+            return;
+          }
+        } catch { /* No confirmation means no success claim. */ }
       }
-
+      if (cancelled) return;
       tries += 1;
-      if (tries < 10) {
-        // Webhook delivery can lag a few seconds behind the redirect — keep polling.
-        setTimeout(pollPlanStatus, 2000);
-      } else if (!cancelled) {
-        // Payment was confirmed by PayMongo but the Pro flag has not landed yet.
-        // Usually happens in local dev where webhooks can't hit localhost.
+      if (orderId && tries < 10) {
+        timer = setTimeout(pollPlanStatus, 2000);
+      } else {
         setPaymentStatus("delayed");
       }
     };
-
-    pollPlanStatus();
-
+    timer = setTimeout(() => {
+      if (status === "failed") {
+        setPaymentStatus("failed");
+      } else {
+        setPaymentStatus("verifying");
+        void pollPlanStatus();
+      }
+    }, 0);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user, loading, refreshUserDoc]);
 
   useEffect(() => {
     if (!appUser?.uid || !user) return;
@@ -134,9 +136,9 @@ export default function DashboardPage() {
       <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-5 py-4 flex items-center gap-3">
         <Loader2 className="w-5 h-5 text-amber-400 animate-spin shrink-0" aria-hidden="true" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-amber-300">Payment received — confirming your Pro upgrade...</p>
+          <p className="text-sm font-semibold text-amber-300">Verifying payment and your Pro upgrade...</p>
           <p className="text-xs text-amber-400/80 mt-0.5">
-            Your Pro access should activate within a minute. The page will update automatically.
+            Waiting for secure payment confirmation. The page will update automatically.
           </p>
         </div>
         <button
@@ -170,7 +172,7 @@ export default function DashboardPage() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-rose-300">Payment was not completed.</p>
           <p className="text-xs text-rose-400/80 mt-0.5">
-            You were not charged and your plan was <strong>NOT</strong> upgraded. You can try subscribing again anytime.
+            This redirect does not confirm a charge or upgrade. Check your payment status before trying again.
           </p>
         </div>
         <button
@@ -186,10 +188,9 @@ export default function DashboardPage() {
         <div className="flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-blue-300">Payment received but upgrade is delayed</p>
+            <p className="text-sm font-semibold text-blue-300">Payment confirmation is still pending</p>
             <p className="text-xs text-blue-400/80 mt-0.5">
-              If you are testing locally, PayMongo webhooks cannot reach your localhost to upgrade your account.
-              You must run the test script in your terminal to force the upgrade.
+              We have not confirmed this purchase. Check again shortly or contact support before paying again.
             </p>
           </div>
         </div>

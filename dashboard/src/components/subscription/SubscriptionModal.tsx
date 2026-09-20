@@ -100,32 +100,19 @@ export default function SubscriptionModal({
     setStep(2); // Show loading state
 
     try {
+      const token = await user.getIdToken();
       const response = await fetch(`${API_BASE}/api/v1/checkout/create-gcash`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.uid,
-          userEmail: user.email || appUser?.email || "",
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+        cache: "no-store",
       });
 
       const data = await response.json();
 
       if (!response.ok) {
         // Handle specific error cases
-        if (response.status === 409) {
-          setErrorMessage(
-            `You already have an active Pro subscription expiring on ${
-              data.expiresAt
-                ? new Date(data.expiresAt).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })
-                : "a future date"
-            }.`
-          );
-        } else if (data.code === "paymongo_auth_failed") {
+        if (data.code === "PAYMENT_CONFIG") {
           setErrorMessage(
             "Payment service is not configured yet. Please notify the system administrator."
           );

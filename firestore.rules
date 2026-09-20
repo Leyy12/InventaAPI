@@ -73,7 +73,10 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.role == 'Developer'
                     && request.resource.data.plan == 'Free'
-                    && request.resource.data.apiRequestLimit == 50;
+                    && request.resource.data.apiRequestLimit == 50
+                    && request.resource.data.get('subscription_status', 'inactive') == 'inactive'
+                    && !request.resource.data.keys().hasAny(['subscriptionExpiresAt', 'lastSubscribedAt',
+                      'subscriptionStartedAt', 'paymentReference']);
 
       // Users can update their own document but CANNOT change:
       //   - uid         (identity)
@@ -89,7 +92,9 @@ service cloud.firestore {
                     && request.resource.data.role == resource.data.role
                     && request.resource.data.get('plan', '') == resource.data.get('plan', '')
                     && request.resource.data.get('apiRequestLimit', 0) == resource.data.get('apiRequestLimit', 0)
-                    && request.resource.data.get('subscriptionExpiresAt', '') == resource.data.get('subscriptionExpiresAt', '')
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                      'subscriptionExpiresAt', 'subscription_status', 'lastSubscribedAt',
+                      'subscriptionStartedAt', 'paymentReference'])
                     && (!('selectedSegment' in request.resource.data) || request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']);
 
       // Only admins can delete user documents
@@ -161,6 +166,13 @@ service cloud.firestore {
       // No client-side writes — EVER. Admin SDK (webhook) handles all writes.
       allow create, update, delete: if false;
     }
+
+    // Payment authority is backend-only, including Admin browser sessions.
+    // Status is exposed by the authenticated backend, not these records.
+    match /payment_orders/{id} { allow read, write: if false; }
+    match /payment_checkout_locks/{id} { allow read, write: if false; }
+    match /payment_sessions/{id} { allow read, write: if false; }
+    match /payment_events/{id} { allow read, write: if false; }
 
     // ───────────────────────────────────────────────────────────────────────
     // ENTERPRISE INQUIRIES COLLECTION
