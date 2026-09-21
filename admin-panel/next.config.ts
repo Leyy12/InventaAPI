@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
 
 const nextConfig: NextConfig = {
   turbopack: {
-    root: process.cwd(),
+    root: resolve(process.cwd(), '..'),
   },
   async rewrites() {
     return [

@@ -155,8 +155,8 @@ export default function SettingsPage() {
                 <span className="text-sm font-semibold text-white">v1.0.0</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-slate-800">
-                <span className="text-sm text-slate-400">Database</span>
-                <span className="text-sm font-semibold text-emerald-400">Connected</span>
+                <span className="text-sm text-slate-400">Database monitoring</span>
+                <span className="text-sm font-semibold text-slate-400">Not configured</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-slate-800">
                 <span className="text-sm text-slate-400">Environment</span>
@@ -164,7 +164,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm text-slate-400">Uptime</span>
-                <span className="text-sm font-semibold text-white">—</span>
+                <span className="text-sm font-semibold text-slate-400">Not tracked</span>
               </div>
             </div>
           </div>

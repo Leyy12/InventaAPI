@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { Terminal } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import NotificationBell from "@/components/shared/NotificationBell";
 import { notifySubscriptionExpiringSoon } from "@/lib/firebase/notifications";
@@ -31,16 +30,6 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        {/* API Status pill */}
-        <button className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-800/50 border border-slate-700/50 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors">
-          <Terminal className="w-3.5 h-3.5" />
-          API Status:{" "}
-          <span className="text-emerald-400 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />{" "}
-            Operational
-          </span>
-        </button>
-
         {/* Notification Bell */}
         {user && (
           <NotificationBell userId={user.uid} accentColor="indigo" />

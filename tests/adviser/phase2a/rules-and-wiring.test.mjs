@@ -63,7 +63,11 @@ test('static frontend: metadata calls authenticate; secret auto-fill and direct 
   assert.match(helper, /getIdToken\(\)/u);
   assert.ok(helper.includes("headers.set('Authorization', `Bearer ${token}`)"));
   for (const page of ['api-keys/page.tsx', 'privacy/page.tsx', 'page.tsx']) {
-    const code = source(`../dashboard/src/app/dashboard/${page}`);
+    let code = source(`../dashboard/src/app/dashboard/${page}`);
+    if (page === 'page.tsx') {
+      assert.match(code, /<CustomerUsageSummary/u);
+      code += source('../dashboard/src/components/reports/CustomerUsageSummary.tsx');
+    }
     assert.match(code, page === 'privacy/page.tsx' ? /api\/v1\/account\/deletion/u : /apiKeyRequest/u);
     assert.doesNotMatch(code, /collection\(db, ["']api_keys["']\)/u);
   }

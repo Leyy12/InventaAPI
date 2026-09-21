@@ -1,37 +1,16 @@
 "use client";
 
-import { 
-  Activity, 
-  CreditCard, 
-  Database, 
-  Server, 
-  ArrowUpRight, 
-  ArrowRight,
-  Code,
-  Key,
-  PackageSearch,
-  Terminal,
-  Zap,
-  ChevronRight,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  X
-} from "lucide-react";
+import { Database, Code, PackageSearch, Terminal, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/firebase/auth-context";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
-import { apiKeyRequest } from "@/lib/api-keys";
+import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
+import { customerReportScope } from "@/lib/reports";
 
 export default function DashboardPage() {
   const { user, appUser, loading, refreshUserDoc } = useAuth();
-  const router = useRouter();
+
   
-  const [activeKeysCount, setActiveKeysCount] = useState(0);
-  const [todaysCalls, setTodaysCalls] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
 
 
@@ -87,35 +66,9 @@ export default function DashboardPage() {
     };
   }, [user, loading, refreshUserDoc]);
 
-  useEffect(() => {
-    if (!appUser?.uid || !user) return;
-    let cancelled = false;
-    const refreshKeys = () => apiKeyRequest(user)
-      .then(data => { if (!cancelled) setActiveKeysCount(data.keys.length); })
-      .catch(() => { if (!cancelled) setActiveKeysCount(0); });
-    refreshKeys();
-    const keysTimer = setInterval(refreshKeys, 30000);
 
-    // Fetch Today's Telemetry (API Calls)
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const telemetryQ = query(
-      collection(db, "api_telemetry"),
-      where("userId", "==", appUser.uid),
-      where("timestamp", ">=", startOfDay)
-    );
-    const unsubTelemetry = onSnapshot(telemetryQ, (snap) => {
-      setTodaysCalls(snap.size);
-    });
 
-    return () => {
-      cancelled = true;
-      clearInterval(keysTimer);
-      unsubTelemetry();
-    };
-  }, [appUser?.uid, user]);
-
-  if (loading || (appUser?.plan === "Free" && !appUser?.selectedSegment)) {
+  if (loading) {
     return (
       <div className="w-full px-6 lg:px-8 space-y-8 animate-pulse pb-10">
         <div className="h-10 w-48 bg-slate-800 rounded"></div>
@@ -129,7 +82,7 @@ export default function DashboardPage() {
     );
   }
 
-  const isPro = appUser?.plan === "Pro";
+  const needsPreference = customerReportScope(appUser?.plan, appUser?.selectedSegment).state === "preference_required";
 
   const paymentBanner =
     paymentStatus === "verifying" ? (
@@ -217,55 +170,14 @@ export default function DashboardPage() {
         <p className="text-slate-400 text-sm">Here&apos;s what&apos;s happening with your InventaAPI projects today.</p>
       </div>
 
-      {/* ─── Stat Cards Row ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <CustomerUsageSummary />
+      {needsPreference && <p role="status" className="text-slate-300">Your account has no valid segment preference. Catalog reports require a confirmed segment; contact support. Your dashboard remains available.</p>}
 
-        {/* Active API Keys — Primary metric, has cyan left accent */}
-        <div className="relative rounded-xl border border-slate-700/50 bg-[#0d1526] overflow-hidden p-6">
-          <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-cyan-500/80"></div>
-          <div className="flex items-start justify-between mb-4">
-            <p className="text-sm text-slate-400 font-medium">Active API keys</p>
-            <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-full border border-cyan-500/20 flex items-center gap-1.5 uppercase tracking-widest">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse inline-block"></span> live
-            </span>
-          </div>
-          <div className="text-5xl font-black text-white tracking-tight">{activeKeysCount}</div>
-        </div>
-
-        {/* API Calls Today */}
-        <div className="relative rounded-xl border border-slate-700/50 bg-[#0d1526] overflow-hidden p-6">
-          <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-cyan-500/40"></div>
-          <div className="flex items-start justify-between mb-4">
-            <p className="text-sm text-slate-400 font-medium">API calls today</p>
-          </div>
-          <div className="text-5xl font-black text-white tracking-tight">{todaysCalls}</div>
-        </div>
-
-      </div>
-
-      {/* ─── Plan Card (Full Width) ─── */}
-      <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] px-6 py-5 flex items-center justify-between">
-        <div>
-          <p className="text-white font-semibold text-sm">{appUser?.plan || 'Verifying'} plan</p>
-          <p className="text-slate-500 text-xs mt-0.5">
-            {isPro ? `${appUser?.apiRequestLimit?.toLocaleString()} requests/day · All segments` : `${appUser?.apiRequestLimit ?? 'Verifying'} requests/day · ${appUser?.subscription_status || 'Verifying'}`}
-          </p>
-        </div>
-        {(
-          <Link
-            href="/dashboard/settings"
-            className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold hover:underline transition-colors"
-          >
-            {isPro ? 'Renew Pro' : 'Upgrade plan'}
-          </Link>
-        )}
-      </div>
-
-      {/* ─── Quick Actions & System Status ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Quick actions */}
+      <div className="grid grid-cols-1 gap-8">
 
         {/* Quick Actions (2/3 width) */}
-        <div className="lg:col-span-2">
+        <div className="w-full">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Quick actions</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
@@ -324,37 +236,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* System Status (1/3 width) */}
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">System status</p>
-          <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] overflow-hidden divide-y divide-slate-800/60">
-
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <span className="text-sm text-slate-300 font-medium">API gateway</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">99.9%</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <span className="text-sm text-slate-300 font-medium">Database sync</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">operational</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <span className="text-sm text-slate-300 font-medium">Auth service</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">operational</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-              </div>
-            </div>
-
-          </div>
-        </div>
 
       </div>
 
