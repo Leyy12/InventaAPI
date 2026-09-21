@@ -1,129 +1,23 @@
 "use client";
+import { useState } from 'react';
+import { apiExamples } from '@/lib/api-examples';
 
-import { useState } from "react";
-import { Copy, Check } from "lucide-react";
-
-interface CodeSnippetProps {
-  apiKey: string;
-  apiUrl?: string;
-}
-
-export default function CodeSnippet({ apiKey, apiUrl = "http://localhost:5001" }: CodeSnippetProps) {
-  const [activeTab, setActiveTab] = useState<"curl" | "javascript" | "python">("curl");
-  const [copied, setCopied] = useState(false);
-
-  const snippets = {
-    curl: `# cURL Command - Get Your Custom Product Catalog
-curl -X GET '${apiUrl}/daas/v1/catalog' \\
-  -H 'x-api-key: ${apiKey}' \\
-  -H 'Content-Type: application/json'`,
-
-    javascript: `// JavaScript (Fetch API)
-const apiKey = '${apiKey}';
-const apiUrl = '${apiUrl}/daas/v1/catalog';
-
-fetch(apiUrl, {
-  method: 'GET',
-  headers: {
-    'x-api-key': apiKey,
-    'Content-Type': 'application/json'
+export default function CodeSnippet({ endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog` }: { endpoint?: string }) {
+  const [language, setLanguage] = useState<'curl' | 'javascript' | 'python' | 'php'>('curl');
+  const [message, setMessage] = useState('');
+  let examples;
+  try { examples = apiExamples(endpoint); } catch { return <p role="alert">API endpoint configuration is unavailable. Contact the operator.</p>; }
+  async function copy(text: string, target: string) {
+    try { await navigator.clipboard.writeText(text); setMessage(`${target} copied.`); }
+    catch { setMessage('Copy failed. Select and copy the text manually.'); }
   }
-})
-  .then(response => response.json())
-  .then(data => {
-    console.log('Products:', data.products);
-    console.log('Total:', data.meta.count);
-  })
-  .catch(error => console.error('Error:', error));`,
-
-    python: `# Python (requests library)
-import requests
-
-api_key = '${apiKey}'
-api_url = '${apiUrl}/daas/v1/catalog'
-
-headers = {
-    'x-api-key': api_key,
-    'Content-Type': 'application/json'
-}
-
-response = requests.get(api_url, headers=headers)
-data = response.json()
-
-print(f"Total Products: {data['meta']['count']}")
-for product in data['products']:
-    print(f"- {product['name']} (SKU: {product['sku']})")`
-  };
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(snippets[activeTab]);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="glass-card rounded-xl border border-slate-700 overflow-hidden">
-      {/* Header */}
-      <div className="bg-slate-900/80 border-b border-slate-700 p-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Integration Code Examples</h3>
-        <button
-          onClick={handleCopy}
-          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition-all flex items-center gap-2"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3 h-3 text-emerald-400" />
-              <span className="text-emerald-400">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-3 h-3" />
-              Copy Code
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="bg-slate-900/50 border-b border-slate-700 flex">
-        <button
-          onClick={() => setActiveTab("curl")}
-          className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === "curl"
-              ? "text-indigo-400 border-indigo-500 bg-slate-800/50"
-              : "text-slate-400 border-transparent hover:text-slate-300 hover:bg-slate-800/30"
-          }`}
-        >
-          cURL
-        </button>
-        <button
-          onClick={() => setActiveTab("javascript")}
-          className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === "javascript"
-              ? "text-indigo-400 border-indigo-500 bg-slate-800/50"
-              : "text-slate-400 border-transparent hover:text-slate-300 hover:bg-slate-800/30"
-          }`}
-        >
-          JavaScript
-        </button>
-        <button
-          onClick={() => setActiveTab("python")}
-          className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === "python"
-              ? "text-indigo-400 border-indigo-500 bg-slate-800/50"
-              : "text-slate-400 border-transparent hover:text-slate-300 hover:bg-slate-800/30"
-          }`}
-        >
-          Python
-        </button>
-      </div>
-
-      {/* Code Content */}
-      <div className="bg-slate-950 p-4 overflow-x-auto">
-        <pre className="text-xs font-mono text-slate-300 leading-relaxed">
-          <code>{snippets[activeTab]}</code>
-        </pre>
-      </div>
-    </div>
-  );
+  return <section className="glass-card rounded-xl border border-slate-700 p-4 space-y-3" aria-label="Integration examples">
+    <h3 className="font-semibold text-white">Integration examples</h3>
+    <p className="text-xs text-slate-400">Server-side examples only. Replace YOUR_API_KEY with a securely stored key; never publish it in browser code or URLs.</p>
+    <div className="flex flex-wrap gap-3"><code className="break-all">{endpoint}</code><button onClick={() => void copy(endpoint, 'Endpoint')} className="text-indigo-300">Copy endpoint</button></div>
+    <div className="flex flex-wrap gap-4">{(['curl', 'javascript', 'python', 'php'] as const).map(lang => <button key={lang} aria-pressed={language === lang} onClick={() => setLanguage(lang)} className={language === lang ? 'text-indigo-300' : 'text-slate-400'}>{lang === 'curl' ? 'cURL' : lang === 'php' ? 'PHP' : lang === 'javascript' ? 'JavaScript' : 'Python'}</button>)}</div>
+    <pre className="overflow-x-auto bg-slate-950 p-4 text-xs"><code>{examples[language]}</code></pre>
+    <button onClick={() => void copy(examples[language], 'Example')} className="text-indigo-300">Copy example</button>
+    {message && <p role="status" className="text-sm">{message}</p>}
+  </section>;
 }

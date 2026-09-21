@@ -22,7 +22,7 @@ const adminRoutes = [
   { name: "Master Product Catalog", href: "/products",  icon: Package         },
   { name: "Product Submissions",    href: "/submissions", icon: FileText       },
 
-  { name: "API Consumers",          href: "/consumers", icon: Key             },
+  { name: "API Key Inventory",      href: "/consumers", icon: Key             },
 
   { name: "Security Center",        href: "/security",  icon: ShieldCheck     },
   { name: "Audit Logs",             href: "/audit",     icon: ShieldAlert     },

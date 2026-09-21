@@ -1,7 +1,8 @@
 import express from 'express';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { createApiKeyHandlers } from '../services/api-key-management.js';
+import { createApiHistoryHandler } from '../services/api-history.js';
 
 const router = express.Router();
 const handlers = createApiKeyHandlers({
@@ -12,6 +13,11 @@ const handlers = createApiKeyHandlers({
 // Every handler verifies the bearer token, derives identity, and checks ownership.
 router.post('/generate', handlers.create);
 router.get('/', handlers.list);
+router.get('/history', createApiHistoryHandler({
+  getDb: () => getFirestore(),
+  verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
+  documentId: FieldPath.documentId(),
+}));
 router.get('/:id', handlers.view);
 router.patch('/:id/products', handlers.products);
 router.patch('/:id', handlers.rename);

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Key, Copy, Plus, Trash2, AlertTriangle, Shield, CheckCircle2, Clock, Activity, Info, Code } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Key, Copy, Plus, Trash2, AlertTriangle, Shield, CheckCircle2, Clock, Info, Code } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import CodeSnippet from "@/components/shared/CodeSnippet";
+import type { User } from 'firebase/auth';
+import CustomerUsageSummary from '@/components/reports/CustomerUsageSummary';
+import RequestHistory from '@/components/api/RequestHistory';
 import { apiKeyRequest } from "@/lib/api-keys";
 
 interface ApiKey {
@@ -15,12 +18,16 @@ interface ApiKey {
   plan: string;
   requestsUsed: number;
   requestLimit: number | null;  // Shared authoritative account allowance
-  createdAt: any;
-  lastUsed: any | null;
+  createdAt: string | null;
+  lastUsed: string | null;
   status: "active" | "revoked";
 }
 
 export default function ApiKeysPage() {
+  const { user } = useAuth();
+  return user ? <AccountKeys key={user.uid} user={user} /> : null;
+}
+function AccountKeys({ user }: { user: User }) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -29,31 +36,28 @@ export default function ApiKeysPage() {
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
   const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
   
-  const { user } = useAuth();
-
-  useEffect(() => {
-    if (user) {
-      fetchApiKeys();
-    }
-  }, [user]);
-
-  const fetchApiKeys = async () => {
-    if (!user) return;
+  const [listError, setListError] = useState(false);
+  const listGeneration = useRef(0);
+  const fetchApiKeys = useCallback(async () => {
+    const ticket = ++listGeneration.current;
     setLoading(true);
+    setListError(false);
     try {
       const data = await apiKeyRequest(user);
-      
-      if (data.success) {
-        setApiKeys(data.keys as ApiKey[]);
-      } else {
-        throw new Error(data.error || "Failed to fetch keys");
-      }
-    } catch (error) {
-      console.error("Error fetching API keys:", error);
+      if (data.success !== true || !Array.isArray(data.keys)) throw new Error('Invalid key response');
+      if (ticket === listGeneration.current) setApiKeys(data.keys as ApiKey[]);
+    } catch {
+      if (ticket === listGeneration.current) { setApiKeys([]); setListError(true); }
     } finally {
-      setLoading(false);
+      if (ticket === listGeneration.current) setLoading(false);
     }
-  };
+  }, [user]);
+  const invalidateList = useCallback(() => { listGeneration.current++; }, []);
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => { if (active) void fetchApiKeys(); });
+    return () => { active = false; invalidateList(); };
+  }, [fetchApiKeys, invalidateList]);
 
   const generateNewKey = async () => {
     if (!newKeyName.trim()) {
@@ -114,7 +118,7 @@ export default function ApiKeysPage() {
       `Are you sure you want to revoke "${keyName}"?\n\n` +
       `⚠️ WARNING: This action cannot be undone!\n` +
       `Any applications using this key will immediately stop working.\n\n` +
-      `Type the key name to confirm: ${keyName}`
+      `Select OK to confirm revocation.`
     );
 
     if (!confirmed) return;
@@ -135,7 +139,7 @@ export default function ApiKeysPage() {
   const handleDownloadEnv = (keyStr: string) => {
     if (!keyStr) return;
     const content = `# DaaS API Configuration
-NEXT_PUBLIC_DAAS_API_URL=${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}
+NEXT_PUBLIC_DAAS_API_URL=${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}
 DAAS_API_KEY=${keyStr}
 `;
     const blob = new Blob([content], { type: "text/plain" });
@@ -164,11 +168,7 @@ DAAS_API_KEY=${keyStr}
             header: [
               { key: "x-api-key", value: keyStr }
             ],
-            url: {
-              raw: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog`,
-              host: [(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002').replace('http://', '')],
-              path: ["daas", "v1", "catalog"]
-            }
+            url: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog`
           }
         }
       ]
@@ -194,6 +194,7 @@ DAAS_API_KEY=${keyStr}
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Never";
     try {
+      if (!Number.isFinite(Date.parse(dateString))) return "Not recorded";
       return new Date(dateString).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -215,6 +216,7 @@ DAAS_API_KEY=${keyStr}
           </h1>
           <p className="text-slate-400">Manage your authentication credentials for API access</p>
         </div>
+        <button onClick={() => setShowGenerateModal(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Generate API key</button>
       </div>
 
       {/* Security Warning Banner */}
@@ -252,12 +254,16 @@ DAAS_API_KEY=${keyStr}
         </div>
       </div>
 
+      <CustomerUsageSummary />
+      <p className="text-sm text-slate-400">The daily account allowance is shared across keys. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
+      <RequestHistory />
+
       {/* API Keys List */}
       <div className="glass-card rounded-xl border border-slate-700">
         <div className="p-6 border-b border-slate-700">
           <h2 className="text-xl font-semibold text-white mb-1">Active API Keys</h2>
           <p className="text-sm text-slate-400">
-            {apiKeys.length === 0 
+            {loading ? "Loading keys…" : listError ? "Key list unavailable" : apiKeys.length === 0
               ? "You don't have any active keys yet" 
               : `You have ${apiKeys.length} active key${apiKeys.length > 1 ? 's' : ''}`
             }
@@ -270,6 +276,8 @@ DAAS_API_KEY=${keyStr}
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500 mb-4"></div>
               <p className="text-sm text-slate-400">Loading API keys...</p>
             </div>
+          ) : listError ? (
+            <div role="alert"><p>Unable to load API keys. Previous rows have been cleared.</p><button onClick={() => void fetchApiKeys()} className="text-indigo-300">Retry key list</button></div>
           ) : apiKeys.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-slate-700 rounded-xl bg-slate-900/50">
               <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-4">
@@ -330,20 +338,8 @@ DAAS_API_KEY=${keyStr}
                     </div>
                   </div>
 
-                  {/* Key Stats */}
-                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-700">
-                    <div>
-                      <p className="text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
-                        <Activity className="w-3 h-3" />
-                        ACCOUNT REQUESTS TODAY
-                      </p>
-                      <p className="text-lg font-semibold text-white">
-                        {apiKey.requestsUsed.toLocaleString()}
-                        <span className="text-xs text-slate-400 font-normal ml-1">
-                          / {apiKey.requestLimit === null ? 'Unlimited' : apiKey.requestLimit.toLocaleString()}
-                        </span>
-                      </p>
-                    </div>
+                  {/* Key metadata; account quota is displayed once above. */}
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
                     <div>
                       <p className="text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -378,10 +374,7 @@ DAAS_API_KEY=${keyStr}
                   {/* Code Snippet Component */}
                   {showCodeSnippet[apiKey.id] && (
                     <div className="mt-4">
-                      <CodeSnippet 
-                        apiKey="YOUR_SAVED_API_KEY"
-                        apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}
-                      />
+                      <CodeSnippet />
                     </div>
                   )}
                 </div>
@@ -429,7 +422,7 @@ DAAS_API_KEY=${keyStr}
                 </div>
                 <h3 className="text-2xl font-bold text-white text-center mb-2">API Key Generated!</h3>
                 <p className="text-sm text-slate-400 text-center mb-6">
-                  Save this key now. You won't be able to see it again!
+                  Save this key now. You won&apos;t be able to see it again!
                 </p>
 
                 <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
@@ -438,14 +431,14 @@ DAAS_API_KEY=${keyStr}
                     {newlyGeneratedKey}
                   </div>
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(newlyGeneratedKey);
-                      alert("API key copied to clipboard!");
+                    onClick={async () => {
+                      try { await navigator.clipboard.writeText(newlyGeneratedKey); alert("API key copied to clipboard!"); }
+                      catch { alert("Copy failed. Save the displayed key manually before closing."); }
                     }}
                     className="w-full px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-medium transition-all flex items-center justify-center gap-2 mb-3"
                   >
                     <Copy className="w-4 h-4" />
-                    Copy to Clipboard
+                    Copy API key
                   </button>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -478,7 +471,7 @@ DAAS_API_KEY=${keyStr}
                   }}
                   className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium transition-all"
                 >
-                  I've Saved My Key
+                  I&apos;ve Saved My Key
                 </button>
               </div>
             ) : (
@@ -503,7 +496,7 @@ DAAS_API_KEY=${keyStr}
                       autoFocus
                     />
                     <p className="text-xs text-slate-500 mt-2">
-                      Give your key a descriptive name to identify where it's used
+                      Give your key a descriptive name to identify where it&apos;s used
                     </p>
                   </div>
 

@@ -1,5 +1,5 @@
 /**
- * Single Source of Truth for Subscription Plans
+ * Marketing descriptions; backend entitlement is the runtime authority.
  * Used by both pricing page and upgrade modal
  */
 
@@ -20,14 +20,13 @@ export const SUBSCRIPTION_PLANS = {
     // Limits
     requestLimit: 50,
     requestLimitDisplay: "50 requests/day",
-    apiKeys: 1,
     
     // Description
     tagline: "For developers exploring the API or proof-of-concept testing",
     
     // Features (base features only)
     features: [
-      "1 API Key (shared access)",
+      "API keys share the account allowance",
       "50 requests per day",
       "Product Catalog endpoint",
       "Product Recommendations",
@@ -65,14 +64,13 @@ export const SUBSCRIPTION_PLANS = {
     // Limits
     requestLimit: 5000,
     requestLimitDisplay: "5,000 requests/day",
-    apiKeys: 1,
     
     // Description
     tagline: "For active businesses needing reliable, fast data integration",
     
     // Incremental features (adds to Free)
     incrementalFeatures: [
-      "1 Dedicated API Key",
+      "API keys share the account allowance",
       "5,000 requests per day",
       "Full Product Catalog + Recommendations",
       "Sales Analytics Feed",
@@ -109,7 +107,6 @@ export const SUBSCRIPTION_PLANS = {
     // Limits
     requestLimit: null, // unlimited
     requestLimitDisplay: "Unlimited requests",
-    apiKeys: null, // multiple
     
     // Description
     tagline: "For large-scale ERP integrations and multi-branch businesses",

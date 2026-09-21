@@ -3,30 +3,18 @@
 import { useState } from "react";
 import { 
   Play, Copy, Check, Key, Database, AlertCircle, 
-  Code, Download, RefreshCw, Sparkles, Zap, ChevronDown, ChevronRight
+  Download, RefreshCw, Sparkles, Zap, ChevronDown, ChevronRight
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import CodeSnippet from "@/components/shared/CodeSnippet";
 
 interface ApiResponse {
   success: boolean;
-  api_key_info?: {
-    business_name: string;
-    email: string;
-    plan: string;
-    authorized_products: number;
-  };
-  pagination?: {
-    total: number;
-    limit: number;
-    offset: number;
-    returned: number;
-  };
-  products?: any[];
-  stats?: any;
+  products?: { id?: string; name?: string; sku?: string; segment?: string; [key: string]: unknown }[];
   error?: string;
   message?: string;
+  [key: string]: unknown;
 }
-
 export default function ApiPlaygroundPage() {
   const searchParams = useSearchParams();
   const preselectedProducts = searchParams.get('products');
@@ -34,19 +22,16 @@ export default function ApiPlaygroundPage() {
   // State Management
   const [apiKey, setApiKey] = useState("");
   const [endpoint, setEndpoint] = useState("/daas/v1/catalog");
-  const [method, setMethod] = useState("GET");
+  const method = "GET";
   const [queryParams, setQueryParams] = useState({
-    segment: "",
-    category: "",
-    search: "",
-    limit: "100",
-    offset: "0"
+    q: "",
+    perPage: "50",
+    page: "1"
   });
   
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [responseTime, setResponseTime] = useState<number | null>(null);
-  const [copied, setCopied] = useState(false);
   const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
 
 
@@ -56,7 +41,7 @@ export default function ApiPlaygroundPage() {
     const url = new URL(`${baseUrl}${endpoint}`);
     
     Object.entries(queryParams).forEach(([key, value]) => {
-      if (value) {
+      if (endpoint === "/daas/v1/catalog" && value) {
         url.searchParams.append(key, value);
       }
     });
@@ -91,95 +76,25 @@ export default function ApiPlaygroundPage() {
 
       const data = await res.json();
       
-      // Inject success based on HTTP status so the UI renders correctly
-      // even if the backend doesn't explicitly send { success: true }
-      if (res.ok && data.success === undefined) {
-        data.success = true;
-      } else if (!res.ok && data.success === undefined) {
-        data.success = false;
-        data.error = data.error || `HTTP Error ${res.status}`;
-      }
+      // Display actual HTTP outcome without assuming an old success/data envelope.
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid response');
+      setResponse({ ...data, success: res.ok, httpStatus: res.status });
 
-      setResponse(data);
-
-    } catch (error: any) {
-      console.error("API Request Error:", error);
+    } catch {
       setResponse({
         success: false,
         error: "Network Error",
-        message: error.message || "Failed to connect to API server"
+        message: "Failed to retrieve a valid response from the API server"
       });
     } finally {
       setLoading(false);
     }
   };
 
-  // Copy to clipboard
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyToClipboard = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); alert('Response copied.'); }
+    catch { alert('Copy failed. Select and copy the response manually.'); }
   };
-
-  // Generate code examples
-  const getCodeExample = (language: string) => {
-    const url = buildApiUrl();
-    
-    const examples: Record<string, string> = {
-      javascript: `// JavaScript (Fetch API)
-fetch('${url}', {
-  method: '${method}',
-  headers: {
-    'x-api-key': '${apiKey}',
-    'Content-Type': 'application/json'
-  }
-})
-.then(response => response.json())
-.then(data => console.log(data))
-.catch(error => console.error('Error:', error));`,
-
-      python: `# Python (Requests)
-import requests
-
-url = '${url}'
-headers = {
-    'x-api-key': '${apiKey}',
-    'Content-Type': 'application/json'
-}
-
-response = requests.get(url, headers=headers)
-data = response.json()
-print(data)`,
-
-      curl: `# cURL Command
-curl -X ${method} '${url}' \\
-  -H 'x-api-key: ${apiKey}' \\
-  -H 'Content-Type: application/json'`,
-
-      php: `<?php
-// PHP (cURL)
-$url = '${url}';
-$headers = [
-    'x-api-key: ${apiKey}',
-    'Content-Type: application/json'
-];
-
-$ch = curl_init($url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-
-$response = curl_exec($ch);
-$data = json_decode($response, true);
-curl_close($ch);
-
-print_r($data);
-?>`
-    };
-
-    return examples[language] || examples.javascript;
-  };
-
-  const [activeCodeTab, setActiveCodeTab] = useState("javascript");
 
   return (
     <div className="space-y-6 pb-10">
@@ -187,7 +102,7 @@ print_r($data);
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2">API Playground</h1>
-          <p className="text-slate-400">Test your custom API endpoints with live product data</p>
+          <p className="text-slate-400">Test authorized API requests. Catalog requests consume your shared account allowance.</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -207,7 +122,7 @@ print_r($data);
           <div>
             <h3 className="text-sm font-bold text-white mb-1">Products Pre-selected</h3>
             <p className="text-xs text-slate-400">
-              You've selected {preselectedProducts.split(',').length} products. Generate an API key to test access to these specific products.
+              You selected {preselectedProducts.split(',').length} products. Use a key with the appropriate product scope. This navigation hint does not authorize access.
             </p>
           </div>
         </div>
@@ -232,7 +147,7 @@ print_r($data);
                   autoComplete="off"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="daas_xxxxxxxxxxxxxxxxxxxxxxxx"
+                  placeholder="YOUR_API_KEY"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
                 />
               </div>
@@ -249,69 +164,20 @@ print_r($data);
               >
                 <option value="/daas/v1/catalog">GET /daas/v1/catalog (Product Catalog)</option>
                 <option value="/daas/v1/health">GET /daas/v1/health (Health Check)</option>
-                <option value="/api/v1/products">GET /api/v1/products (Admin)</option>
               </select>
               <p className="text-xs text-slate-500 mt-1">
                 Use <code className="text-indigo-400">/daas/v1/catalog</code> — the primary endpoint that returns only products linked to your API key.
               </p>
             </div>
 
-            {/* Query Parameters */}
-            {endpoint === "/api/v1/products" && (
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-slate-300 block">QUERY PARAMETERS (Optional)</label>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="Segment (e.g., Pharmacy)"
-                      value={queryParams.segment}
-                      onChange={(e) => setQueryParams({...queryParams, segment: e.target.value})}
-                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="Category"
-                      value={queryParams.category}
-                      onChange={(e) => setQueryParams({...queryParams, category: e.target.value})}
-                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                    />
-                  </div>
-                </div>
-
-                <input
-                  type="text"
-                  placeholder="Search (name or description)"
-                  value={queryParams.search}
-                  onChange={(e) => setQueryParams({...queryParams, search: e.target.value})}
-                  className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                />
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Limit (default: 100)"
-                      value={queryParams.limit}
-                      onChange={(e) => setQueryParams({...queryParams, limit: e.target.value})}
-                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Offset (default: 0)"
-                      value={queryParams.offset}
-                      onChange={(e) => setQueryParams({...queryParams, offset: e.target.value})}
-                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+            {endpoint === "/daas/v1/catalog" && <div className="space-y-3">
+              {(['q', 'page', 'perPage'] as const).map(field => <label key={field} className="block text-sm text-slate-300">
+                {field === 'q' ? 'Search product text' : field === 'page' ? 'Page number' : 'Products per page (not daily quota)'}
+                <input type={field === 'q' ? 'text' : 'number'} min={field === 'q' ? undefined : 1} value={queryParams[field]}
+                  onChange={e => setQueryParams({ ...queryParams, [field]: e.target.value })}
+                  className="block w-full bg-slate-900 border border-slate-700 rounded-lg p-2" />
+              </label>)}
+            </div>}
 
             {/* Execute Button */}
             <button
@@ -333,41 +199,7 @@ print_r($data);
             </button>
           </div>
 
-          {/* Code Examples */}
-          <div className="glass-card rounded-xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <Code className="w-5 h-5 text-indigo-400" />
-              Code Examples
-            </h2>
-
-            <div className="flex gap-2 mb-4">
-              {['javascript', 'python', 'curl', 'php'].map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => setActiveCodeTab(lang)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    activeCodeTab === lang
-                      ? "bg-indigo-500 text-white"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700"
-                  }`}
-                >
-                  {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <pre className="bg-slate-950 border border-slate-800 rounded-lg p-4 text-xs text-slate-300 overflow-x-auto font-mono">
-                {getCodeExample(activeCodeTab)}
-              </pre>
-              <button
-                onClick={() => copyToClipboard(getCodeExample(activeCodeTab))}
-                className="absolute top-2 right-2 p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-              >
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+          <CodeSnippet endpoint={buildApiUrl()} />
         </div>
 
         {/* RIGHT PANEL: Response Display */}
@@ -389,7 +221,7 @@ print_r($data);
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Play className="w-12 h-12 text-slate-600 mb-3" />
                 <p className="text-sm font-medium text-slate-300">No response yet</p>
-                <p className="text-xs text-slate-500 mt-1">Click "Execute Request" to test your API</p>
+                <p className="text-xs text-slate-500 mt-1">Click &quot;Execute Request&quot; to test your API</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -415,48 +247,6 @@ print_r($data);
                     </div>
                   </div>
                 </div>
-
-                {/* API Key Info */}
-                {response.api_key_info && (
-                  <div className="bg-slate-950 border border-slate-800 rounded-lg p-4">
-                    <h4 className="text-xs font-bold text-slate-400 mb-2">API KEY INFO</h4>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Business:</span>
-                        <span className="text-slate-300 font-medium">{response.api_key_info.business_name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Plan:</span>
-                        <span className="text-indigo-400 font-medium">{response.api_key_info.plan}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Authorized Products:</span>
-                        <span className="text-emerald-400 font-medium">{response.api_key_info.authorized_products}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Pagination Info */}
-                {response.pagination && (
-                  <div className="bg-slate-950 border border-slate-800 rounded-lg p-4">
-                    <h4 className="text-xs font-bold text-slate-400 mb-2">PAGINATION</h4>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Total Products:</span>
-                        <span className="text-slate-300 font-medium">{response.pagination.total}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Returned:</span>
-                        <span className="text-emerald-400 font-medium">{response.pagination.returned}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Limit:</span>
-                        <span className="text-slate-300 font-medium">{response.pagination.limit}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Schema Note */}
                 {response.products && response.products.length > 0 && (
@@ -522,7 +312,8 @@ print_r($data);
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="text-xs font-bold text-slate-400">RAW JSON</h4>
                     <button
-                      onClick={() => copyToClipboard(JSON.stringify(response, null, 2))}
+                      onClick={() => void copyToClipboard(JSON.stringify(response, null, 2))}
+                      aria-label="Copy response" title="Copy response"
                       className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors"
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -542,6 +333,7 @@ print_r($data);
                     a.href = url;
                     a.download = `api-response-${Date.now()}.json`;
                     a.click();
+                    URL.revokeObjectURL(url);
                   }}
                   className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
                 >

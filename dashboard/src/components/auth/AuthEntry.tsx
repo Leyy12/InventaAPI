@@ -586,7 +586,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
               )}.
             </p>
             <p className="text-xs text-slate-500 mb-7">
-              You have full access to 5,000 requests/day and all business segments.
+              View your current account allowance and access on your dashboard.
             </p>
 
             <button

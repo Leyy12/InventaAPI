@@ -6,9 +6,12 @@ import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
 
+type KeyRow = { id: string; userId: string; name?: string; userEmail?: string; status?: string; linkedProductIds?: string[]; createdAt?: string; lastUsed?: string };
+type OwnerRow = { id: string; businessName?: string; fullName?: string; email?: string };
 export default function ConsumersPage() {
-  const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const [usersMap, setUsersMap] = useState<Record<string, any>>({});
+  const [apiKeys, setApiKeys] = useState<KeyRow[]>([]);
+  const [usersMap, setUsersMap] = useState<Record<string, OwnerRow>>({});
+  const [readError, setReadError] = useState(false);
   const [usersReady, setUsersReady] = useState(false);
   const [keysReady, setKeysReady] = useState(false);
   const [search, setSearch] = useState("");
@@ -17,22 +20,23 @@ export default function ConsumersPage() {
   const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId));
 
   useEffect(() => {
+    const unavailable = () => { setReadError(true); setApiKeys([]); setUsersMap({}); };
     // Listener 1: Users collection — authoritative customer profile data
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const uMap: Record<string, any> = {};
+      const uMap: Record<string, OwnerRow> = {};
       snapshot.docs.forEach(doc => {
         uMap[doc.id] = { id: doc.id, ...doc.data() };
       });
       setUsersMap(uMap);
       setUsersReady(true);
-    });
+    }, unavailable);
 
     // Listener 2: API Keys — one row per key, joined to user by userId
     const q = query(collection(db, "api_keys"), orderBy("createdAt", "desc"));
     const unsubKeys = onSnapshot(q, (snapshot) => {
-      setApiKeys(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setApiKeys(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as KeyRow)));
       setKeysReady(true);
-    });
+    }, unavailable);
 
     return () => {
       unsubUsers();
@@ -53,16 +57,18 @@ export default function ConsumersPage() {
     });
   }, [apiKeys, usersMap, search]);
 
+  if (readError) return <p role="alert" className="p-6 text-rose-300">API key inventory could not be verified. Reload to retry; previous rows have been cleared.</p>;
+
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10 animate-fadeIn">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
             <Users className="w-8 h-8 text-indigo-500" />
-            API Consumers
+            API Key Inventory
           </h1>
           <p className="text-slate-400">
-            Every row is an active API key joined to its authoritative customer profile. Updates in real-time.
+            One row per key, including inactive keys, joined to its customer owner. This is not a downstream consumer registry. Account usage is shared across all of the owner&apos;s keys, not an allowance per row. Active is the stored key status, not proof of current account authorization or unexpired credentials.
           </p>
         </div>
       </div>
@@ -87,7 +93,7 @@ export default function ConsumersPage() {
               Active: <span className="font-bold">{apiKeys.filter(k => k.status === 'active').length}</span>
             </span>
             <span className="text-red-400">
-              Revoked: <span className="font-bold">{apiKeys.filter(k => k.status !== 'active').length}</span>
+              Revoked: <span className="font-bold">{apiKeys.filter(k => k.status === 'revoked').length}</span>
             </span>
           </div>
         </div>
@@ -98,7 +104,7 @@ export default function ConsumersPage() {
               <tr className="bg-slate-900/30 border-b border-slate-800/60">
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Customer Info</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">API Key & Plan</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Usage</th>
+                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Shared account usage (UTC)</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Linked Products</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeline</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
@@ -109,7 +115,7 @@ export default function ConsumersPage() {
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-500">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500 mx-auto mb-2" />
-                    <p className="text-xs">Loading consumers...</p>
+                    <p className="text-xs">Loading API key inventory...</p>
                   </td>
                 </tr>
               ) : filteredKeys.length === 0 ? (
@@ -160,17 +166,17 @@ export default function ConsumersPage() {
                       {/* Usage with progress bar */}
                       <td className="p-4 align-top min-w-[160px]">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">Requests</span>
+                          <span className="text-xs text-slate-400">Account requests</span>
                           <span className={`text-xs font-bold ${isOverage ? 'text-red-400' : 'text-white'}`}>
                             {entitlement?.used ?? '—'} / {entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'}
                           </span>
                         </div>
-                        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        {entitlement?.limit != null && entitlement?.used != null && <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                           <div
                             className={`h-full transition-all ${isOverage ? 'bg-red-500' : 'bg-emerald-500'}`}
                             style={{ width: `${usedPct}%` }}
                           />
-                        </div>
+                        </div>}
                         {entitlement?.limit != null && entitlement?.used != null && (
                           <div className="text-[10px] text-slate-500 text-right mt-0.5">
                             {Math.max(0, entitlement.limit - entitlement.used)} remaining
@@ -186,7 +192,7 @@ export default function ConsumersPage() {
                             {k.linkedProductIds?.length ?? 0}
                           </span>
                         </div>
-                        {k.linkedProductIds?.length > 0 && (
+                        {(k.linkedProductIds?.length ?? 0) > 0 && (
                           <p className="text-[10px] text-slate-600 mt-0.5">products linked</p>
                         )}
                       </td>
@@ -217,7 +223,7 @@ export default function ConsumersPage() {
                             <>
                               <AlertTriangle className="w-4 h-4 text-red-400" />
                               <span className="text-[10px] px-2 py-1 rounded-full border uppercase font-bold tracking-wider bg-red-500/10 text-red-400 border-red-500/20">
-                                {k.status || "Revoked"}
+                                {k.status || "Unknown"}
                               </span>
                             </>
                           )}

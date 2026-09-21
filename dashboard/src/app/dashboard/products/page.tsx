@@ -284,9 +284,10 @@ export default function ProductCatalogPage() {
     }
   };
 
-  const handleCopyAndClose = useCallback(() => {
+  const handleCopyAndClose = useCallback(async () => {
     if (generatedKey) {
-      navigator.clipboard.writeText(generatedKey);
+      try { await navigator.clipboard.writeText(generatedKey); }
+      catch { alert("Copy failed. Save the displayed API key manually before leaving."); return; }
       setCopied(true);
       setTimeout(() => {
         router.push('/dashboard/api-keys');
@@ -326,11 +327,7 @@ DAAS_API_KEY=${generatedKey}
           request: {
             method: "GET",
             header: [{ key: "x-api-key", value: generatedKey }],
-            url: {
-              raw: `${API_URL}/daas/v1/catalog`,
-              host: [API_URL.replace('http://', '')],
-              path: ["daas", "v1", "catalog"]
-            }
+            url: `${API_URL}/daas/v1/catalog`
           }
         }
       ]
@@ -725,7 +722,7 @@ DAAS_API_KEY=${generatedKey}
                   className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 mb-3"
                 >
                   {copied ? <Check className="w-5 h-5" /> : <Key className="w-5 h-5" />}
-                  {copied ? "Copied! Going to API Keys..." : "Copy & Go to API Keys →"}
+                  {copied ? "Copied! Going to API Keys..." : "Copy API key & Go to API Keys →"}
                 </button>
 
                 <div className="grid grid-cols-2 gap-3">

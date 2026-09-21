@@ -112,7 +112,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   ) : (
     <>
       Choose the business segment your account accesses. This is required to log in, and your catalog is
-      tailored to it. Free plan includes 50 requests/day and 1 API key; upgrade to{" "}
+      tailored to it. Free plan includes 50 requests/day shared across your API keys; upgrade to{" "}
       <span className="text-indigo-400">Pro</span> to unlock all segments.
     </>
   );

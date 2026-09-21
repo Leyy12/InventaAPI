@@ -115,6 +115,12 @@ for (const role of ['customer', 'stranger', 'anonymous']) {
     }
     assert.equal((await call('PATCH', 'api_keys/forged', tokens[role], { userId: 'customer-a', status: 'active' })).status, 403);
     assert.equal((await call('DELETE', 'api_keys/key-a', tokens[role])).status, 403);
+    // R5B history is backend-mediated; no Customer can list, read, forge or
+    // delete telemetry, even by naming their own account in the payload.
+    assert.equal((await call('GET', 'api_telemetry', tokens[role])).status, 403);
+    assert.equal((await call('GET', 'api_telemetry/request-a', tokens[role])).status, 403);
+    assert.equal((await call('PATCH', 'api_telemetry/request-a', tokens[role], { userId: 'customer-a', statusCode: 200 })).status, 403);
+    assert.equal((await call('DELETE', 'api_telemetry/request-a', tokens[role])).status, 403);
   });
   for (const field of ['key', 'credentialHash', 'credentialVersion', 'userId', 'status', 'linkedProductIds',
     'linkedProducts', 'linkedVariantSelections', 'plan', 'requestLimit', 'requestsUsed', 'resetAt', 'expiresAt']) {

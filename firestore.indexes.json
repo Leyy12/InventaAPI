@@ -1,6 +1,15 @@
 {
   "indexes": [
     {
+      "collectionGroup": "api_telemetry",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "product_requests",
       "queryScope": "COLLECTION",
       "fields": [

@@ -65,7 +65,7 @@ export default function Sidebar() {
 
       <div className="flex-1 py-6 px-3 overflow-y-auto space-y-1 custom-scrollbar">
         <div className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          SME Consumer
+          Customer Workspace
         </div>
         {dashboardRoutes.map((route) => {
           const isActive = pathname === route.href || (pathname.startsWith(route.href) && route.href !== "/dashboard");

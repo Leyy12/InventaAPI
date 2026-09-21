@@ -25,7 +25,10 @@ test('static wiring: all management routes use tested authenticated handlers', (
     ['patch', '/:id/products', 'products'], ['patch', '/:id', 'rename'], ['delete', '/:id', 'revoke'],
   ]) assert.ok(routes.includes(`router.${verb}('${path}', handlers.${handler})`));
   assert.match(routes, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);
-  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 6);
+  // R5B adds one separately tested, token-scoped history reader; the six
+  // original management handlers above remain unchanged.
+  assert.match(routes, /router\.get\('\/history', createApiHistoryHandler\(/u);
+  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 7);
 });
 
 test('static wiring: both DaaS endpoints consume account quota, with paid plan checked in transaction', () => {
