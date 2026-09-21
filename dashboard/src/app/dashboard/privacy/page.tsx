@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { Shield, Trash2, AlertTriangle } from "lucide-react";
 
 export default function PrivacySettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, confirmAccountDeletion } = useAuth();
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -27,6 +27,7 @@ export default function PrivacySettingsPage() {
         setDeleting(false);
         return;
       }
+      confirmAccountDeletion();
       alert("Account access and sign-in have been deleted. Required payment audit records are retained.");
       await logout();
       

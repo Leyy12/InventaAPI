@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Image from "next/image";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDocFromServer } from "firebase/firestore";
+import { profileRole } from '../../../../services/auth-navigation';
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { KeyRound, Mail, AlertCircle, Loader2, Eye, EyeOff } from "lucide-react";
@@ -31,7 +32,8 @@ export default function AdminLoginPage() {
       console.log("[ADMIN LOGIN] User authenticated:", user.email);
       
       // Step 2: Get user role from Firestore
-      const userDoc = await getDoc(doc(db, "users", user.uid));
+      const userDoc = await getDocFromServer(doc(db, "users", user.uid));
+      if (auth.currentUser !== user) throw new Error('Session ended during login.');
       
       if (!userDoc.exists()) {
         console.warn("[ADMIN LOGIN] User document not found");
@@ -42,7 +44,7 @@ export default function AdminLoginPage() {
       }
       
       const userData = userDoc.data();
-      const role = userData?.role?.toLowerCase();
+      const role = profileRole(userData ?? null);
       
       console.log("[ADMIN LOGIN] User role:", role);
       

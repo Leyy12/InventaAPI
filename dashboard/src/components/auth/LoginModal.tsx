@@ -2,17 +2,20 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
+import { doc, getDocFromServer, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkles, Building2, X } from "lucide-react";
 import type { PlanId } from "@/config/plans";
+import { profileRole, adminLoginDestination } from '../../../../services/auth-navigation';
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onStart?: () => void;
+  standalone?: boolean;
   pendingPlan?: PlanId | null;
   onOpenSubscription?: (plan: PlanId) => void;
   initialError?: string;
@@ -26,7 +29,7 @@ const SEGMENT_OPTIONS = [
 
 type SegmentId = "Grocery" | "Pharmacy" | "Hardware";
 
-export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscription, initialError }: LoginModalProps) {
+export default function LoginModal({ isOpen, onClose, onStart, standalone = false, pendingPlan, onOpenSubscription, initialError }: LoginModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [segment, setSegment] = useState<SegmentId | "">("");
@@ -116,6 +119,7 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    onStart?.();
 
     // No pre-auth segment block here — we don't know the user's plan until
     // after Firebase auth. The post-auth check (below) handles segment gating
@@ -133,24 +137,25 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
       console.log("[LOGIN] User authenticated:", user.email);
 
       // 2. Get user role from Firestore
-      const userDoc = await getDoc(doc(db, "users", user.uid));
+      const userDoc = await getDocFromServer(doc(db, "users", user.uid));
+      if (auth.currentUser !== user) throw new Error('Session ended during login. Please try again.');
       const userData = userDoc.data();
-      const role = userData?.role?.toLowerCase();
+      const role = profileRole(userData ?? null);
+
+      if (!role) {
+        await signOut(auth);
+        setError('Account unavailable. Please contact support.');
+        setLoading(false);
+        return;
+      }
 
       console.log("[LOGIN] User role:", role);
 
       // 3. Check if admin
       if (role === "admin") {
-        console.log("[LOGIN] 🔑 Admin detected - initiating token bridge...");
-
-        setSuccess("Admin login successful! Redirecting to admin panel...");
-
-        const idToken = await user.getIdToken();
-        const adminUrl = `http://localhost:3001/?authToken=${idToken}`;
-
-        setTimeout(() => {
-          window.location.href = adminUrl;
-        }, 2000);
+        const adminUrl = adminLoginDestination(process.env.NEXT_PUBLIC_ADMIN_APP_ORIGIN, window.location.hostname);
+        if (adminUrl && new URL(adminUrl).origin !== window.location.origin) window.location.replace(adminUrl);
+        else setError('Use the separate Admin application. Contact the operator for its address.');
         return;
       }
 
@@ -159,15 +164,6 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
       // Plan checks are case-insensitive and legacy-tolerant: the DB may hold
       // "free"/"Free", "pro"/"Pro", "Starter", etc.
       const normalizedPlan = String(plan ?? "").toLowerCase();
-      const hasSubscription =
-        userData?.subscription_status === "active" ||
-        normalizedPlan === "free" ||
-        normalizedPlan === "deleted" ||   // churned/reset Free accounts
-        normalizedPlan === "starter" ||
-        normalizedPlan === "pro" ||
-        normalizedPlan === "unlimited" ||
-        normalizedPlan === "professional" ||
-        normalizedPlan === "enterprise";
 
       // ── Account Type vs Subscription Plan ────────────────────────────────
       // These are SEPARATE concerns:
@@ -196,7 +192,7 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
       const roleLower = userData?.role?.toLowerCase() || "developer";
       const accountType = roleLower === "business" ? "Business" : "Consumer";
       
-      const isFreePlan = normalizedPlan === "free" || normalizedPlan === "starter" || normalizedPlan === "deleted" || !normalizedPlan;
+      const isFreePlan = normalizedPlan === "free" || normalizedPlan === "starter" || !normalizedPlan;
       const isProPlan = normalizedPlan === "pro" || normalizedPlan === "professional";
       const isEnterprisePlan = normalizedPlan === "enterprise" || normalizedPlan === "unlimited";
 
@@ -261,6 +257,7 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
         // continue the upgrade journey: open the plan chooser → GCash checkout.
         setSuccess("Login successful!");
         setTimeout(() => {
+          if (auth.currentUser !== user) return;
           onClose();
           onOpenSubscription?.(pendingPlan);
         }, 600);
@@ -271,6 +268,7 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
         // Already on a paid plan and clicked Pro CTA — skip checkout, go to dashboard.
         setSuccess("You already have an active subscription! Redirecting to your dashboard...");
         setTimeout(() => {
+          if (auth.currentUser !== user) return;
           onClose();
           router.push("/dashboard");
         }, 800);
@@ -285,6 +283,7 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
       // only for explicit Pro upgrade flows triggered by a Pro CTA.
       setSuccess("Login successful!");
       setTimeout(() => {
+        if (auth.currentUser !== user) return;
         onClose();
         router.push("/dashboard");
       }, 600);
@@ -368,7 +367,7 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
       {/* Dark semi-transparent overlay - click anywhere outside to close */}
       <div
         className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={standalone ? undefined : onClose}
       />
 
       {/* Modal Content - Glassmorphism */}
@@ -376,14 +375,14 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
 
         {/* Close button - lets the consumer back out of the login modal */}
         <div className="absolute top-3 right-3 flex items-center gap-2">
-          <button
+          {!standalone && <button
             type="button"
             onClick={onClose}
             aria-label="Close login"
             className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
           >
             <X className="w-5 h-5" />
-          </button>
+          </button>}
         </div>
 
         <div className="text-center mb-8">

@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { completeLanding, browserStorage } from '../../../../services/auth-navigation';
 
 const BUSINESS_SEGMENTS = [
   "Grocery",
@@ -59,6 +60,7 @@ function SignupPageInner() {
     }
 
     try {
+      completeLanding(browserStorage());
       // Create user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
@@ -86,12 +88,12 @@ function SignupPageInner() {
       // Sign out immediately — Firebase auto-logs in after createUser,
       // but we want the user to explicitly log in themselves.
       await signOut(auth);
-      // Forward the pending plan intent back to the landing page.
+      // Forward the existing pending plan intent to the explicit Login route.
       // ?registered=true auto-opens the LoginModal; ?choosePlan=true then
       // opens the SubscriptionModal after the user logs in.
       const redirectUrl = pendingPlan && pendingPlan !== "free"
-        ? `/?registered=true&choosePlan=true`
-        : `/?registered=true`;
+        ? `/login?registered=true&choosePlan=true`
+        : `/login?registered=true`;
       router.push(redirectUrl);
     } catch (err: any) {
       console.error("Signup error:", err);
@@ -307,7 +309,7 @@ function SignupPageInner() {
         </form>
 
         <p className="text-center text-sm text-slate-500 mt-8">
-          Already have an account? <Link href="/?login=true" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
+          Already have an account? <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
         </p>
       </div>
     </div>

@@ -1,138 +1,70 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "./config";
-import { useRouter } from "next/navigation";
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { onIdTokenChanged, User } from 'firebase/auth';
+import { doc, getDocFromServer } from 'firebase/firestore';
+import { auth, db } from './config';
+import { useRouter } from 'next/navigation';
+import { createAuthSession, createLogoutAction, profileRole, type AuthStatus, type LogoutResult } from '../../../../services/auth-navigation';
 
-interface AdminUser {
-  uid: string;
-  email: string;
-  fullName: string;
-  role: string;
-  plan: string;
-  businessName: string;
-}
-
+interface AdminUser { uid: string; email: string; fullName: string; role: string; plan: string; businessName: string }
 interface AdminAuthContextType {
-  user: User | null;
-  adminUser: AdminUser | null;
-  loading: boolean;
-  logout: () => Promise<void>;
+  user: User | null; adminUser: AdminUser | null; loading: boolean; logout: () => Promise<LogoutResult>;
+  authStatus: AuthStatus; logoutError: string | null; logoutBusy: boolean; retryVerification: () => void;
 }
-
-const AdminAuthContext = createContext<AdminAuthContextType>({
-  user: null,
-  adminUser: null,
-  loading: true,
-  logout: async () => {},
-});
-
+const AdminAuthContext = createContext<AdminAuthContextType>({ user: null, adminUser: null, loading: true,
+  authStatus: 'initializing', logoutError: null, logoutBusy: false, retryVerification: () => {}, logout: async () => ({ ok: false }) });
 export const useAdminAuth = () => useContext(AdminAuthContext);
 
 export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('initializing');
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const router = useRouter();
+  const sessionGate = React.useRef<ReturnType<typeof createAuthSession<User, AdminUser>> | null>(null);
+  const logoutAction = React.useRef<(() => Promise<LogoutResult>) | null>(null);
+  const logout = async () => logoutAction.current ? logoutAction.current() : { ok: false };
+  const retryVerification = () => { void sessionGate.current?.retry(async () => {
+    await auth.authStateReady(); return auth.currentUser;
+  }); };
 
-  // Listen to auth state changes ONCE — do NOT include pathname/router in deps,
-  // otherwise the listener re-runs on every page navigation causing a flicker.
   useEffect(() => {
-    console.log("[ADMIN AUTH] 👂 Setting up auth state listener...");
-    
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      console.log("[ADMIN AUTH] 🔄 Auth state changed:", !!currentUser);
-      
-      setUser(currentUser);
-
-      if (currentUser) {
-        try {
-          console.log("[ADMIN AUTH] 📄 Fetching user data from Firestore...");
-          
-          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            
-            console.log("[ADMIN AUTH] ✅ User data loaded");
-            console.log("[ADMIN AUTH] Role:", userData.role);
-
-            if (userData.role?.toLowerCase() === "admin") {
-              // Determine display name: prefer fullName from Firestore,
-              // then displayName from Firebase Auth, then "Super Admin" for admin role
-              const displayName = userData.fullName
-                || currentUser.displayName
-                || (userData.role?.toLowerCase() === "admin" ? "Super Admin" : "User");
-
-              setAdminUser({
-                uid: currentUser.uid,
-                email: currentUser.email || "",
-                fullName: displayName,
-                role: userData.role,
-                plan: userData.plan || "Unlimited",
-                businessName: userData.businessName || "InventaAPI",
-              });
-              
-              console.log("[ADMIN AUTH] ✅ Admin access granted, displayName:", displayName);
-            } else {
-              console.warn("[ADMIN AUTH] ❌ Not an admin role:", userData.role);
-              await auth.signOut();
-              setAdminUser(null);
-              router.push("/login");
-            }
-          } else {
-            console.error("[ADMIN AUTH] ❌ User document not found in Firestore");
-            await auth.signOut();
-            setAdminUser(null);
-            router.push("/login");
-          }
-        } catch (error) {
-          console.error("[ADMIN AUTH] ❌ Error loading user data:", error);
-          await auth.signOut();
-          setAdminUser(null);
-          router.push("/login");
-        }
-      } else {
-        console.log("[ADMIN AUTH] ⚠️ No user session detected");
-        setAdminUser(null);
-        // Use the ref approach to get latest pathname without adding it as a dep
-        if (window.location.pathname !== "/login") {
-          router.push("/login");
-        }
-      }
-
-      setLoading(false);
+    const gate = createAuthSession<User, AdminUser>({
+      readProfile: async (currentUser, forceRefresh) => {
+        // Token refresh and role read share one bounded/generation-checked attempt.
+        // Observer events must not force another token event in a refresh loop.
+        await currentUser.getIdToken(forceRefresh);
+        const snapshot = await getDocFromServer(doc(db, 'users', currentUser.uid));
+        const profile = snapshot.exists() ? snapshot.data() : null;
+        if (profileRole(profile) !== 'admin') return null;
+        return { ...profile, uid: currentUser.uid, email: currentUser.email || '',
+          fullName: profile?.fullName || currentUser.displayName || 'Super Admin',
+          role: profile?.role, plan: profile?.plan || 'Unlimited', businessName: profile?.businessName || 'InventaAPI' } as AdminUser;
+      },
+      publish: state => { setUser(state.user); setAdminUser(state.profile); setLoading(state.loading); setAuthStatus(state.status); },
+      rejected: () => { router.replace('/login'); },
     });
-
-    return () => {
-      console.log("[ADMIN AUTH] 🔌 Cleaning up auth listener...");
-      unsubscribe();
+    sessionGate.current = gate;
+    logoutAction.current = createLogoutAction({ currentUser: () => auth.currentUser,
+      signOut: () => auth.signOut(), active: () => sessionGate.current === gate,
+      changed: (busy, error) => { setLogoutBusy(busy); setLogoutError(error); },
+      completed: () => { gate.invalidate(); router.replace('/login'); } });
+    const unsubscribe = onIdTokenChanged(auth, currentUser => { void gate.accept(currentUser); },
+      error => { gate.failure(auth.currentUser, error); });
+    const visible = () => {
+      const currentUser = auth.currentUser;
+      if (document.visibilityState === 'visible' && currentUser) {
+        void gate.accept(currentUser, true);
+      }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps: only run once on mount, not on every navigation
-
-  const logout = async () => {
-    try {
-      console.log("[ADMIN AUTH] 🚪 Logging out...");
-      
-      await auth.signOut();
-      setUser(null);
-      setAdminUser(null);
-      
-      console.log("[ADMIN AUTH] ✅ Logout successful");
-      
-      // Redirect to login page
-      router.push("/login");
-    } catch (error) {
-      console.error("[ADMIN AUTH] ❌ Logout error:", error);
-    }
-  };
-
-  return (
-    <AdminAuthContext.Provider value={{ user, adminUser, loading, logout }}>
-      {children}
-    </AdminAuthContext.Provider>
-  );
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      unsubscribe(); gate.stop(); document.removeEventListener('visibilitychange', visible);
+      if (sessionGate.current === gate) { sessionGate.current = null; logoutAction.current = null; }
+    };
+  }, [router]);
+  return <AdminAuthContext.Provider value={{ user, adminUser, loading, logout, authStatus, logoutError, logoutBusy, retryVerification }}>{children}</AdminAuthContext.Provider>;
 };

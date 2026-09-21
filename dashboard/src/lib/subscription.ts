@@ -18,6 +18,6 @@ export async function readSubscription(user: User): Promise<SubscriptionState> {
   const response = await fetch(`${base}/api/v1/checkout/subscription-status`, {
     headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
   });
-  if (!response.ok) throw new Error('Subscription verification unavailable.');
+  if (!response.ok) throw Object.assign(new Error('Subscription verification unavailable.'), { status: response.status });
   return response.json();
 }
