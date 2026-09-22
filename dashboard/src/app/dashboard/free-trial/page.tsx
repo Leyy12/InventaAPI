@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -6,7 +6,7 @@ import { Zap, Check, AlertTriangle, ArrowRight, Clock, ShieldCheck } from "lucid
 import Link from "next/link";
 
 export default function FreeTrialPage() {
-  const { user, appUser, refreshAppUser } = useAuth();
+  const { user, appUser, refreshUserDoc } = useAuth();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [error, setError] = useState("");
