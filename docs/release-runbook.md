@@ -171,3 +171,15 @@ isolated mutation/concurrency E2E and acceptance before setting
 Archived/deleted/retired identities remain reserved. Never roll back to an uncoordinated
 direct writer against the new claims. On failure KEEP WRITES FROZEN until a coordinated
 forward-fix/recovery is verified. Production migration/deployment was not executed.
+
+### Frozen export tooling (R7C — not production authorization)
+
+The [R7C exporter contract](adviser-r7c-frozen-exporter.md) provides a standalone
+read-only exporter with explicit project/database/credential confirmation, boolean
+freeze checks, two-pass completeness/stability checks and a 5,000-product cap.
+Its identity source is `product_submission_identity`; the 400-reservation backfill
+limit is not an export limit. It does not establish the external freeze or perform
+audit repair/backfill. R7C ran locally only; production has NOT been exported or
+audited by this work. Production invocation still requires a later review and
+authorization gate. Capture/reconcile actual deployed rules before designing the
+temporary maintenance rules; do not substitute repository rules without that check.
