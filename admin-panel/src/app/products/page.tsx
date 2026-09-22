@@ -1136,7 +1136,7 @@ export default function MasterProductCatalogPage() {
         {/* Toolbar */}
         <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-[#111827]">
           {/* Search (Moved to left) */}
-          <div className="relative w-full md:w-[450px] lg:w-[500px]">
+          <div className="relative w-96">
             <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input type="text" placeholder="Search by name, brand, SKU…" value={search}
               onChange={e => setSearch(e.target.value)}

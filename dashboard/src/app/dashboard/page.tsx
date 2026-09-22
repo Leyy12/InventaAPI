@@ -160,23 +160,35 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const userId = appUser?.uid || (appUser as any)?.id;
-    if (!userId) return;
+    if (!appUser?.uid) return;
 
-    // Fetch Active API Keys via REST API
-    fetch(`http://localhost:5002/api/v1/api-keys?userId=${userId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && Array.isArray(data.keys)) {
-          setActiveKeysCount(data.keys.length);
-        }
-      })
-      .catch(err => console.error('[Dashboard] Error fetching active keys:', err));
+    // Fetch Active API Keys
+    const keysQ = query(
+      collection(db, "api_keys"),
+      where("userId", "==", appUser.uid),
+      where("status", "==", "active")
+    );
+    const unsubKeys = onSnapshot(keysQ, (snap) => {
+      setActiveKeysCount(snap.size);
+    });
 
-    // Telemetry stats not yet migrated to a user endpoint; mock as 0 for now.
-    setTodaysCalls(0);
+    // Fetch Today's Telemetry (API Calls)
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const telemetryQ = query(
+      collection(db, "api_telemetry"),
+      where("userId", "==", appUser.uid),
+      where("timestamp", ">=", startOfDay)
+    );
+    const unsubTelemetry = onSnapshot(telemetryQ, (snap) => {
+      setTodaysCalls(snap.size);
+    });
 
-  }, [appUser?.uid, (appUser as any)?.id]);
+    return () => {
+      unsubKeys();
+      unsubTelemetry();
+    };
+  }, [appUser?.uid]);
 
   if (loading) {
     return (
@@ -395,10 +407,13 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ─── Quick Actions ─── */}
-      <div className="w-full">
+      {/* ─── Quick Actions & System Status ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        {/* Quick Actions (2/3 width) */}
+        <div className="lg:col-span-2">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Quick actions</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
             <Link
               href="/dashboard/api-keys"
@@ -453,6 +468,40 @@ export default function DashboardPage() {
             </Link>
 
           </div>
+        </div>
+
+        {/* System Status (1/3 width) */}
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">System status</p>
+          <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] overflow-hidden divide-y divide-slate-800/60">
+
+            <div className="flex items-center justify-between px-5 py-3.5">
+              <span className="text-sm text-slate-300 font-medium">API gateway</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-slate-400">99.9%</span>
+                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-5 py-3.5">
+              <span className="text-sm text-slate-300 font-medium">Database sync</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-slate-400">operational</span>
+                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-5 py-3.5">
+              <span className="text-sm text-slate-300 font-medium">Auth service</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-slate-400">operational</span>
+                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
       </div>
 
       {/* ─── Reports & Price Distribution Chart ─── */}

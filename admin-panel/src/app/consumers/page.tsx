@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Users, Search, Activity, CheckCircle2, AlertTriangle } from "lucide-react";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { db } from "@/lib/firebase/config";
 
 export default function ConsumersPage() {
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -13,32 +15,27 @@ export default function ConsumersPage() {
   const loading = !usersReady || !keysReady;
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch users from MongoDB
-        const [usersRes, keysRes] = await Promise.all([
-          fetch('http://localhost:5002/api/v1/users'),
-          fetch('http://localhost:5002/api/v1/api-keys/all')
-        ]);
-        const usersData = await usersRes.json();
-        const keysData = await keysRes.json();
+    // Listener 1: Users collection — authoritative customer profile data
+    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+      const uMap: Record<string, any> = {};
+      snapshot.docs.forEach(doc => {
+        uMap[doc.id] = { id: doc.id, ...doc.data() };
+      });
+      setUsersMap(uMap);
+      setUsersReady(true);
+    });
 
-        const uMap: Record<string, any> = {};
-        (usersData.users || []).forEach((u: any) => {
-          uMap[u.firestoreId || u.id] = u;
-        });
-        setUsersMap(uMap);
-        setUsersReady(true);
-        setApiKeys(keysData.keys || []);
-        setKeysReady(true);
-      } catch (err) {
-        console.error('[Consumers] Failed to fetch data:', err);
-        setUsersReady(true);
-        setKeysReady(true);
-      }
+    // Listener 2: API Keys — one row per key, joined to user by userId
+    const q = query(collection(db, "api_keys"), orderBy("createdAt", "desc"));
+    const unsubKeys = onSnapshot(q, (snapshot) => {
+      setApiKeys(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setKeysReady(true);
+    });
+
+    return () => {
+      unsubUsers();
+      unsubKeys();
     };
-
-    fetchData();
   }, []);
 
   const filteredKeys = useMemo(() => {
@@ -70,7 +67,7 @@ export default function ConsumersPage() {
 
       <div className="glass-card rounded-xl overflow-hidden border border-white/5">
         <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row items-center justify-start bg-slate-900/50 gap-3">
-          <div className="relative w-full md:w-[450px] lg:w-[500px]">
+          <div className="relative w-64">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"

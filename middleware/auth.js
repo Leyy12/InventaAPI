@@ -6,8 +6,10 @@ dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 const DAAS_API_KEY = process.env.DAAS_API_KEY || 'daas_fallback_key';
 
+
+
 import { getAuth } from 'firebase-admin/auth';
-import User from '../models/User.js';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // Firebase ID Token verification middleware
 export const verifyFirebaseToken = async (req, res, next) => {
@@ -28,20 +30,21 @@ export const verifyFirebaseToken = async (req, res, next) => {
     }
 };
 
-// Admin role check using MongoDB
+// Admin role check using Firestore
 export const requireAdmin = async (req, res, next) => {
     if (!req.firebaseUser || !req.firebaseUser.uid) {
         return res.status(401).json({ error: "Unauthorized. User identity not found." });
     }
 
     try {
-        const user = await User.findOne({ firestoreId: req.firebaseUser.uid }).lean();
+        const userDoc = await getFirestore().collection("users").doc(req.firebaseUser.uid).get();
         
-        if (!user) {
+        if (!userDoc.exists) {
             return res.status(403).json({ error: "Forbidden. User profile not found." });
         }
 
-        const role = user.role ? user.role.toLowerCase() : "";
+        const userData = userDoc.data();
+        const role = userData.role ? userData.role.toLowerCase() : "";
         
         if (role !== "admin") {
             return res.status(403).json({ error: "Forbidden. Admin privileges required." });

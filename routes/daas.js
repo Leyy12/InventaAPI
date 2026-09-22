@@ -1,11 +1,6 @@
 import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
 import { requirePlan, enforceRequestLimit } from '../middleware/planGate.js';
-import Product from '../models/Product.js';      // MongoDB product catalog
-import ApiKey from '../models/ApiKey.js';         // MongoDB api_keys
-import User from '../models/User.js';             // MongoDB users
-import AuditLog from '../models/AuditLog.js';     // MongoDB audit_logs
-import ApiTelemetry from '../models/ApiTelemetry.js'; // MongoDB api_telemetry
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getDb() is always ready here.
@@ -18,20 +13,20 @@ function getDb() {
 }
 const router = express.Router();
 
-// Middleware: Authenticate API Key from MongoDB
+// Middleware: Authenticate API Key from Firebase
 const authenticateApiKey = async (req, res, next) => {
-    req.startTime = Date.now();
+    req.startTime = Date.now(); // Start timing for telemetry
     const apiKey = req.headers['x-api-key'] || req.query.apiKey;
 
     if (!apiKey) {
-        AuditLog.create({
-            firestoreId: `audit_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        const ts = new Date();
+        getDb().collection('audit_logs').add({
             action: 'Authentication Failure',
             userId: 'Unknown',
             email: 'Unknown Client',
             endpoint: req.path,
             status: 401,
-            timestamp: new Date()
+            timestamp: ts
         }).catch(console.error);
         return res.status(401).json({
             error: 'Unauthorized',
@@ -40,17 +35,22 @@ const authenticateApiKey = async (req, res, next) => {
     }
 
     try {
-        const keyDoc = await ApiKey.findOne({ key: apiKey, status: 'active' }).lean();
+        // Query Firebase for the API key
+        const snapshot = await getDb().collection('api_keys')
+            .where('key', '==', apiKey)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
 
-        if (!keyDoc) {
-            AuditLog.create({
-                firestoreId: `audit_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        if (snapshot.empty) {
+            const ts = new Date();
+            getDb().collection('audit_logs').add({
                 action: 'Invalid API Key Attempt',
                 userId: 'Unknown',
                 email: 'Unknown Client',
                 endpoint: req.path,
                 status: 401,
-                timestamp: new Date()
+                timestamp: ts
             }).catch(console.error);
             return res.status(401).json({
                 error: 'Unauthorized',
@@ -58,12 +58,18 @@ const authenticateApiKey = async (req, res, next) => {
             });
         }
 
-        // Update last used timestamp
-        await ApiKey.findByIdAndUpdate(keyDoc._id, { lastUsed: new Date().toISOString() });
+        const keyDoc = snapshot.docs[0];
+        const keyData = keyDoc.data();
 
+        // Update last used timestamp (do NOT increment requestsUsed here - that's handled by enforceRequestLimit)
+        await getDb().collection('api_keys').doc(keyDoc.id).update({
+            lastUsed: new Date().toISOString()
+        });
+
+        // Attach key data to request for downstream use
         req.apiKeyData = {
-            id: keyDoc.firestoreId,
-            ...keyDoc
+            id: keyDoc.id,
+            ...keyData
         };
 
         next();
@@ -141,25 +147,27 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
             });
         }
 
-        // Fetch products from MongoDB Atlas using a single batch query.
-        // firestoreId is used as the lookup key so that existing
-        // api_keys.linkedProductIds (Firestore doc IDs) remain compatible.
-        const mongoDocs = await Product.find(
-            { firestoreId: { $in: allProductIdsToFetch }, isActive: true },
-            { __v: 0 }   // exclude internal Mongoose field
-        ).lean();
+        // Fetch products from Firebase by IDs
+        const productPromises = allProductIdsToFetch.map(async (productId) => {
+            const doc = await getDb().collection('products').doc(productId).get();
+            if (doc.exists) {
+                return { id: doc.id, ...doc.data() };
+            }
+            return null;
+        });
 
-        // Re-map so downstream code can still use `p.id` (firestoreId)
-        let products = mongoDocs.map(p => ({ ...p, id: p.firestoreId }));
+        const productsData = await Promise.all(productPromises);
+        let products = productsData.filter(p => p !== null);
 
         // SECURITY: Enforce segment restriction for Free plan users
-        const userDoc = await User.findOne({ firestoreId: req.apiKeyData.userId }).lean();
-        if (userDoc) {
-            const userPlan = userDoc.plan;
+        const userDoc = await getDb().collection('users').doc(req.apiKeyData.userId).get();
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            const userPlan = userData.plan;
             const isFreePlan = ['free', 'Free', 'Starter'].includes(userPlan);
             
-            if (isFreePlan && userDoc.selectedSegment) {
-                products = products.filter(p => p.segment === userDoc.selectedSegment);
+            if (isFreePlan && userData.selectedSegment) {
+                products = products.filter(p => p.segment === userData.selectedSegment);
             }
         }
 
@@ -178,8 +186,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                 const latencyMs = Date.now() - req.startTime;
                 const ts = new Date();
                 
-                ApiTelemetry.create({
-                    firestoreId: `tel_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+                getDb().collection('api_telemetry').add({
                     apiKeyId: req.apiKeyData.id,
                     userId: req.apiKeyData.userId,
                     keyName: req.apiKeyData.name,
@@ -191,8 +198,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
                     timestamp: ts
                 }).catch(console.error);
                 
-                AuditLog.create({
-                    firestoreId: `audit_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+                getDb().collection('audit_logs').add({
                     action: 'API Request',
                     userId: req.apiKeyData.userId,
                     email: req.apiKeyData.userEmail || req.apiKeyData.name,

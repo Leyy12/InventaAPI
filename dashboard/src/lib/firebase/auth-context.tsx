@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { auth } from "./config";
+import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "./config";
 import { useRouter, usePathname } from "next/navigation";
 
 
@@ -96,37 +97,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       if (currentUser) {
         try {
-          const res = await fetch(`http://localhost:5002/api/v1/users/${currentUser.uid}`);
+          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
           
-          if (res.ok) {
-            const data = await res.json();
-            currentAppUser = data.user as AppUser;
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            currentAppUser = userData as AppUser;
             setAppUser(currentAppUser);
             if (typeof window !== 'undefined') {
               localStorage.setItem("appUserCache", JSON.stringify(currentAppUser));
             }
 
-            // Write Customer Login audit log ONCE per session
+            // Write Customer Login audit log ONCE per session (not on every page refresh)
             if (loginLoggedRef.current !== currentUser.uid) {
               loginLoggedRef.current = currentUser.uid;
               try {
-                await fetch(`http://localhost:5002/api/v1/audit`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    action: "Customer Login",
-                    userId: currentUser.uid,
-                    email: currentUser.email || 'unknown@email.com',
-                    endpoint: 'auth-context',
-                    status: 'success'
-                  })
+                await addDoc(collection(db, "audit_logs"), {
+                  action: "Customer Login",
+                  userId: currentUser.uid,
+                  userEmail: currentUser.email || 'unknown@email.com',
+                  timestamp: serverTimestamp(),
+                  details: 'User logged in successfully',
+                  userAgent: navigator.userAgent || null,
+                  ipAddress: null
                 });
               } catch (auditErr) {
                 console.warn("[Audit] Failed to write login log:", auditErr);
               }
             }
           } else {
-            console.warn("User document not found in database.");
+            console.warn("User document not found in Firestore.");
             
             // Check if this is the superadmin account (by UID, not email)
             // UID is server-verified and non-spoofable
@@ -168,20 +168,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             
             console.log("Waiting to avoid race condition with signup form...");
             
-            setTimeout(async () => {
+            setTimeout(() => {
+              import("firebase/firestore").then(async ({ getDoc, setDoc, doc }) => {
                 try {
-                  const retryRes = await fetch(`http://localhost:5002/api/v1/users/${currentUser.uid}`);
-                  if (retryRes.ok) {
+                  const retryDoc = await getDoc(doc(db, "users", currentUser.uid));
+                  if (retryDoc.exists()) {
                     console.log("✅ Document created by signup form, skipping auto-heal.");
-                    const retryData = await retryRes.json();
-                    setAppUser(retryData.user as AppUser);
+                    setAppUser(retryDoc.data() as AppUser);
                     return;
                   }
                   
                   console.log("Auto-healing regular user document...");
                   const newDoc = {
                     uid: currentUser.uid,
-                    id: currentUser.uid,
                     fullName: currentUser.displayName || "Developer",
                     email: currentUser.email || "",
                     businessName: "SME Store",
@@ -193,16 +192,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     subscription_status: "inactive",
                   };
                   
-                  await fetch(`http://localhost:5002/api/v1/users`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newDoc)
-                  });
+                  await setDoc(doc(db, "users", currentUser.uid), newDoc);
                   console.log("✅ Auto-heal successful");
-                  setAppUser(newDoc as unknown as AppUser);
+                  setAppUser(newDoc as AppUser);
                 } catch (error) {
                   console.error("❌ Auto-heal failed:", error);
                 }
+              });
             }, 2000);
           }
         } catch (error) {
@@ -302,16 +298,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // 4. Fire-and-forget audit log — do NOT await (never block sign-out on this)
       if (uid) {
-        fetch(`http://localhost:5002/api/v1/audit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        void addDoc(collection(db, "audit_logs"), {
             action: "Customer Logout",
             userId: uid,
-            email: email || 'unknown@email.com',
-            endpoint: 'auth-context',
-            status: 'success'
-          })
+            userEmail: email || 'unknown@email.com',
+            timestamp: serverTimestamp(),
+            details: 'User logged out successfully',
+            userAgent: navigator.userAgent || null,
+            ipAddress: null
         }).catch((auditErr) => {
           console.warn("[Audit] Failed to write logout log:", auditErr);
         });
@@ -339,10 +333,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const currentUser = auth.currentUser;
     if (!currentUser) return null;
     try {
-      const res = await fetch(`http://localhost:5002/api/v1/users/${currentUser.uid}`);
-      if (res.ok) {
-        const data = await res.json();
-        const fresh = data.user as AppUser;
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const fresh = userDoc.data() as AppUser;
         setAppUser(fresh);
         if (typeof window !== "undefined") {
           localStorage.setItem("appUserCache", JSON.stringify(fresh));
