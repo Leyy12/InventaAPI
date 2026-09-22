@@ -87,6 +87,21 @@ or subscription policy. Standalone Login has no dismiss-to-dashboard escape whil
 segment onboarding is pending. Subscription verification does not determine
 ordinary authentication routing, so background polls do not bounce routes.
 
+## Customer Login business-segment gate
+
+The Customer Login modal always renders a required Business Segment select after
+Password and before Login. Its options are the canonical Phase 1 product segments
+(`Grocery`, `Pharmacy`, and `Hardware`) imported from `services/product-contract.js`;
+the selector is UX context, not an authentication or entitlement authority. An empty
+selection is rejected before Firebase sign-in. After sign-in, the server-read user
+profile and plan remain authoritative: Free/Basic/Starter accounts must have a
+matching canonical profile segment, while paid accounts may choose any canonical
+segment and have that active context persisted to `selectedSegment`. Invalid or
+missing profile segment data fails closed, signs out the newly authenticated SDK
+session, and leaves the user at the Login modal with a generic error. Signup's
+existing authoritative profile provisioning and the separate Admin Login flow are
+unchanged; no client-selected value grants a plan, role, quota, or product access.
+
 ## First-visit state
 
 The former `inventa.landing-completed.v1` localStorage marker is legacy and is

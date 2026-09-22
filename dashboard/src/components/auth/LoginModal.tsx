@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkles, Building2, X } from "lucide-react";
 import type { PlanId } from "@/config/plans";
 import { profileRole, adminLoginDestination } from '../../../../services/auth-navigation';
+import { PRODUCT_SEGMENTS, normalizeSegment } from '../../../../services/product-contract.js';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -21,13 +22,8 @@ interface LoginModalProps {
   initialError?: string;
 }
 
-const SEGMENT_OPTIONS = [
-  { id: "Grocery", label: "Grocery" },
-  { id: "Pharmacy", label: "Pharmacy" },
-  { id: "Hardware", label: "Hardware" },
-] as const;
-
-type SegmentId = "Grocery" | "Pharmacy" | "Hardware";
+const SEGMENT_OPTIONS = PRODUCT_SEGMENTS.map(id => ({ id, label: id }));
+type SegmentId = (typeof PRODUCT_SEGMENTS)[number];
 
 export default function LoginModal({ isOpen, onClose, onStart, standalone = false, pendingPlan, onOpenSubscription, initialError }: LoginModalProps) {
   const [email, setEmail] = useState("");
@@ -54,15 +50,10 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       setEmail("");
       setPassword("");
       setSegment("");
-      // Segment dropdown is ONLY shown upfront when the user explicitly clicked
-      // the Free plan CTA (pendingPlan === 'free'). For plain logins and Pro/
-      // Enterprise upgrade intents, we do NOT show it upfront because:
-      //   - Pro/Enterprise: user has access to all segments, no selection needed.
-      //   - Plain login (null pendingPlan): user might already be Pro — we don't
-      //     know their plan until after Firebase auth, so we cannot require a
-      //     segment selection before we know if they need one.
-      const isFreeFlowOnOpen = pendingPlan === "free";
-      setShowSegment(isFreeFlowOnOpen);
+      // Segment is an explicit login input for every Customer flow. It is only
+      // an active-context preference; profile/plan authority is verified after
+      // Firebase authentication and can still reject the selection.
+      setShowSegment(true);
       setSegmentBlocked(false);
       setShowPassword(false);
       setLoading(false);
@@ -130,9 +121,15 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
     e.preventDefault();
     onStart?.();
 
-    // No pre-auth segment block here — we don't know the user's plan until
-    // after Firebase auth. The post-auth check (below) handles segment gating
-    // correctly once we know whether this is a Free or Pro account.
+    // Do not authenticate a request that has not supplied the required context.
+    // This is UX validation only; authorization is still profile/plan based below.
+    const requestedSegment = normalizeSegment(segment);
+    if (!requestedSegment) {
+      setSegmentBlocked(true);
+      setShowSegment(true);
+      setError("Please select your business segment to continue.");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -184,61 +181,35 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       const paidPlans = ["pro", "enterprise", "professional", "unlimited"];
       const isPaidPlan = paidPlans.includes(normalizedPlan);
       const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "enterprise";
-      const chosenSegment = segment as SegmentId;
+      const chosenSegment = normalizeSegment(segment) as SegmentId | null;
 
       // existingSegment: check selectedSegment first (set by the login flow), then
       // fall back to businessSegment (always written at signup). This prevents new
       // Consumer users — who have businessSegment but never set selectedSegment —
       // from being falsely blocked as "no segment" users.
-      const rawSelectedSegment = userData?.selectedSegment as SegmentId | undefined;
-      const rawBusinessSegment = userData?.businessSegment as SegmentId | undefined;
-      const existingSegment: SegmentId | "" = rawSelectedSegment || rawBusinessSegment || "";
+      const hasSelectedSegment = Object.prototype.hasOwnProperty.call(userData ?? {}, "selectedSegment");
+      const normalizedSelectedSegment = normalizeSegment(userData?.selectedSegment);
+      const invalidStoredSegment = hasSelectedSegment && normalizedSelectedSegment === null;
+      const existingSegment = hasSelectedSegment
+        ? normalizedSelectedSegment
+        : normalizeSegment(userData?.businessSegment);
 
       console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "existingSegment:", existingSegment, "isPaidPlan:", isPaidPlan);
 
-      // ── Business Segment Validation ───────────────────────────────────────
-      // Determine Account Type based on role
-      const roleLower = userData?.role?.toLowerCase() || "developer";
-      const accountType = roleLower === "business" ? "Business" : "Consumer";
-      
-      const isFreePlan = normalizedPlan === "free" || normalizedPlan === "starter" || !normalizedPlan;
-      const isProPlan = normalizedPlan === "pro" || normalizedPlan === "professional";
-      const isEnterprisePlan = normalizedPlan === "enterprise" || normalizedPlan === "unlimited";
-
-      let needsSegmentPick = false;
-
-      // Ensure Account Type and Subscription Plan remain separate and follow strict rules
-      if (accountType === "Consumer") {
-        if (isFreePlan) {
-          // IF Account Type = Consumer AND Plan = Free
-          // → Business Segment REQUIRED
-          needsSegmentPick = !existingSegment && !isUpgradeIntent;
-        } else if (isProPlan) {
-          // IF Account Type = Consumer AND Plan = Pro
-          // → Business Segment NOT REQUIRED
-          needsSegmentPick = false;
-        } else if (isEnterprisePlan) {
-          // IF Account Type = Consumer AND Plan = Enterprise
-          // → Follow the intended Enterprise flow (historically, no rigid segment blocks)
-          needsSegmentPick = false; 
-        }
-      } else if (accountType === "Business") {
-        // IF Account Type = Business
-        // → Apply Business Segment validation only if required by the specific Business account flow
-        needsSegmentPick = false; // Default off unless required by specific business flows
-      }
-
-      if (needsSegmentPick && !chosenSegment) {
-        // Block login if no Business Segment
+      const isFreePlan = normalizedPlan === "free" || normalizedPlan === "starter" || normalizedPlan === "basic" || !normalizedPlan;
+      // Free/Basic/Starter accounts are restricted to their authoritative
+      // profile segment. Paid accounts may choose any canonical segment, but
+      // the chosen value is still stored only after server profile validation.
+      if (!chosenSegment || invalidStoredSegment || (isFreePlan && (!existingSegment || chosenSegment !== existingSegment))) {
+        try { await signOut(auth); } catch (signOutErr) { console.error("[LOGIN] Segment rejection sign-out failed:", signOutErr); }
         setSegmentBlocked(true);
-        setShowSegment(true); // ensure dropdown is visible if it wasn't already
-        setError("Please select your business segment to continue. Login is blocked until a segment is chosen.");
+        setShowSegment(true);
+        setError("That business segment is not available for this account.");
         setLoading(false);
         return;
       }
 
-      // Persist the segment only if it was required and just picked in this modal.
-      if (needsSegmentPick && chosenSegment) {
+      if (chosenSegment !== existingSegment) {
         try {
           await updateDoc(doc(db, "users", user.uid), { selectedSegment: chosenSegment });
           await refreshUserDoc();
@@ -251,9 +222,8 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
         }
       }
 
-      // Requirement satisfied or not needed (paid plan, or Free with a saved segment):
-      // hide the dropdown so paid accounts complete a clean, dropdown-free login.
-      setShowSegment(false);
+      // The modal closes as part of the successful route transition; retaining
+      // the selector state until then avoids a flash of an unvalidated session.
 
       // ── Upgrade intent (user clicked a Pro/Enterprise CTA before logging in) ──
       // IMPORTANT: only fire if pendingPlan is STRICTLY a paid plan ("pro" or
