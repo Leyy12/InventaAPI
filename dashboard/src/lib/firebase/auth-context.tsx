@@ -7,7 +7,8 @@ import { auth, db } from "./config";
 import { useRouter } from "next/navigation";
 import { readSubscription, type SubscriptionState } from '@/lib/subscription';
 import { createEntitlementPoller } from '@/lib/entitlement-poller';
-import { createAuthSession, createLogoutAction, markPostLogoutLogin, profileRole, verifyWithin,
+import { createAuthSession, createLogoutAction, beginCustomerLogout, cancelCustomerLogout,
+  customerLogoutDestination, markPostLogoutLogin, profileRole, verifyWithin,
   type AuthStatus, type LogoutResult } from '../../../../services/auth-navigation';
 
 interface AppUser {
@@ -78,22 +79,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
       rejected: () => {
         // Signup owns its create-profile-then-signout transaction. Never auto-create a missing profile here.
-        if (window.location.pathname !== '/signup') router.replace('/login');
+        const destination = customerLogoutDestination('/login');
+        if (window.location.pathname !== '/signup' && destination) router.replace(destination);
       },
     });
     sessionGate.current = gate;
     logoutAction.current = createLogoutAction({ currentUser: () => auth.currentUser,
       signOut: () => firebaseSignOut(auth), active: () => sessionGate.current === gate,
-      changed: (busy, error) => { setLogoutBusy(busy); setLogoutError(error); },
+      changed: (busy, error) => {
+        if (busy) beginCustomerLogout();
+        else if (error) cancelCustomerLogout();
+        setLogoutBusy(busy); setLogoutError(error);
+      },
       completed: () => {
-        const marked = markPostLogoutLogin();
-        clearSession(); router.replace(marked ? '/' : '/?login=true&from=logout');
+        markPostLogoutLogin();
+        clearSession(); router.replace('/');
       } });
     const unsubscribe = onIdTokenChanged(auth, currentUser => { void gate.accept(currentUser); },
       error => { gate.failure(auth.currentUser, error); });
     return () => {
       unsubscribe(); gate.stop();
-      if (sessionGate.current === gate) { sessionGate.current = null; logoutAction.current = null; }
+      if (sessionGate.current === gate) {
+        cancelCustomerLogout(true); sessionGate.current = null; logoutAction.current = null;
+      }
     };
   }, [clearSession, router]);
 

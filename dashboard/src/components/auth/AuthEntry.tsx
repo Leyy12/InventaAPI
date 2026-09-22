@@ -36,8 +36,8 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   const [showAlreadyProModal, setShowAlreadyProModal] = useState(false);
 
   useEffect(() => {
-    if (!loginOnly && consumePostLogoutLogin()) setShowLoginModal(true);
-  }, [loginOnly]);
+    if (!loginOnly && !loading && !user && consumePostLogoutLogin()) setShowLoginModal(true);
+  }, [loginOnly, loading, user]);
 
   const destination = navigationDecision({ path: loginOnly ? '/login' : '/', initializing: loading,
     role: user ? profileRole(appUser) : null,

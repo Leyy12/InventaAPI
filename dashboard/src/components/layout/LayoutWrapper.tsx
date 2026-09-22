@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen } from '../../../../services/auth-navigation';
+import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen, customerLogoutDestination } from '../../../../services/auth-navigation';
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import SubscriptionExpiryBanner from "@/components/shared/SubscriptionExpiryBanner";
@@ -19,11 +19,14 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const destination = rejected && pathname !== '/signup' && pathname !== '/login' ? '/login'
     : navigationDecision({ path: pathname, initializing: screen !== 'ready', role, entryFlow: true });
   useEffect(() => {
-    if (destination === 'admin-app') {
+    // Read the synchronous logout intent when the effect executes, including
+    // effects scheduled before the SDK published its unauthenticated state.
+    const targetDestination = customerLogoutDestination(destination);
+    if (targetDestination === 'admin-app') {
       const target = adminLoginDestination(process.env.NEXT_PUBLIC_ADMIN_APP_ORIGIN, window.location.hostname);
       if (target && new URL(target).origin !== window.location.origin) window.location.replace(target);
-    } else if (destination) router.replace(destination);
-  }, [destination, router]);
+    } else if (targetDestination && targetDestination !== pathname) router.replace(targetDestination);
+  }, [destination, router, pathname, logoutBusy]);
 
   const logoutNotice = logoutError && <div role="alert">
     <p>{logoutError}</p>

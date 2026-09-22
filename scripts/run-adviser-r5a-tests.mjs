@@ -8,7 +8,7 @@ for (const file of ['services/auth-navigation.ts', 'functions/subscription-lifec
 }
 const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 const result = spawnSync(process.execPath, ['--experimental-strip-types', '--experimental-loader', './scripts/adviser-r5a-loader.mjs',
-  '--test', '--test-reporter=spec', 'tests/adviser/r5a/navigation.test.mjs', 'tests/adviser/r5a/session.test.mjs', 'tests/adviser/r5a/wiring.test.mjs'],
+  '--test', '--test-reporter=spec', 'tests/adviser/r5a/navigation.test.mjs', 'tests/adviser/r5a/session.test.mjs', 'tests/adviser/r5a/wiring.test.mjs', 'tests/adviser/r5a/landing-login-modal.test.mjs'],
   { cwd: root, env, stdio: 'inherit', windowsHide: true });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);

@@ -2,11 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Set(['services/auth-navigation.ts', 'functions/subscription-lifecycle.mjs',
-  'tests/adviser/r5a/navigation.test.mjs', 'tests/adviser/r5a/session.test.mjs', 'tests/adviser/r5a/wiring.test.mjs'].map(file => resolvePath(root, file)));
+  'tests/adviser/r5a/navigation.test.mjs', 'tests/adviser/r5a/session.test.mjs', 'tests/adviser/r5a/wiring.test.mjs', 'tests/adviser/r5a/landing-login-modal.test.mjs'].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {
     if (!['node:test', 'node:assert/strict', 'node:fs'].includes(specifier)
-      || (specifier === 'node:fs' && !context.parentURL?.endsWith('/wiring.test.mjs'))) throw new Error('Isolated I/O prohibited');
+      || (specifier === 'node:fs' && !['/wiring.test.mjs', '/landing-login-modal.test.mjs'].some(file => context.parentURL?.endsWith(file)))) throw new Error('Isolated I/O prohibited');
     return nextResolve(specifier, context);
   }
   const result = await nextResolve(specifier, context);

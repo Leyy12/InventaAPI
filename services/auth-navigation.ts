@@ -13,15 +13,35 @@ export function browserStorage(): StorageLike | null {
   try { return window.localStorage; } catch { return null; }
 }
 export const POST_LOGOUT_LOGIN_KEY = 'inventa.post-logout-login.v1';
+// In-flight intent is document-local: a reload cannot turn an unfinished logout
+// into a successful one. Memory also keeps navigation working if storage is denied.
+let customerLogoutIntent: 'pending' | 'completed' | null = null;
+export function beginCustomerLogout(): void {
+  cancelCustomerLogout();
+  customerLogoutIntent = 'pending';
+}
+export function cancelCustomerLogout(pendingOnly = false): void {
+  if (pendingOnly && customerLogoutIntent !== 'pending') return;
+  customerLogoutIntent = null;
+  try { window.sessionStorage.removeItem(POST_LOGOUT_LOGIN_KEY); } catch { /* Optional UX storage. */ }
+}
+export function customerLogoutDestination(destination: string | null): string | null {
+  if (customerLogoutIntent === 'pending') return null;
+  if (customerLogoutIntent === 'completed') return '/';
+  return destination;
+}
 export function markPostLogoutLogin(): boolean {
+  customerLogoutIntent = 'completed';
   try { window.sessionStorage.setItem(POST_LOGOUT_LOGIN_KEY, '1'); return true; } catch { return false; }
 }
 export function consumePostLogoutLogin(): boolean {
+  if (customerLogoutIntent === 'pending') return false;
+  let completed = customerLogoutIntent === 'completed';
   try {
-    if (window.sessionStorage.getItem(POST_LOGOUT_LOGIN_KEY) !== '1') return false;
-    window.sessionStorage.removeItem(POST_LOGOUT_LOGIN_KEY);
-    return true;
-  } catch { return false; }
+    completed ||= window.sessionStorage.getItem(POST_LOGOUT_LOGIN_KEY) === '1';
+  } catch { /* Document-local fallback. */ }
+  cancelCustomerLogout();
+  return completed;
 }
 export type AuthProfile = { role?: unknown; plan?: unknown; disabled?: unknown; deleted?: unknown;
   deletedAt?: unknown; deletionRequested?: unknown; status?: unknown; accountState?: unknown };

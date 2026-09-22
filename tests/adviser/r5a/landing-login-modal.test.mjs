@@ -24,14 +24,14 @@ test('Login modal exposes close, Escape, dialog semantics, and existing form pat
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /event\.key === 'Escape'/);
   assert.match(source, /aria-label="Close login"/);
-  for (const token of ['Forgot password?', 'Create an Account', 'Business Segment']) assert.match(source, new RegExp(token));
+  for (const token of ['Forgot password?', 'Create Account', 'Business Segment']) assert.ok(source.includes(token), token);
 });
 
 test('Successful Customer logout returns to root with one-time modal intent', () => {
   const source = read('dashboard/src/lib/firebase/auth-context.tsx');
-  assert.match(source, /const marked = markPostLogoutLogin\(\);/);
-  assert.match(source, /router\.replace\(marked \? '\/' : '\/?login=true&from=logout'\)/);
-  assert.doesNotMatch(source, /completeLanding|router\.replace\('\/login'\)/);
+  assert.ok(source.includes('if (busy) beginCustomerLogout();'));
+  assert.ok(source.includes("clearSession(); router.replace('/')"));
+  assert.doesNotMatch(source, /completeLanding|login=true&from=logout/);
 });
 
 test('Post-logout intent is session-scoped, consumed once, and leaves root URL clean', () => {

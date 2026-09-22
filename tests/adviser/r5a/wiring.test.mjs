@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { createAuthSession, createLogoutAction, completeLanding, landingSeen, navigationDecision, profileRole, authScreen } from '../../../services/auth-navigation.ts';
+import { createAuthSession, createLogoutAction, completeLanding, landingSeen, navigationDecision, profileRole, authScreen,
+  beginCustomerLogout, cancelCustomerLogout, customerLogoutDestination, markPostLogoutLogin, consumePostLogoutLogin,
+  POST_LOGOUT_LOGIN_KEY, customerPublicPath } from '../../../services/auth-navigation.ts';
 const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
 test('root always renders Landing and does not consult browser visit state', () => {
   const source = read('dashboard/src/app/page.tsx');
@@ -30,8 +32,8 @@ test('Customer session never trusts browser profiles or auto-recreates missing a
   const source = read('dashboard/src/lib/firebase/auth-context.tsx');
   for (const token of ['createAuthSession', 'getDocFromServer', 'onIdTokenChanged', 'sessionGate.current?.failure', 'sessionGate.current?.invalidate']) assert.ok(source.includes(token));
   assert.doesNotMatch(source, /getItem\(|setItem\(|setDoc\(|readCache|hasActiveSubscription/);
-  assert.ok(source.includes("const marked = markPostLogoutLogin();"));
-  assert.ok(source.includes("router.replace(marked ? '/' : '/?login=true&from=logout')"));
+  assert.ok(source.includes('if (busy) beginCustomerLogout();'));
+  assert.ok(source.includes("clearSession(); router.replace('/')"));
   assert.doesNotMatch(source, /finally \{ router.replace/);
 });
 test('subscription verification retains one poller and only exposes HTTP status for auth rejection', () => {
@@ -58,8 +60,9 @@ function sources(directory) {
   }
   return result;
 }
-test('active Customer auth/logout sources have no logout-to-root destination', () => {
+test('Customer logout routing is owned only by the provider', () => {
   for (const [path, source] of sources('dashboard/src')) {
+    if (path === 'dashboard/src/lib/firebase/auth-context.tsx') continue;
     if (/logout\s*[=(]|signOut\(/.test(source)) assert.doesNotMatch(source, /(?:router\.(?:push|replace)\(|window.location.href\s*=\s*)["']\/["']/, path);
   }
 });
@@ -116,9 +119,9 @@ function providerLogout(app, fail = false, storage = null) {
   const clear = () => { localUser = null; invalidated = true; };
   const gate = { invalidate: clear }, sessionGate = { current: gate }, logoutAction = { current: null };
   new Function('logoutAction', 'createLogoutAction', 'auth', 'firebaseSignOut', 'sessionGate', 'gate',
-    'setLogoutBusy', 'setLogoutError', 'clearSession', 'completeLanding', 'browserStorage', 'markPostLogoutLogin', 'router',
+    'setLogoutBusy', 'setLogoutError', 'clearSession', 'completeLanding', 'browserStorage', 'markPostLogoutLogin', 'router', 'beginCustomerLogout', 'cancelCustomerLogout',
     'logoutAction.current = createLogoutAction({' + body)(logoutAction, createLogoutAction, auth, signOut,
-      sessionGate, gate, value => { busy = value; }, value => { error = value; }, clear, completeLanding, () => storage, () => true, router);
+      sessionGate, gate, value => { busy = value; }, value => { error = value; }, clear, completeLanding, () => storage, () => true, router, () => {}, () => {});
   return { run: logoutAction.current, auth, routes, recover: () => { fail = false; },
     state: () => ({ localUser, invalidated, calls, busy, error }) };
 }
@@ -144,8 +147,8 @@ function verificationHarness(pathname = '/dashboard') {
   let logoutCalls = 0, state;
   const pending = [], timers = new Map(); let nextTimer = 0;
   const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
-  const rejected = () => new Function('window', 'endSession', 'router', rejectedBody)(
-    { location: { pathname } }, () => { logoutCalls++; return Promise.resolve(); }, { replace() {} });
+  const rejected = () => new Function('window', 'endSession', 'router', 'customerLogoutDestination', rejectedBody)(
+    { location: { pathname } }, () => { logoutCalls++; return Promise.resolve(); }, { replace() {} }, customerLogoutDestination);
   const gate = createAuthSession({
     readProfile: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
     publish: value => { state = value; }, rejected,
@@ -208,7 +211,7 @@ test('review: actual signup provisions profile before subsequent protected acces
   const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
   const gate = createAuthSession({ readProfile: async identity => profiles.get(identity.uid) ?? null,
     publish: state => { current = state; },
-    rejected: () => new Function('window', 'endSession', 'router', rejectedBody)({ location: { pathname: '/signup' } }, async () => { unexpectedLogout++; }, { replace() { unexpectedLogout++; } }),
+    rejected: () => new Function('window', 'endSession', 'router', 'customerLogoutDestination', rejectedBody)({ location: { pathname: '/signup' } }, async () => { unexpectedLogout++; }, { replace() { unexpectedLogout++; } }, customerLogoutDestination),
     schedule: () => 1, cancel: () => {} });
   const body = bodyBetween('dashboard/src/app/signup/page.tsx', 'const handleSignup = async (e: React.FormEvent) => {', '\n  };')
     .replace('catch (err: any)', 'catch (err)'); // Remove the sole TypeScript annotation in this callback body.
@@ -287,4 +290,141 @@ test('Privacy invalidates only after confirmed backend deletion and before local
   const events = [];
   new Function('sessionGate', 'router', body)({ current: { deny() { events.push('deny'); } } }, { replace(path) { events.push(path); } });
   assert.deepEqual(events, ['deny', '/login']);
+});
+
+// Exercise actual provider, observer, layout-effect and root-effect bodies together.
+// The fake SDK publishes null BEFORE its signOut promise resolves. Router requests
+// are queued separately, so an old /login effect can execute after logout completes.
+function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
+  const previousWindow = globalThis.window;
+  const values = new Map();
+  globalThis.window = { sessionStorage: {
+    getItem(key) { if (storageDenied) throw Error('denied'); return values.get(key) ?? null; },
+    setItem(key, value) { if (storageDenied) throw Error('denied'); values.set(key, value); },
+    removeItem(key) { if (storageDenied) throw Error('denied'); values.delete(key); },
+  } };
+  cancelCustomerLogout();
+  const identity = { uid: 'race-customer' }, auth = { currentUser: identity };
+  let path = '/dashboard', state, modal = false, busy = false, error, finishSignOut;
+  const requests = [];
+  const router = { replace(target) { requests.push(target); } };
+  const provider = 'dashboard/src/lib/firebase/auth-context.tsx';
+  const layout = 'dashboard/src/components/layout/LayoutWrapper.tsx';
+  const entry = 'dashboard/src/components/auth/AuthEntry.tsx';
+  const gate = createAuthSession({ readProfile: async () => ({ role: 'Developer' }),
+    publish: value => { state = value; }, rejected() {}, schedule: () => 1, cancel() {} });
+  const observerBody = bodyBetween(provider, 'onIdTokenChanged(auth, currentUser => {', ' },\n      error');
+  const observe = currentUser => new Function('gate', 'currentUser', observerBody)(gate, currentUser);
+  const guardBody = 'const role =' + bodyBetween(layout, '  const role =', '\n  useEffect');
+  const effectBody = bodyBetween(layout, '  useEffect(() => {', '\n  }, [destination');
+  const captureGuard = () => {
+    const snapshotPath = path;
+    const destination = new Function('user', 'appUser', 'authStatus', 'pathname', 'customerPublicPath',
+      'profileRole', 'authScreen', 'navigationDecision', guardBody + '\nreturn destination;')(
+      state?.user ?? null, state?.profile ?? null, state?.status ?? 'unauthenticated', path,
+      customerPublicPath, profileRole, authScreen, navigationDecision);
+    return () => new Function('destination', 'pathname', 'router', 'customerLogoutDestination', effectBody)(
+      destination, snapshotPath, router, customerLogoutDestination);
+  };
+  const root = (loginOnly = false) => {
+    modal = loginOnly;
+    new Function('loginOnly', 'loading', 'user', 'consumePostLogoutLogin', 'setShowLoginModal',
+      'if (!loginOnly' + bodyBetween(entry, '  useEffect(() => {\n    if (!loginOnly', '\n  }, [loginOnly, loading, user]'))(
+      loginOnly, state?.loading ?? false, state?.user ?? null, consumePostLogoutLogin, value => { modal = value; });
+  };
+  const clearSession = () => gate.invalidate();
+  const logoutAction = { current: null }, sessionGate = { current: gate };
+  const sdk = async () => {
+    assert.equal(customerLogoutDestination('/login'), null, 'intent must exist before signOut');
+    if (fail) throw Error('SDK rejected signOut');
+    auth.currentUser = null;
+    observe(null);
+    captureGuard()(); // Reproduce React flushing the observer update during the await.
+    await new Promise(resolve => { finishSignOut = resolve; });
+  };
+  const body = bodyBetween(provider, 'logoutAction.current = createLogoutAction({', '\n    const unsubscribe');
+  const bindings = { logoutAction, createLogoutAction, auth, firebaseSignOut: sdk, sessionGate, gate,
+    setLogoutBusy: value => { busy = value; }, setLogoutError: value => { error = value; },
+    beginCustomerLogout, cancelCustomerLogout, markPostLogoutLogin, clearSession, router };
+  new Function(...Object.keys(bindings), 'logoutAction.current = createLogoutAction({' + body)(...Object.values(bindings));
+  return {
+    async login() { auth.currentUser = identity; await gate.accept(identity); path = '/dashboard'; },
+    run: () => logoutAction.current(), captureGuard, root,
+    complete: () => finishSignOut(),
+    settle() { if (requests.length) path = requests.at(-1); },
+    dismiss() {
+      const close = bodyBetween(entry, '        onClose={() => {\n          setShowLoginModal(false);', '\n        }}');
+      modal = false;
+      new Function('setPendingPlan', 'setModalError', 'setLoginStarted', 'pathname', 'searchParams', 'router', close)(
+        () => {}, () => {}, () => {}, path, new URLSearchParams(), router);
+    },
+    direct(target) { path = target; },
+    state: () => ({ path, modal, busy, error, user: state?.user, profile: state?.profile }), requests, values,
+    dispose() { gate.stop(); cancelCustomerLogout(); globalThis.window = previousWindow; },
+  };
+}
+
+for (const storageDenied of [false, true]) {
+  test(`race: observer and delayed protected guard cannot overwrite logout root (storage denied=${storageDenied})`, async () => {
+    const h = logoutRaceHarness({ storageDenied });
+    try {
+      await h.login();
+      const logout = h.run();
+      await Promise.resolve(); await Promise.resolve();
+      assert.equal(h.state().user, null); assert.equal(h.state().profile, null);
+      assert.deepEqual(h.requests, [], 'pending logout must suppress /login');
+      assert.equal(consumePostLogoutLogin(), false, 'root cannot consume unfinished signout');
+      const delayedGuard = h.captureGuard();
+      h.complete(); assert.deepEqual(await logout, { ok: true });
+      delayedGuard(); // Flush stale /login closure AFTER provider requested root.
+      assert.ok(h.requests.length > 0); assert.ok(h.requests.every(route => route === '/'));
+      assert.equal(customerLogoutDestination('/login'), '/');
+      h.settle(); h.root();
+      assert.equal(h.state().path, '/'); assert.equal(h.state().modal, true);
+      assert.equal(h.values.has(POST_LOGOUT_LOGIN_KEY), false);
+      assert.equal(consumePostLogoutLogin(), false, 'intent consumed exactly once');
+      if (storageDenied) {
+        const escape = bodyBetween('dashboard/src/components/auth/LoginModal.tsx',
+          '    const onKeyDown = (event: KeyboardEvent) => {', '\n    };');
+        new Function('event', 'standalone', 'onClose', escape)({ key: 'Escape' }, false, () => h.dismiss());
+      } else h.dismiss();
+      h.settle(); assert.equal(h.state().path, '/'); assert.equal(h.state().modal, false);
+      h.root(); assert.equal(h.state().modal, false, 'remount/refresh must not reopen modal');
+      h.captureGuard()(); h.settle(); assert.equal(h.state().path, '/', 'no redirect loop');
+      await h.login(); const second = h.run(); await Promise.resolve(); await Promise.resolve();
+      h.complete(); await second; h.settle(); h.root(); assert.equal(h.state().modal, true);
+    } finally { h.dispose(); }
+  });
+}
+test('race: normal unauthenticated protected visit still reaches /login and direct /login stays compatible', () => {
+  const h = logoutRaceHarness();
+  try {
+    h.captureGuard()(); h.settle(); assert.equal(h.state().path, '/login');
+    h.root(true); assert.equal(h.state().modal, true);
+    h.requests.length = 0; h.captureGuard()(); assert.deepEqual(h.requests, []);
+  } finally { h.dispose(); }
+});
+test('race: failed SDK signOut cancels intent and retains authenticated UI', async () => {
+  const h = logoutRaceHarness({ fail: true });
+  try {
+    await h.login(); assert.deepEqual(await h.run(), { ok: false });
+    h.captureGuard()(); assert.deepEqual(h.requests, []);
+    assert.equal(h.state().path, '/dashboard'); assert.ok(h.state().user); assert.ok(h.state().profile);
+    assert.match(h.state().error, /Logout failed/); assert.equal(h.state().busy, false);
+    assert.equal(consumePostLogoutLogin(), false);
+    assert.equal(customerLogoutDestination('/login'), '/login');
+  } finally { h.dispose(); }
+});
+test('race: provider rejection cannot introduce a second /login redirect during logout', () => {
+  const h = logoutRaceHarness();
+  try {
+    const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
+    const rejected = () => new Function('window', 'router', 'customerLogoutDestination', rejectedBody)(
+      { location: { pathname: '/dashboard' } }, { replace: path => h.requests.push(path) }, customerLogoutDestination);
+    beginCustomerLogout(); rejected(); assert.deepEqual(h.requests, []);
+    markPostLogoutLogin(); rejected(); assert.deepEqual(h.requests, ['/']);
+    cancelCustomerLogout(true); // Successful provider cleanup must retain root intent.
+    assert.equal(consumePostLogoutLogin(), true); assert.equal(consumePostLogoutLogin(), false);
+    h.requests.length = 0; rejected(); assert.deepEqual(h.requests, ['/login']);
+  } finally { h.dispose(); }
 });
