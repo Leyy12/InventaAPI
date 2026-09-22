@@ -234,11 +234,17 @@ it cannot select production Firebase or load real credentials. Fixture and real 
 paths were validated. Export conversion/coverage is an operator responsibility.
 
 `backfillCatalogReservations(db, at)` is dependency-injected tooling with memory tests,
-not an exposed HTTP operation or production CLI. It requires frozen:true, audits all
-products/existing claims, and writes a clean <=400-reservation plan atomically. It
-leaves frozen:true and records auditCompletedAt, never enables writers. Larger plans
-fail explicitly and require a separately reviewed, idempotent chunked migration under
-freeze. Live writers scan at most 5000 products; larger catalogs fail closed with 503.
+not an exposed HTTP operation. R8C adds the explicit operator CLI described in the
+release runbook. It requires boolean frozen:true, audits all products/existing claims,
+and sorts missing required bindings by deterministic document ID. Each invocation
+writes at most 400 NEW reservations atomically with the shared control fence. Existing
+valid claims and retired/deleted tombstones are preserved; required conflicting
+claims fail closed. Repeat invocations until the independently re-audited remaining
+count is zero. Completed bindings are skipped, never overwritten on retry. Partial
+batches do not publish auditCompletedAt; only a complete plan does. The postcheck
+re-reads the freeze and re-audits claims; uncertain outcomes require inspection, not
+blind retries. R8C changes execution support only, not canonical identity semantics.
+Live writers scan at most 5000 products; larger catalogs fail closed with 503.
 Every mutation scans the catalog and shares one serialization document. Production
 catalog size, transaction-size limits, latency, retry/contention and read cost must be
 verified on a representative isolated export before deployment; this is not a claim

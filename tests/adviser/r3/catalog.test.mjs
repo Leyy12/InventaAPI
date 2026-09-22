@@ -174,7 +174,8 @@ test('offline audit and frozen backfill preserve archived identities and disting
   const audit = auditCatalog([{ id: 'a', data: a }, { id: 'b', data: b }]);
   assert.equal(audit.ok, true); assert.equal(audit.collisions.length, 0); assert.equal(audit.possibleDuplicates.length, 1);
   const f = fixture({ 'products/a': a, 'products/b': b, 'catalog_control/writer': { frozen: true } });
-  assert.deepEqual(await backfillCatalogReservations(f.db, '2026-09-20T12:00:00Z'), { reserved: 2, frozen: true });
+  assert.deepEqual(await backfillCatalogReservations(f.db, '2026-09-20T12:00:00Z'),
+    { attempted: 2, created: 2, alreadyValid: 0, conflicts: 0, remaining: 0, frozen: true });
   assert.equal(f.db.read('catalog_control/writer').frozen, true);
 });
 for (const [kind, data] of Object.entries({ collision: product, missing: { sku: 'missing' }, malformed: null,
@@ -283,9 +284,11 @@ test('original forced-collision reproduction: no writes/completion on retry; res
     assert.equal(f.db.read(claimPath), undefined); assert.equal(f.db.read('catalog_control/writer').auditCompletedAt, undefined);
   }
   f.db.remove('products/b');
-  assert.deepEqual(await backfillCatalogReservations(f.db, at, collisionOptions), { reserved: 1, frozen: true });
+  assert.deepEqual(await backfillCatalogReservations(f.db, at, collisionOptions),
+    { attempted: 1, created: 1, alreadyValid: 0, conflicts: 0, remaining: 0, frozen: true });
   const claim = f.db.read(claimPath);
-  assert.deepEqual(await backfillCatalogReservations(f.db, at, collisionOptions), { reserved: 1, frozen: true });
+  assert.deepEqual(await backfillCatalogReservations(f.db, at, collisionOptions),
+    { attempted: 0, created: 0, alreadyValid: 1, conflicts: 0, remaining: 0, frozen: true });
   assert.deepEqual(f.db.read(claimPath), claim); assert.equal(claim.identity, 'sku:CAN-330');
   assert.equal(f.db.read('catalog_control/writer').auditCompletedAt, at);
 });

@@ -88,31 +88,59 @@ export async function prepareCatalogWrite({ tx, db, uid, action, productId, inpu
     } };
 }
 
-// Dependency-injected operator tooling: caller must hold a verified write freeze.
-// No production CLI is supplied; offline plan and emulator/memory verification only.
+// Full audit on every invocation; only absent required bindings are candidates.
+export async function inspectFrozenCatalog(tx, db, deriveReservationId = identityId) {
+  const controlRef = db.collection('catalog_control').doc('writer');
+  const control = (await tx.get(controlRef)).data();
+  if (control?.frozen !== true) throw catalogError(409, 'Write freeze required for backfill.');
+  const records = await readCatalog(tx, db);
+  const existing = await tx.get(db.collection('product_submission_identity'));
+  const reservations = existing.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+  const audit = auditCatalog(records, reservations, { deriveReservationId });
+  const integrity = audit.problems.filter(problem => problem.kind.startsWith('RESERVATION_'));
+  if (integrity.length) throw reservationIntegrityError(integrity);
+  if (!audit.ok) throw catalogError(409, 'Resolve catalog and reservation conflicts before backfill.');
+  assertBackfillReservationPlan(records, audit.reservations, reservations, deriveReservationId);
+  const present = new Set(reservations.map(binding => binding.id));
+  const missing = audit.reservations.filter(binding => !present.has(binding.id))
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  return { controlRef, control, missing, present, required: audit.reservations.length,
+    alreadyValid: audit.reservations.length - missing.length };
+}
+
+// One atomic missing-only batch. The shared control remains the serializing fence.
 export async function backfillCatalogReservations(db, at, { deriveReservationId = identityId } = {}) {
-  return db.runTransaction(async tx => {
-    const controlRef = db.collection('catalog_control').doc('writer');
-    const control = (await tx.get(controlRef)).data();
-    if (control?.frozen !== true) throw catalogError(409, 'Write freeze required for backfill.');
-    const records = await readCatalog(tx, db);
-    const existing = await tx.get(db.collection('product_submission_identity'));
-    const reservations = existing.docs.map(doc => ({ id: doc.id, data: doc.data() }));
-    const audit = auditCatalog(records, reservations, { deriveReservationId });
-    const integrity = audit.problems.filter(problem => problem.kind.startsWith('RESERVATION_'));
-    if (integrity.length) throw reservationIntegrityError(integrity);
-    if (!audit.ok) throw catalogError(409, 'Resolve catalog and reservation conflicts before backfill.');
-    assertBackfillReservationPlan(records, audit.reservations, reservations, deriveReservationId);
-    // Small catalogs only in one atomic transaction. Larger plans require a separately
-    // reviewed chunked migration during freeze, never a partial ready signal.
-    if (audit.reservations.length > 400) throw catalogError(409, 'Backfill exceeds single-batch limit; approved chunked migration required.');
-    for (const binding of audit.reservations) {
+  const batch = await db.runTransaction(async tx => {
+    const state = await inspectFrozenCatalog(tx, db, deriveReservationId);
+    const selected = state.missing.slice(0, 400);
+    // Explicit absent-document reads protect against competing creators, including
+    // writers that do not honor the shared fence. All reads precede all writes.
+    for (const binding of selected) {
+      if ((await tx.get(db.collection('product_submission_identity').doc(binding.id))).exists) {
+        throw catalogError(409, 'Claim changed during migration; re-audit before retry.');
+      }
+    }
+    for (const binding of selected) {
       const { id, ...data } = binding;
       tx.set(db.collection('product_submission_identity').doc(id), { ...data, updatedAt: at });
     }
-    tx.set(controlRef, { ...control, version: 1, auditCompletedAt: at, revision: (control.revision ?? 0) + 1 });
-    return { reserved: audit.reservations.length, frozen: true };
+    const remaining = state.missing.length - selected.length;
+    if (selected.length || !state.control.auditCompletedAt) {
+      const { auditCompletedAt: previousCompletion, ...control } = state.control;
+      tx.set(state.controlRef, { ...control, version: 1, revision: (control.revision ?? 0) + 1,
+        ...(remaining === 0 ? { auditCompletedAt: at } : {}) });
+    }
+    return { attempted: selected.length, created: selected.length, alreadyValid: state.alreadyValid,
+      conflicts: 0, remaining, ids: selected.map(binding => binding.id) };
   });
+  // An uncertain commit/postcheck must never be reported as success. A later
+  // invocation re-audits actual persisted claims instead of replaying a stale plan.
+  const after = await db.runTransaction(tx => inspectFrozenCatalog(tx, db, deriveReservationId));
+  if (batch.ids.some(id => !after.present.has(id)) || after.missing.length > batch.remaining) {
+    throw catalogError(409, 'Backfill readback mismatch; keep frozen and inspect before retry.');
+  }
+  const { ids, ...progress } = batch;
+  return { ...progress, remaining: after.missing.length, frozen: true };
 }
 
 // Apply-layer defense: independently prove plan coverage/ownership and ID/evidence

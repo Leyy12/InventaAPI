@@ -28,7 +28,8 @@
     "test:adviser:r6a": "node scripts/run-adviser-r6a-tests.mjs",
     "test:adviser:r6b": "node --test --test-reporter=spec tests/adviser/r6b/release.test.mjs",
     "test:adviser:r6c": "node scripts/run-adviser-r6c-tests.mjs",
-    "test:adviser:r7c": "node scripts/run-adviser-r7c-tests.mjs"
+    "test:adviser:r7c": "node scripts/run-adviser-r7c-tests.mjs",
+    "test:adviser:r8c": "node scripts/run-adviser-r8c-tests.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

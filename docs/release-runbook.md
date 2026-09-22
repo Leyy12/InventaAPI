@@ -183,3 +183,79 @@ audit repair/backfill. R7C ran locally only; production has NOT been exported or
 audited by this work. Production invocation still requires a later review and
 authorization gate. Capture/reconcile actual deployed rules before designing the
 temporary maintenance rules; do not substitute repository rules without that check.
+
+### R8C frozen repair and missing-only migration (local implementation only)
+
+R8C has NOT executed production repairs, backfill, deployment, or unfreeze. Production
+execution requires separate authorization after review. Maintain the browser freeze
+and privileged-writer maintenance window throughout. Never run seed/import/cleanup
+tools concurrently. The operator target is explicitly `inventaapi-db`, database
+`(default)`; credentials must be supplied by absolute file path and their project
+metadata must match. No ADC, implicit CLI project, environment credential bootstrap,
+emulator or proxy override is supported. Never commit credentials or release evidence.
+
+The six human decisions are fixed in `scripts/frozen-catalog-repair.mjs`:
+
+| Exact document ID | Authorized change only |
+| --- | --- |
+| KWusUA5m2FEP6Y5fQQx6 | x-o: set missing segment to `Grocery` |
+| W3dRbwFB91ehYNr0XPVr | stick-o: set missing segment to `Grocery` |
+| MZwdfSGk0ZPl6sihK1Ya | DOLFENAL: collapse identical variants to stored variant 0 (price 6.5) |
+| S0SuWh7m289ND8oUBZge | Biogesic: collapse identical variants to stored variant 0 (price 4) |
+| jpjrb14dyZY4jQARduq9 | GLUCOPHAGE: retain 500mg/Tablet/16.5; remove duplicate priced 18.5 |
+| oDKhLkR5wfA5DfzVf1oP | SOLMUX: retain 500mg/Capsule/11; remove duplicate priced 12.5 |
+
+The withdrawn `Biscuits & Wafers` segment decision is not used. R3 segment and
+identity rules are unchanged. No generic document, patch, price, field or value
+arguments exist. The repair source must be the reviewed local R8 export whose SHA-256
+is `0627226fd3a9c4726b0081c01150de112632fd4483a9e007ceec6fdc3fd3788c`.
+The CLI rejects any other export bytes. The entire stored data of all six documents
+is compared to that source, including all unrelated fields and nanosecond timestamps.
+All six updates are one transaction after all six before-states and the boolean
+freeze have been checked. Only segment/variants fields are updated. No product is
+deleted; unrelated data, publication state, timestamps, images and descriptions
+remain unchanged. Each repaired document and the freeze are read again afterward.
+All-six-already-repaired is a verified no-op; mixed/partial or unexpected state aborts.
+
+For a later authorized run, invoke `node scripts/migrate-frozen-catalog.mjs` with:
+
+- `--operation repair` or `--operation backfill` (one operation per invocation).
+- `--project inventaapi-db --confirm-project inventaapi-db`.
+- `--database "(default)" --confirm-database "(default)"`.
+- `--credentials <absolute service-account JSON path>`.
+- `--evidence-dir <new absolute directory, parent already exists>`.
+- Repair only: `--source-export <absolute reviewed R8 frozen export path>`.
+
+Evidence directories must not already exist. Durable `started.json` and `before.json`
+precede mutation; `after.json` and `complete.json` are written only after readback.
+Keep every directory, especially an uncertain attempt. A commit can succeed even
+when its response, postcheck, or evidence write fails. On any failure, KEEP FROZEN,
+inspect actual persisted state and reconcile evidence before any explicit retry.
+The repair's before/after records include full snapshots and the exact changed fields.
+No credential contents or SDK exceptions are logged.
+
+After repair, run the unchanged R7C exporter to a NEW artifact and unchanged R3 audit.
+Require zero structural/identity/reservation/hash conflicts before backfill. Backfill
+re-audits the complete <=5,000-product catalog and existing claims inside each
+transaction; it selects only missing required claims, in deterministic ID order.
+The hard limit is **400 new claims per invocation**, plus one control-fence write.
+Explicit reads of the selected absent claim documents prevent overwriting a racing
+creator. Existing valid claims retain every stored field, including original metadata;
+retired/deleted claims retain the unchanged R3 treatment. No products are mutated.
+
+Each successful invocation reports `attempted`, `created`, `alreadyValid`, `conflicts`
+(zero on success), `remaining`, and `frozen`. `alreadyValid` counts required bindings
+present before that transaction, excluding unrelated historical tombstones. Conflicts
+abort before mutation, rather than producing misleading success counts. Remaining is
+independently re-audited after commit; concurrent authorized batches can reduce it
+further. Operators should run sequentially and reconcile each decrease. The control
+fence serializes batches; transaction retries reselect current missing claims. A fully
+completed retry is a no-op. Partial batches clear any stale completion timestamp;
+only the final batch records completion. No success is claimed if postcheck fails.
+
+Repeat with a new evidence directory until `remaining=0`; never increase the 400 cap.
+A 1,634-claim synthetic fixture completes as 400/400/400/400/34, but real counts must
+come from audit results. Firestore transaction payload/time limits still apply; an
+oversized/failed batch stops without a partial commit and needs review, not a cap
+override. Finish with another NEW frozen export and unchanged R3 audit proving zero
+missing claims and conflicts, then retain the freeze for the next release gate.
