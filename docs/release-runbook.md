@@ -105,6 +105,26 @@ release certification. R6A resolves none of these deployment gates.
 18. Monitor application errors, authentication, quota, rules denials, webhook delivery, latency, and resource usage for the approved observation window.
 19. If acceptance or monitoring fails, execute the reviewed rollback/revert procedure below and record the incident.
 
+## R6D index reconciliation — local only, not deployed
+
+The operator-supplied `production-indexes.json` snapshot contained nine composite
+indexes. Eight matched the prior tracked set semantically; production alone had
+the legacy `notifications` COLLECTION index ordered by `user_email ASCENDING`,
+`is_read ASCENDING`, `created_at DESCENDING`, `__name__ DESCENDING`. Preserve that
+exact index for release safety, independently of the camelCase notification index.
+Its ongoing necessity may be reviewed after the capstone; **no production index
+deletion is authorized in this release**.
+
+The desired tracked set is now **10 indexes**: all nine snapshot indexes plus the
+R5B `api_telemetry` COLLECTION index (`userId ASCENDING`, `timestamp DESCENDING`,
+`__name__ DESCENDING`). Comparison accounts for Firestore's implicit final document
+name ordering; `fieldOverrides` remains empty. Against this snapshot, expected
+additions: **1**; expected deletions: **0**. No indexes were deployed by R6D.
+The snapshot is temporary read-only operational evidence, not a tracked release file.
+Before a separately authorized deployment, recheck target `inventaapi-db` and the
+current production index set; stop if the deployment proposes unrelated changes
+or any deletion. Storage and other release-resource configuration are unchanged.
+
 ## Rollback
 
 ### Code/config-only release

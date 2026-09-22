@@ -182,6 +182,31 @@ test('history index exactly matches account equality and descending timestamp/do
   assert.match(read('services/api-history.js'), /where\('userId', '==', actor.uid\)/);
   assert.match(read('services/admin-traffic.js'), /orderBy\('timestamp', 'desc'\)\s*\.orderBy\(documentId, 'desc'\).limit\(ADMIN_TRAFFIC_LIMIT\)/);
 });
+test('R6D preserves the production legacy notification index in the ten-index release set', () => {
+  const config = JSON.parse(read('firestore.indexes.json'));
+  assert.equal(config.indexes.length, 10);
+  const matches = config.indexes.filter(index => index.collectionGroup === 'notifications'
+    && index.fields.some(field => field.fieldPath === 'user_email'));
+  assert.deepEqual(matches, [{ collectionGroup: 'notifications', queryScope: 'COLLECTION', fields: [
+    { fieldPath: 'user_email', order: 'ASCENDING' }, { fieldPath: 'is_read', order: 'ASCENDING' },
+    { fieldPath: 'created_at', order: 'DESCENDING' }, { fieldPath: '__name__', order: 'DESCENDING' },
+  ] }]);
+  assert.deepEqual(config.fieldOverrides, []);
+  assert.equal(JSON.parse(read('firebase.json')).storage, undefined);
+});
+
+test('R6D index set has no semantic duplicates, including implicit document-name ordering', () => {
+  const config = JSON.parse(read('firestore.indexes.json'));
+  const signatures = config.indexes.map(index => {
+    const fields = index.fields.map(field => [field.fieldPath, field.order ?? null, field.arrayConfig ?? null]);
+    // Firestore appends __name__ in the final field direction (ASC for a non-directional field).
+    if (fields.at(-1)[0] !== '__name__') fields.push(['__name__', fields.at(-1)[1] ?? 'ASCENDING', null]);
+    return JSON.stringify([index.collectionGroup, index.queryScope, index.apiScope ?? 'ANY_API',
+      index.density ?? 'SPARSE_ALL', fields]);
+  });
+  assert.equal(new Set(signatures).size, config.indexes.length);
+});
+
 test('Firebase deploy config includes rules/indexes/Functions but neither Hosting nor Storage', () => {
   const config = JSON.parse(read('firebase.json'));
   assert.deepEqual(config.firestore, { rules: 'firestore.rules', indexes: 'firestore.indexes.json' });
