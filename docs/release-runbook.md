@@ -30,6 +30,28 @@ production target. Those targets remain explicit release inputs documented in
 
 ## Required gate for every production batch
 
+R6B's [environment inventory, packaging proof, deployment sequence and operator
+checklist](adviser-r6b-release-environment.md) is the detailed local-readiness record.
+Both frontends require the repository sibling sources and build-only validation
+scripts. Run `npm --prefix dashboard ci` / `npm --prefix dashboard run build` and
+the equivalent `admin-panel` commands from a full checkout; app-only source uploads
+are incomplete. Configure public origins before building and preserve them for
+Next startup. No real provider/project/hostname or deploy command is inferred.
+
+The root backend must pass its release validator before `npm start`. R0's claimed
+application-default root credential path was incorrect; it is now rejected by the
+validator. Use the implemented environment credential triple. Functions use their
+separate managed identity. Explicit operator-approved `TZ` preserves the existing
+subscription calendar behavior; do not pick or change it during deployment by accident.
+
+R5C marker retention is a post-release operations decision without contrary scale
+evidence. Markers are small and correctness does not require cleanup. Measure
+growth/cost; do not add TTL/deletion casually or delete current-day evidence.
+
+`NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` is optional for both frontend builds. Supplying
+it only configures the existing Web SDK; it does not authorize an upload workflow
+or Storage deployment. Product images remain URL-only.
+
 Admin traffic permission gap: **CLOSED AT CODE LEVEL** by
 [R6A](adviser-r6a-admin-traffic.md), not production-certified. The Admin browser
 uses an authenticated backend latest-500 snapshot; browser telemetry access stays
@@ -102,8 +124,17 @@ proves the earlier code can safely read the post-migration data.
 
 Follow the [R3 frozen audit/backfill and coordinated rollout gate](adviser-r3-catalog-import-integrity.md)
 before enabling catalog writes. Stop old privileged writers and browser mutations;
-the new catalog_control flag alone cannot freeze old backends. Resolve historical
-identity conflicts explicitly, backfill/re-audit reservations, deploy all shared writers
-and backend-only rules while frozen, then pass browser E2E before enabling writes.
+the new catalog_control flag alone cannot freeze old backends. After draining them,
+explicitly set `catalog_control/writer.frozen=true` with approved privileged operator
+tooling and verify canonical writes are denied. Resolve historical identity conflicts
+explicitly, backfill/re-audit reservations, then deploy all shared writers and final
+compatible rules while still frozen. Earlier reviewed maintenance/marker-denial rules
+may protect the frozen transition; they do not prevent approved Admin SDK backfill.
+Use the single reconciled [12-step R6B sequence](adviser-r6b-release-environment.md#proposed-deployment-order--not-executed),
+with R3 authoritative for migration details. Backfill is not a browser/HTTP endpoint
+and does not require deploying the new frontends first. Pass the frozen checks,
+isolated mutation/concurrency E2E and acceptance before setting
+`catalog_control/writer.frozen=false` and resuming approved writers.
 Archived/deleted/retired identities remain reserved. Never roll back to an uncoordinated
-direct writer against the new claims. Production migration/deployment was not executed.
+direct writer against the new claims. On failure KEEP WRITES FROZEN until a coordinated
+forward-fix/recovery is verified. Production migration/deployment was not executed.

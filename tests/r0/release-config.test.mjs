@@ -4,6 +4,7 @@ import { formatValidation, validateReleaseConfig } from '../../scripts/validate-
 
 const complete = {
   NODE_ENV: 'production',
+  TZ: 'UTC', // Synthetic test choice, not a production timezone decision.
   FIREBASE_AUTH_MODE: 'service_account_env',
   FIREBASE_PROJECT_ID: 'inventa-release',
   FIREBASE_CLIENT_EMAIL: 'release@inventa-release.iam.gserviceaccount.com',
@@ -14,6 +15,7 @@ const complete = {
   NEXT_PUBLIC_APP_URL: 'https://dashboard.inventa-release.com',
   API_QUOTA_CUTOVER_AT: '2026-01-01T00:00:00.000Z',
   NEXT_PUBLIC_API_URL: 'https://api.inventa-release.com',
+  NEXT_PUBLIC_ADMIN_APP_ORIGIN: 'https://admin.inventa-release.com',
   NEXT_PUBLIC_FIREBASE_API_KEY: 'AIzaSyA1b2C3d4E5f6G7h8I9j0K1L2M3N4O5P6',
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'inventa-release.firebaseapp.com',
   NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'inventa-release',

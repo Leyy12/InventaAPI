@@ -13,15 +13,19 @@ const canonicalUtc = value => {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
 };
 
-function validReleaseUrl(value, mode) {
+export function validReleaseOrigin(value, mode) {
   try {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false;
+    // Canonical origins only: clients append fixed paths without URL resolution.
+    if (value !== url.origin || url.search || url.hash || url.pathname !== '/') return false;
     if (mode === 'production') {
       if (url.protocol !== 'https:') return false;
-      if (['localhost', '127.0.0.1', '::1'].includes(url.hostname)) return false;
-      if (/^(?:.*\.)?example\.(?:com|net|org)$/iu.test(url.hostname)
-        || /\.(?:example|invalid|test)$/iu.test(url.hostname)) return false;
+      const hostname = url.hostname.replace(/\.$/u, '');
+      if (['localhost', '0.0.0.0', '[::]', '[::1]'].includes(hostname)
+        || hostname.endsWith('.localhost') || /^127\./u.test(hostname)) return false;
+      if (/^(?:.*\.)?example\.(?:com|net|org)$/iu.test(hostname)
+        || /\.(?:example|invalid|test)$/iu.test(hostname)) return false;
     }
     return true;
   } catch {
@@ -88,6 +92,8 @@ export function validateReleaseConfig(env, {
         expectation: 'a PEM private key',
       });
     } else if (env.FIREBASE_AUTH_MODE === 'application_default') {
+      add(errors, 'UNSUPPORTED_AUTH_MODE', 'FIREBASE_AUTH_MODE',
+        'root backend currently implements service_account_env only; managed identity is supported by Functions, not this initializer');
       for (const name of ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY']) {
         if (isPresent(env[name])) add(errors, name === 'FIREBASE_PRIVATE_KEY' ? 'MALFORMED_SECRET' : 'MALFORMED_PUBLIC', name,
           'must be omitted when FIREBASE_AUTH_MODE=application_default; use the managed runtime identity');
@@ -105,8 +111,15 @@ export function validateReleaseConfig(env, {
       expectation: 'the non-placeholder signing secret for the matching webhook endpoint',
     });
     for (const name of ['DASHBOARD_URL', 'NEXT_PUBLIC_APP_URL']) {
-      required(name, { valid: value => validReleaseUrl(value, mode), expectation: `an absolute ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} URL` });
+      required(name, { valid: value => validReleaseOrigin(value, mode), expectation: `a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} origin without path, trailing slash, query or fragment` });
     }
+    if (isPresent(env.DASHBOARD_URL) && isPresent(env.NEXT_PUBLIC_APP_URL) && env.DASHBOARD_URL !== env.NEXT_PUBLIC_APP_URL) {
+      add(errors, 'ORIGIN_MISMATCH', 'NEXT_PUBLIC_APP_URL', 'must match DASHBOARD_URL: both identify the Customer origin');
+    }
+    required('TZ', { valid: value => {
+      if (value !== 'UTC' && !/^[A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?$/u.test(value)) return false;
+      try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; }
+    }, expectation: 'UTC or an explicit supported IANA timezone chosen for the existing subscription calendar behavior' });
     const apiPort = Number(env.API_PORT);
     if (isPresent(env.API_PORT)
       && (!/^\d+$/u.test(env.API_PORT) || !Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535)) {
@@ -126,7 +139,7 @@ export function validateReleaseConfig(env, {
 
   if (dashboard || admin) {
     required('NEXT_PUBLIC_API_URL', {
-      valid: value => validReleaseUrl(value, mode), expectation: `an absolute ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} URL`,
+      valid: value => validReleaseOrigin(value, mode), expectation: `a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} backend origin`,
     });
     required('NEXT_PUBLIC_FIREBASE_API_KEY', {
       valid: value => noWhitespace(value) && value.length >= 20 && notPlaceholder(value),
@@ -139,7 +152,9 @@ export function validateReleaseConfig(env, {
       valid: value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u.test(value) && notPlaceholder(value),
       expectation: 'a non-placeholder Firebase project ID',
     });
-    required('NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET', {
+    // URL-only product images do not require Storage. Validate an optional value
+    // without making bucket configuration or uploads a release prerequisite.
+    if (env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET !== undefined && env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET !== '') required('NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET', {
       valid: value => /^[A-Za-z0-9.-]+$/u.test(value) && value.includes('.'), expectation: 'a Storage bucket hostname',
     });
     required('NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID', {
@@ -151,8 +166,8 @@ export function validateReleaseConfig(env, {
   }
 
   if (dashboard) {
-    required('NEXT_PUBLIC_SUPERADMIN_UID', {
-      valid: value => noWhitespace(value) && value.length <= 128, expectation: 'a non-empty Firebase Auth UID',
+    required('NEXT_PUBLIC_ADMIN_APP_ORIGIN', {
+      valid: value => validReleaseOrigin(value, mode), expectation: `a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} Admin origin`,
     });
   }
 

@@ -7,7 +7,9 @@ const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDIgenHFkHR9RQJ0TzOsfqUF824TYOALxA",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "inventaapi-db.firebaseapp.com",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "inventaapi-db",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "inventaapi-db.firebasestorage.app",
+  // Optional SDK setting; product images remain URL-only, with no upload workflow.
+  ...(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    ? { storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET } : {}),
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "915061674133",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:915061674133:web:e01e4bc4a3ca6f74814b9c",
 };
