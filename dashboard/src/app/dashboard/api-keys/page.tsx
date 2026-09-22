@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Key, Copy, Plus, Trash2, Eye, EyeOff, AlertTriangle, Shield, CheckCircle2, Clock, Activity, Info, Code } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import CodeSnippet from "@/components/shared/CodeSnippet";
@@ -28,7 +28,10 @@ export default function ApiKeysPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [generatingKey, setGeneratingKey] = useState(false);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
+  
+  // Make Code Snippet visible by default using a ref to track if we've initialized it
   const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
+  const initializedSnippets = useRef(false);
   
   const { user } = useAuth();
 
@@ -47,7 +50,16 @@ export default function ApiKeysPage() {
       const data = await response.json();
       
       if (response.ok && data.success) {
-        setApiKeys(data.keys as ApiKey[]);
+        const fetchedKeys = data.keys as ApiKey[];
+        setApiKeys(fetchedKeys);
+        
+        // Auto-expand code snippets for all keys on initial load
+        if (!initializedSnippets.current && fetchedKeys.length > 0) {
+          const initialSnippets: { [key: string]: boolean } = {};
+          fetchedKeys.forEach(k => initialSnippets[k.id] = true);
+          setShowCodeSnippet(initialSnippets);
+          initializedSnippets.current = true;
+        }
       } else {
         throw new Error(data.error || "Failed to fetch keys");
       }
@@ -247,6 +259,41 @@ DAAS_API_KEY=${keyStr}
         </div>
       </div>
 
+      {/* Instructions Banner */}
+      <div className="glass-card rounded-xl p-6 border-l-4 border-indigo-500 bg-gradient-to-r from-indigo-500/10 to-transparent">
+        <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+          <Info className="w-5 h-5 text-indigo-400" />
+          How to Use Your API Key
+        </h3>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">1</span>
+              <h4 className="text-sm font-semibold text-white">Generate</h4>
+            </div>
+            <p className="text-xs text-slate-400">Click the "Generate Your First Key" button. (Note: Free plan users can generate 1 key per day).</p>
+          </div>
+          <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">2</span>
+              <h4 className="text-sm font-semibold text-white">Copy</h4>
+            </div>
+            <p className="text-xs text-slate-400">Copy the generated key immediately using the inline Copy button. It won't be shown again.</p>
+          </div>
+          <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">3</span>
+              <h4 className="text-sm font-semibold text-white">Integrate</h4>
+            </div>
+            <p className="text-xs text-slate-400">Use the Integration Code Examples below to fetch your product catalog in your app.</p>
+          </div>
+        </div>
+        <p className="text-xs text-indigo-300 mt-4 flex items-center gap-1.5">
+          <Activity className="w-4 h-4" />
+          <strong>Auto-Sync Note:</strong> You don't need to generate a new key when products are updated. Data is synced automatically!
+        </p>
+      </div>
+
       {/* Security Warning Banner */}
       <div className="glass-card rounded-xl p-6 border-l-4 border-amber-500 bg-gradient-to-r from-amber-500/10 to-transparent">
         <div className="flex gap-4">
@@ -329,10 +376,22 @@ DAAS_API_KEY=${keyStr}
                     <div>
                       <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-1">
                         {apiKey.name}
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Active
-                        </span>
+                        {apiKey.status === "active" ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                            <AlertTriangle className="w-3 h-3 mr-1" />
+                            Revoked
+                          </span>
+                        )}
+                        {apiKey.plan === "FreeTrial" && apiKey.status === "active" && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 ml-2">
+                            Free Trial
+                          </span>
+                        )}
                       </h3>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -340,22 +399,6 @@ DAAS_API_KEY=${keyStr}
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handleCopy(apiKey.key, apiKey.id)}
-                        className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium transition-all flex items-center gap-2"
-                      >
-                        {copiedKey === apiKey.id ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            <span className="text-emerald-400">Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4" />
-                            Copy
-                          </>
-                        )}
-                      </button>
                       <button
                         onClick={() => revokeKey(apiKey.id, apiKey.name)}
                         className="px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium transition-all flex items-center gap-2"
@@ -373,6 +416,17 @@ DAAS_API_KEY=${keyStr}
                       <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 font-mono text-sm text-indigo-300">
                         {showKey[apiKey.id] ? apiKey.key : maskKey(apiKey.key)}
                       </div>
+                      <button
+                        onClick={() => handleCopy(apiKey.key, apiKey.id)}
+                        className="p-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all flex items-center gap-2"
+                        title="Copy Key"
+                      >
+                        {copiedKey === apiKey.id ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </button>
                       <button
                         onClick={() => toggleShowKey(apiKey.id)}
                         className="p-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
@@ -397,7 +451,7 @@ DAAS_API_KEY=${keyStr}
                       <p className="text-lg font-semibold text-white">
                         {apiKey.requestsUsed.toLocaleString()}
                         <span className="text-xs text-slate-400 font-normal ml-1">
-                          / {apiKey.requestLimit ? apiKey.requestLimit.toLocaleString() : '50'}
+                          / {apiKey.plan === 'FreeTrial' ? '500' : (apiKey.requestLimit ? apiKey.requestLimit.toLocaleString() : '50')}
                         </span>
                       </p>
                     </div>
@@ -474,6 +528,57 @@ DAAS_API_KEY=${keyStr}
         </div>
       </div>
 
+      {/* API Generation History */}
+      <div className="glass-card rounded-xl border border-slate-700 overflow-hidden mt-6">
+        <div className="p-6 border-b border-slate-700">
+          <h2 className="text-xl font-semibold text-white mb-1">API Key Generation History</h2>
+          <p className="text-sm text-slate-400">Track when API keys were generated and their status</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left text-slate-400">
+            <thead className="text-xs text-slate-500 uppercase bg-slate-900/80 border-b border-slate-700">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Consumer / Name</th>
+                <th className="px-6 py-4 font-semibold">Date Generated</th>
+                <th className="px-6 py-4 font-semibold">Plan</th>
+                <th className="px-6 py-4 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {apiKeys.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-6 py-8 text-center text-slate-500">No API key history found</td>
+                </tr>
+              ) : (
+                apiKeys.map((key) => (
+                  <tr key={key.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-slate-300">{key.name}</div>
+                      <div className="text-xs text-slate-500 mt-1">{key.userEmail}</div>
+                    </td>
+                    <td className="px-6 py-4">{formatDate(key.createdAt)}</td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded text-xs border border-indigo-500/20">
+                        {key.plan || 'Free'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded text-xs border ${
+                        key.status === 'active' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                          : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}>
+                        {key.status === 'active' ? 'Active' : 'Revoked'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Generate New Key Modal */}
       {showGenerateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm animate-in fade-in">
@@ -543,7 +648,7 @@ DAAS_API_KEY=${keyStr}
               <>
                 <div className="p-6 border-b border-slate-700">
                   <h3 className="text-xl font-bold text-white mb-1">Generate New API Key</h3>
-                  <p className="text-sm text-slate-400">Create a new key for your application</p>
+                  <p className="text-sm text-slate-400">Create a new key for your application. <span className="text-indigo-400 font-medium">Limit: 1 key generation per day (Free Plan)</span></p>
                 </div>
 
                 <div className="p-6">

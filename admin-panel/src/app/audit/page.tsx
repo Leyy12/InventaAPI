@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { ShieldAlert, Search, Clock, User, FileText } from "lucide-react";
-import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -17,24 +15,10 @@ export default function AuditLogsPage() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      // First try to fetch from an audit_logs collection
-      const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(50));
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        setLogs(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } else {
-        // Fallback: fetch from transactions if audit_logs is empty
-        const tq = query(collection(db, "transactions"), orderBy("createdAt", "desc"), limit(50));
-        const tSnapshot = await getDocs(tq);
-        setLogs(tSnapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          action: "PAYMENT_TRANSACTION", 
-          userEmail: doc.data().customerEmail || "System", 
-          details: `Amount: ${doc.data().amount || 0}`, 
-          timestamp: doc.data().createdAt 
-        })));
-      }
+      const res = await fetch('http://localhost:5002/api/v1/audit?limit=100');
+      if (!res.ok) throw new Error('Failed to fetch audit logs');
+      const data = await res.json();
+      setLogs(data.logs || []);
     } catch (error) {
       console.error("Error fetching audit logs:", error);
     } finally {
@@ -44,7 +28,7 @@ export default function AuditLogsPage() {
 
   const filteredLogs = logs.filter(l => 
     (l.action || "").toLowerCase().includes(search.toLowerCase()) || 
-    (l.userEmail || "").toLowerCase().includes(search.toLowerCase())
+    (l.email || l.userEmail || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -60,7 +44,7 @@ export default function AuditLogsPage() {
       </div>
 
       <div className="glass-card rounded-xl overflow-hidden mt-8 border border-white/5">
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-start bg-slate-900/50">
           <div className="relative w-full md:w-96">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
@@ -105,7 +89,7 @@ export default function AuditLogsPage() {
                       <div className="flex items-center gap-2 text-slate-300">
                         <Clock className="w-4 h-4 text-slate-500" />
                         <span className="text-sm">
-                          {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : new Date(log.timestamp).toLocaleString()}
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}
                         </span>
                       </div>
                     </td>
@@ -117,7 +101,7 @@ export default function AuditLogsPage() {
                     <td className="p-4">
                       <div className="flex items-center gap-2 text-slate-300">
                         <User className="w-4 h-4 text-slate-500" />
-                        <span className="text-sm">{log.userEmail || log.userId || "System"}</span>
+                        <span className="text-sm">{log.email || log.userEmail || log.userId || "System"}</span>
                       </div>
                     </td>
                     <td className="p-4 text-sm text-slate-400">

@@ -29,7 +29,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
 function isFreePlan(plan: string | undefined): boolean {
   if (!plan) return true; // no plan at all = Free-tier access
   const p = plan.toLowerCase();
-  return p === "free" || p === "starter" || p === "deleted";
+  const isPro = p === "pro" || p === "professional" || p === "enterprise" || p === "unlimited";
+  return !isPro;
 }
 
 
@@ -486,18 +487,20 @@ DAAS_API_KEY=${generatedKey}
               <option value={appUser?.selectedSegment}>{appUser?.selectedSegment}</option>
             ) : (
               <>
-                <option value="All">All Categories</option>
+                <option value="All">All Segment</option>
                 <option value="Hardware">Hardware</option>
                 <option value="Grocery">Grocery</option>
                 <option value="Pharmacy">Pharmacy</option>
               </>
             )}
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
+          {!isFreePlan(appUser?.plan) && (
+            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          )}
         </div>
 
         {/* Select All button */}

@@ -16,14 +16,52 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  X
+  X,
+  ChevronDown,
+  Lock,
+  ShieldAlert
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
+
+type Category = "All" | "Hardware" | "Grocery" | "Pharmacy";
+const PRICE_BUCKET_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#ddd6fe"];
+
+/* ── Custom Tooltip for Chart ── */
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 shadow-2xl text-sm z-50">
+        {label && <p className="text-slate-400 mb-1 font-medium">{label}</p>}
+        {payload.map((p: any, i: number) => (
+          <p key={i} style={{ color: p.color || p.fill }} className="font-semibold">
+            {p.name ? `${p.name}: ` : ""}
+            {typeof p.value === "number"
+              ? p.name?.toLowerCase().includes("value") || p.dataKey === "value"
+                ? `₱${p.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : p.value.toLocaleString()
+              : p.value}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
 
 export default function DashboardPage() {
   const { appUser, loading, refreshUserDoc } = useAuth();
@@ -32,6 +70,43 @@ export default function DashboardPage() {
   const [activeKeysCount, setActiveKeysCount] = useState(0);
   const [todaysCalls, setTodaysCalls] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  // For Free users, initialise to their locked segment so the chart is scoped
+  // immediately. For Pro users (or unresolved state), default to "All".
+  const [selectedCategory, setSelectedCategory] = useState<Category>("All");
+
+  // Fetch all products for the chart preview
+  useEffect(() => {
+    if (!appUser) return;
+    let isMounted = true;
+    import("@/lib/firebase/products-service").then(({ getAllProducts }) => {
+      getAllProducts().then(data => {
+        if (isMounted) setAllProducts(data as any[]);
+      });
+    });
+    return () => { isMounted = false; };
+  }, [appUser]);
+
+  const priceDistribution = useMemo(() => {
+    const products = selectedCategory === "All" ? allProducts : allProducts.filter((p) => p.segment === selectedCategory);
+    const buckets = [
+      { range: "₱0–50", min: 0, max: 50, count: 0 },
+      { range: "₱51–100", min: 51, max: 100, count: 0 },
+      { range: "₱101–500", min: 101, max: 500, count: 0 },
+      { range: "₱501–1k", min: 501, max: 1000, count: 0 },
+      { range: "₱1k+", min: 1001, max: Infinity, count: 0 },
+    ];
+    products.forEach((p) => {
+      const price = p.price || 0;
+      const bucket = buckets.find((b) => price >= b.min && price <= b.max);
+      if (bucket) bucket.count++;
+    });
+    return buckets.map((b, i) => ({
+      range: b.range,
+      count: b.count,
+      fill: PRICE_BUCKET_COLORS[i],
+    }));
+  }, [allProducts, selectedCategory]);
 
 
   // Handle PayMongo redirect result (?payment=success | ?payment=failed).
@@ -85,51 +160,56 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!appUser?.uid) return;
+    const userId = appUser?.uid || (appUser as any)?.id;
+    if (!userId) return;
 
-    // Fetch Active API Keys
-    const keysQ = query(
-      collection(db, "api_keys"),
-      where("userId", "==", appUser.uid),
-      where("status", "==", "active")
-    );
-    const unsubKeys = onSnapshot(keysQ, (snap) => {
-      setActiveKeysCount(snap.size);
-    });
+    // Fetch Active API Keys via REST API
+    fetch(`http://localhost:5002/api/v1/api-keys?userId=${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.keys)) {
+          setActiveKeysCount(data.keys.length);
+        }
+      })
+      .catch(err => console.error('[Dashboard] Error fetching active keys:', err));
 
-    // Fetch Today's Telemetry (API Calls)
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const telemetryQ = query(
-      collection(db, "api_telemetry"),
-      where("userId", "==", appUser.uid),
-      where("timestamp", ">=", startOfDay)
-    );
-    const unsubTelemetry = onSnapshot(telemetryQ, (snap) => {
-      setTodaysCalls(snap.size);
-    });
+    // Telemetry stats not yet migrated to a user endpoint; mock as 0 for now.
+    setTodaysCalls(0);
 
-    return () => {
-      unsubKeys();
-      unsubTelemetry();
-    };
-  }, [appUser?.uid]);
+  }, [appUser?.uid, (appUser as any)?.id]);
 
-  if (loading || (appUser?.plan === "Free" && !appUser?.selectedSegment)) {
+  if (loading) {
     return (
       <div className="w-full px-6 lg:px-8 space-y-8 animate-pulse pb-10">
         <div className="h-10 w-48 bg-slate-800 rounded"></div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="h-32 bg-slate-800 rounded-xl"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="h-32 bg-slate-800 rounded-xl"></div>
           <div className="h-32 bg-slate-800 rounded-xl"></div>
         </div>
+        <div className="h-12 bg-slate-800 rounded-xl"></div>
         <div className="h-64 bg-slate-800 rounded-xl"></div>
       </div>
     );
   }
 
-  const isPro = appUser?.plan === "Pro";
+  const normalizedPlan = (appUser?.plan ?? "").toLowerCase();
+  const isPro = normalizedPlan === "pro" || normalizedPlan === "professional" || normalizedPlan === "unlimited" || normalizedPlan === "enterprise";
+  const isFreeUser = !isPro && normalizedPlan !== "";
+  const missingSegment = isFreeUser && !appUser?.selectedSegment;
+
+  // Keep selectedCategory in sync with the user's locked segment (runs once
+  // after appUser loads). Pro users keep "All".
+  const lockedSegment = isFreeUser ? (appUser?.selectedSegment ?? null) : null;
+  // Sync once when appUser becomes available
+  // (useState initialiser can't read appUser before auth resolves)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (lockedSegment) {
+      setSelectedCategory(lockedSegment as Category);
+    }
+  // Only run when lockedSegment value changes (i.e. once after auth resolves)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedSegment]);
 
   const paymentBanner =
     paymentStatus === "verifying" ? (
@@ -204,8 +284,57 @@ export default function DashboardPage() {
       </div>
     ) : null;
 
+  /* ─── Access Gate: block dashboard entirely if Free user has no segment ─── */
+  if (missingSegment) {
+    return (
+      <div className="w-full min-h-[calc(100vh-4rem)] flex items-center justify-center px-6">
+        <div className="relative max-w-md w-full">
+          {/* Glow backdrop */}
+          <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-amber-500/20 via-orange-500/10 to-transparent blur-xl pointer-events-none" />
+
+          <div className="relative rounded-2xl border border-amber-500/25 bg-[#0d1526]/90 backdrop-blur-sm p-8 shadow-2xl flex flex-col items-center text-center gap-6">
+
+            {/* Icon cluster */}
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                <ShieldAlert className="w-9 h-9 text-amber-400" strokeWidth={1.5} />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center">
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+              </div>
+            </div>
+
+            {/* Message */}
+            <div className="space-y-2">
+              <h2 className="text-xl font-bold text-white tracking-tight">Business Segment Required</h2>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                You need to select a business segment to proceed to dashboard.
+              </p>
+            </div>
+
+            {/* Divider */}
+            <div className="w-full h-px bg-slate-800" />
+
+            {/* CTA */}
+            <Link
+              href="/dashboard/settings"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 text-sm font-bold transition-all duration-200 shadow-lg shadow-amber-500/25 hover:shadow-amber-400/30 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Go to Settings
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+
+            <p className="text-xs text-slate-500">
+              Contact support if you believe this is an error.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full px-6 lg:px-8 pb-12 animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div className="w-full px-6 lg:px-8 pb-12 animate-fadeIn flex flex-col gap-8">
 
       {/* ─── Payment Status Banner (from PayMongo redirect) ─── */}
       {paymentBanner}
@@ -249,7 +378,11 @@ export default function DashboardPage() {
         <div>
           <p className="text-white font-semibold text-sm">{isPro ? "Pro plan" : "Free plan"}</p>
           <p className="text-slate-500 text-xs mt-0.5">
-            {isPro ? "Unlimited requests & segments" : `Limited to 1 segment (${appUser?.selectedSegment || "None"})`}
+            {isPro
+              ? "Unlimited requests & segments"
+              : appUser?.selectedSegment
+              ? `Limited to 1 segment (${appUser.selectedSegment})`
+              : "No segment selected — set one in Settings"}
           </p>
         </div>
         {!isPro && (
@@ -257,18 +390,15 @@ export default function DashboardPage() {
             href="/dashboard/settings"
             className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold hover:underline transition-colors"
           >
-            Upgrade plan
+            {appUser?.selectedSegment ? "Upgrade plan" : "Set up segment"}
           </Link>
         )}
       </div>
 
-      {/* ─── Quick Actions & System Status ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-        {/* Quick Actions (2/3 width) */}
-        <div className="lg:col-span-2">
+      {/* ─── Quick Actions ─── */}
+      <div className="w-full">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Quick actions</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 
             <Link
               href="/dashboard/api-keys"
@@ -323,40 +453,74 @@ export default function DashboardPage() {
             </Link>
 
           </div>
-        </div>
+      </div>
 
-        {/* System Status (1/3 width) */}
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">System status</p>
-          <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] overflow-hidden divide-y divide-slate-800/60">
-
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <span className="text-sm text-slate-300 font-medium">API gateway</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">99.9%</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <span className="text-sm text-slate-300 font-medium">Database sync</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">operational</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <span className="text-sm text-slate-300 font-medium">Auth service</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">operational</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-              </div>
-            </div>
-
+      {/* ─── Reports & Price Distribution Chart ─── */}
+      <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-white mb-1">Reports & Price Distribution</h2>
+            <p className="text-xs text-slate-400">Quick overview of your catalog's pricing</p>
           </div>
+          {/* ── Category Filter ──────────────────────────────────────────────
+               Free users: read-only badge locked to their segment.
+               Pro users:  full dropdown with all categories.
+          ──────────────────────────────────────────────────────────────────── */}
+          {isFreeUser && lockedSegment ? (
+            /* Read-only locked segment badge */
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-slate-800/80 border border-slate-700 w-full sm:w-auto">
+              <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="text-sm font-semibold text-slate-200">{lockedSegment}</span>
+              <span className="ml-auto text-[10px] font-bold text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                Locked
+              </span>
+            </div>
+          ) : (
+            /* Pro user: full dropdown */
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value as Category)}
+                className="w-full sm:w-48 appearance-none pl-4 pr-10 py-2.5 rounded-lg bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer"
+              >
+                <option value="All">All Segment</option>
+                <option value="Hardware">Hardware</option>
+                <option value="Grocery">Grocery</option>
+                <option value="Pharmacy">Pharmacy</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </div>
+            </div>
+          )}
         </div>
 
+        <div className="h-[300px] w-full">
+          {allProducts.length === 0 ? (
+            <div className="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-lg">
+              <Loader2 className="w-6 h-6 text-slate-500 animate-spin mb-3" />
+              <p className="text-sm text-slate-400">Loading catalog data...</p>
+            </div>
+          ) : priceDistribution.every(b => b.count === 0) ? (
+            <div className="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-lg">
+              <p className="text-sm text-slate-400">No products found for this category</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={priceDistribution} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="range" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="count" name="Products" radius={[4, 4, 0, 0]} maxBarSize={60}>
+                  {priceDistribution.map((entry, index) => (
+                    <Cell key={index} fill={entry.fill} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
 
     </div>

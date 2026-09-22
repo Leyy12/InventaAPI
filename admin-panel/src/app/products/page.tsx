@@ -431,6 +431,7 @@ function EditModal({
   const [brand, setBrand] = useState(getBrand(product));
   const [category, setCategory] = useState(product.category || "");
   const [segment, setSegment] = useState(product.segment || "");
+  const [imageUrl, setImageUrl] = useState(product.image_url || product.image || "");
   const [status, setStatus] = useState(getStatus(product));
   const [variants, setVariants] = useState<ProductVariant[]>(seedVariants);
   const [saving, setSaving] = useState(false);
@@ -495,6 +496,7 @@ function EditModal({
         brand: brand.trim(),
         category: category.trim(),
         segment,
+        image_url: imageUrl.trim(),
         status,
         is_active: status === "Active",
         variants: cleaned,
@@ -573,6 +575,21 @@ function EditModal({
                 <option value="Active">Active</option>
                 <option value="Archived">Archived</option>
               </select>
+            </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Image URL <span className="text-slate-600 normal-case tracking-normal font-normal">(optional)</span></label>
+              <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://example.com/product-image.jpg" className={inputCls} />
+              {imageUrl.trim() && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img
+                    src={imageUrl.trim()}
+                    alt="Preview"
+                    className="w-14 h-14 rounded-lg border border-slate-700 object-cover bg-slate-800"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <span className="text-[10px] text-slate-500">Image preview</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -665,6 +682,7 @@ function AddProductModal({
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [segment, setSegment] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "", price: 0 }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -746,6 +764,7 @@ function AddProductModal({
           brand: brand.trim(),
           category: category.trim(),
           segment,
+          image_url: imageUrl.trim(),
           status: "Active",
           is_active: true,
           variants: cleaned,
@@ -837,6 +856,21 @@ function AddProductModal({
             <div className="col-span-2">
               <label className={labelCls}>Category</label>
               <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Snacks" className={inputCls} />
+            </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Image URL <span className="text-slate-600 normal-case tracking-normal font-normal">(optional)</span></label>
+              <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://example.com/product-image.jpg" className={inputCls} />
+              {imageUrl.trim() && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img
+                    src={imageUrl.trim()}
+                    alt="Preview"
+                    className="w-14 h-14 rounded-lg border border-slate-700 object-cover bg-slate-800"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <span className="text-[10px] text-slate-500">Image preview</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1102,7 +1136,7 @@ export default function MasterProductCatalogPage() {
         {/* Toolbar */}
         <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-[#111827]">
           {/* Search (Moved to left) */}
-          <div className="relative w-64">
+          <div className="relative w-full md:w-[450px] lg:w-[500px]">
             <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input type="text" placeholder="Search by name, brand, SKU…" value={search}
               onChange={e => setSearch(e.target.value)}

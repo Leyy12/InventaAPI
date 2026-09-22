@@ -13,7 +13,8 @@ import {
   BarChart3,
   LogOut,
   Shield,
-  Settings
+  Settings,
+  Zap
 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 
@@ -95,6 +96,21 @@ export default function Sidebar() {
           );
         })}
 
+        {/* Free Trial Button for Free Users */}
+        {isMounted && appUser && (appUser.plan === "Free" || appUser.plan === "Starter" || appUser.plan === "FreeTrial") && (
+          <Link
+            href="/dashboard/free-trial"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 mt-4 rounded-lg text-sm font-bold transition-all duration-200",
+              pathname === "/dashboard/free-trial"
+                ? "bg-amber-500 text-slate-900 shadow-lg shadow-amber-500/20"
+                : "bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20"
+            )}
+          >
+            <Zap className={cn("w-4 h-4", pathname === "/dashboard/free-trial" ? "text-slate-900" : "text-amber-500")} />
+            7-Day Pro Trial
+          </Link>
+        )}
 
       </div>
 
@@ -135,9 +151,10 @@ export default function Sidebar() {
           </div>
         )}
         <button
-          onClick={() => {
+          onClick={async () => {
             if (window.confirm("Are you sure you want to logout?")) {
-              logout();
+              await logout();
+              window.location.href = "/?logout=true";
             }
           }}
           className="flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors w-full"

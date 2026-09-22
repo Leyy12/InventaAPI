@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ShieldCheck, Key, Activity, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
 
 export default function SecurityCenterPage() {
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -15,27 +13,30 @@ export default function SecurityCenterPage() {
   const loading = !usersReady || !keysReady;
 
   useEffect(() => {
-    // Listener 1: Users — build lookup map by userId
-    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const uMap: Record<string, any> = {};
-      snapshot.docs.forEach(doc => {
-        uMap[doc.id] = { id: doc.id, ...doc.data() };
-      });
-      setUsersMap(uMap);
-      setUsersReady(true);
-    });
+    const fetchData = async () => {
+      try {
+        const [usersRes, keysRes] = await Promise.all([
+          fetch('http://localhost:5002/api/v1/users'),
+          fetch('http://localhost:5002/api/v1/api-keys/all')
+        ]);
+        const usersData = await usersRes.json();
+        const keysData = await keysRes.json();
 
-    // Listener 2: API Keys — ordered by creation date desc
-    const q = query(collection(db, "api_keys"), orderBy("createdAt", "desc"));
-    const unsubKeys = onSnapshot(q, (snapshot) => {
-      setApiKeys(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setKeysReady(true);
-    });
-
-    return () => {
-      unsubUsers();
-      unsubKeys();
+        const uMap: Record<string, any> = {};
+        (usersData.users || []).forEach((u: any) => {
+          uMap[u.firestoreId || u.id] = u;
+        });
+        setUsersMap(uMap);
+        setUsersReady(true);
+        setApiKeys(keysData.keys || []);
+        setKeysReady(true);
+      } catch (err) {
+        console.error('[Security] Failed to fetch data:', err);
+        setUsersReady(true);
+        setKeysReady(true);
+      }
     };
+    fetchData();
   }, []);
 
   const filteredKeys = useMemo(() => {
@@ -99,9 +100,8 @@ export default function SecurityCenterPage() {
       </div>
 
       <div className="glass-card rounded-xl overflow-hidden mt-2 border border-white/5">
-        <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center bg-slate-900/50 gap-4">
-          <h2 className="text-lg font-bold text-white">API Keys Management</h2>
-          <div className="relative w-full md:w-72">
+        <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row items-center justify-start bg-slate-900/50 gap-4">
+          <div className="relative w-full md:w-[450px] lg:w-[500px]">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -164,7 +164,6 @@ export default function SecurityCenterPage() {
                         <div className="text-xs text-slate-400 mt-0.5">
                           {k.userEmail || user.email || "No email"}
                         </div>
-                        <div className="text-[10px] text-slate-600 font-mono mt-1">{k.userId}</div>
                       </td>
 
                       {/* Plan & Usage bar */}

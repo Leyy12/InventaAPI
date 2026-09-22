@@ -84,15 +84,11 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
     ? pendingPlan === "pro"
       ? "Login to continue to your Pro upgrade"
       : "Login to continue to Enterprise"
-    : isFreeFlow
-      ? "Login to continue to InventaAPI Free"
-      : "Welcome to InventaAPI";
+    : "Login to continue to InventaAPI Free";
 
   const modalSubtitle = isUpgradeIntent
     ? "Log in to continue to the secure PayMongo checkout."
-    : isFreeFlow
-      ? "Log in to access your Free plan dashboard."
-      : "Log in to manage your DaaS platform";
+    : "Log in to access your Free plan dashboard.";
 
   const segmentHint = isUpgradeIntent ? (
     <>
@@ -117,7 +113,14 @@ export default function LoginModal({ isOpen, onClose, pendingPlan, onOpenSubscri
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // No pre-auth segment block here — we don't know the user's plan until
+    // Pre-auth segment check: if the dropdown is visible, enforce selection BEFORE authenticating.
+    if (showSegment && !segment) {
+      setError("Please select your business segment to continue.");
+      setSegmentBlocked(true);
+      return;
+    }
+
+    // No pre-auth segment block here for plain logins — we don't know the user's plan until
     // after Firebase auth. The post-auth check (below) handles segment gating
     // correctly once we know whether this is a Free or Pro account.
 

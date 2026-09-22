@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Plus, X, AlertTriangle, Check, Save, Loader2, Upload
+  Plus, X, AlertTriangle, Check, Save, Loader2, Upload, ImagePlus, Link2, Trash2
 } from "lucide-react";
-import { db } from "@/lib/firebase/config";
+import { db, storage } from "@/lib/firebase/config";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { notifyAdminNewRequest } from "@/lib/firebase/notifications";
@@ -27,24 +28,91 @@ interface VariantRow {
 
 export default function AddProductModal({ open, onClose, onAdded }: AddProductModalProps) {
   const { appUser } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [name, setName]             = useState("");
-  const [brand, setBrand]           = useState("");
-  const [segment, setSegment]       = useState("");
-  const [category, setCategory]     = useState("");
+  const [name, setName]               = useState("");
+  const [brand, setBrand]             = useState("");
+  const [segment, setSegment]         = useState("");
+  const [category, setCategory]       = useState("");
   const [description, setDescription] = useState("");
-  const [variants, setVariants]     = useState<VariantRow[]>([{ flavor: "", size: "", sku: "", price: "" }]);
-  const [saving, setSaving]         = useState(false);
-  const [error, setError]           = useState("");
-  const [success, setSuccess]       = useState("");
+  const [variants, setVariants]       = useState<VariantRow[]>([{ flavor: "", size: "", sku: "", price: "" }]);
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState("");
+  const [success, setSuccess]         = useState("");
+
+  // Image state
+  const [imageMode, setImageMode]     = useState<"upload" | "url">("upload");
+  const [imageUrl, setImageUrl]       = useState("");           
+  const [urlInput, setUrlInput]       = useState("");           
+  const [imageFile, setImageFile]     = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const [uploading, setUploading]     = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragOver, setDragOver]       = useState(false);
 
   // Reset every time modal opens
   useEffect(() => {
     if (!open) return;
-    setName(""); setBrand(""); setSegment(""); setCategory("");
+    setName(""); setBrand(""); setCategory("");
     setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
     setError(""); setSuccess("");
-  }, [open]);
+    setImageMode("upload"); setImageUrl(""); setUrlInput("");
+    setImageFile(null); setImagePreview(""); setUploadProgress(0);
+
+    const planStr = (appUser?.plan ?? "").toLowerCase();
+    const proPlan = planStr === "pro" || planStr === "professional" || planStr === "enterprise" || planStr === "unlimited";
+    if (!proPlan && appUser?.selectedSegment) {
+      setSegment(appUser.selectedSegment);
+    } else {
+      setSegment("");
+    }
+  }, [open, appUser]);
+
+  // ── Image helpers ────────────────────────────────────────────────────────────
+  const applyFile = (file: File) => {
+    if (!file.type.startsWith("image/")) { setError("Please select an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Image must be smaller than 5 MB."); return; }
+    setError("");
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setImageUrl(""); // clear previous URL until upload finishes
+  };
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) applyFile(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) applyFile(file);
+    e.target.value = ""; // allow re-selecting same file
+  };
+
+  const clearImage = () => {
+    setImageFile(null); setImagePreview(""); setImageUrl(""); setUrlInput(""); setUploadProgress(0);
+  };
+
+  const uploadImageToStorage = async (file: File, productName: string): Promise<string> => {
+    setUploading(true); setUploadProgress(0);
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `product-images/${Date.now()}_${productName.replace(/\s+/g, "_")}.${ext}`;
+    const fileRef = ref(storage, path);
+
+    return new Promise((resolve, reject) => {
+      const task = uploadBytesResumable(fileRef, file);
+      task.on("state_changed",
+        snap => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+        err => { setUploading(false); reject(err); },
+        async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          setUploading(false); setUploadProgress(100);
+          resolve(url);
+        }
+      );
+    });
+  };
 
   const updateVariant = (i: number, field: keyof VariantRow, val: string) =>
     setVariants(prev => prev.map((v, idx) => idx === i ? { ...v, [field]: val } : v));
@@ -58,6 +126,13 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
     setSaving(true); setError("");
 
     try {
+      let finalImageUrl = "";
+      if (imageMode === "upload" && imageFile) {
+        finalImageUrl = await uploadImageToStorage(imageFile, name.trim());
+      } else if (imageMode === "url" && urlInput.trim()) {
+        finalImageUrl = urlInput.trim();
+      }
+
       const cleanedVariants = variants
         .filter(v => v.flavor || v.size || v.sku || v.price)
         .map(v => ({
@@ -73,6 +148,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
         segment:      segment || "Grocery",
         category:     category.trim(),
         description:  description.trim(),
+        image_url:    finalImageUrl,
         status:       "Active",
         is_active:    true,
         variants:     cleanedVariants,
@@ -82,12 +158,11 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
         updatedAt:    serverTimestamp(),
       };
 
-      const ref = await addDoc(collection(db, "products"), payload);
+      const docRef = await addDoc(collection(db, "products"), payload);
 
-      // Notify admin
       try {
         await notifyAdminNewRequest({
-          requestId:        ref.id,
+          requestId:        docRef.id,
           productName:      payload.name,
           category:         payload.category || payload.segment,
           requestedByName:  payload.addedByName,
@@ -106,6 +181,9 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   };
 
   if (!open) return null;
+
+  const planStr = (appUser?.plan ?? "").toLowerCase();
+  const isPro = planStr === "pro" || planStr === "professional" || planStr === "enterprise" || planStr === "unlimited";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
@@ -162,11 +240,22 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             </div>
             <div>
               <label className={labelCls}>Segment</label>
-              <select value={segment} onChange={e => setSegment(e.target.value)} className={inputCls}>
-                <option value="">— Select Segment —</option>
-                <option value="Grocery">Grocery</option>
-                <option value="Hardware">Hardware</option>
-                <option value="Pharmacy">Pharmacy</option>
+              <select 
+                value={segment} 
+                onChange={e => setSegment(e.target.value)} 
+                className={`${inputCls} ${!isPro ? "opacity-70 cursor-not-allowed appearance-none pr-3" : ""}`}
+                disabled={!isPro}
+              >
+                {!isPro ? (
+                  <option value={appUser?.selectedSegment || ""}>{appUser?.selectedSegment || "— Select Segment —"}</option>
+                ) : (
+                  <>
+                    <option value="">— Select Segment —</option>
+                    <option value="Grocery">Grocery</option>
+                    <option value="Hardware">Hardware</option>
+                    <option value="Pharmacy">Pharmacy</option>
+                  </>
+                )}
               </select>
             </div>
             <div className="col-span-2">
@@ -176,6 +265,111 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             <div className="col-span-2">
               <label className={labelCls}>Description <span className="text-slate-600 normal-case tracking-normal font-normal">(optional)</span></label>
               <textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief product description…" className={inputCls + " resize-none"} />
+            </div>
+            {/* ── Image Upload ── */}
+            <div className="col-span-2">
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelCls + " mb-0"}>Product Image <span className="text-slate-600 normal-case tracking-normal font-normal">(optional)</span></label>
+                {/* Tab toggle */}
+                <div className="flex rounded-lg overflow-hidden border border-slate-700 text-[10px] font-semibold">
+                  <button
+                    onClick={() => setImageMode("upload")}
+                    className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${imageMode === "upload" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800"}`}
+                  >
+                    <ImagePlus className="w-3 h-3" /> Upload File
+                  </button>
+                  <button
+                    onClick={() => setImageMode("url")}
+                    className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${imageMode === "url" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800"}`}
+                  >
+                    <Link2 className="w-3 h-3" /> Paste URL
+                  </button>
+                </div>
+              </div>
+
+              {imageMode === "upload" ? (
+                /* ── FILE UPLOAD ZONE ── */
+                imagePreview ? (
+                  <div className="flex items-center gap-4 p-3 rounded-xl border border-slate-700 bg-slate-800/40">
+                    <img src={imagePreview} alt="Preview" className="w-20 h-20 rounded-lg object-cover border border-slate-700 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-300 truncate">{imageFile?.name}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{imageFile ? (imageFile.size / 1024).toFixed(0) + " KB" : ""}</p>
+                      {/* Progress bar */}
+                      {uploading && (
+                        <div className="mt-2">
+                          <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-indigo-400 mt-1">Uploading… {uploadProgress}%</p>
+                        </div>
+                      )}
+                      {uploadProgress === 100 && !uploading && (
+                        <p className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Uploaded successfully
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={clearImage}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleFileDrop}
+                    className={`relative flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
+                      dragOver
+                        ? "border-indigo-500 bg-indigo-500/10"
+                        : "border-slate-700 bg-slate-800/30 hover:border-indigo-500/60 hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <ImagePlus className={`w-7 h-7 transition-colors ${dragOver ? "text-indigo-400" : "text-slate-600"}`} />
+                    <div className="text-center">
+                      <p className="text-xs font-medium text-slate-400">
+                        <span className="text-indigo-400">Click to browse</span> or drag & drop
+                      </p>
+                      <p className="text-[10px] text-slate-600 mt-0.5">PNG, JPG, WEBP · Max 5 MB</p>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                  </div>
+                )
+              ) : (
+                /* ── URL INPUT ── */
+                <div>
+                  <input
+                    value={urlInput}
+                    onChange={e => setUrlInput(e.target.value)}
+                    placeholder="https://example.com/product-image.jpg"
+                    className={inputCls}
+                  />
+                  {urlInput.trim() && (
+                    <div className="mt-2 flex items-center gap-3">
+                      <img
+                        src={urlInput.trim()}
+                        alt="Preview"
+                        className="w-14 h-14 rounded-lg border border-slate-700 object-cover bg-slate-800"
+                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                      <span className="text-[10px] text-slate-500">Image preview</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -226,14 +420,14 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
 
         {/* ── Footer ── */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-end gap-2 shrink-0">
-          <button onClick={onClose}
-            className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors">
+          <button onClick={onClose} disabled={saving || uploading}
+            className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors disabled:opacity-40">
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving || !!success}
+          <button onClick={handleSave} disabled={saving || uploading || !!success}
             className="inline-flex items-center gap-1.5 px-5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors">
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {saving ? "Saving…" : "Save Product"}
+            {saving || uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {uploading ? `Uploading ${uploadProgress}%…` : saving ? "Saving…" : "Save Product"}
           </button>
         </div>
       </div>

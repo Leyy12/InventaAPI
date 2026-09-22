@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { X, PackageSearch, ArrowUpRight, ShieldCheck } from "lucide-react";
 

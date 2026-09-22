@@ -37,6 +37,8 @@ function LandingPageInner() {
     const params = new URLSearchParams(searchParams.toString());
     let handled = false;
 
+    // -------------------------
+
     const error = searchParams.get("error");
     if (error) {
       const errorMessages: Record<string, string> = {
@@ -55,6 +57,14 @@ function LandingPageInner() {
 
     // Auto-open login modal when a visitor clicks "Login" on the signup page.
     if (searchParams.get("login") === "true") {
+      setShowLoginModal(true);
+      handled = true;
+    }
+
+    // After signout, open the Free-plan login flow so the modal shows
+    // "Login to continue to InventaAPI Free" with the segment selector.
+    if (searchParams.get("logout") === "true") {
+      setPendingPlan("free");
       setShowLoginModal(true);
       handled = true;
     }
@@ -89,7 +99,7 @@ function LandingPageInner() {
     }
 
     if (handled) {
-      ["error", "login", "registered", "choosePlan", "payment"].forEach((key) =>
+      ["error", "login", "logout", "registered", "choosePlan", "payment"].forEach((key) =>
         params.delete(key)
       );
       const qs = params.toString();

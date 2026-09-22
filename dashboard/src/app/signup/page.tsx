@@ -2,8 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, setDoc, serverTimestamp, writeBatch, collection } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase/config";
+import { auth } from "@/lib/firebase/config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
@@ -63,25 +62,23 @@ function SignupPageInner() {
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
 
-      // Create user document in Firestore
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        fullName: formData.fullName,
-        email: formData.email,
-        businessName: formData.businessName,
-        businessSegment: formData.businessSegment,
-        plan: "Free",
-        role: "Developer",  // All signups are Developer role
-        apiRequestLimit: 50,
-        apiRequestsUsed: 0,
-        createdAt: serverTimestamp(),
-        lastLogin: serverTimestamp(),
-        privacyConsent: true,
-        privacyConsentTimestamp: serverTimestamp()
+      // Save user profile to MongoDB via our API
+      await fetch('http://localhost:5002/api/v1/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.uid,
+          email: formData.email,
+          fullName: formData.fullName,
+          businessName: formData.businessName,
+          businessSegment: formData.businessSegment,
+          plan: 'Free',
+          role: 'Developer',
+          apiRequestLimit: 50,
+          apiRequestsUsed: 0,
+          privacyConsent: true,
+        })
       });
-
-      // Remove Firestore seeding to prevent permission errors
-      // Dashboard now fetches products directly from the DaaS API (data.json)
 
       // Sign out immediately — Firebase auto-logs in after createUser,
       // but we want the user to explicitly log in themselves.

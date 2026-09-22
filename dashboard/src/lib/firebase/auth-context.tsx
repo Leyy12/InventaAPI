@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "./config";
+import { auth } from "./config";
 import { useRouter, usePathname } from "next/navigation";
 
 
@@ -73,24 +72,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Track tab visibility changes (critical for throttling hypothesis)
   React.useEffect(() => {
     const handleVisibilityChange = () => {
-      const timestamp = new Date().toISOString();
-      const timeOnly = timestamp.substring(11, 23);
-      console.log(`\n[🔍 TAB VISIBILITY @ ${timeOnly}] Document became: ${document.visibilityState}`);
-      console.log(`  Window focused: ${document.hasFocus()}`);
-      console.log(`  Current auth.currentUser: ${auth.currentUser ? `EXISTS (${auth.currentUser.email})` : '❌ NULL'}`);
-      console.log(`  Current appUser: ${appUserRef.current ? `EXISTS (${appUserRef.current.fullName})` : '❌ NULL'}`);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', () => {
-      const timestamp = new Date().toISOString();
-      const timeOnly = timestamp.substring(11, 23);
-      console.log(`[🔍 WINDOW FOCUS @ ${timeOnly}] Window regained focus`);
     });
     window.addEventListener('blur', () => {
-      const timestamp = new Date().toISOString();
-      const timeOnly = timestamp.substring(11, 23);
-      console.log(`[🔍 WINDOW BLUR @ ${timeOnly}] Window lost focus`);
     });
 
     return () => {
@@ -99,25 +86,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    console.log('[🔍 AUTH DIAGNOSTIC] Listener mounted at:', new Date().toISOString());
-    console.log('[🔍 AUTH DIAGNOSTIC] React Strict Mode may cause double-mount in dev');
-    console.log('[🔍 AUTH DIAGNOSTIC] Document visibility:', document.visibilityState);
-    console.log('[🔍 AUTH DIAGNOSTIC] Window focused:', document.hasFocus());
-    
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      const timestamp = new Date().toISOString();
-      const timeOnly = timestamp.substring(11, 23); // HH:MM:SS.mmm
-      
-      console.log(`\n[🔍 AUTH DIAGNOSTIC @ ${timeOnly}] onAuthStateChanged FIRED`);
-      console.log(`  TRIGGER CONTEXT:`);
-      console.log(`    - Document visibility: ${document.visibilityState}`);
-      console.log(`    - Window focused: ${document.hasFocus()}`);
-      console.log(`    - Network online: ${navigator.onLine}`);
-      console.log(`  AUTH STATE:`);
-      console.log(`    - currentUser (callback param): ${currentUser ? `EXISTS (${currentUser.email})` : '❌ NULL'}`);
-      console.log(`    - existing appUser (ref): ${appUserRef.current ? `EXISTS (${appUserRef.current.fullName}, ${appUserRef.current.plan})` : '❌ NULL'}`);
-      console.log(`    - auth.currentUser (direct): ${auth.currentUser ? `EXISTS (${auth.currentUser.email})` : '❌ NULL'}`);
-      
       setUser(currentUser);
       if (currentUser && typeof window !== 'undefined') {
         localStorage.setItem("userCache", JSON.stringify({ uid: currentUser.uid, email: currentUser.email }));
@@ -126,44 +95,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       let currentAppUser: AppUser | null = null;
       
       if (currentUser) {
-        console.log(`  [🔍 ${timeOnly}] Branch: currentUser EXISTS - fetching Firestore doc...`);
         try {
-          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          console.log(`  [🔍 ${timeOnly}] Firestore read completed, doc exists: ${userDoc.exists()}`);
+          const res = await fetch(`http://localhost:5002/api/v1/users/${currentUser.uid}`);
           
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            
-            currentAppUser = userData as AppUser;
-            console.log(`  [🔍 ${timeOnly}] ✅ Setting appUser from Firestore: ${currentAppUser.fullName} (${currentAppUser.plan})`);
+          if (res.ok) {
+            const data = await res.json();
+            currentAppUser = data.user as AppUser;
             setAppUser(currentAppUser);
             if (typeof window !== 'undefined') {
               localStorage.setItem("appUserCache", JSON.stringify(currentAppUser));
             }
 
-            // Write Customer Login audit log ONCE per session (not on every page refresh)
+            // Write Customer Login audit log ONCE per session
             if (loginLoggedRef.current !== currentUser.uid) {
               loginLoggedRef.current = currentUser.uid;
               try {
-                await addDoc(collection(db, "audit_logs"), {
-                  action: "Customer Login",
-                  userId: currentUser.uid,
-                  userEmail: currentUser.email || 'unknown@email.com',
-                  timestamp: serverTimestamp(),
-                  details: 'User logged in successfully',
-                  userAgent: navigator.userAgent || null,
-                  ipAddress: null
+                await fetch(`http://localhost:5002/api/v1/audit`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: "Customer Login",
+                    userId: currentUser.uid,
+                    email: currentUser.email || 'unknown@email.com',
+                    endpoint: 'auth-context',
+                    status: 'success'
+                  })
                 });
-                console.log(`  [🔍 ${timeOnly}] ✅ Customer Login audit log written`);
               } catch (auditErr) {
                 console.warn("[Audit] Failed to write login log:", auditErr);
               }
-            } else {
-              console.log(`  [🔍 ${timeOnly}] ⏭️  Login already logged this session, skipping duplicate`);
             }
           } else {
-            console.log(`  [🔍 ${timeOnly}] ⚠️  Firestore doc does NOT exist - checking superadmin/auto-heal...`);
-            console.warn("User document not found in Firestore.");
+            console.warn("User document not found in database.");
             
             // Check if this is the superadmin account (by UID, not email)
             // UID is server-verified and non-spoofable
@@ -205,19 +168,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             
             console.log("Waiting to avoid race condition with signup form...");
             
-            setTimeout(() => {
-              import("firebase/firestore").then(async ({ getDoc, setDoc, doc }) => {
+            setTimeout(async () => {
                 try {
-                  const retryDoc = await getDoc(doc(db, "users", currentUser.uid));
-                  if (retryDoc.exists()) {
+                  const retryRes = await fetch(`http://localhost:5002/api/v1/users/${currentUser.uid}`);
+                  if (retryRes.ok) {
                     console.log("✅ Document created by signup form, skipping auto-heal.");
-                    setAppUser(retryDoc.data() as AppUser);
+                    const retryData = await retryRes.json();
+                    setAppUser(retryData.user as AppUser);
                     return;
                   }
                   
                   console.log("Auto-healing regular user document...");
                   const newDoc = {
                     uid: currentUser.uid,
+                    id: currentUser.uid,
                     fullName: currentUser.displayName || "Developer",
                     email: currentUser.email || "",
                     businessName: "SME Store",
@@ -229,23 +193,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     subscription_status: "inactive",
                   };
                   
-                  await setDoc(doc(db, "users", currentUser.uid), newDoc);
+                  await fetch(`http://localhost:5002/api/v1/users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newDoc)
+                  });
                   console.log("✅ Auto-heal successful");
-                  setAppUser(newDoc as AppUser);
+                  setAppUser(newDoc as unknown as AppUser);
                 } catch (error) {
                   console.error("❌ Auto-heal failed:", error);
                 }
-              });
             }, 2000);
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
-          console.log(`  [🔍 ${timeOnly}] ❌ Firestore read ERROR:`, error);
         }
       } else {
-        console.log(`  [🔍 ${timeOnly}] Branch: currentUser is NULL`);
-        console.log(`  [🔍 ${timeOnly}] Had existing appUser before this?: ${appUserRef.current ? `YES (${appUserRef.current.fullName})` : 'NO'}`);
-        console.log(`  [🔍 ${timeOnly}] ❌ Calling setAppUser(null) now...`);
         setAppUser(null);
         if (typeof window !== 'undefined') {
           localStorage.removeItem("userCache");
@@ -253,7 +216,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         // Reset login tracking so next login writes a fresh audit log
         loginLoggedRef.current = null;
-        console.log(`  [🔍 ${timeOnly}] setAppUser(null) completed\n`);
       }
       
       setLoading(false);
@@ -318,7 +280,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     return () => {
-      console.log('[🔍 AUTH DIAGNOSTIC] Cleanup: unsubscribing listener at:', new Date().toISOString());
       unsubscribe();
     };
   }, []); // Empty array: mount once, never re-run (no more flicker!)
@@ -341,14 +302,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // 4. Fire-and-forget audit log — do NOT await (never block sign-out on this)
       if (uid) {
-        void addDoc(collection(db, "audit_logs"), {
+        fetch(`http://localhost:5002/api/v1/audit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             action: "Customer Logout",
             userId: uid,
-            userEmail: email || 'unknown@email.com',
-            timestamp: serverTimestamp(),
-            details: 'User logged out successfully',
-            userAgent: navigator.userAgent || null,
-            ipAddress: null
+            email: email || 'unknown@email.com',
+            endpoint: 'auth-context',
+            status: 'success'
+          })
         }).catch((auditErr) => {
           console.warn("[Audit] Failed to write logout log:", auditErr);
         });
@@ -363,12 +326,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       //    router.push() to guarantee a full-page reload that clears all Next.js
       //    route cache and React state. router.push can be silently intercepted by
       //    the auth guard, causing the redirect to fail on the first attempt.
-      window.location.href = "/";
+      window.location.href = "/?logout=true";
 
     } catch (error) {
       console.error("Error logging out:", error);
       // On error, still try to get to landing page
-      window.location.href = "/";
+      window.location.href = "/?logout=true";
     }
   };
 
@@ -376,9 +339,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const currentUser = auth.currentUser;
     if (!currentUser) return null;
     try {
-      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-      if (userDoc.exists()) {
-        const fresh = userDoc.data() as AppUser;
+      const res = await fetch(`http://localhost:5002/api/v1/users/${currentUser.uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        const fresh = data.user as AppUser;
         setAppUser(fresh);
         if (typeof window !== "undefined") {
           localStorage.setItem("appUserCache", JSON.stringify(fresh));

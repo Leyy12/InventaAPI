@@ -98,37 +98,39 @@ export default function ImportCsvModal({
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
-  const [activeTab, setActiveTab] = useState<"new" | "update" | "appended" | "rejected">("new");
+  const [activeTab, setActiveTab] = useState<"new" | "update" | "added" | "rejected">("new");
   const [defaultSegment, setDefaultSegment] = useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   // ── Core matching ─────────────────────────────────────────────────────────
-  function classifyRow(mapped: Record<string, string>, segment: string, price: number | null) {
-    const csvSku  = mapped["sku"]  || "";
-    const csvName = mapped["name"] || "";
+  function classifyRow(mapped: Record<string, string>, segment: string, price: number | null, allProducts: Product[]) {
+    const csvSku   = mapped["sku"]   || "";
+    const csvName  = mapped["name"]  || "";
+    const csvBrand = mapped["brand"] || "";
 
-    // Find existing product — SKU first, then name+segment, then name-only
+    if (!csvName || !csvName.trim()) return { status: "rejected" as const, matchId: null, reason: "Missing product name" };
+    if (!csvBrand || !csvBrand.trim()) return { status: "rejected" as const, matchId: null, reason: "Missing brand" };
+    if (!segment || !segment.trim()) return { status: "rejected" as const, matchId: null, reason: "Missing segment" };
+    if (!mapped["category"] || !mapped["category"].trim()) return { status: "rejected" as const, matchId: null, reason: "Missing category" };
+    if (price === null || isNaN(price)) return { status: "rejected" as const, matchId: null, reason: "Missing or invalid price" };
+
+    // Find existing product — SKU first, then Brand+Name
     let match: Product | undefined;
 
     if (csvSku) {
-      match = existingProducts.find(p =>
+      match = allProducts.find(p =>
         p.sku === csvSku || p.variants?.some(v => v.sku === csvSku)
       );
     }
     if (!match && csvName) {
-      match = existingProducts.find(p =>
-        p.name?.toLowerCase().trim() === csvName.toLowerCase() &&
-        p.segment?.toLowerCase() === segment.toLowerCase()
-      );
-    }
-    if (!match && csvName && !csvSku) {
-      // Broader: name-only (no segment in CSV)
-      match = existingProducts.find(p =>
-        p.name?.toLowerCase().trim() === csvName.toLowerCase()
+      // Dedup by Brand + Name
+      match = allProducts.find(p =>
+        p.name?.toLowerCase().trim() === csvName.toLowerCase().trim() &&
+        (p.brand || "").toLowerCase().trim() === csvBrand.toLowerCase().trim()
       );
     }
 
-    if (!match) return { status: "new" as const, matchId: null };
+    if (!match) return { status: "new" as const, matchId: null, reason: "New product" };
 
     // Found a match — compare every non-empty CSV field against DB
     const pVariant = (match.variants?.[0] || {}) as any;
@@ -156,9 +158,9 @@ export default function ImportCsvModal({
       else if (dbPrice === null) hasFill = true;
     }
 
-    if (hasConflict) return { status: "update"    as const, matchId: match.id };
-    if (hasFill)     return { status: "appended"  as const, matchId: match.id };
-    return             { status: "rejected"  as const, matchId: match.id }; // exact dup
+    if (hasConflict) return { status: "update"    as const, matchId: match.id, reason: "Updates existing product" };
+    if (hasFill)     return { status: "added"  as const, matchId: match.id, reason: "Adds missing details to product" };
+    return             { status: "rejected"  as const, matchId: match.id, reason: "Exact duplicate, no new info" }; // exact dup
   }
 
   // ── CSV parsing ───────────────────────────────────────────────────────────
@@ -189,6 +191,9 @@ export default function ImportCsvModal({
         const guessedSegment = inferSegmentFromFilename(fname);
         const parsed: any[] = [];
         const errs: string[] = [];
+        
+        // Track products seen so far to prevent duplicates within the CSV itself
+        const localProducts = [...existingProducts];
 
         data.forEach((rawRow, i) => {
           const rowNum = i + 2;
@@ -212,12 +217,13 @@ export default function ImportCsvModal({
           const rawPrice = row["price"] || row["srp"] || "";
           const price = rawPrice ? parseFloat(rawPrice.replace(/[^0-9.]/g, "")) : null;
 
-          const { status, matchId } = classifyRow(row, segment, price);
+          const { status, matchId, reason } = classifyRow(row, segment, price, localProducts);
 
-          parsed.push({
+          const parsedRow = {
             _row: rowNum,
             _status: status,
             _matchId: matchId,
+            _reason: reason,
             name,
             brand:    row["brand"]       || "",
             segment,
@@ -233,16 +239,30 @@ export default function ImportCsvModal({
               sku:            row["sku"]             || "",
               expirationDate: row["expirationDate"]  || "",
             }],
-          });
+          };
+          
+          parsed.push(parsedRow);
+
+          // If it's a new product, add it to local tracker to prevent subsequent rows in 
+          // the same CSV from being duplicated.
+          if (status === "new") {
+            localProducts.push({
+              id: `temp_${i}`,
+              name: parsedRow.name,
+              brand: parsedRow.brand,
+              sku: parsedRow.sku,
+              variants: parsedRow.variants
+            } as any);
+          }
         });
 
         // Auto-select first tab that has data
         const hasNew      = parsed.some(r => r._status === "new");
         const hasUpdate   = parsed.some(r => r._status === "update");
-        const hasAppended = parsed.some(r => r._status === "appended");
+        const hasAppended = parsed.some(r => r._status === "added");
         if (hasNew)      setActiveTab("new");
         else if (hasUpdate)   setActiveTab("update");
-        else if (hasAppended) setActiveTab("appended");
+        else if (hasAppended) setActiveTab("added");
         else setActiveTab("rejected");
 
         setErrors(errs);
@@ -278,8 +298,8 @@ export default function ImportCsvModal({
 
     try {
       for (const row of validRows) {
-        const { _row, _status, _matchId, ...payload } = row;
-        if ((_status === "update" || _status === "appended") && _matchId) {
+        const { _row, _status, _matchId, _reason, ...payload } = row;
+        if ((_status === "update" || _status === "added") && _matchId) {
           await updateDoc(doc(db, "products", _matchId), { ...payload, updatedAt: serverTimestamp() });
           created.push({ id: _matchId, ...payload } as Product);
           _status === "update" ? updateCount++ : appendedCount++;
@@ -298,7 +318,7 @@ export default function ImportCsvModal({
       try {
         await addDoc(collection(db, "auditLogs"), {
           action: "Bulk CSV Import",
-          details: `Bulk CSV Import: ${newCount} new, ${updateCount} updated, ${appendedCount} appended, ${rows.length - validRows.length} skipped`,
+          details: `Bulk CSV Import: ${newCount} new, ${updateCount} updated, ${appendedCount} added, ${rows.length - validRows.length} skipped`,
           timestamp: serverTimestamp(),
           user: "Admin",
         });
@@ -332,11 +352,11 @@ export default function ImportCsvModal({
   // ── Tab counts ────────────────────────────────────────────────────────────
   const counts = {
     new:      rows.filter(r => r._status === "new").length,
-    appended: rows.filter(r => r._status === "appended").length,
+    added:    rows.filter(r => r._status === "added").length,
     update:   rows.filter(r => r._status === "update").length,
     rejected: rows.filter(r => r._status === "rejected").length,
   };
-  const actionable = counts.new + counts.appended + counts.update;
+  const actionable = counts.new + counts.added + counts.update;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -450,7 +470,7 @@ export default function ImportCsvModal({
                   <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-slate-800/50 border border-slate-700/60">
                     {([
                       { key: "new",      label: "New",      count: counts.new,      active: "bg-emerald-900/50 text-emerald-400 border-emerald-500/30" },
-                      { key: "appended", label: "Appended", count: counts.appended, active: "bg-blue-900/50 text-blue-400 border-blue-500/30" },
+                      { key: "added",    label: "Added",    count: counts.added,    active: "bg-blue-900/50 text-blue-400 border-blue-500/30" },
                       { key: "update",   label: "Updates",  count: counts.update,   active: "bg-amber-900/50 text-amber-400 border-amber-500/30" },
                       { key: "rejected", label: "Skipped",  count: counts.rejected, active: "bg-slate-700/70 text-slate-300 border-slate-600" },
                     ] as const).map(tab => (
@@ -480,7 +500,7 @@ export default function ImportCsvModal({
                         <table className="w-full text-xs">
                           <thead className="bg-slate-800/80 sticky top-0 z-10">
                             <tr>
-                              {["#","Name","Brand","Segment","Category","Size","Price","SKU"].map(h => (
+                              {["#","Name","Brand","Segment","Category","Size","Price","SKU","Reason"].map(h => (
                                 <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                                   {h}
                                 </th>
@@ -503,7 +523,14 @@ export default function ImportCsvModal({
                                 <td className="px-3 py-2 text-emerald-400 font-bold whitespace-nowrap">
                                   {row.variants?.[0]?.price ? `₱${Number(row.variants[0].price).toFixed(2)}` : "—"}
                                 </td>
-                                <td className="px-3 py-2 text-slate-500 font-mono max-w-[100px] truncate">{row.sku || "—"}</td>
+                                <td className="px-3 py-2 text-slate-500 font-mono max-w-[100px] truncate">
+                                  {row.sku || "—"}
+                                </td>
+                                <td className="px-3 py-2 max-w-[120px] truncate">
+                                  <span className={`text-[10px] ${activeTab === 'rejected' ? 'text-red-400' : 'text-slate-400'}`} title={row._reason}>
+                                    {row._reason || "—"}
+                                  </span>
+                                </td>
                               </tr>
                             ))}
                           </tbody>

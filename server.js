@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Route files call getFirestore() at module load time, so Firebase must
 // be initialized (via database/firebase.js) before any route is imported.
 import './database/firebase.js';
+import { connectMongo } from './database/mongodb.js';
 
 // Import routers
 import authRouter from './routes/auth.js';
@@ -24,6 +25,11 @@ import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
 import adminRouter from './routes/admin.js';
 import contactRouter from './routes/contact.js';
+import freetrialRouter from './routes/freetrial.js';
+import usersRouter from './routes/users.js';
+import auditRouter from './routes/audit.js';
+import productRequestsRouter from './routes/product_requests.js';
+import { startTrialWatcher } from './jobs/trialWatcher.js';
 
 
 
@@ -131,12 +137,16 @@ app.use((req, res, next) => {
 
 // --- API Routing Hookup (Version 1) ---
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/products', productsRouter);
 app.use('/api/v1/api-keys', apiKeysRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/checkout', checkoutRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/contact', contactRouter);
+app.use('/api/v1/free-trial', freetrialRouter);
+app.use('/api/v1/audit', auditRouter);
+app.use('/api/v1/product-requests', productRequestsRouter);
 
 // --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
 app.use('/api/webhooks', webhooksRouter);
@@ -194,13 +204,26 @@ app.use((err, req, res, next) => {
 
 // Start Server (only when running locally, not on Vercel Serverless)
 if (!process.env.VERCEL) {
-    app.listen(PORT, () => {
-        console.log(`========================================================================`);
-        console.log(` SUCCESS: DaaS sales & inventory service running on http://localhost:${PORT}`);
-        console.log(` Compliance Level: Data Privacy Act of 2012 / GDPR Standard`);
-        console.log(` Architecture: Security-Hardened API-based Data-as-a-Service (DaaS)`);
-        console.log(`========================================================================`);
-    });
+    // Connect to MongoDB Atlas first, then start the HTTP server
+    connectMongo()
+        .then(() => {
+            app.listen(PORT, () => {
+                console.log(`========================================================================`);
+                console.log(` SUCCESS: DaaS sales & inventory service running on http://localhost:${PORT}`);
+                console.log(` Compliance Level: Data Privacy Act of 2012 / GDPR Standard`);
+                console.log(` Architecture: Security-Hardened API-based Data-as-a-Service (DaaS)`);
+                console.log(` Database: Firebase Firestore (auth/keys/logs) + MongoDB Atlas (catalog)`);
+                console.log(`========================================================================`);
+
+                // Start background jobs
+                startTrialWatcher();
+            });
+        })
+        .catch(err => {
+            console.error('[STARTUP] Failed to connect to MongoDB Atlas:', err.message);
+            console.error('[STARTUP] Server will NOT start. Fix MONGODB_URI in .env and retry.');
+            process.exit(1);
+        });
 }
 
 export default app;

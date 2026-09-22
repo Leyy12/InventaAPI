@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { 
-  Package, Plus, Edit2, Trash2, Search, Filter 
+  Package, Plus, Edit2, Trash2, Search, Filter, ImagePlus, Link2
 } from "lucide-react";
 import { collection, addDoc, deleteDoc, doc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -40,6 +40,9 @@ export default function AdminProductTable({ initialProducts }: AdminProductTable
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
+  const [urlInput, setUrlInput] = useState("");
+
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,10 +50,12 @@ export default function AdminProductTable({ initialProducts }: AdminProductTable
       setIsUploading(true);
       let finalImageUrl = formData.image_url;
 
-      if (imageFile) {
+      if (imageMode === "upload" && imageFile) {
         const storageRef = ref(storage, `products/${Date.now()}_${imageFile.name}`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         finalImageUrl = await getDownloadURL(snapshot.ref);
+      } else if (imageMode === "url" && urlInput.trim()) {
+        finalImageUrl = urlInput.trim();
       } else if (!finalImageUrl) {
         finalImageUrl = "https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=800";
       }
@@ -82,6 +87,8 @@ export default function AdminProductTable({ initialProducts }: AdminProductTable
       setVariants([]);
       setImageFile(null);
       setImagePreview(null);
+      setImageMode("upload");
+      setUrlInput("");
       
       // Refresh the page to show new product
       router.refresh();
@@ -161,7 +168,7 @@ export default function AdminProductTable({ initialProducts }: AdminProductTable
       {/* Search Bar */}
       <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/30">
         <div className="flex gap-3 flex-1 items-center">
-          <div className="relative w-64">
+          <div className="relative w-96">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
               type="text" 
@@ -426,27 +433,75 @@ export default function AdminProductTable({ initialProducts }: AdminProductTable
                 </div>
                 
                 <div className="space-y-1.5 col-span-2">
-                  <label className="text-xs font-medium text-slate-300">Product Image *</label>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <input 
-                        type="file" 
-                        accept="image/jpeg,image/jpg,image/png,image/webp"
-                        onChange={handleImageChange}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/20 transition-all cursor-pointer"
-                      />
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-slate-300">Product Image *</label>
+                    <div className="flex rounded-lg overflow-hidden border border-slate-700 text-[10px] font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setImageMode("upload")}
+                        className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${imageMode === "upload" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800"}`}
+                      >
+                        <ImagePlus className="w-3 h-3" /> Upload File
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImageMode("url")}
+                        className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${imageMode === "url" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800"}`}
+                      >
+                        <Link2 className="w-3 h-3" /> Paste URL
+                      </button>
                     </div>
-                    {(imagePreview || formData.image_url) && (
-                      <div className="w-16 h-16 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0">
-                        <img 
-                          src={imagePreview || formData.image_url} 
-                          alt="Preview" 
-                          className="w-full h-full object-cover" 
-                        />
-                      </div>
-                    )}
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">Upload a real photo (JPG, PNG, or WebP • Max 2MB) to accurately represent this product.</p>
+                  
+                  {imageMode === "upload" ? (
+                    <>
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <input 
+                            type="file" 
+                            accept="image/jpeg,image/jpg,image/png,image/webp"
+                            onChange={handleImageChange}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/20 transition-all cursor-pointer"
+                          />
+                        </div>
+                        {(imagePreview || formData.image_url) && (
+                          <div className="w-16 h-16 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0">
+                            <img 
+                              src={imagePreview || formData.image_url} 
+                              alt="Preview" 
+                              className="w-full h-full object-cover" 
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">Upload a real photo (JPG, PNG, or WebP • Max 2MB) to accurately represent this product.</p>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <input
+                          type="url"
+                          placeholder="https://example.com/image.jpg"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-2">Paste a direct link to an image. Ensure the URL ends in .jpg, .png, or .webp.</p>
+                      </div>
+                      {urlInput && (
+                        <div className="w-16 h-16 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0">
+                          <img 
+                            src={urlInput} 
+                            alt="URL Preview" 
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=800";
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               
