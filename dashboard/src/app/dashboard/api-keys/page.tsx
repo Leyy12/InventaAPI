@@ -8,6 +8,7 @@ import type { User } from 'firebase/auth';
 import CustomerUsageSummary from '@/components/reports/CustomerUsageSummary';
 import RequestHistory from '@/components/api/RequestHistory';
 import { apiKeyRequest } from "@/lib/api-keys";
+import { GENERATION_POLICY, REVOCATION_WARNING, generationErrorMessage } from '@/lib/api-key-generation';
 
 interface ApiKey {
   id: string;
@@ -89,7 +90,7 @@ function AccountKeys({ user }: { user: User }) {
 
       if (!response.ok) {
         // Show more specific error messages from backend
-        const errorMessage = data.message || data.error || "Unable to create your API key. Please try again later.";
+        const errorMessage = generationErrorMessage(data);
         throw new Error(errorMessage);
       }
       
@@ -118,6 +119,7 @@ function AccountKeys({ user }: { user: User }) {
       `Are you sure you want to revoke "${keyName}"?\n\n` +
       `⚠️ WARNING: This action cannot be undone!\n` +
       `Any applications using this key will immediately stop working.\n\n` +
+      `${REVOCATION_WARNING}\n\n` +
       `Select OK to confirm revocation.`
     );
 
@@ -215,6 +217,7 @@ DAAS_API_KEY=${keyStr}
             API Keys
           </h1>
           <p className="text-slate-400">Manage your authentication credentials for API access</p>
+          <p className="text-sm text-slate-400 mt-2">{GENERATION_POLICY}</p>
         </div>
         <button onClick={() => setShowGenerateModal(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Generate API key</button>
       </div>
@@ -479,7 +482,7 @@ DAAS_API_KEY=${keyStr}
               <>
                 <div className="p-6 border-b border-slate-700">
                   <h3 className="text-xl font-bold text-white mb-1">Generate New API Key</h3>
-                  <p className="text-sm text-slate-400">Create a new key for your application</p>
+                  <p className="text-sm text-slate-400">{GENERATION_POLICY} This is separate from your daily API request quota.</p>
                 </div>
 
                 <div className="p-6">

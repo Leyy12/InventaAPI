@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
   usageForToday, validDocumentId,
@@ -121,18 +122,33 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const scope = scopeFromBody(body);
       await validateScope(db, scope, context);
       const issued = issueCredential();
-      const now = clock();
-      const key = {
-        ...issued.stored, ...scope, name, userId: actor.uid, userEmail: actor.email || '',
-        status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
-        plan: context.entitlement.plan, requestLimit: context.entitlement.limit,
-        productAvailability: Object.fromEntries(authorizedProductIds(scope).map(id => [id, { availableSince: now }])),
-      };
-      await db.runTransaction(async tx => {
+      const key = await db.runTransaction(async tx => {
         await currentAccount(tx, db, actor.uid, context);
+        // Recompute on every transaction retry, including a retry across midnight.
+        // Caller dates/timezones never enter this account-level generation policy.
+        const now = clock();
+        const window = now.toISOString().slice(0, 10);
+        const nextDay = new Date(now);
+        nextDay.setUTCHours(24, 0, 0, 0);
+        const nextEligibleAt = nextDay.toISOString();
+        const ownerHash = createHash('sha256').update(actor.uid, 'utf8').digest('hex');
+        const marker = db.collection('api_key_generation_days').doc(`${ownerHash}_${window}`);
+        if ((await tx.get(marker)).exists) {
+          throw new ApiSecurityError(409, 'API_KEY_DAILY_GENERATION_LIMIT',
+            "You've already generated an API key today. You can generate another after the next UTC reset.",
+            { nextEligibleAt });
+        }
         const ref = db.collection('api_keys').doc(issued.id);
         if ((await tx.get(ref)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key creation.');
-        tx.set(ref, key);
+        const record = {
+          ...issued.stored, ...scope, name, userId: actor.uid, userEmail: actor.email || '',
+          status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
+          plan: context.entitlement.plan, requestLimit: context.entitlement.limit,
+          productAvailability: Object.fromEntries(authorizedProductIds(scope).map(id => [id, { availableSince: now }])),
+        };
+        tx.set(ref, record);
+        tx.set(marker, { userId: actor.uid, window, keyId: issued.id, createdAt: now, nextEligibleAt });
+        return record;
       });
       await audit(db, 'API Key Generated', actor, issued.id);
       return res.json({ success: true, ...publicKeyMetadata(issued.id, key, context.entitlement, context.usage), key: issued.credential });

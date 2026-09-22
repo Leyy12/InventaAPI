@@ -108,6 +108,18 @@ test('control: customer identity is recognized and can read its own safe profile
   assert.equal((await call('GET', 'users/customer-b', tokens.customer)).status, 403);
 });
 
+for (const role of ['customer', 'stranger', 'anonymous', 'admin']) {
+  test(`R5C ${role}: daily-generation markers are server-only, including deletion`, async () => {
+    const path = 'api_key_generation_days/customer-a_2026-09-22';
+    assert.equal((await call('PATCH', path, 'owner', { userId: 'customer-a', window: '2026-09-22' })).status, 200);
+    assert.equal((await call('GET', path, tokens[role])).status, 403);
+    assert.equal((await call('GET', 'api_key_generation_days', tokens[role])).status, 403);
+    assert.equal((await call('PATCH', path, tokens[role], { window: '2099-01-01' })).status, 403);
+    assert.equal((await call('PATCH', 'api_key_generation_days/forged', tokens[role], { userId: 'customer-a' })).status, 403);
+    assert.equal((await call('DELETE', path, tokens[role])).status, 403);
+  });
+}
+
 for (const role of ['customer', 'stranger', 'anonymous']) {
   test(`${role}: key reads/listing, creation, and deletion are denied`, async () => {
     for (const path of ['api_keys/key-a', 'api_keys/key-b', 'api_keys']) {

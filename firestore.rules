@@ -169,6 +169,10 @@ service cloud.firestore {
     }
 
     // One UTC daily counter per account, written only by server transactions.
+    // R5C: server transaction alone creates key-generation evidence. Revocation
+    // must never reset it; no browser (including Admin) may read/write markers.
+    match /api_key_generation_days/{id} { allow read, write: if false; }
+
     match /account_api_usage/{userId} {
       allow read: if isAdmin();
       allow create, update, delete: if false;

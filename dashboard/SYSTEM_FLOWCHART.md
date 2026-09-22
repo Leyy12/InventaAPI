@@ -1,5 +1,10 @@
 # 🔄 SYSTEM FLOWCHART - B2B Product Catalog API Platform
 
+> Historical design, superseded by [the authoritative R5C system flow](../docs/system-flow.md).
+> The old diagrams below are retained as historical context, not current routes,
+> payment authority, key-generation policy, or deployment instructions. Use the
+> linked Markdown/Mermaid source for the final visual/paper flowchart.
+
 ## 📊 COMPLETE SYSTEM FLOW
 
 ```

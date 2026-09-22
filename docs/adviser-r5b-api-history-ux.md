@@ -37,15 +37,16 @@ The Independent repository was not accessed or modified.
 - No active instruction to regenerate keys after product edits was found. Explicit same-key/subsequent-request wording was added, with no real-time delivery promise.
 - Existing legacy `.backup` files and historical phase reports are not active API UX and were not changed. Internal legacy role aliases Consumer/Business remain supported, not redefined as downstream applications.
 
-## Frozen policy and unresolved product decisions
+## Final product decisions (resolved by R5C)
 
-**UNRESOLVED CLIENT POLICY DECISION:** “1 per day” means either A. one API request
-per day, or B. one API-key generation per day. R5B does NOT choose or implement
-either. The runtime remains Free 50/day (including existing lower server caps),
+**RESOLVED:** “1 per day” means one successful API-key generation per account per
+UTC calendar day. R5B did not implement that rule; R5C implements it transactionally.
+See [R5C decisions and cutover](adviser-r5c-final-requirements.md) and the
+[authoritative system flow](system-flow.md). API request quotas remain Free 50/day (including existing lower server caps),
 Pro 5,000/day, existing Enterprise/unlimited behavior, shared ACCOUNT quota across
 keys, UTC windows and the existing cutover hold. Creation/revocation does not reset
-usage. No generation throttle, credential format, subscription/payment policy or
-catalog/import behavior changed.
+usage. R5C changes generation frequency only; credential format, subscription/payment
+policy and catalog/import behavior remain unchanged.
 
 “Existing lower server caps” specifically means the existing Free/Starter account
 field `users/{uid}.apiRequestLimit`: the unchanged entitlement evaluator requires
@@ -55,15 +56,15 @@ tier or an inference from traffic. Default provisioning remains 50. Expired Pro
 normalizes to Free 50. Separately, the unchanged Express limiter permits 60
 requests per minute per IP across the `/api/` and `/daas/` mounts, including history.
 That abuse limiter does not change the daily entitlement or provide per-key quota.
-No new management quota or limiter was added. Daily exhaustion/IP limiting use
+R5B added no management limiter; R5C adds a separate generation allowance. Request quota exhaustion/IP limiting use
 429; clean-window activation hold uses 503 `QUOTA_CUTOVER_PENDING`.
 
-**Consumer Name:** no real downstream Consumer Name is captured. A Customer owner,
+**RESOLVED — Consumer Name:** use **Key Name**; no downstream Consumer registry is
+required in current scope. No real downstream Consumer Name is captured. A Customer owner,
 business name, key holder or key alias cannot truthfully fill that field. History
 uses **Key name (at request)**, **Date**, **Endpoint**, **HTTP status**. Names are
 untrusted display labels recorded at request time, not current key names, proof
-of key validity or Consumer identities. True downstream identity remains a
-data-model/product decision. No registry was created.
+of key validity or Consumer identities. No registry was created or is required.
 
 ## History authority, query and privacy
 
@@ -221,7 +222,7 @@ whitespace checks pass. No dependency installation, lockfile change or staging.
 The R5A remaining-list API policy/history implementation is addressed as far as
 current requirements permit. The pre-existing Admin traffic listener/rules gap
 means this review cannot certify all original-list feature work as complete.
-The two product decisions above remain unresolved;
+The two product decisions above were resolved by the approved R5C requirements;
 Free Trial is separately deferred, not an R5B policy decision. This is local
 implementation evidence, not production certification or a new audit of every
 historical client-list item.
@@ -263,7 +264,7 @@ Remaining Consumer matches are compatibility route/component names, internal
 Customer role aliases/comments, historical reports and explicit statements that
 key names are NOT downstream identities. Misleading active UI labels: zero.
 Completeness matches are qualified limitations or unrelated canonical-product
-refresh semantics. Neither unresolved one-per-day rule is presented as enforcement.
+refresh semantics. R5B did not enforce a one-per-day rule; R5C now enforces only daily key generation.
 
 **R5B HISTORY FIRESTORE INDEX: PRODUCTION DEPLOYMENT GATE.** This review does not
 authorize deployment or establish production readiness.
@@ -279,5 +280,5 @@ Final review disposition: **R5B SAFE FOR LOCAL COMMIT**. Remaining R5B local-com
 blockers: none. All 26 files remain unstaged and uncommitted; tracked diff remains
 +197 / -1,088. Tracked and new-file whitespace checks pass. The pre-existing Admin
 traffic permission gap is documented for an authorized follow-up, not silently
-fixed or misrepresented as working. Release gates and the two unresolved original
-client decisions remain outstanding.
+fixed or misrepresented as working. Release gates remain outstanding. The two
+original client decisions are now resolved above by R5C.

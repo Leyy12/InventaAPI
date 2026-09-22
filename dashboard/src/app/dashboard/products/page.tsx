@@ -1,4 +1,5 @@
 "use client";
+import { GENERATION_POLICY, generationErrorMessage } from '@/lib/api-key-generation';
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
@@ -269,7 +270,7 @@ export default function ProductCatalogPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || data.error || "Unable to create your API key. Please try again later.");
+        throw new Error(generationErrorMessage(data));
       }
 
       setGeneratedKey(data.key);
@@ -657,6 +658,7 @@ DAAS_API_KEY=${generatedKey}
                   <Key className="w-7 h-7 text-indigo-400" />
                 </div>
                 <h3 className="text-2xl font-bold text-white text-center mb-1">Generate API Key</h3>
+                <p className="text-sm text-slate-400 text-center mb-3">{GENERATION_POLICY} API request quotas are separate.</p>
                 <p className="text-sm text-slate-400 text-center mb-6">
                   This key will be linked to <span className="text-indigo-400 font-semibold">{selectedProducts.size} selected product{selectedProducts.size !== 1 ? 's' : ''}</span>.
                 </p>

@@ -200,7 +200,8 @@ test('all keys consume one allowance; creating, revoking, and replacing keys nev
   assert.equal((await invoke(handlers.revoke)).statusCode, 200);
   assert.equal((await consume(db, created.body.id, created.body.key)).usage.remaining, 0);
   const replacement = await invoke(handlers.create, { body: { keyName: 'Replacement key' } });
-  await assert.rejects(consume(db, replacement.body.id, replacement.body.key), error => error.status === 429);
+  assert.equal(replacement.body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
+  await assert.rejects(consume(db, created.body.id, created.body.key), error => error.status === 429);
   await db.collection('api_keys').doc('key-b').delete();
   assert.equal(db.read('account_api_usage/owner').used, 3);
 });
