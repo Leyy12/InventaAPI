@@ -32,9 +32,8 @@ export function navigationDecision({ app = 'customer', path, initializing, role,
   if (role === 'admin') return 'admin-app';
   if (!customerPublicPath(path)) return role === 'customer' ? null : '/login';
   if (path !== '/' && path !== '/login') return null;
-  if (entryFlow) return null; // Explicit existing signup/plan/login handoff owns completion.
   if (role === 'customer') return '/dashboard';
-  return path === '/' && seen ? '/login' : null;
+  return null;
 }
 // An operator-configured app origin, never a URL supplied by a visitor/query string.
 export function adminLoginDestination(config: string | undefined, hostname: string): string | null {

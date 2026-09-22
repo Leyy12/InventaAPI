@@ -74,6 +74,15 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   // correct even when they are set after the modal first mounts.
   }, [isOpen, pendingPlan, initialError]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !standalone) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, standalone, onClose]);
+
   if (!isOpen) return null;
 
   // Plan-aware messaging:
@@ -371,7 +380,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       />
 
       {/* Modal Content - Glassmorphism */}
-      <div className="w-full max-w-md glass-card rounded-2xl p-8 relative z-10 shadow-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md animate-in fade-in zoom-in duration-200">
+      <div role="dialog" aria-modal="true" aria-labelledby="login-modal-title" className="w-full max-w-md glass-card rounded-2xl p-8 relative z-10 shadow-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md animate-in fade-in zoom-in duration-200">
 
         {/* Close button - lets the consumer back out of the login modal */}
         <div className="absolute top-3 right-3 flex items-center gap-2">
@@ -396,7 +405,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
               priority
             />
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight mt-2">{modalTitle}</h2>
+          <h2 id="login-modal-title" className="text-2xl font-bold text-white tracking-tight mt-2">{modalTitle}</h2>
           <p className="text-slate-400 text-sm mt-2">{modalSubtitle}</p>
         </div>
 
@@ -422,6 +431,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
               <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 id="email"
+                autoFocus
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

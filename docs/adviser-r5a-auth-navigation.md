@@ -1,5 +1,22 @@
 # R5A — Landing / Login / Logout / Auth navigation
 
+## Post-release landing/login modal contract
+
+The post-release Customer hotfix supersedes the earlier first-visit routing
+description below. An unauthenticated visit to `/` always renders the marketing
+Landing page with the Login modal closed, regardless of browser history. The
+Landing Login action opens the existing modal in place; it does not navigate to a
+dedicated login page. The modal keeps the existing credential validation, forgot
+password, segment selection, and account-creation paths, and can be closed back
+to Landing (including with Escape). `/login` remains a compatibility entry that
+renders Landing with the modal open. A successful Customer logout clears local
+auth state only after Firebase sign-out succeeds, then navigates to `/?login=true`
+so the modal is initially open. Closing it removes the one-time query intent and
+stays on Landing; refreshing `/` after dismissal does not reopen it. Authenticated
+Customers still resolve `/` to `/dashboard`, and protected routes remain guarded.
+The legacy `inventa.landing-completed.v1` value is no longer read or written by
+Customer navigation and has no security or routing authority.
+
 Review base: `581ad97f047ebd9f766306078c079ca9952217ea` (R4).
 Branch: `adviser/r5a-auth-navigation`. Production reference at safety gate:
 `ac3908401fac5732192ac364600c7f397a3a6af6`.
@@ -33,15 +50,14 @@ START
      YES -> Customer: /dashboard
             Admin: separate Admin application (its protected home is /)
      NO  -> Root visit?
-            first browser visit -> Landing
-            returning browser   -> /login
+            unauthenticated root -> Landing (modal closed unless explicit intent)
             protected route     -> /login
-            logout/invalid auth -> /login
+     logout -> /?login=true (Landing with modal open)
   -> Login / Signup
   -> Login + server-verified account/role
   -> Role-appropriate dashboard
 
-Customer dashboard -> Logout -> SDK success -> Customer /login
+Customer dashboard -> Logout -> SDK success -> Customer /?login=true
 Admin dashboard    -> Logout -> SDK success -> Admin /login
 Either logout failure -> preserve still-valid verified state + visible Retry logout
 Signup             -> create existing profile -> sign out -> /login?registered=true
@@ -52,11 +68,12 @@ PDF, or image artifact was changed.
 
 | Entry | Result after initialization |
 | --- | --- |
-| Fresh unauthenticated `/` | Landing |
-| Returning unauthenticated `/` | `/login` |
+| Fresh unauthenticated `/` | Landing, modal closed |
+| Returning unauthenticated `/` | Landing, modal closed |
 | Authenticated Customer `/` or ordinary `/login` | `/dashboard` |
 | Unauthenticated protected Customer route (including dashboard descendants) | `/login`; protected children never mount |
-| Customer logout / detected invalid session | Explicit `/login`, independent of Landing flag |
+| Customer logout | `/` with one-time modal-open intent; close returns to Landing |
+| Detected invalid session | Explicit `/login` compatibility entry |
 | Admin `/login` with verified Admin session | Admin `/` |
 | Non-Admin on Admin protected route | Admin `/login`; no protected children |
 | Admin in Customer application | Separate Admin Login; never Customer marketing/dashboard |
@@ -70,21 +87,16 @@ or subscription policy. Standalone Login has no dismiss-to-dashboard escape whil
 segment onboarding is pending. Subscription verification does not determine
 ordinary authentication routing, so background polls do not bounce routes.
 
-## First-visit persistence
+## First-visit state
 
-- `localStorage` key `inventa.landing-completed.v1`, value `1` only.
-- Written on deliberate Landing Login/Sign Up/pricing CTA; also on explicit Login
-  submission, valid Signup submission, or successful Customer logout (including direct-entry users).
-- Logout writes this optional flag only after SDK success. Failed signout does not write it.
-- Not written on render, preload, mount, auth restoration, or automatic auth errors.
-- No credentials, tokens, identity, role, or entitlement is in this flag. It is
-  **not a security authority** and is not consulted by either protected-route guard.
-- Root listens to browser storage events, including clearing in another tab.
-  Firebase remains responsible for its cross-tab auth persistence/events.
-- New browser/profile/device, private browsing, or cleared storage can show Landing
-  again. This is not once per account forever; there is no backend visit tracking.
-- Denied/unavailable storage is caught: explicit Login/logout still work, but
-  first-visit memory is not durable and Landing can reappear on a later root visit.
+The former `inventa.landing-completed.v1` localStorage marker is legacy and is
+not read or written by the current Customer Landing/login flow. Root routing is
+therefore deterministic across fresh browsers, returning browsers, cleared
+storage, and new devices: unauthenticated `/` is Landing with the modal closed.
+The only modal-open state is an explicit route intent (`/login` or the one-time
+post-logout `/?login=true` query), which is removed when the modal is dismissed.
+No browser storage value is an authentication, role, entitlement, or product
+access authority.
 
 ## Security and lifecycle
 
@@ -95,8 +107,9 @@ ordinary authentication routing, so background polls do not bounce routes.
   are generation-checked; logout, account switches, cross-tab null events, timeout,
   and unmount discard late profile results. Timeout closes protected UI but retains
   SDK identity in a retryable unverified state, without signing out.
-- Explicit signout clears derived identity and routes to the app's own `/login`
-  only after SDK success. Failure preserves still-valid verified state and shows
+- Explicit Customer signout clears derived identity and routes to `/?login=true`
+  (Landing with modal open) only after SDK success; Admin signout still routes to
+  its own `/login`. Failure preserves still-valid verified state and shows
   a generic retryable error. The provider returns `{ ok: false }`, never false success.
 - SDK null/token events are observed. Customer's existing single entitlement poller
   invalidates detected 401/403 or invalid Firebase-session errors and routes to Login.
@@ -124,9 +137,9 @@ ordinary authentication routing, so background polls do not bounce routes.
 
 ## Redirect audit
 
-No active Customer logout-to-root remains. Sidebar and Privacy delegate to the
-provider's explicit Login exit, as does the Admin-handoff fallback's new Sign out
-button; Signup now targets `/login?registered=true` with
+Customer logout intentionally returns to the Landing root with a one-time
+modal-open query; Sidebar and Privacy still delegate to the provider's explicit
+logout action, as does the Admin-handoff fallback's new Sign out button. Signup now targets `/login?registered=true` with
 the existing optional plan intent. Admin's remaining `router.push("/")` is its
 successful authorized login, not logout. Admin ErrorState's home link is likewise
 its own dashboard. Marketing anchor links and existing Settings/checkout root
@@ -218,9 +231,9 @@ override either security blocker.
 
 Normal signup explicitly provisions its own Developer/Free profile through the
 existing server-enforced Firestore create rules, then signs out and returns to
-Login. It does not need missing-profile auto-recreation. The first-visit write
-occurs before the signup attempt, so even a failed attempt can make a later root
-visit go to Login; this is intentional browser UX, not account authority. Selected
+Login. It does not need missing-profile auto-recreation. (The first-visit write
+described in this historical pre-correction note has been removed by the
+post-release hotfix.) Selected
 plans remain intent only. Missing existing profiles and deletion tombstones are
 not recreated. Late profile results are generation-discarded, including after
 logout, account switch, timeout, cross-tab null events, and unmount.

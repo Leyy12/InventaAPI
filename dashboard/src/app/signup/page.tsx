@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { completeLanding, browserStorage } from '../../../../services/auth-navigation';
 
 const BUSINESS_SEGMENTS = [
   "Grocery",
@@ -60,7 +59,6 @@ function SignupPageInner() {
     }
 
     try {
-      completeLanding(browserStorage());
       // Create user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;

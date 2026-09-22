@@ -7,7 +7,7 @@ import { auth, db } from "./config";
 import { useRouter } from "next/navigation";
 import { readSubscription, type SubscriptionState } from '@/lib/subscription';
 import { createEntitlementPoller } from '@/lib/entitlement-poller';
-import { createAuthSession, createLogoutAction, completeLanding, browserStorage, profileRole, verifyWithin,
+import { createAuthSession, createLogoutAction, profileRole, verifyWithin,
   type AuthStatus, type LogoutResult } from '../../../../services/auth-navigation';
 
 interface AppUser {
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       signOut: () => firebaseSignOut(auth), active: () => sessionGate.current === gate,
       changed: (busy, error) => { setLogoutBusy(busy); setLogoutError(error); },
       completed: () => {
-        clearSession(); completeLanding(browserStorage()); router.replace('/login');
+        clearSession(); router.replace('/?login=true&from=logout');
       } });
     const unsubscribe = onIdTokenChanged(auth, currentUser => { void gate.accept(currentUser); },
       error => { gate.failure(auth.currentUser, error); });

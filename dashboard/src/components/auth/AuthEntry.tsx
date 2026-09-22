@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-react";
 import LoginModal from "@/components/auth/LoginModal";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
-import { completeLanding, browserStorage, navigationDecision, profileRole } from '../../../../services/auth-navigation';
+import { navigationDecision, profileRole } from '../../../../services/auth-navigation';
 
 // Paid plans that block the checkout when already active (single source of truth
 // shared by openSubscription and the routing effect).
@@ -17,13 +17,15 @@ const ACTIVE_PAID_PLANS = ["Pro", "Enterprise", "Professional", "Unlimited"];
 export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }) {
   const { user, appUser, loading, entitlement } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [loginStarted, setLoginStarted] = useState(false);
   const planIntent = searchParams.get('pendingPlan');
   const initialPlan: PlanId | null = planIntent === 'free' || planIntent === 'pro' || planIntent === 'enterprise'
     ? planIntent : searchParams.get('choosePlan') === 'true' || searchParams.get('payment') === 'cancelled' ? 'pro' : null;
-  const [showLoginModal, setShowLoginModal] = useState(loginOnly && !initialPlan);
+  const explicitLogin = searchParams.get('login') === 'true' || searchParams.get('logout') === 'true';
+  const [showLoginModal, setShowLoginModal] = useState(loginOnly || explicitLogin);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("pro");
   const [pendingPlan, setPendingPlan] = useState<PlanId | null>(initialPlan);
@@ -41,7 +43,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   }, [destination, router]);
 
   const proceed = (target: string) => {
-    completeLanding(browserStorage());
     router.push(target);
   };
 
@@ -49,7 +50,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   // Each handler runs ONCE, then the consumed params are stripped from the URL
   // so a reload/back-navigation does not re-open the modals or toasts.
   useEffect(() => {
-    if (!loginOnly) return; // Root entry owns query normalization before showing Landing.
     const params = new URLSearchParams(searchParams.toString());
     let handled = false;
 
@@ -70,7 +70,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
     }
 
     // Auto-open login modal when a visitor clicks "Login" on the signup page.
-    if (searchParams.get("login") === "true") {
+    if (searchParams.get("login") === "true" || searchParams.get("logout") === "true") {
       setShowLoginModal(true);
       handled = true;
     }
@@ -105,11 +105,12 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
     }
 
     if (handled) {
-      ["error", "login", "registered", "choosePlan", "payment", "pendingPlan"].forEach((key) =>
+      ["error", "login", "logout", "from", "registered", "choosePlan", "payment", "pendingPlan"].forEach((key) =>
         params.delete(key)
       );
       const qs = params.toString();
-      router.replace(qs ? `/login?${qs}` : "/login", { scroll: false });
+      const base = loginOnly ? '/login' : '/';
+      router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
     }
   }, [searchParams, router, loginOnly]);
 
@@ -169,7 +170,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   }, [loading, user, appUser, entitlement, pendingPlan, showLoginModal]);
 
   const openSubscription = (plan: PlanId) => {
-    if (!loginOnly) { proceed(`/login?pendingPlan=${plan}`); return; }
+    if (!loginOnly) { setPendingPlan(plan); setShowLoginModal(true); return; }
     setSelectedPlan(plan);
 
     // Firebase auth still resolving — record the intent only; the effect above
@@ -237,7 +238,9 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
     });
   })();
 
-  if (loginOnly && !loginStarted && (loading || destination)) return <p role="status">Checking session…</p>;
+  // Do not flash marketing content while Firebase is restoring an authenticated
+  // session; the single navigation decision above resolves first.
+  if (loading || destination) return <p role="status">Checking session…</p>;
 
   return (
     <div className="min-h-screen bg-[#020617] text-white selection:bg-indigo-500/30 overflow-x-hidden">
@@ -297,7 +300,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
 
             </div>
             <div className="flex items-center gap-4 text-sm">
-              <button onClick={() => proceed('/login')} className="hover:text-white transition-colors">Login</button>
+              <button onClick={() => setShowLoginModal(true)} className="hover:text-white transition-colors">Login</button>
               <button onClick={() => proceed('/signup')} className="hover:text-white transition-colors">Sign Up</button>
             </div>
           </div>
@@ -535,9 +538,12 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
       {/* Login is required only when a visitor chooses a pricing plan. */}
       <LoginModal
         isOpen={showLoginModal}
-        standalone={loginOnly}
-        onStart={() => { completeLanding(browserStorage()); setLoginStarted(true); }}
-        onClose={() => { setShowLoginModal(false); setPendingPlan(null); setModalError(""); setLoginStarted(false); }}
+        standalone={loginOnly && !!pendingPlan}
+        onStart={() => { setLoginStarted(true); }}
+        onClose={() => {
+          setShowLoginModal(false); setPendingPlan(null); setModalError(""); setLoginStarted(false);
+          if (pathname === '/login' || searchParams.get('login') === 'true' || searchParams.get('logout') === 'true') router.replace('/', { scroll: false });
+        }}
         pendingPlan={pendingPlan}
         onOpenSubscription={(plan) => { setSelectedPlan(plan); setShowSubscriptionModal(true); }}
         initialError={modalError}

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LANDING_SEEN_KEY, landingSeen, completeLanding, browserStorage, profileRole, navigationDecision,
   customerPublicPath, adminLoginDestination, loginEntryQuery, invalidSessionError } from '../../../services/auth-navigation.ts';
-const decide = values => navigationDecision({ path: '/', initializing: false, role: null, ...values });
+const decide = values => navigationDecision({ initializing: false, role: null, path: '/', ...values });
 const memory = () => {
   const values = new Map();
   return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
@@ -12,10 +12,10 @@ test('fresh browser root renders Landing without persisting on read', () => {
   assert.equal(decide({ seen: landingSeen(storage) }), null);
   assert.equal(storage.values.size, 0);
 });
-test('deliberate continuation writes one non-sensitive UX value then root goes to Login', () => {
+test('legacy landing marker is inert and root remains Landing for returning browsers', () => {
   const storage = memory(); completeLanding(storage);
   assert.deepEqual([...storage.values], [[LANDING_SEEN_KEY, '1']]);
-  assert.equal(decide({ seen: landingSeen(storage) }), '/login');
+  assert.equal(decide({ seen: landingSeen(storage) }), null);
 });
 test('cleared storage permits Landing again', () => {
   const storage = memory(); completeLanding(storage); storage.values.clear();
@@ -58,13 +58,11 @@ test('Firebase session disappears on protected page: Login, then stays there', (
   assert.equal(decide({ path: '/dashboard', role: null }), '/login');
   assert.equal(decide({ path: '/login', role: null, seen: true }), null);
 });
-test('root/login and protected/login transitions have stable terminal destinations', () => {
-  for (const path of ['/', '/dashboard']) {
-    const destination = decide({ path, seen: true });
-    assert.equal(destination, '/login'); assert.equal(decide({ path: destination, seen: true }), null);
-    assert.equal(decide({ path: destination, role: 'customer' }), '/dashboard');
-    assert.equal(decide({ path: '/dashboard', role: 'customer' }), null);
-  }
+test('root remains a stable public Landing while protected routes still go Login', () => {
+  assert.equal(decide({ path: '/', seen: true }), null);
+  assert.equal(decide({ path: '/login', seen: true }), null);
+  assert.equal(decide({ path: '/dashboard', seen: true }), '/login');
+  assert.equal(decide({ path: '/dashboard', role: 'customer' }), null);
 });
 test('subscription polling is not an input to auth navigation', () => {
   for (const entitlement of [null, { plan: 'Free' }, { plan: 'Pro' }]) {
@@ -72,7 +70,7 @@ test('subscription polling is not an input to auth navigation', () => {
   }
 });
 test('explicit entry flow may finish login/onboarding/plan handoff but never bypasses protected guard', () => {
-  assert.equal(decide({ path: '/login', role: 'customer', entryFlow: true }), null);
+  assert.equal(decide({ path: '/login', role: 'customer', entryFlow: true }), '/dashboard');
   assert.equal(decide({ path: '/dashboard', entryFlow: true, seen: true }), '/login');
 });
 for (const path of ['/', '/products', '/settings']) test(`Customer cannot enter Admin ${path}`, () => {

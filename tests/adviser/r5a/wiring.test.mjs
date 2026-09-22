@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createAuthSession, createLogoutAction, completeLanding, landingSeen, navigationDecision, profileRole, authScreen } from '../../../services/auth-navigation.ts';
 const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
-test('root uses browser-local decision and cross-tab storage subscription', () => {
+test('root always renders Landing and does not consult browser visit state', () => {
   const source = read('dashboard/src/app/page.tsx');
-  for (const token of ['navigationDecision', 'landingSeen', 'useSyncExternalStore', "addEventListener('storage'", 'if (loading || destination)']) assert.ok(source.includes(token));
-  assert.doesNotMatch(source, /completeLanding|setItem|view.*landing/);
+  assert.match(source, /<AuthEntry \/>/);
+  assert.doesNotMatch(source, /landingSeen|useSyncExternalStore|completeLanding|setItem/);
 });
-test('CTA writes only at deliberate action and both Login/Signup links exist', () => {
+test('Landing Login opens a dismissible modal while Signup remains a route', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
-  assert.match(source, /const proceed = [\s\S]*completeLanding\(browserStorage\(\)\);\s*router.push\(target\)/);
-  assert.ok(source.includes("proceed('/login')")); assert.ok(source.includes("proceed('/signup')"));
-  assert.ok(source.includes('proceed(`/login?pendingPlan=${plan}`)'));
-  assert.match(source, /if \(!loginOnly\) return; \/\/ Root entry owns query normalization/);
+  assert.match(source, /onClick=\{\(\) => setShowLoginModal\(true\)\}/);
+  assert.ok(source.includes("proceed('/signup')"));
+  assert.ok(source.includes('if (!loginOnly) { setPendingPlan(plan); setShowLoginModal(true); return; }'));
+  assert.doesNotMatch(source, /completeLanding|browserStorage/);
 });
 test('explicit Login route exists; signup no longer redirects to Landing', () => {
   assert.match(read('dashboard/src/app/login/page.tsx'), /<AuthEntry loginOnly/);
@@ -30,7 +30,7 @@ test('Customer session never trusts browser profiles or auto-recreates missing a
   const source = read('dashboard/src/lib/firebase/auth-context.tsx');
   for (const token of ['createAuthSession', 'getDocFromServer', 'onIdTokenChanged', 'sessionGate.current?.failure', 'sessionGate.current?.invalidate']) assert.ok(source.includes(token));
   assert.doesNotMatch(source, /getItem\(|setItem\(|setDoc\(|readCache|hasActiveSubscription/);
-  assert.match(source, /completed: \(\) => \{\s*clearSession\(\); completeLanding\(browserStorage\(\)\); router.replace\('\/login'\)/);
+  assert.ok(source.includes("clearSession(); router.replace('/?login=true&from=logout')"));
   assert.doesNotMatch(source, /finally \{ router.replace/);
 });
 test('subscription verification retains one poller and only exposes HTTP status for auth rejection', () => {
@@ -78,7 +78,7 @@ test('Admin handoff is configured origin only; no token bridge or visitor return
   assert.match(modal, /auth.currentUser !== user/);
 });
 test('standalone Login cannot dismiss pending segment onboarding into an authenticated redirect', () => {
-  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /standalone=\{loginOnly\}/);
+  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /standalone=\{loginOnly && !!pendingPlan\}/);
   const modal = read('dashboard/src/components/auth/LoginModal.tsx');
   assert.match(modal, /onClick=\{standalone \? undefined : onClose\}/);
   assert.match(modal, /\{!standalone && <button/);
@@ -125,7 +125,7 @@ for (const app of ['customer', 'admin']) {
   test(`review: ${app} successful signout clears SDK/UI and reaches own Login`, async () => {
     const h = providerLogout(app); await h.run();
     assert.equal(h.auth.currentUser, null); assert.equal(h.state().localUser, null);
-    assert.deepEqual(h.routes, ['/login']); assert.equal(h.state().calls, 1);
+    assert.deepEqual(h.routes, app === 'customer' ? ['/?login=true&from=logout'] : ['/login']); assert.equal(h.state().calls, 1);
   });
   test(`review: ${app} failed signout must not masquerade as a completed logout`, async () => {
     const h = providerLogout(app, true); await h.run().catch(() => {});
@@ -136,7 +136,7 @@ for (const app of ['customer', 'admin']) {
     assert.deepEqual(h.routes, []); assert.match(h.state().error, /session may still be active/);
     assert.equal(h.state().busy, false);
     h.recover(); assert.deepEqual(await h.run(), { ok: true });
-    assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, ['/login']);
+    assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, app === 'customer' ? ['/?login=true&from=logout'] : ['/login']);
   });
 }
 function verificationHarness(pathname = '/dashboard') {
@@ -197,7 +197,7 @@ test('review: denied first-visit persistence cannot prevent actual Customer sign
   let h;
   const storage = { setItem() { assert.equal(h.auth.currentUser, null, 'flag written only after SDK success'); throw Error('storage denied'); } };
   h = providerLogout('customer', false, storage); await h.run();
-  assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, ['/login']);
+  assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, ['/?login=true&from=logout']);
 });
 test('review: actual signup provisions profile before subsequent protected access without auto-heal', async () => {
   const values = new Map(), profiles = new Map(), routes = [], events = [];
@@ -223,7 +223,7 @@ test('review: actual signup provisions profile before subsequent protected acces
   assert.deepEqual(events, ['create', 'profile', 'signout']); assert.equal(unexpectedLogout, 0);
   assert.equal(profiles.get(user.uid).role, 'Developer'); assert.equal(profiles.get(user.uid).plan, 'Free');
   assert.equal(profiles.get(user.uid).apiRequestLimit, 50); assert.equal(profiles.get(user.uid).businessSegment, 'Grocery');
-  assert.equal(landingSeen(storage), true); assert.deepEqual(routes, ['/login?registered=true&choosePlan=true']);
+  assert.equal(landingSeen(storage), false); assert.deepEqual(routes, ['/login?registered=true&choosePlan=true']);
   auth.currentUser = user; await gate.accept(user);
   assert.equal(navigationDecision({ path: '/login', initializing: current.loading, role: profileRole(current.profile) }), '/dashboard');
   gate.stop();
