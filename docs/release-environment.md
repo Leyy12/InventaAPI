@@ -21,8 +21,10 @@ node --env-file=<frontend-env-file> scripts/validate-release-config.mjs --scope=
 node --env-file=<frontend-env-file> scripts/validate-release-config.mjs --scope=admin --mode=production
 ```
 
-Use `--mode=test` with test credentials and HTTP localhost URLs in isolated
-validation environments. The validator reads environment variables only. It
+Use `--mode=test` for a test application runtime and HTTP localhost URLs in isolated
+validation environments. This flag validates the runtime/origins, not payment mode.
+The current capstone deployment uses `NODE_ENV=production`, `--mode=production`,
+and explicit `PAYMONGO_MODE=test`. The validator reads environment variables only. It
 does not initialize Firebase or call PayMongo, and it never prints secret values.
 
 ## Backend contract
@@ -35,7 +37,8 @@ does not initialize Firebase or call PayMongo, and it never prints secret values
 | `FIREBASE_PROJECT_ID` | Conditional | No | Required with `service_account_env`; valid Firebase project ID. |
 | `FIREBASE_CLIENT_EMAIL` | Conditional | No | Required with `service_account_env`; service-account email. |
 | `FIREBASE_PRIVATE_KEY` | Conditional | Yes | Required with `service_account_env`; PEM private key, normally injected with escaped newlines. |
-| `PAYMONGO_SECRET_KEY` | Yes | Yes | `sk_test_...` for test mode; `sk_live_...` for an explicitly authorized production release. Backend only. |
+| `PAYMONGO_MODE` | Yes | No | Exactly `test` or `live`, independent of `NODE_ENV`. Missing/invalid fails closed. Current capstone: `test`; live deferred until commercial launch. |
+| `PAYMONGO_SECRET_KEY` | Yes | Yes | Must match `PAYMONGO_MODE`: `sk_test_...` for `test`, `sk_live_...` for `live`. Backend only; never infer mode from the key or runtime. |
 | `PAYMONGO_WEBHOOK_SECRET` | Yes | Yes | Opaque, non-placeholder signing secret for the webhook endpoint in the matching PayMongo mode. No undocumented prefix is assumed. Backend only. |
 | `DASHBOARD_URL` | Yes | No | Customer origin for checkout redirects. Canonical non-local HTTPS origin, with no trailing slash, path, query or fragment. |
 | `NEXT_PUBLIC_APP_URL` | Yes | No | Same exact value as `DASHBOARD_URL`, used in backend DaaS/product action links. Despite its name, this is a backend input. |
@@ -51,6 +54,30 @@ environment triple from the secret store and run backend preflight before startu
 Firebase Functions independently call `initializeApp()` and use managed identity;
 they do not need the root backend's private-key variables. An operator needing
 root managed identity must obtain a separate reviewed initializer implementation.
+
+## Current capstone payment contract (R6C)
+
+Use `PAYMONGO_MODE=test` with a PayMongo Test Secret Key and the signing secret
+from the matching Test Mode webhook endpoint. Both are required external secrets;
+their real values are never stored here. Real money: **NO**. Live mode:
+**DEFERRED UNTIL COMMERCIAL LAUNCH**, requiring a separate authorization and review.
+`NODE_ENV=production` remains the normal production application runtime.
+
+Test mode requires `sk_test_`, signature `te`, and `livemode=false` throughout the
+event/session/payment/intent. Future live mode requires `sk_live_`, `li`, and
+`livemode=true`. Mismatches fail closed. The opaque webhook secret has no assumed
+mode prefix. The current routes remain Checkout Sessions via
+`POST /api/v1/checkout/create-gcash`, status via
+`GET /api/v1/checkout/subscription-status`, and
+`POST /api/webhooks/paymongo` for `checkout_session.payment.paid` fulfillment.
+Price remains 149900 centavos, PHP, Pro, 30 calendar days.
+
+`DASHBOARD_URL` must equal `NEXT_PUBLIC_APP_URL`. Success uses
+`/dashboard?payment=success&order=<orderId>`; cancel uses `/?payment=cancelled`.
+Both redirects derive from `DASHBOARD_URL`; neither grants entitlement. Production
+runtime continues to require secure redirects even with sandbox payments.
+See [R6C](adviser-r6c-paymongo-mode.md). Sandbox E2E, actual origins and other release
+gates remain open; this configuration change does not authorize deployment.
 
 ## Frontend build contract
 

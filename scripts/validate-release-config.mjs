@@ -99,11 +99,15 @@ export function validateReleaseConfig(env, {
           'must be omitted when FIREBASE_AUTH_MODE=application_default; use the managed runtime identity');
       }
     }
+    required('PAYMONGO_MODE', {
+      valid: value => ['test', 'live'].includes(value), expectation: 'test or live',
+    });
     required('PAYMONGO_SECRET_KEY', {
       secret: true,
-      valid: value => value.startsWith(mode === 'production' ? 'sk_live_' : 'sk_test_')
-        && value.length > 'sk_live_'.length && notPlaceholder(value),
-      expectation: mode === 'production' ? 'a live secret key' : 'a test secret key',
+      valid: value => ['test', 'live'].includes(env.PAYMONGO_MODE)
+        && /^sk_(test|live)_\S+$/u.exec(value)?.[1] === env.PAYMONGO_MODE
+        && notPlaceholder(value) && !/YOUR_/iu.test(value),
+      expectation: 'a non-placeholder secret key matching PAYMONGO_MODE (sk_test_ or sk_live_)',
     });
     required('PAYMONGO_WEBHOOK_SECRET', {
       secret: true,

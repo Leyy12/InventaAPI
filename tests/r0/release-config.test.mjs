@@ -9,7 +9,7 @@ const complete = {
   FIREBASE_PROJECT_ID: 'inventa-release',
   FIREBASE_CLIENT_EMAIL: 'release@inventa-release.iam.gserviceaccount.com',
   FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nnot-a-real-key\\n-----END PRIVATE KEY-----',
-  PAYMONGO_SECRET_KEY: 'sk_live_not-a-real-secret',
+  PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_not-a-real-secret',
   PAYMONGO_WEBHOOK_SECRET: 'whsec_not-a-real-webhook-secret',
   DASHBOARD_URL: 'https://dashboard.inventa-release.com',
   NEXT_PUBLIC_APP_URL: 'https://dashboard.inventa-release.com',

@@ -24,9 +24,9 @@ export const modeKey = (mode, id) => `${mode}_${id}`;
 export const refFor = (db, name, id) => db.collection(PAYMENT_COLLECTIONS[name]).doc(id);
 export const matchesPurchase = order => order && Object.entries(PRO_PURCHASE).every(([key, value]) => order[key] === value);
 
-export function paymentConfiguration({ secretKey, webhookSecret, nodeEnv, dashboardUrl }) {
-  const mode = /^sk_(test|live)_\S+$/u.exec(secretKey || '')?.[1];
-  requirePayment(mode && mode === (nodeEnv === 'production' ? 'live' : 'test')
+export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, dashboardUrl }) {
+  const keyMode = /^sk_(test|live)_\S+$/u.exec(secretKey || '')?.[1];
+  requirePayment(['test', 'live'].includes(mode) && keyMode === mode
     && typeof webhookSecret === 'string' && webhookSecret.trim().length > 0
     && !/REPLACE|PLACEHOLDER|YOUR_/iu.test(webhookSecret)
     && !/REPLACE|PLACEHOLDER|YOUR_/iu.test(secretKey), 'PAYMENT_CONFIG', 'Payment service is not configured.', 503);
@@ -35,7 +35,8 @@ export function paymentConfiguration({ secretKey, webhookSecret, nodeEnv, dashbo
   if (dashboardUrl !== undefined) {
     let url;
     try { url = new URL(dashboardUrl); } catch { /* Fail closed below. */ }
-    requirePayment(url && !url.username && !url.password && (mode === 'live'
+    // Runtime production still requires a secure redirect, even with sandbox payments.
+    requirePayment(url && !url.username && !url.password && (nodeEnv === 'production' || mode === 'live'
       ? url.protocol === 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
       : ['http:', 'https:'].includes(url.protocol)), 'PAYMENT_CONFIG', 'Invalid payment redirect configuration.', 503);
   }

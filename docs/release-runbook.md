@@ -44,6 +44,19 @@ validator. Use the implemented environment credential triple. Functions use thei
 separate managed identity. Explicit operator-approved `TZ` preserves the existing
 subscription calendar behavior; do not pick or change it during deployment by accident.
 
+For the current capstone release, keep `NODE_ENV=production` and explicitly set
+`PAYMONGO_MODE=test`. Supply a PayMongo Test Secret Key (`sk_test_`) and the signing
+secret for the matching Test Mode webhook endpoint. Run backend validation with
+`--mode=production`; that option governs application runtime/origins, not payment
+mode. Missing/invalid `PAYMONGO_MODE` or a mismatched key fails closed.
+Real money: **NO**. Live mode is **DEFERRED UNTIL COMMERCIAL LAUNCH** with separate
+authorization; do not enable it as a side effect of a production build/deployment.
+Before a future mode/key change, resolve outstanding orders through the existing
+review/recovery process; do not relabel stored orders or replay cross-mode events.
+Keep `DASHBOARD_URL` equal to `NEXT_PUBLIC_APP_URL` and validate the fixed success
+and cancel routes. [R6C](adviser-r6c-paymongo-mode.md) preserves webhook security;
+real PayMongo sandbox E2E remains a separate gate and was not executed locally.
+
 R5C marker retention is a post-release operations decision without contrary scale
 evidence. Markers are small and correctness does not require cleanup. Measure
 growth/cost; do not add TTL/deletion casually or delete current-day evidence.

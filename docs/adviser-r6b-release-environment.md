@@ -189,8 +189,11 @@ service identity permissions and deployed origin E2E remain security boundaries.
 
 ## Payment mode and secret handling
 
-`paymentConfiguration` accepts test-prefixed secret keys in non-production and
-live-prefixed keys only in production. Webhook event, fetched checkout/payment
+R6C supersedes the original runtime/payment coupling: `paymentConfiguration`
+requires explicit `PAYMONGO_MODE=test|live` and a matching secret-key prefix,
+independently of `NODE_ENV`. Current capstone: production runtime with test
+payments, Test Secret Key and Test Webhook Secret required, no real money. Live
+mode is deferred until commercial launch. Webhook event, checkout/payment
 and intent `livemode` must match the configured mode. One `PAYMONGO_SECRET_KEY`
 name is used with different secret-store values; there is no second live/test env
 name. `PAYMONGO_WEBHOOK_SECRET` must belong to the matching endpoint/mode. Success

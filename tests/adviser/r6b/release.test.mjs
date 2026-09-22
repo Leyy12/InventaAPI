@@ -19,7 +19,7 @@ const frontend = {
 const backend = { NODE_ENV: 'production', TZ: 'UTC', FIREBASE_AUTH_MODE: 'service_account_env',
   FIREBASE_PROJECT_ID: 'demo-r6b-validation', FIREBASE_CLIENT_EMAIL: 'synthetic@demo-r6b-validation.iam.gserviceaccount.com',
   FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_NOT_A_KEY\n-----END PRIVATE KEY-----',
-  PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
+  PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
   DASHBOARD_URL: 'https://customer.r6b-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.r6b-fixture.net' };
 const options = { scope: 'backend', nodeVersion: 'v22.20.0' };
 
@@ -167,9 +167,9 @@ test('redacted failure messages contain variable names, never supplied credentia
     PAYMONGO_SECRET_KEY: 'SECRET_SENTINEL' }, options));
   assert.match(text, /FIREBASE_PRIVATE_KEY/); assert.doesNotMatch(text, /PRIVATE_SENTINEL|SECRET_SENTINEL/);
 });
-test('PayMongo mode contract rejects test credentials for production and live for test', () => {
+test('PayMongo mode contract rejects credentials that mismatch explicit payment mode', () => {
   assert.ok(validateReleaseConfig({ ...backend, PAYMONGO_SECRET_KEY: 'sk_test_SYNTHETIC' }, options).errors.some(issue => issue.name === 'PAYMONGO_SECRET_KEY'));
-  assert.ok(validateReleaseConfig({ ...backend, NODE_ENV: 'test' }, { ...options, mode: 'test' }).errors.some(issue => issue.name === 'PAYMONGO_SECRET_KEY'));
+  assert.ok(validateReleaseConfig({ ...backend, PAYMONGO_MODE: 'test', NODE_ENV: 'test' }, { ...options, mode: 'test' }).errors.some(issue => issue.name === 'PAYMONGO_SECRET_KEY'));
 });
 test('history index exactly matches account equality and descending timestamp/document order', () => {
   const config = JSON.parse(read('firestore.indexes.json'));

@@ -167,10 +167,10 @@ for (const override of [{ livemode: true }, { status: 'expired' }, { payment_int
         livemode: false, status: 'active', payment_intent: { id: 'pi_abc123' }, checkout_url: 'https://checkout.paymongo.com/abc', ...override } } }) }) }));
   });
 }
-for (const [secretKey, nodeEnv, accepted] of [['sk_test_synthetic', 'test', true], ['sk_live_synthetic', 'production', true],
-  ['sk_test_synthetic', 'production', false], ['sk_live_synthetic', 'development', false], ['', 'test', false]]) {
-  test(`configuration: ${nodeEnv}/${secretKey.split('_')[1] || 'missing'} mode`, () => {
-    const action = () => paymentConfiguration({ ...config, secretKey, nodeEnv });
+for (const [secretKey, mode, accepted] of [['sk_test_synthetic', 'test', true], ['sk_live_synthetic', 'live', true],
+  ['sk_test_synthetic', 'live', false], ['sk_live_synthetic', 'test', false], ['', 'test', false]]) {
+  test(`configuration: ${mode}/${secretKey.split('_')[1] || 'missing'} mode`, () => {
+    const action = () => paymentConfiguration({ ...config, secretKey, mode });
     if (accepted) assert.ok(action().mode); else assert.throws(action);
   });
 }
@@ -292,7 +292,7 @@ test('configuration: opaque signing secret has no invented prefix or minimum len
 });
 test('configuration: live checkout rejects missing/unsafe redirect configuration', () => {
   for (const dashboardUrl of ['', 'javascript:alert(1)', 'http://customer.example', 'https://localhost', 'https://user:pass@customer.example']) {
-    assert.throws(() => paymentConfiguration({ ...config, secretKey: 'sk_live_synthetic', nodeEnv: 'production', dashboardUrl }));
+    assert.throws(() => paymentConfiguration({ ...config, mode: 'live', secretKey: 'sk_live_synthetic', nodeEnv: 'production', dashboardUrl }));
   }
 });
 test('signature: valid live fixture requires live header and all matching resource modes', async () => {

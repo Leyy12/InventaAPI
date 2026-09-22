@@ -9,7 +9,7 @@ const router = express.Router();
 const handlers = createPaymentHandlers({
   getDb: () => getFirestore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
-  getConfig: () => paymentConfiguration({ secretKey: process.env.PAYMONGO_SECRET_KEY,
+  getConfig: () => paymentConfiguration({ mode: process.env.PAYMONGO_MODE, secretKey: process.env.PAYMONGO_SECRET_KEY,
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET, nodeEnv: process.env.NODE_ENV,
     dashboardUrl: process.env.DASHBOARD_URL || 'http://localhost:3000' }),
   createSession: args => createPaymongoCheckout({ ...args, request: globalThis.fetch }),
