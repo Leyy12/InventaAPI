@@ -1,10 +1,13 @@
 import express from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { createAdminEntitlements } from '../services/admin-entitlements.js';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath } from 'firebase-admin/firestore';
+import { createAdminTrafficHandler } from '../services/admin-traffic.js';
 import { verifyFirebaseToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
+router.get('/traffic', createAdminTrafficHandler({ getDb: () => getFirestore(),
+  verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
 router.post('/entitlements', createAdminEntitlements({ getDb: () => getFirestore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked) }));
 

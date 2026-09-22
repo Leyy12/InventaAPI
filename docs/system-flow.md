@@ -138,7 +138,10 @@ Storage upload flow, object migration, or activation/deployment of dormant
 
 ## Release readiness remains separate
 
-Admin traffic permission gap; history composite index deployment; actual
+Admin traffic permission gap: **CLOSED AT CODE LEVEL** by the authenticated,
+Admin-authorized bounded backend sample in [R6A](adviser-r6a-admin-traffic.md).
+Telemetry browser reads/writes remain denied. Production validation and Admin
+traffic scale remain open. Remaining gates: history composite index deployment; actual
 Customer/Admin/API origins and provider targets; Node 22 provider compatibility;
 sibling reporting-source packaging; production secrets/config; coordinated
 `API_QUOTA_CUTOVER_AT`; runtime timezone; catalog/report/history scale; R3 audit,

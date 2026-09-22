@@ -30,6 +30,22 @@ production target. Those targets remain explicit release inputs documented in
 
 ## Required gate for every production batch
 
+Admin traffic permission gap: **CLOSED AT CODE LEVEL** by
+[R6A](adviser-r6a-admin-traffic.md), not production-certified. The Admin browser
+uses an authenticated backend latest-500 snapshot; browser telemetry access stays
+denied. Validate actual-origin CORS/auth/query behavior in deployed browser E2E.
+Admin traffic query cost, multi-operator concurrency and retention remain a
+**PRODUCTION SCALE GATE**. No polling or retention policy is introduced.
+
+Keep the R5B history index deployment and R5C all-backend coordinated rollout,
+marker-rule ordering, backend clock synchronization and marker retention/growth
+gates open. Also retain actual origins/targets, `NEXT_PUBLIC_ADMIN_APP_ORIGIN`,
+Node 22 provider support, shared-source packaging, catalog/report/listener scale,
+lint debt, PayMongo sandbox, production secrets/config, `API_QUOTA_CUTOVER_AT`,
+runtime timezone, R3 production audit/conflict resolution/reservation backfill and
+write-freeze rollout, deployed-origin browser E2E, rollback validation and final
+release certification. R6A resolves none of these deployment gates.
+
 1. Fetch `origin/master` without modifying the working tree.
 2. Stop if production moved from the reviewed SHA; do not reconcile automatically.
 3. Reconcile the adviser branch against the newly reviewed production state.

@@ -120,6 +120,17 @@ for (const role of ['customer', 'stranger', 'anonymous', 'admin']) {
   });
 }
 
+for (const role of ['customer', 'admin']) {
+  test(`R6A ${role}: direct telemetry get/list/create/update/delete remain denied`, async () => {
+    assert.equal((await call('PATCH', 'api_telemetry/r6a-existing', 'owner', { statusCode: 200 })).status, 200);
+    assert.equal((await call('GET', 'api_telemetry', tokens[role])).status, 403);
+    assert.equal((await call('GET', 'api_telemetry/r6a-existing', tokens[role])).status, 403);
+    assert.equal((await call('PATCH', 'api_telemetry/r6a-new', tokens[role], { statusCode: 200 })).status, 403);
+    assert.equal((await call('PATCH', 'api_telemetry/r6a-existing', tokens[role], { statusCode: 500 })).status, 403);
+    assert.equal((await call('DELETE', 'api_telemetry/r6a-existing', tokens[role])).status, 403);
+  });
+}
+
 for (const role of ['customer', 'stranger', 'anonymous']) {
   test(`${role}: key reads/listing, creation, and deletion are denied`, async () => {
     for (const path of ['api_keys/key-a', 'api_keys/key-b', 'api_keys']) {
