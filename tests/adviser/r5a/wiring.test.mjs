@@ -30,7 +30,8 @@ test('Customer session never trusts browser profiles or auto-recreates missing a
   const source = read('dashboard/src/lib/firebase/auth-context.tsx');
   for (const token of ['createAuthSession', 'getDocFromServer', 'onIdTokenChanged', 'sessionGate.current?.failure', 'sessionGate.current?.invalidate']) assert.ok(source.includes(token));
   assert.doesNotMatch(source, /getItem\(|setItem\(|setDoc\(|readCache|hasActiveSubscription/);
-  assert.ok(source.includes("clearSession(); router.replace('/?login=true&from=logout')"));
+  assert.ok(source.includes("const marked = markPostLogoutLogin();"));
+  assert.ok(source.includes("router.replace(marked ? '/' : '/?login=true&from=logout')"));
   assert.doesNotMatch(source, /finally \{ router.replace/);
 });
 test('subscription verification retains one poller and only exposes HTTP status for auth rejection', () => {
@@ -115,9 +116,9 @@ function providerLogout(app, fail = false, storage = null) {
   const clear = () => { localUser = null; invalidated = true; };
   const gate = { invalidate: clear }, sessionGate = { current: gate }, logoutAction = { current: null };
   new Function('logoutAction', 'createLogoutAction', 'auth', 'firebaseSignOut', 'sessionGate', 'gate',
-    'setLogoutBusy', 'setLogoutError', 'clearSession', 'completeLanding', 'browserStorage', 'router',
+    'setLogoutBusy', 'setLogoutError', 'clearSession', 'completeLanding', 'browserStorage', 'markPostLogoutLogin', 'router',
     'logoutAction.current = createLogoutAction({' + body)(logoutAction, createLogoutAction, auth, signOut,
-      sessionGate, gate, value => { busy = value; }, value => { error = value; }, clear, completeLanding, () => storage, router);
+      sessionGate, gate, value => { busy = value; }, value => { error = value; }, clear, completeLanding, () => storage, () => true, router);
   return { run: logoutAction.current, auth, routes, recover: () => { fail = false; },
     state: () => ({ localUser, invalidated, calls, busy, error }) };
 }
@@ -125,7 +126,7 @@ for (const app of ['customer', 'admin']) {
   test(`review: ${app} successful signout clears SDK/UI and reaches own Login`, async () => {
     const h = providerLogout(app); await h.run();
     assert.equal(h.auth.currentUser, null); assert.equal(h.state().localUser, null);
-    assert.deepEqual(h.routes, app === 'customer' ? ['/?login=true&from=logout'] : ['/login']); assert.equal(h.state().calls, 1);
+    assert.deepEqual(h.routes, app === 'customer' ? ['/'] : ['/login']); assert.equal(h.state().calls, 1);
   });
   test(`review: ${app} failed signout must not masquerade as a completed logout`, async () => {
     const h = providerLogout(app, true); await h.run().catch(() => {});
@@ -136,7 +137,7 @@ for (const app of ['customer', 'admin']) {
     assert.deepEqual(h.routes, []); assert.match(h.state().error, /session may still be active/);
     assert.equal(h.state().busy, false);
     h.recover(); assert.deepEqual(await h.run(), { ok: true });
-    assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, app === 'customer' ? ['/?login=true&from=logout'] : ['/login']);
+    assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, app === 'customer' ? ['/'] : ['/login']);
   });
 }
 function verificationHarness(pathname = '/dashboard') {
@@ -197,7 +198,7 @@ test('review: denied first-visit persistence cannot prevent actual Customer sign
   let h;
   const storage = { setItem() { assert.equal(h.auth.currentUser, null, 'flag written only after SDK success'); throw Error('storage denied'); } };
   h = providerLogout('customer', false, storage); await h.run();
-  assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, ['/?login=true&from=logout']);
+  assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, ['/']);
 });
 test('review: actual signup provisions profile before subsequent protected access without auto-heal', async () => {
   const values = new Map(), profiles = new Map(), routes = [], events = [];

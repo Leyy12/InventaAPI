@@ -8,7 +8,7 @@ import LoginModal from "@/components/auth/LoginModal";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
-import { navigationDecision, profileRole } from '../../../../services/auth-navigation';
+import { consumePostLogoutLogin, navigationDecision, profileRole } from '../../../../services/auth-navigation';
 
 // Paid plans that block the checkout when already active (single source of truth
 // shared by openSubscription and the routing effect).
@@ -34,6 +34,10 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Pre-check: already-active Pro modal shown BEFORE checkout is opened.
   const [showAlreadyProModal, setShowAlreadyProModal] = useState(false);
+
+  useEffect(() => {
+    if (!loginOnly && consumePostLogoutLogin()) setShowLoginModal(true);
+  }, [loginOnly]);
 
   const destination = navigationDecision({ path: loginOnly ? '/login' : '/', initializing: loading,
     role: user ? profileRole(appUser) : null,

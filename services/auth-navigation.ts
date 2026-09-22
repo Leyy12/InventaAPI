@@ -12,6 +12,17 @@ export function completeLanding(storage: StorageLike | null): void {
 export function browserStorage(): StorageLike | null {
   try { return window.localStorage; } catch { return null; }
 }
+export const POST_LOGOUT_LOGIN_KEY = 'inventa.post-logout-login.v1';
+export function markPostLogoutLogin(): boolean {
+  try { window.sessionStorage.setItem(POST_LOGOUT_LOGIN_KEY, '1'); return true; } catch { return false; }
+}
+export function consumePostLogoutLogin(): boolean {
+  try {
+    if (window.sessionStorage.getItem(POST_LOGOUT_LOGIN_KEY) !== '1') return false;
+    window.sessionStorage.removeItem(POST_LOGOUT_LOGIN_KEY);
+    return true;
+  } catch { return false; }
+}
 export type AuthProfile = { role?: unknown; plan?: unknown; disabled?: unknown; deleted?: unknown;
   deletedAt?: unknown; deletionRequested?: unknown; status?: unknown; accountState?: unknown };
 export function profileRole(profile: AuthProfile | null): 'customer' | 'admin' | null {

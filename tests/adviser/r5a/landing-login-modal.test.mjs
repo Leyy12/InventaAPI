@@ -29,8 +29,16 @@ test('Login modal exposes close, Escape, dialog semantics, and existing form pat
 
 test('Successful Customer logout returns to root with one-time modal intent', () => {
   const source = read('dashboard/src/lib/firebase/auth-context.tsx');
-  assert.match(source, /clearSession\(\); router\.replace\('\/?login=true&from=logout'\)/);
+  assert.match(source, /const marked = markPostLogoutLogin\(\);/);
+  assert.match(source, /router\.replace\(marked \? '\/' : '\/?login=true&from=logout'\)/);
   assert.doesNotMatch(source, /completeLanding|router\.replace\('\/login'\)/);
+});
+
+test('Post-logout intent is session-scoped, consumed once, and leaves root URL clean', () => {
+  const source = read('services/auth-navigation.ts');
+  assert.match(source, /POST_LOGOUT_LOGIN_KEY/);
+  assert.match(source, /sessionStorage\.removeItem\(POST_LOGOUT_LOGIN_KEY\)/);
+  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /consumePostLogoutLogin\(\)/);
 });
 
 test('Legacy landing marker cannot decide authentication or root routing', () => {
