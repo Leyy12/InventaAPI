@@ -202,28 +202,24 @@ app.use((err, req, res, next) => {
     });
 });
 
+// Connect to MongoDB Atlas (Mongoose handles queuing queries until connected)
+connectMongo().catch(err => {
+    console.error('[STARTUP] Failed to connect to MongoDB Atlas:', err.message);
+});
+
 // Start Server (only when running locally, not on Vercel Serverless)
 if (!process.env.VERCEL) {
-    // Connect to MongoDB Atlas first, then start the HTTP server
-    connectMongo()
-        .then(() => {
-            app.listen(PORT, () => {
-                console.log(`========================================================================`);
-                console.log(` SUCCESS: DaaS sales & inventory service running on http://localhost:${PORT}`);
-                console.log(` Compliance Level: Data Privacy Act of 2012 / GDPR Standard`);
-                console.log(` Architecture: Security-Hardened API-based Data-as-a-Service (DaaS)`);
-                console.log(` Database: Firebase Firestore (auth/keys/logs) + MongoDB Atlas (catalog)`);
-                console.log(`========================================================================`);
+    app.listen(PORT, () => {
+        console.log(`========================================================================`);
+        console.log(` SUCCESS: DaaS sales & inventory service running on http://localhost:${PORT}`);
+        console.log(` Compliance Level: Data Privacy Act of 2012 / GDPR Standard`);
+        console.log(` Architecture: Security-Hardened API-based Data-as-a-Service (DaaS)`);
+        console.log(` Database: Firebase Firestore (auth/keys/logs) + MongoDB Atlas (catalog)`);
+        console.log(`========================================================================`);
 
-                // Start background jobs
-                startTrialWatcher();
-            });
-        })
-        .catch(err => {
-            console.error('[STARTUP] Failed to connect to MongoDB Atlas:', err.message);
-            console.error('[STARTUP] Server will NOT start. Fix MONGODB_URI in .env and retry.');
-            process.exit(1);
-        });
+        // Start background jobs
+        startTrialWatcher();
+    });
 }
 
 export default app;
