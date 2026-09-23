@@ -168,13 +168,15 @@ export default function ConsumersPage() {
                       {/* Usage with progress bar */}
                       <td className="p-4 align-top min-w-[160px]">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">Account requests ({entitlement?.period || 'unverified'})</span>
+                          <span className="text-xs text-slate-400">Account requests {entitlement?.status === 'upgrade_required' ? '(paused)' : `(${entitlement?.period || 'unverified'})`}</span>
                           <span className={`text-xs font-bold ${isOverage ? 'text-red-400' : 'text-white'}`}>
-                            {entitlement?.used ?? '—'} / {entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'}
+                            {entitlement?.status === 'upgrade_required' ? 'Upgrade Required'
+                              : `${entitlement?.used ?? '—'} / ${entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'}`}
                           </span>
                         </div>
                         {entitlement?.holdUntil && <p className="text-xs text-amber-300">Monthly activation hold until {entitlement.holdUntil}</p>}
                         {entitlement?.trial && !entitlement.trial.active && <p className="text-xs text-slate-400">Trial ended: {entitlement.trial.used} / 500 total</p>}
+                        {entitlement?.status === 'upgrade_required' && <p className="text-xs text-amber-300">Paid Pro is required to resume API access. Free monthly usage is historical only.</p>}
                         {entitlement?.limit != null && entitlement?.used != null && <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                           <div
                             className={`h-full transition-all ${isOverage ? 'bg-red-500' : 'bg-emerald-500'}`}

@@ -58,6 +58,11 @@ root managed identity must obtain a separate reviewed initializer implementation
 
 ## Free Trial warning Function configuration — release gate
 
+The reviewed post-Trial contract pauses protected API access and new key
+generation until valid paid Pro entitlement. The scheduled warning uses Resend
+for communication only; server entitlement evaluation enforces the boundary
+even when the Function does not run. No production values are set here.
+
 The uncommitted Phase 2 `monitorFreeTrials` Function requires
 `TRIAL_WARNING_FROM_EMAIL` (a verified sender email, non-secret Firebase
 parameter) and `RESEND_API_KEY` (server-only Firebase Secret Manager secret

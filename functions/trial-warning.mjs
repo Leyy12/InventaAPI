@@ -22,7 +22,7 @@ function warningPayload(account, from) {
     from,
     to: [account.email.trim()],
     subject: 'Your 7-Day Pro Trial is approaching its end',
-    text: `Your 7-Day Pro Trial is approaching its end on ${expiresAt} (UTC). You can upgrade to Pro if you want to keep Pro access. After Trial ends, your account returns to Free; existing API keys are not revoked.`,
+    text: `Your 7-Day Pro Trial is approaching its end on ${expiresAt} (UTC). When the Trial ends, API access will pause until you upgrade to Pro. Your account and existing API key records remain available.`,
   };
 }
 
@@ -89,7 +89,7 @@ export async function processTrialWarning(db, uid, { now = () => new Date(), fro
     const notificationRef = db.collection('notifications').doc(`trial-day4-${warningId(uid, claimed.record.startedAt)}`);
     tx.set(notificationRef, {
       userId: uid, type: 'trial_expiring', title: 'Your 7-Day Pro Trial is ending soon',
-      body: `Your Trial ends on ${claimed.record.expiresAt} (UTC). Upgrade to Pro to keep Pro access. Your keys remain valid on Free.`,
+      body: `Your Trial ends on ${claimed.record.expiresAt} (UTC). API access will pause until you upgrade to Pro. Your existing key records remain available.`,
       read: false, createdAt: now(), meta: { trialExpiresAt: claimed.record.expiresAt },
     });
     tx.update(claimed.ref, { status: 'accepted', providerId, leaseUntil: null, acceptedAt: now().toISOString() });

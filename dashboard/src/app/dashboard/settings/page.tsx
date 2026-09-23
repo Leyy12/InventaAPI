@@ -33,8 +33,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="glass-card rounded-xl p-6 md:p-8">
-        {entitlement.canPurchasePro && <button onClick={() => setSubscriptionOpen(true)}
-          className="mb-6 text-indigo-400 font-semibold">{entitlement.activePro ? 'Renew Pro — 30 more days' : 'Subscribe to Pro'}</button>}
+        {entitlement.canPurchasePro && <button id="subscription" onClick={() => setSubscriptionOpen(true)}
+          className="mb-6 text-indigo-400 font-semibold">{entitlement.activePro ? 'Renew Pro — 30 more days'
+            : entitlement.subscription_status === 'upgrade_required' ? 'Upgrade to Pro' : 'Subscribe to Pro'}</button>}
         <SubscriptionModal isOpen={subscriptionOpen} onClose={() => setSubscriptionOpen(false)} />
         <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-indigo-400" />

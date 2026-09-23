@@ -48,10 +48,13 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, clock = () => ne
       const used = trial.used ? trialUsage(record, { startedAt: trial.startedAt, expiresAt: trial.expiresAt }).used : 0;
       const eligible = !trial.used && ['free', 'starter'].includes(String(account.plan).toLowerCase())
         && effective.level === 0 && !!normalizeSegment(account.businessSegment);
-      const exhausted = used >= 500, active = trial.active && !exhausted;
+      const exhausted = trial.exhausted || used >= 500, active = effective.activeTrial === true && !exhausted;
+      const paid = effective.activePro || effective.level === 2;
       return { eligible, hasUsedFreeTrial: trial.used, active, expired: trial.expired,
-        exhausted, status: exhausted ? 'exhausted' : active ? 'active'
-          : trial.expired ? 'expired' : trial.used ? 'superseded' : eligible ? 'eligible' : 'ineligible',
+        exhausted, upgradeRequired: effective.upgradeRequired === true,
+        endReason: exhausted ? 'exhausted' : trial.expired ? 'expired' : null,
+        status: paid ? 'paid' : active ? 'active' : effective.upgradeRequired ? 'upgrade_required'
+          : eligible ? 'eligible' : 'ineligible',
         startedAt: trial.startedAt, expiresAt: trial.expiresAt, serverTime: now.toISOString(),
         secondsRemaining: active ? Math.max(0, (Date.parse(trial.expiresAt) - now.getTime()) / 1000) : 0,
         used, allowance: 500, remaining: active ? 500 - used : 0 };

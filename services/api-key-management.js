@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
-  usageForToday, validDocumentId, trialUsage, freeMonthlyUsage,
+  usageForToday, validDocumentId, trialUsage, freeMonthlyUsage, upgradeRequiredError,
 } from './api-key-security.js';
 import { authorizedProductIds } from './daas-catalog.js';
 import { normalizeSegment } from './product-contract.js';
@@ -58,7 +58,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     const account = accountDoc.data();
     const entitlement = accountEntitlement(account, clock());
     const trialDoc = entitlement.activeTrial ? await tx.get(db.collection('account_trial_usage').doc(uid)) : null;
-    const usage = entitlement.level === 0 ? freeMonthlyUsage(monthlyDoc.exists ? monthlyDoc.data() : null, accountDoc, clock(), monthlyCutoverAt)
+    const usage = entitlement.upgradeRequired ? { used: null, period: 'upgrade_required', resetsAt: null, state: 'upgrade_required' }
+      : entitlement.level === 0 ? freeMonthlyUsage(monthlyDoc.exists ? monthlyDoc.data() : null, accountDoc, clock(), monthlyCutoverAt)
       : entitlement.activeTrial ? trialUsage(trialDoc?.data(), entitlement) : usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
     if (entitlement.activeTrial) {
       const daily = usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
@@ -69,9 +70,10 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     });
   }
 
-  async function currentAccount(tx, db, uid, context) {
+  async function currentAccount(tx, db, uid, context, requireIssuance = false) {
     const account = (await tx.get(db.collection('users').doc(uid))).data();
     const entitlement = accountEntitlement(account, clock());
+    if (requireIssuance && entitlement.upgradeRequired) throw upgradeRequiredError();
     if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment
       || account.businessSegment !== context.account.businessSegment)) {
       throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
@@ -131,11 +133,12 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const body = req.body || {};
       const name = keyName(body.keyName);
       const context = await accountContext(db, actor.uid);
+      if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
       const scope = scopeFromBody(body);
       await validateScope(db, scope, context);
       const issued = issueCredential();
       const key = await db.runTransaction(async tx => {
-        await currentAccount(tx, db, actor.uid, context);
+        await currentAccount(tx, db, actor.uid, context, true);
         // Recompute on every transaction retry, including a retry across midnight.
         // Caller dates/timezones never enter this account-level generation policy.
         const now = clock();

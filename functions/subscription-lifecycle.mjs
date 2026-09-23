@@ -17,6 +17,11 @@ function unavailable(code = 'ENTITLEMENT_UNAVAILABLE', status = 503) {
   throw Object.assign(new Error('Unable to verify account entitlement.'), { code, status });
 }
 export const TRIAL_LIMIT = 500;
+function upgradeRequired(trial, { expired = trial.expired, expiresAt = trial.expiresAt,
+  startedAt = trial.startedAt, normalization = null } = {}) {
+  return { plan: 'Upgrade Required', level: -1, limit: 0, status: 'upgrade_required',
+    upgradeRequired: true, activePro: false, activeTrial: false, expired, expiresAt, startedAt, normalization };
+}
 export function trialState(account, now = new Date()) {
   const fields = ['hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt', 'trialExpiredAt', 'trialExhaustedAt'];
   if (!fields.some(field => Object.hasOwn(account || {}, field))) return { used: false, active: false, expired: false, startedAt: null, expiresAt: null };
@@ -40,6 +45,7 @@ export function evaluateEntitlement(account, now = new Date()) {
     const trial = trialState(account, now);
     if (trial.active) return { plan: 'Pro Trial', level: 1, limit: TRIAL_LIMIT, status: 'trial', activePro: false,
       activeTrial: true, expired: false, expiresAt: trial.expiresAt, startedAt: trial.startedAt, normalization: null };
+    if (trial.used) return upgradeRequired(trial);
   }
   const end = dateMillis(account.subscriptionExpiresAt);
   const expiresAt = Number.isFinite(end) ? new Date(end).toISOString() : null;
@@ -50,6 +56,11 @@ export function evaluateEntitlement(account, now = new Date()) {
     if (!Number.isFinite(end)) unavailable();
     const expired = now.getTime() >= end;
     const activePro = !expired && account.subscription_status === 'active';
+    if (!activePro) {
+      const trial = trialState(account, now);
+      if (trial.used) return upgradeRequired(trial, { expired, expiresAt, startedAt,
+        normalization: { ...FREE_ENTITLEMENT } });
+    }
     return { plan: activePro ? 'Pro' : 'Free', level: activePro ? 1 : 0, limit: activePro ? 5000 : 50,
       status: activePro ? 'active' : 'inactive', activePro, expired, expiresAt, startedAt,
       normalization: !activePro ? { ...FREE_ENTITLEMENT } : null };

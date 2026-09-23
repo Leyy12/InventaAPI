@@ -1,5 +1,6 @@
 import {
   ApiSecurityError, PLAN_LEVELS, accountEntitlement, assertActiveKey, credentialMatches, usageForToday, trialUsage, freeMonthlyUsage,
+  upgradeRequiredError,
 } from './api-key-security.js';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
@@ -38,6 +39,7 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     const trialDoc = entitlement.activeTrial ? await transaction.get(trialRef) : null;
     if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
     const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
+    if (entitlement.upgradeRequired) return { denied: upgradeRequiredError() };
     if (allowedPlans && entitlement.level < Math.min(...allowedPlans.map(plan => PLAN_LEVELS[plan] ?? Infinity))) {
       return { denied: new ApiSecurityError(403, 'PLAN_UPGRADE_REQUIRED', 'Your account plan does not include this endpoint.') };
     }

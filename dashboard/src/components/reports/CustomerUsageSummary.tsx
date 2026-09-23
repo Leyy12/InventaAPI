@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { quotaSummary, quotaVerificationKey } from "@/lib/reports";
 import { createQuotaRefresh, type QuotaSource } from "@/lib/quota-refresh";
 
-function Usage({ user }: { user: User }) {
+function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean }) {
   const [source, setSource] = useState<QuotaSource>({ status: "loading", count: null, usage: null });
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -18,6 +18,13 @@ function Usage({ user }: { user: User }) {
   }, [user]);
   const quota = quotaSummary(source.usage, now);
   const unavailable = source.status === "loading" ? "Loading…" : "Unavailable";
+  if (upgradeRequired) return <section aria-label="Account API usage" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-6 space-y-3">
+    <h2 className="text-lg font-semibold text-amber-200">Free Trial Ended — Upgrade Required</h2>
+    <p className="text-slate-200">Protected API access is paused until you upgrade to Pro. Your account and existing API keys remain available.</p>
+    <p className="text-sm text-slate-300">Active API keys: {source.count ?? unavailable}</p>
+    {source.status === 'error' && <p role="alert">Unable to load API-key history. Retrying automatically.</p>}
+    <Link href="/dashboard/settings#subscription" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">Upgrade to Pro</Link>
+  </section>;
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[["API keys (active status)", source.count ?? unavailable],
@@ -38,10 +45,11 @@ export default function CustomerUsageSummary() {
   const { user, entitlement } = useAuth();
   const verification = quotaVerificationKey(user?.uid ?? null, entitlement ? { ...entitlement } : null);
   return <div className="space-y-5">
-    {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} />
+    {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} upgradeRequired={entitlement?.subscription_status === 'upgrade_required'} />
       : <p role="status">Account usage unavailable while entitlement is being verified.</p>}
     <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-5 flex justify-between gap-4">
-      <p className="text-white">{entitlement ? `${entitlement.plan} plan · ${entitlement.subscription_status}` : "Plan verification unavailable"}</p>
+      <p className="text-white">{entitlement?.subscription_status === 'upgrade_required' ? 'Upgrade Required · protected API access paused'
+        : entitlement ? `${entitlement.plan} plan · ${entitlement.subscription_status}` : "Plan verification unavailable"}</p>
       <Link href="/dashboard/settings" className="text-cyan-400 text-sm">Plan settings</Link>
     </div>
   </div>;

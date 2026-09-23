@@ -89,6 +89,10 @@ export function accountEntitlement(account, now = new Date()) {
   catch (error) { throw new ApiSecurityError(error.status || 503, error.code || 'ENTITLEMENT_UNAVAILABLE', error.message); }
 }
 
+export function upgradeRequiredError() {
+  return new ApiSecurityError(403, 'UPGRADE_REQUIRED', 'Your Free Trial has ended. Upgrade to Pro to continue using the API.');
+}
+
 export function usageForToday(stored, now = new Date()) {
   const window = now.toISOString().slice(0, 10);
   const tomorrow = new Date(now);
@@ -121,7 +125,7 @@ export function publicKeyMetadata(id, key, entitlement, usage) {
     plan: entitlement.plan, requestLimit: entitlement.limit, requestsUsed: usage.used,
     usageScope: 'account', resetAt: usage.resetsAt,
     quotaPeriod: usage.period || 'daily',
-    quotaState: usage.holdUntil ? 'pending_clean_window' : 'active',
+    quotaState: usage.state === 'upgrade_required' ? 'upgrade_required' : usage.holdUntil ? 'pending_clean_window' : 'active',
   };
 }
 

@@ -7,15 +7,21 @@ defines one-time seven-day Pro Trial access, 500 total account-wide requests,
 owned-segment authority and rules/backend/frontend coordination. It is local
 review work only, not authorization to deploy. Existing release gates remain.
 
-The [final client quota contract](adviser-free-trial-quota-contract.md) changes
-Free to 50/UTC month (lower caps retained), ends Trial at expiry OR exhaustion,
-and specifies the approved monthly migration hold. Coordinate restrictive rules
+The [final client quota contract](adviser-free-trial-quota-contract.md) grants
+Free accounts 50/UTC month before their one-time Trial (lower caps retained).
+At Trial expiry OR 500-request exhaustion, protected API access and new key
+generation require paid Pro; existing key records and Customer application
+access remain. A later paid expiry returns a used-Trial account to Upgrade
+Required. The contract also specifies the approved monthly migration hold.
+Coordinate restrictive rules
 and all backend instances; do not infer a monthly opening balance from daily
 history or reuse the earlier daily cutover timestamp. No production value or
 migration is authorized by these local integration changes.
 
-The uncommitted [Phase 2 client TODO implementation](adviser-free-trial-integration.md#phase-2-client-todo-implementation--uncommitted)
+The [Phase 2 client TODO implementation](adviser-free-trial-integration.md#phase-2-client-todo-implementation--uncommitted)
 adds the `monitorFreeTrials` scheduled Function and Admin/Customer UI changes.
+Its Day-4 copy warns that API access pauses until paid upgrade; the scheduled
+Function is not the entitlement authority.
 Before any separately authorized release, verify the Resend Secret Manager
 binding and sender, run the Functions-scoped config preflight, and exercise
 email/notification delivery in an isolated non-production environment.

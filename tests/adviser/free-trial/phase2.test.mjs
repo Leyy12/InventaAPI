@@ -33,8 +33,13 @@ test('before threshold no write; at threshold sends and records exactly once', a
   f.time(threshold); assert.equal(await f.run(), true); assert.equal(f.sends(), 1);
   const delivery = f.db.read(`trial_warning_deliveries/${warningId('owner', startedAt)}`);
   assert.equal(delivery.status, 'accepted'); assert.equal(delivery.providerId, 'email-accepted');
-  assert.match(delivery.payload.text, /returns to Free/); assert.match(delivery.payload.text, /not revoked/);
-  assert.equal(f.db.read('notifications/trial-day4-' + warningId('owner', startedAt)).userId, 'owner');
+  assert.match(delivery.payload.text, /API access will pause until you upgrade to Pro/);
+  assert.match(delivery.payload.text, /existing API key records remain available/);
+  assert.doesNotMatch(delivery.payload.text, /returns to Free|key.*revoked|account.*inaccessible/i);
+  const notification = f.db.read('notifications/trial-day4-' + warningId('owner', startedAt));
+  assert.equal(notification.userId, 'owner');
+  assert.match(notification.body, /API access will pause until you upgrade to Pro/);
+  assert.doesNotMatch(notification.body, /returns to Free|key.*revoked|account.*inaccessible/i);
   assert.equal(await f.run(), false); assert.equal(f.sends(), 1);
   assert.equal(f.db.read('api_keys/key-a').status, 'active');
 });
@@ -98,8 +103,26 @@ for (const [label, account, counter, time] of [
 });
 test('API Trial authority is independent of watcher and never revokes keys', () => {
   assert.equal(evaluateEntitlement(base, new Date(threshold)).activeTrial, true);
-  assert.equal(evaluateEntitlement(base, new Date(expiresAt)).plan, 'Free');
+  assert.equal(evaluateEntitlement(base, new Date(expiresAt)).plan, 'Upgrade Required');
   assert.equal(fixture().db.read('api_keys/key-a').status, 'active');
+});
+test('Customer and Admin surfaces expose Upgrade Required without hiding key history or owned segment', () => {
+  const source = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
+  const dashboard = source('dashboard/src/components/reports/CustomerUsageSummary.tsx');
+  const trial = source('dashboard/src/app/dashboard/free-trial/page.tsx');
+  const keys = source('dashboard/src/app/dashboard/api-keys/page.tsx');
+  const settings = source('dashboard/src/app/dashboard/settings/page.tsx');
+  const admin = source('admin-panel/src/app/consumers/page.tsx');
+  assert.match(dashboard, /Free Trial Ended — Upgrade Required/);
+  assert.match(trial, /trial\.eligible && <button/);
+  assert.match(trial, /trial\.upgradeRequired &&/);
+  assert.match(trial, /Upgrade to Pro/);
+  assert.match(keys, /disabled=\{!canGenerate\}/);
+  assert.match(keys, /Active API Keys/);
+  assert.match(keys, /Upgrade to Pro/);
+  assert.match(settings, /activeCustomerSegment\(appUser\)/);
+  assert.match(admin, /entitlement\?\.status === 'upgrade_required'/);
+  assert.doesNotMatch(trial, /returns you to the existing Free monthly balance/);
 });
 test('linked names come only from canonical persisted IDs and authoritative product documents', () => {
   const key = { linkedProductIds: ['hammer'], linkedVariantSelections: { nails: ['size:2'] },

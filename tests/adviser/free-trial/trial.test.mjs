@@ -8,7 +8,7 @@ import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createDaaSSecurity, requirePlan } from '../../../services/daas-security.js';
 import { activeCustomerSegment, loginSegmentAllowed, scopeCustomerProducts } from '../../../services/customer-segment.js';
 import { createProductSubmissionHandlers } from '../../../services/product-submissions.js';
-import { quotaSummary } from '../../../services/reporting.js';
+import { quotaSummary, customerReportScope } from '../../../services/reporting.js';
 import { freeMonthlyUsage } from '../../../services/api-key-security.js';
 import { createEntitlementPoller } from '../../../dashboard/src/lib/entitlement-poller.ts';
 import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
@@ -88,23 +88,26 @@ for (const options of [{ body: { uid: 'another' } }, { body: { duration: 1000 } 
 test('legacy/ambiguous markers cannot grant another trial', async () => {
   for (const value of [true, false, 'false']) assert.equal((await fixture({ hasUsedFreeTrial: value }).activate()).statusCode, 409);
 });
-test('requests 1-500 share Trial usage; request 501 resumes the unchanged Free monthly balance', async () => {
+test('requests 1-500 share Trial usage; request 501 and later UTC windows require paid Pro', async () => {
   const f = fixture(); await f.activate();
   for (let i = 1; i <= 500; i++) assert.equal((await f.consume(i % 2 === 0)).usage.used, i);
-  const next = await f.consume(); assert.equal(next.account.plan, 'Free'); assert.equal(next.usage.used, 3);
-  assert.equal((await f.consume(true)).usage.used, 4);
-  f.time('2026-09-24T00:00:00.000Z'); assert.equal((await f.consume()).usage.used, 5);
+  for (const useOtherKey of [false, true]) await assert.rejects(f.consume(useOtherKey),
+    { status: 403, code: 'UPGRADE_REQUIRED', message: 'Your Free Trial has ended. Upgrade to Pro to continue using the API.' });
+  f.time('2026-10-01T00:00:00.000Z'); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(f.db.read('account_trial_usage/owner').used, 500);
   assert.equal(f.db.read('account_api_usage/owner').used, 2);
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
   const status = (await f.status()).body; assert.equal(status.exhausted, true); assert.equal(status.active, false);
-  assert.equal(evaluateEntitlement(f.db.read('users/owner'), f.clock()).plan, 'Free');
+  assert.equal(status.status, 'upgrade_required'); assert.equal(status.endReason, 'exhausted');
+  assert.equal(evaluateEntitlement(f.db.read('users/owner'), f.clock()).plan, 'Upgrade Required');
 });
 test('concurrent final-unit requests cannot overrun 500', async () => {
   const f = fixture(); await f.activate(); await f.db.collection('account_trial_usage').doc('owner').update({ used: 499 });
   const results = await Promise.allSettled([f.consume(), f.consume(true), f.consume()]);
   assert.equal(results.filter(result => result.status === 'fulfilled' && result.value.account.plan === 'Pro Trial').length, 1);
-  assert.equal(results.filter(result => result.status === 'fulfilled' && result.value.account.plan === 'Free').length, 2);
+  assert.equal(results.filter(result => result.status === 'rejected' && result.reason.code === 'UPGRADE_REQUIRED').length, 2);
   assert.equal(f.db.read('account_trial_usage/owner').used, 500);
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
 });
 test('UTC midnight, new session/device and key revocation never reset/refund trial', async () => {
   const f = fixture(); await f.activate(); await f.consume();
@@ -161,11 +164,13 @@ test('Trial passes real Pro endpoint middleware while Free/expired Trial cannot;
   assert.equal(next, true); assert.equal(request.userPlan, 'Pro Trial'); assert.equal(activeCustomerSegment(request.userPlanData), 'Hardware');
   f.time(END); await assert.rejects(f.consume(false, { allowedPlans: ['pro'] }), { status: 403 });
 });
-test('expiry uses server boundary, returns Free, keeps keys/ownership, never permits reactivation', async () => {
+test('expiry uses server boundary, requires upgrade, keeps keys/ownership, never permits reactivation', async () => {
   const f = fixture(); await f.activate();
   f.time('2026-09-30T11:59:59.999Z'); assert.equal((await f.status()).body.active, true);
-  f.time(END); assert.equal((await f.status()).body.status, 'expired');
-  assert.equal((await f.consume()).usage.limit, 50); assert.equal(f.db.read('api_keys/key-a').status, 'active');
+  f.time(END); assert.equal((await f.status()).body.status, 'upgrade_required');
+  assert.equal((await f.status()).body.endReason, 'expired');
+  await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(f.db.read('api_keys/key-a').status, 'active');
   assert.equal(f.db.read('users/owner').businessSegment, 'Hardware'); assert.equal((await f.activate()).statusCode, 409);
 });
 test('paid Pro supersedes trial; trial time never extends paid renewal base', async () => {
@@ -173,7 +178,67 @@ test('paid Pro supersedes trial; trial time never extends paid renewal base', as
   const period = renewalPeriod(f.db.read('users/owner'), f.clock()); assert.equal(period.start, START);
   await f.db.collection('users').doc('owner').update({ plan: 'Pro', subscription_status: 'active', subscriptionExpiresAt: period.end });
   assert.equal((await f.consume()).usage.limit, 5000); assert.equal(f.db.read('account_trial_usage/owner').used, 1);
-  assert.equal((await f.status()).body.status, 'superseded'); assert.equal((await f.activate()).statusCode, 409);
+  assert.equal((await f.status()).body.status, 'paid'); assert.equal((await f.activate()).statusCode, 409);
+  f.time(period.end); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(f.db.read('users/owner').hasUsedFreeTrial, true);
+  assert.equal(evaluateEntitlement(f.db.read('users/owner'), f.clock()).status, 'upgrade_required');
+});
+test('never-used Free account keeps its monthly entitlement', async () => {
+  const f = fixture();
+  assert.equal(evaluateEntitlement(f.db.read('users/owner'), f.clock()).plan, 'Free');
+  assert.equal((await f.consume()).usage.used, 3);
+  assert.equal((await f.status()).body.eligible, true);
+});
+test('Upgrade Required preserves owned segment and Dashboard report scope', async () => {
+  const f = fixture(); await f.activate(); f.time(END);
+  const effective = evaluateEntitlement(f.db.read('users/owner'), f.clock());
+  assert.equal(activeCustomerSegment({ ...f.db.read('users/owner'), plan: effective.plan }), 'Hardware');
+  assert.deepEqual(customerReportScope(effective.plan, 'Hardware'),
+    { state: 'ready', segment: 'Hardware', restricted: true });
+  assert.deepEqual(scopeCustomerProducts([{ segment: 'Hardware' }, { segment: 'Grocery' }],
+    { ...f.db.read('users/owner'), plan: effective.plan }), [{ segment: 'Hardware' }]);
+});
+test('post-Trial middleware returns a stable 403 entitlement error before monthly admission', async () => {
+  const f = fixture(); await f.activate(); f.time(END);
+  const security = createDaaSSecurity({ getDb: () => f.db, clock: f.clock });
+  const req = { apiKeyData: { ...key, id: 'key-a' }, apiCredential: key.key };
+  const res = { statusCode: 200, body: null, set() { return this; }, status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; } };
+  let passed = false;
+  await security.enforceRequestLimit(req, res, () => { passed = true; });
+  assert.equal(passed, false); assert.equal(res.statusCode, 403);
+  assert.deepEqual(res.body, { success: false, error: 'UPGRADE_REQUIRED',
+    message: 'Your Free Trial has ended. Upgrade to Pro to continue using the API.' });
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
+});
+test('ended Trial keeps key history and management, but rejects new key issuance', async () => {
+  const f = fixture(); await f.activate(); f.time(END);
+  const list = await invoke(f.keys.list);
+  assert.equal(list.statusCode, 200); assert.equal(list.body.keys.length, 2);
+  assert.equal(list.body.keys[0].quotaState, 'upgrade_required');
+  assert.equal(list.body.usage.state, 'upgrade_required');
+  assert.equal(quotaSummary(list.body.usage, f.clock()), null);
+  const create = await invoke(f.keys.create, { body: { keyName: 'Unusable' } });
+  assert.equal(create.statusCode, 403); assert.equal(create.body.error, 'UPGRADE_REQUIRED');
+  assert.equal((await invoke(f.keys.rename, { params: { id: 'key-a' }, body: { name: 'Kept Key' } })).statusCode, 200);
+  assert.equal((await invoke(f.keys.revoke, { params: { id: 'key-b' } })).statusCode, 200);
+  assert.equal(f.db.read('api_keys/key-a').status, 'active');
+  assert.equal(f.db.read('api_keys/key-b').status, 'revoked');
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
+});
+test('paid Pro restores the same active key, then paid expiry restores Upgrade Required', async () => {
+  const f = fixture(); await f.activate(); await f.consume(); f.time(END);
+  await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  await f.db.collection('users').doc('owner').update({ plan: 'Pro', subscription_status: 'active',
+    subscriptionExpiresAt: '2026-10-31T12:00:00.000Z', apiRequestLimit: 5000 });
+  assert.equal((await f.consume()).usage.used, 1);
+  assert.equal(f.db.read('api_keys/key-a').status, 'active');
+  assert.equal((await f.status()).body.status, 'paid');
+  assert.equal((await invoke(f.keys.create, { body: { keyName: 'Paid Key' } })).statusCode, 200);
+  f.time('2026-10-31T12:00:00.000Z');
+  await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(f.db.read('users/owner').hasUsedFreeTrial, true);
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
 });
 test('usage projection shows trial total and expiry rather than daily reset', async () => {
   const f = fixture(); await f.activate(); await f.consume();
@@ -259,25 +324,26 @@ test('new account exception requires new monthly cutover plus server creation me
   const old = fixture({}, { 'account_free_monthly_usage/owner': null });
   await assert.rejects(old.consume(false, { cutoverAt: cutoff }), { code: 'QUOTA_CUTOVER_PENDING' });
 });
-test('Trial bypasses exhausted Free month, but exhaustion restores it without reset or key revocation', async () => {
+test('Trial bypasses exhausted Free month, but exhaustion enforces paywall without key revocation', async () => {
   const f = fixture({}, { 'account_free_monthly_usage/owner': { window: '2026-09', used: 50 } });
   await f.activate();
   for (let i = 0; i < 500; i++) await f.consume();
   assert.equal((await f.status()).body.active, false);
-  await assert.rejects(f.consume(), { status: 429 });
-  await assert.rejects(f.consume(false, { allowedPlans: ['pro'] }), { status: 403 });
+  await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  await assert.rejects(f.consume(false, { allowedPlans: ['pro'] }), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(f.db.read('api_keys/key-a').status, 'active');
   assert.equal(f.db.read('users/owner').businessSegment, 'Hardware');
   assert.equal((await f.activate()).statusCode, 409);
-  f.time('2026-10-01T00:00:00.000Z'); assert.equal((await f.consume()).usage.used, 1);
+  f.time('2026-10-01T00:00:00.000Z'); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(f.db.read('account_trial_usage/owner').used, 500);
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 50);
 });
-test('Trial expiry preserves current monthly Free balance and lower cap', async () => {
+test('Trial expiry preserves historical Free monthly balance without reopening its lower cap', async () => {
   const f = fixture({ apiRequestLimit: 3 }); await f.activate();
   for (let i = 0; i < 60; i++) await f.consume(i % 2 === 0);
-  f.time(END); const after = await f.consume();
-  assert.equal(after.account.plan, 'Free'); assert.equal(after.usage.used, 3); assert.equal(after.usage.limit, 3);
-  await assert.rejects(f.consume(true), { status: 429 });
+  f.time(END); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  await assert.rejects(f.consume(true), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
   assert.equal(f.db.read('account_trial_usage/owner').used, 60);
 });
 test('failed 500th commit cannot publish exhaustion or partially charge', async () => {
@@ -286,7 +352,7 @@ test('failed 500th commit cannot publish exhaustion or partially charge', async 
   assert.equal(f.db.read('users/owner').trialExhaustedAt, undefined);
   assert.equal(f.db.read('account_trial_usage/owner').used, 499);
   assert.equal((await f.consume()).usage.used, 500);
-  assert.equal((await f.consume()).account.plan, 'Free');
+  await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
 });
 test('paid Pro retains daily rollover independent of saved Free month', async () => {
   const f = fixture({ plan: 'Pro', subscription_status: 'active', subscriptionExpiresAt: END },
@@ -295,14 +361,15 @@ test('paid Pro retains daily rollover independent of saved Free month', async ()
   f.time('2026-09-24T00:00:00.000Z'); assert.equal((await f.consume()).usage.used, 1);
   assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
 });
-test('UTC month rollover never resets an active Trial counter; later expiry opens only the new Free month', async () => {
+test('UTC month rollover never resets Trial; later expiry remains paid-only', async () => {
   const f = fixture(); f.time('2026-09-29T12:00:00.000Z'); await f.activate(); await f.consume();
   f.time('2026-10-01T00:00:00.000Z');
   const next = await f.consume(true); assert.equal(next.account.plan, 'Pro Trial'); assert.equal(next.usage.used, 2);
   assert.equal(f.db.read('account_free_monthly_usage/owner').window, '2026-09');
   f.time('2026-10-06T12:00:00.000Z');
-  const free = await f.consume(); assert.equal(free.account.plan, 'Free'); assert.equal(free.usage.window, '2026-10');
-  assert.equal(free.usage.used, 1); assert.equal(f.db.read('account_trial_usage/owner').used, 2);
+  await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(f.db.read('account_free_monthly_usage/owner').window, '2026-09');
+  assert.equal(f.db.read('account_trial_usage/owner').used, 2);
 });
 test('Settings uses shared segment policy; quota copy distinguishes monthly, daily and Trial', () => {
   const settings = read('dashboard/src/app/dashboard/settings/page.tsx');
@@ -310,5 +377,5 @@ test('Settings uses shared segment policy; quota copy distinguishes monthly, dai
   assert.match(settings, /activeCustomerSegment\(appUser\)/);
   assert.match(read('dashboard/src/config/plans.ts'), /50 requests\/month/);
   assert.match(read('dashboard/src/components/reports/CustomerUsageSummary.tsx'), /Monthly account limit/);
-  assert.match(read('dashboard/src/app/dashboard/free-trial/page.tsx'), /Expiry or exhaustion returns you/);
+  assert.match(read('dashboard/src/app/dashboard/free-trial/page.tsx'), /Upgrade to Pro/);
 });

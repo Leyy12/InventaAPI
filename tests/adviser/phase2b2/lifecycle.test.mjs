@@ -221,7 +221,7 @@ test('Admin entitlement display joins account allowance and shared usage; Custom
   const result = await invoke(handler, { body: { ids: ['stranger', 'missing'] } });
   assert.equal(result.body.accounts.stranger.limit, 50); assert.equal(result.body.accounts.missing.active, false);
 });
-test('Admin shows Trial total separately from restored Free month; subscription status agrees on exhaustion', async () => {
+test('Admin shows ended Trial total and Upgrade Required without a current Free allowance', async () => {
   const startedAt = NOW.toISOString(), expiresAt = '2026-09-27T10:00:00.000Z';
   const db = setup({ ...free, trialVersion: 1, hasUsedFreeTrial: true, trialStartedAt: startedAt, trialExpiresAt: expiresAt });
   db.seed('users/admin', { role: 'Admin' });
@@ -233,11 +233,23 @@ test('Admin shows Trial total separately from restored Free month; subscription 
   assert.equal(active.used, 499); assert.equal(active.limit, 500); assert.equal(active.period, 'trial');
   await consume(db);
   const ended = (await invoke(handler, { body: { ids: ['owner'] } })).body.accounts.owner;
-  assert.equal(ended.plan, 'Free'); assert.equal(ended.used, 2); assert.equal(ended.limit, 50); assert.equal(ended.period, 'monthly');
+  assert.equal(ended.plan, 'Upgrade Required'); assert.equal(ended.used, null);
+  assert.equal(ended.limit, 0); assert.equal(ended.period, 'upgrade_required');
   assert.equal(ended.trial.used, 500); assert.equal(ended.trial.limit, 500); assert.equal(ended.trial.active, false);
   const status = (await invoke(handlers(db).status)).body;
-  assert.equal(status.plan, 'Free'); assert.equal(status.activeTrial, false);
-  assert.equal((await consume(db)).usage.used, 3);
+  assert.equal(status.plan, 'Upgrade Required'); assert.equal(status.activeTrial, false);
+  await assert.rejects(consume(db), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(db.read('account_free_monthly_usage/owner').used, 2);
+});
+test('used-Trial paywall keeps authenticated Pro checkout available', async () => {
+  const startedAt = '2026-09-13T09:00:00.000Z', expiresAt = '2026-09-20T09:00:00.000Z';
+  const db = setup({ ...free, trialVersion: 1, hasUsedFreeTrial: true, trialStartedAt: startedAt, trialExpiresAt: expiresAt });
+  db.seed('account_trial_usage/owner', { startedAt, expiresAt, used: 12 });
+  const status = await invoke(handlers(db).status);
+  assert.equal(status.body.plan, 'Upgrade Required'); assert.equal(status.body.canPurchasePro, true);
+  const checkout = await invoke(handlers(db).checkout);
+  assert.equal(checkout.statusCode, 200); assert.equal(checkout.body.success, true);
+  assert.equal(db.read('users/owner').hasUsedFreeTrial, true);
 });
 test('Admin paid daily reporting is not replaced by malformed legacy Trial history', async () => {
   const db = setup({ ...owner, hasUsedFreeTrial: true });

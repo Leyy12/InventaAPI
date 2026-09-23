@@ -7,7 +7,8 @@ import { Zap } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
 
 type Trial = { eligible: boolean; active: boolean; exhausted: boolean; expired: boolean;
-  hasUsedFreeTrial: boolean; status: string; startedAt: string | null; expiresAt: string | null;
+  hasUsedFreeTrial: boolean; upgradeRequired: boolean; endReason: 'expired' | 'exhausted' | null;
+  status: string; startedAt: string | null; expiresAt: string | null;
   serverTime: string; secondsRemaining: number; allowance: number; used: number; remaining: number };
 
 export default function FreeTrialPage() {
@@ -81,16 +82,22 @@ function TrialPanel({ user }: { user: User }) {
     {error && <p role="alert" className="text-rose-300">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry status</button></p>}
     {!trial ? <p role="status">Checking trial eligibility and usage…</p> :
       <section className="glass-card rounded-2xl border border-amber-500/30 p-8 space-y-4">
-        <h2 className="text-xl text-white">{trial.exhausted ? 'Trial quota exhausted' : trial.active ? 'Your Free Trial is Active!'
-          : trial.expired ? 'Your Free Trial has ended' : trial.eligible ? 'Activate your one-time trial'
-          : trial.hasUsedFreeTrial ? 'Trial already used; current plan applies' : 'Trial is not available for this account'}</h2>
+        <h2 className="text-xl text-white">{trial.status === 'paid' ? 'Paid subscription active'
+          : trial.active ? 'Your Free Trial is Active!'
+          : trial.upgradeRequired ? 'Free Trial Ended — Upgrade Required'
+          : trial.eligible ? 'Activate your one-time trial' : 'Trial is not available for this account'}</h2>
         {trial.expiresAt && <p>Expires: {new Date(trial.expiresAt).toUTCString()}</p>}
         {trial.active && <>
           <p>{trial.used} / 500 total API requests consumed · {trial.remaining} remaining</p>
           <p>{Math.ceil(trial.secondsRemaining / 3600)} hours remaining as of {new Date(trial.serverTime).toUTCString()}.</p>
-          <p className="text-sm text-slate-400">No midnight reset. Expiry or exhaustion returns you to the existing Free monthly balance.</p>
+          <p className="text-sm text-slate-400">No midnight reset. When the Trial ends, protected API access pauses until you upgrade to Pro.</p>
         </>}
-        {(trial.expired || trial.exhausted) && <p>Trial ended: {trial.used} / 500 total requests used. Normal Free monthly rules apply unless you have a paid subscription. Existing keys remain valid; the Free monthly balance is not reset.</p>}
+        {trial.upgradeRequired && <>
+          <p>{trial.endReason === 'exhausted' ? 'Trial quota exhausted' : 'Seven-day Trial expired'}: {trial.used} / 500 total requests used. Protected API access is paused until you upgrade to Pro. Existing key records remain available and can work again after a valid paid upgrade.</p>
+          <p>Trial already used. Your account and business segment remain available; this Trial cannot be activated again.</p>
+          <Link className="inline-flex rounded-lg bg-indigo-600 px-5 py-3 text-white" href="/dashboard/settings#subscription">Upgrade to Pro</Link>
+        </>}
+        {trial.status === 'paid' && trial.hasUsedFreeTrial && <p>Trial history: {trial.used} / 500 total requests used. Paid entitlement currently controls API access.</p>}
         {trial.eligible && <button disabled={busy} onClick={activate} className="rounded-lg bg-indigo-600 px-5 py-3 disabled:opacity-50">{busy ? 'Activating…' : 'Activate 7-Day Trial'}</button>}
         <div><Link className="text-cyan-400" href="/dashboard/api-keys">Manage API Keys →</Link></div>
       </section>}

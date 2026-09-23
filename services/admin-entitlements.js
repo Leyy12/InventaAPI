@@ -28,12 +28,13 @@ export function createAdminEntitlements({ getDb, verifyIdToken, clock = () => ne
           trialHistoryUnavailable = true;
         }
         const monthly = effective.level === 0 ? await tx.get(db.collection('account_free_monthly_usage').doc(id)) : null;
-        const usage = effective.activeTrial ? trialQuota : effective.level === 0
+        const usage = effective.upgradeRequired ? null : effective.activeTrial ? trialQuota : effective.level === 0
           ? freeMonthlyUsage(monthly.exists ? monthly.data() : null, accountDoc, now, monthlyCutoverAt)
           : storedUsage ? usageForToday(storedUsage, now) : null;
         return { plan: effective.plan, status: effective.status, limit: effective.limit,
           used: usage?.holdUntil ? null : usage?.used ?? null, active: true,
-          period: usage?.period || 'daily', resetsAt: usage?.resetsAt ?? null, holdUntil: usage?.holdUntil ?? null,
+          period: effective.upgradeRequired ? 'upgrade_required' : usage?.period || 'daily',
+          resetsAt: usage?.resetsAt ?? null, holdUntil: usage?.holdUntil ?? null,
           ...(trialHistoryUnavailable ? { trialHistoryUnavailable: true } : {}),
           ...(trialQuota ? { trial: { used: trialQuota.used, limit: 500, active: !!effective.activeTrial,
             expiresAt: trial.expiresAt } } : {}) };

@@ -6,6 +6,7 @@ import {
   Download, RefreshCw, Sparkles, Zap, ChevronDown, ChevronRight
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import Link from 'next/link';
 import CodeSnippet from "@/components/shared/CodeSnippet";
 
 interface ApiResponse {
@@ -244,6 +245,7 @@ export default function ApiPlaygroundPage() {
                       {response.message && (
                         <p className="text-xs text-slate-400 mt-1">{response.message}</p>
                       )}
+                      {response.error === 'UPGRADE_REQUIRED' && <Link href="/dashboard/settings#subscription" className="mt-2 inline-block text-sm font-semibold text-cyan-300">Upgrade to Pro</Link>}
                     </div>
                   </div>
                 </div>

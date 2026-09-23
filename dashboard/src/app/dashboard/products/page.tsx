@@ -42,7 +42,12 @@ function isFreePlan(plan: string | undefined): boolean {
 
 export default function ProductCatalogPage() {
   const router = useRouter();
-  const { appUser } = useAuth();
+  const { user, appUser, entitlement } = useAuth();
+  const [paywalledUserId, setPaywalledUserId] = useState<string | null>(null);
+  const paidAccess = entitlement?.activePro === true || ['Enterprise', 'Unlimited'].includes(entitlement?.plan ?? '');
+  const upgradeRequired = entitlement?.subscription_status === 'upgrade_required'
+    || (paywalledUserId === user?.uid && !paidAccess);
+  const canGenerate = !!entitlement && !upgradeRequired;
   
   // Core State
   const [products, setProducts] = useState<Product[]>([]);
@@ -218,6 +223,7 @@ export default function ProductCatalogPage() {
   // ==================== API KEY GENERATION ====================
 
   const handleGenerateApiKey = async () => {
+    if (!canGenerate) return;
     if (!keyName.trim()) {
       alert("Please enter a name for your API key");
       return;
@@ -273,6 +279,10 @@ export default function ProductCatalogPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.error === 'UPGRADE_REQUIRED') {
+          setPaywalledUserId(user?.uid ?? null);
+          setShowGenModal(false);
+        }
         throw new Error(generationErrorMessage(data));
       }
 
@@ -364,6 +374,7 @@ DAAS_API_KEY=${generatedKey}
         <div className="flex items-center gap-3">
           {selectedProducts.size > 0 && (
             <button
+              disabled={!canGenerate}
               onClick={() => { 
                 setShowGenModal(true); 
                 setGeneratedKey(null); 
@@ -378,6 +389,7 @@ DAAS_API_KEY=${generatedKey}
               Generate API Key ({selectedProducts.size} products)
             </button>
           )}
+          {upgradeRequired && <Link href="/dashboard/settings#subscription" className="text-sm font-semibold text-cyan-300">Free Trial Ended — Upgrade to Pro to generate a key</Link>}
           <button
             onClick={() => setShowAddProductModal(true)}
             className="px-5 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
@@ -648,7 +660,7 @@ DAAS_API_KEY=${generatedKey}
       )}
 
       {/* Generate API Key Modal */}
-      {showGenModal && (
+      {showGenModal && canGenerate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
           <div className="w-full max-w-md glass-card rounded-2xl border border-slate-700 shadow-2xl p-8 animate-in fade-in zoom-in duration-200 relative">
             <button

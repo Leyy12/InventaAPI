@@ -23,13 +23,13 @@ export default function DocsPage() {
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Account usage and recorded history</h2>
-      <p>Check API Keys for your backend-verified limit, period, usage, remaining allowance and UTC reset. Free allows 50 requests per UTC calendar month, Pro keeps its daily quota, and Trial allows 500 total until seven days or exhaustion. Quota is account-level, shared across keys. Creating another key does not reset it. History is a bounded record of logged route requests, not the quota counter.</p>
+      <p>Check API Keys for your backend-verified limit, period, usage, remaining allowance and UTC reset. Free allows 50 requests per UTC calendar month before the one-time Trial; Pro keeps its daily quota; Trial allows 500 total until seven days or exhaustion. After Trial ends, protected API access pauses until paid Pro is active. Existing keys remain available and work again after a valid upgrade. Quota is account-level, shared across keys. Creating another key does not reset it. History is a bounded record of logged route requests, not the quota counter.</p>
       <p>Key Name is your user-selected key alias, recorded at request time. Older or malformed records may have unavailable fields.</p>
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Errors</h2>
       <p>Key generation: 409 with <code>API_KEY_DAILY_GENERATION_LIMIT</code> means this account already generated a key in the current UTC day. The server returns <code>nextEligibleAt</code>, the next 00:00 UTC. This is separate from API request quota exhaustion and IP rate limiting.</p>
-      <p>Always check HTTP status before using products. 401: invalid or missing credential; 403: denied/inactive key, account or scope; 429: account quota exhausted or the separate short-window IP rate limit reached; 503 with QUOTA_CUTOVER_PENDING: account activation hold; other 500/503: server or verification unavailable. A network error is not an empty catalog.</p>
+      <p>Always check HTTP status before using products. 401: invalid or missing credential; 403 with <code>UPGRADE_REQUIRED</code>: Trial ended and paid Pro is required for protected API access; other 403: account, plan or scope denied; 429: temporary account quota exhaustion or the separate short-window IP rate limit; 503 with QUOTA_CUTOVER_PENDING: account activation hold; other 500/503: server or verification unavailable. A network error is not an empty catalog.</p>
       <p>Security errors use flat <code>error</code> (code) and <code>message</code> fields; some include quota metadata. Respect the returned reset/hold time for quota responses or Retry-After for the IP limiter. Do not retry by generating keys or assume every error has a nested <code>error.message</code>.</p>
       <p>Need help? <a href="mailto:support@inventaapi.com" className="text-indigo-300">Contact support</a>.</p>
     </section>

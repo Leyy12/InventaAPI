@@ -1,16 +1,19 @@
 # Free Trial integration — local review contract
 
 The [final client quota contract](adviser-free-trial-quota-contract.md) supersedes
-the original Free daily policy: Free is now monthly; Trial ends at expiry OR
-500 requests, then returns to the preserved Free month balance. That document
-also records the approved migration hold, Admin projection and Settings fixes.
+the original Free daily policy: Free is now monthly before Trial; Trial ends at
+expiry OR 500 requests, then protected API access requires paid Pro. The
+monthly counter remains historical and does not restore access after Trial.
+That document also records the approved migration hold, Admin projection and
+Settings fixes.
 
 ## Status and safety
 
 Implementation on `adviser/free-trial-integration`, based on production commit
 `0f392700b6f921c55e478d2a8ea1469c3c54ad1e`.
-The approved core is locally checkpointed at `f7987647194ecb0cbf40b1c0de8ae071450cc928`;
-the Phase 2 client TODO changes below remain uncommitted for review.
+The approved core, Phase 2 client TODO and Customer lint fix are locally
+checkpointed at `f798764`, `d523734` and `b897156`. The hard paywall change
+remains uncommitted for review.
 Reference only: `origin/client/free-trial` at
 `5a914d6489155ecc56a3c487454e2ee33825af84`.
 No merge, rebase, wholesale cherry-pick, push, deployment or production access.
@@ -65,18 +68,22 @@ their owner's scope; stale embedded key product snapshots remain non-authoritati
   trial. `account_trial_usage/{uid}` binds used count to the exact trial dates.
   Quota, key validity and account entitlement are checked transactionally together.
   Requests 1–500 may succeed. The 500th atomically ends Trial entitlement;
-  subsequent requests use the current Free monthly balance. Invalid/missing
-  Trial counters fail closed. Admission still charges downstream failures.
+  subsequent protected API requests fail with `403 UPGRADE_REQUIRED` before
+  monthly accounting. Invalid/missing Trial counters fail closed. Admission
+  still charges downstream failures.
 - Midnight, new keys, revocation, browser/device changes or new login do not
-  reset/refund usage. Exhaustion restores the existing Free monthly balance,
-  never creates an extra/reset Free allowance.
+  reset/refund usage. Exhaustion does not reopen the existing Free monthly
+  balance or create another allowance.
 - The existing daily-account counter is retained separately, not erased. Its
   clean-window/cutover hold remains enforced and appears in management metadata.
   Trial activation does not reset generation markers or bypass the one successful
   key generation per account/UTC day rule. Existing 60/minute IP limits remain.
 - At server time >= trialExpiresAt, or after the 500th admission, the overlay ceases.
-  Normal Free entitlement/quota applies; owned segment and keys are preserved.
-  The lifetime used flag remains. No scheduled job is necessary for correctness.
+  `Upgrade Required` applies unless valid paid entitlement exists. Owned segment,
+  Dashboard access and key records are preserved; new key generation is blocked.
+  Paid Pro re-enables otherwise-valid keys. If paid Pro later expires, the
+  paywall returns. The lifetime used flag remains. No scheduled job is
+  necessary for correctness.
 - A valid paid Pro subscription supersedes trial entitlement. Existing PayMongo
   checkout, webhook, amount/currency, order/payment idempotency and atomic
   fulfillment are unchanged. Activation creates no payment/order/subscription.

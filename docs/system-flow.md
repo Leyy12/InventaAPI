@@ -106,9 +106,11 @@ recent recorded API requests, not complete quota accounting or key-generation
 history. **Key Name** is the key alias at request time; no downstream Consumer
 registry or invented Consumer identity.
 
-Trial ends at seven days OR 500 total requests and returns to the preserved
-Free monthly balance; keys are not revoked. See the [monthly migration and
-Trial contract](adviser-free-trial-quota-contract.md) for holds and precedence.
+Trial ends at seven days OR 500 total requests. Protected API access and new
+key generation then require paid Pro; existing keys and Customer application
+access remain. Paid expiry after a used Trial restores Upgrade Required, not
+Free API access. See the [monthly migration and Trial contract](adviser-free-trial-quota-contract.md)
+for holds and precedence.
 
 ## Payment and entitlement
 
@@ -122,8 +124,10 @@ flowchart LR
 
 Browser plan selections and payment redirects are intent/display only, never
 payment proof. Existing lifecycle expiry, renewal and deletion barriers remain.
-Free Trial is **DEFERRED / OUT OF SCOPE**. PayMongo sandbox verification remains
-a release gate; no live payment calls were made for R5C.
+Free Trial was **DEFERRED / OUT OF SCOPE for R5C**; the subsequent local
+integration and hard-paywall review candidate are documented above. PayMongo
+sandbox verification remains a release gate; no live payment calls were made
+for R5C.
 
 ## Images
 

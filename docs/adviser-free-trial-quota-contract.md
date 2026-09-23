@@ -10,6 +10,7 @@ inspection or migration has been performed. Notifications remain deferred.
 | --- | --- | --- |
 | Free / Starter | `account_free_monthly_usage/{uid}` | `min(apiRequestLimit, 50)` per UTC calendar month |
 | Active Pro Trial | `account_trial_usage/{uid}` | 500 total, until seven days or exhaustion, whichever is first |
+| Upgrade Required after Trial | No consuming counter | Protected API denied with `403 UPGRADE_REQUIRED` until valid paid entitlement |
 | Paid Pro | `account_api_usage/{uid}` | Existing 5,000/day policy |
 | Enterprise / Unlimited | `account_api_usage/{uid}` | Existing unlimited policy and daily diagnostics |
 
@@ -55,8 +56,10 @@ account without an authoritative monthly counter waits for the next UTC month.
 Never copy the earlier daily-cutover value or backdate the monthly cutover.
 
 The monthly counter is separate from paid daily history. Paid requests do not
-consume Free allowance; returning to Free reuses the current authoritative
-monthly balance, or applies the same unknown-opening-balance hold if absent.
+consume Free allowance. Ordinary Free access remains available only before the
+one-time Trial has been used. After Trial, the monthly balance is historical and
+cannot admit requests, even at a new UTC month boundary. An expired paid
+subscription after a used Trial returns to Upgrade Required.
 
 ## Trial termination and preserved balances
 
@@ -67,9 +70,10 @@ UTC to September 30 at noon UTC), or when request 500 is admitted.
 
 Request 500 consumes the final Trial unit and atomically writes protected
 `users.trialExhaustedAt`. That request retains its admitted Pro behavior. Every
-subsequent entitlement evaluation returns Free unless valid paid entitlement
-takes precedence. A request for a Pro-only endpoint then fails its plan gate.
-There is no 501st Trial unit: a later eligible request uses Free monthly quota.
+subsequent entitlement evaluation returns Upgrade Required unless valid paid
+entitlement takes precedence. Every protected API endpoint then returns
+`403 UPGRADE_REQUIRED`, including those previously available to Free. There is
+no 501st Trial unit or Free monthly fallback.
 
 While active, Trial does not consume or reset the Free month balance and is not
 capped by it. A missing monthly balance is recorded as pending when a Trial API
@@ -78,20 +82,24 @@ The existing legacy daily cutover hold remains independent. Trial expiry or
 exhaustion does not clear a pending monthly hold. Month rollover never resets
 Trial usage or daily key-generation markers.
 
-After either termination condition, existing keys remain valid, the owned
-businessSegment is preserved, and hasUsedFreeTrial stays true. The client's old
-automatic Trial-key-revocation wording is explicitly superseded. Trial cannot
-restart. Normal paid Pro upgrade through the existing PayMongo flow remains
-available. No watcher or notification process is required for expiry.
+After either termination condition, existing key records and their normal
+revocation state remain intact, the owned businessSegment is preserved, and
+hasUsedFreeTrial stays true. New key generation and protected API admission
+pause; Customer login, Dashboard, products, Settings and checkout remain
+available. A valid paid Pro upgrade through the existing PayMongo flow restores
+otherwise-valid keys without clearing Trial history. Later paid expiry returns
+to Upgrade Required. No watcher or notification process is required for the
+paywall.
 
 ## Reporting, scope and rules
 
 Admin's active Trial usage is read from the Trial counter, not daily/monthly
-usage. After exhaustion, Admin displays current Free monthly usage separately
-from ended Trial history: **Free 2/50 monthly; Trial ended 500/500 total**, never
-2/500. Paid reporting stays daily. Customer metadata and quota labels identify
-monthly, daily and Trial periods. Settings uses the shared segment policy:
-Hardware Free -> Trial -> Free remains Hardware, never all segments.
+usage. After exhaustion, Admin displays **Upgrade Required** with ended Trial
+history (for example, 500/500); a saved Free 2/50 balance is historical and
+must not appear as usable. Paid reporting stays daily. Customer metadata and
+quota labels identify monthly, daily, Trial and Upgrade Required states.
+Settings uses the shared segment policy: Hardware Free -> Trial -> Upgrade
+Required remains Hardware, never all segments.
 
 Both counter collections are denied to browser reads/writes, including Admin
 browser clients. Ownership, paid authority and Trial exhaustion fields remain
@@ -169,7 +177,7 @@ worktree. Dependencies and lockfiles are unchanged. Nothing is staged or committ
 | `docs/release-runbook.md` | Link the trial contract / correct authoritative segment documentation. |
 | `docs/system-flow.md` | Update authoritative Free/Trial quota flow and retained keys. |
 | `firestore.rules` | Protect ownership, trial fields and the server-only shared trial counter. |
-| `functions/subscription-lifecycle.mjs` | Seven-day Trial overlay with atomic-exhaustion marker; Free fallback and paid precedence. |
+| `functions/subscription-lifecycle.mjs` | Seven-day Trial overlay with atomic-exhaustion marker; post-Trial paywall and paid precedence. |
 | `middleware/planGate.js` | Inject optional monthly cutover into quota enforcement. |
 | `package.json` | Add isolated test command only; dependencies unchanged. |
 | `routes/admin.js` | Inject the same monthly cutover into Admin usage projections. |

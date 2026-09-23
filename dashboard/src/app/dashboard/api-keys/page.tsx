@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from 'next/link';
 import { Key, Copy, Plus, Trash2, AlertTriangle, Shield, CheckCircle2, Clock, Info, Code } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import CodeSnippet from "@/components/shared/CodeSnippet";
@@ -27,10 +28,14 @@ interface ApiKey {
 }
 
 export default function ApiKeysPage() {
-  const { user, appUser } = useAuth();
-  return user ? <AccountKeys key={user.uid} user={user} account={appUser} /> : null;
+  const { user, appUser, entitlement } = useAuth();
+  const entitlementStatus = entitlement?.subscription_status ?? null;
+  return user ? <AccountKeys key={`${user.uid}:${entitlementStatus}`} user={user} account={appUser}
+    entitlementStatus={entitlementStatus} paidAccess={entitlement?.activePro === true || ['Enterprise', 'Unlimited'].includes(entitlement?.plan ?? '')} /> : null;
 }
-function AccountKeys({ user, account }: { user: User; account: { uid?: string; plan?: unknown; businessSegment?: unknown; selectedSegment?: unknown } | null }) {
+function AccountKeys({ user, account, entitlementStatus, paidAccess }: { user: User;
+  account: { uid?: string; plan?: unknown; businessSegment?: unknown; selectedSegment?: unknown } | null;
+  entitlementStatus: string | null; paidAccess: boolean }) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -41,7 +46,10 @@ function AccountKeys({ user, account }: { user: User; account: { uid?: string; p
   const [loadedProducts, setLoadedProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [productsLoading, setProductsLoading] = useState(false);
+  const [serverPaywall, setServerPaywall] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
+  const upgradeRequired = entitlementStatus === 'upgrade_required' || (serverPaywall && !paidAccess);
+  const canGenerate = entitlementStatus !== null && !upgradeRequired;
   const availableProducts = scopeCustomerProducts(loadedProducts, account);
   const selectedCustomerProducts = availableProducts.filter(product =>
     typeof product.id === 'string' && selectedProductIds.has(product.id));
@@ -64,6 +72,7 @@ function AccountKeys({ user, account }: { user: User; account: { uid?: string; p
   }, [user]);
   const invalidateList = useCallback(() => { listGeneration.current++; }, []);
   const openGenerateModal = () => {
+    if (!canGenerate) return;
     setProductsLoading(true);
     setShowGenerateModal(true);
   };
@@ -84,6 +93,7 @@ function AccountKeys({ user, account }: { user: User; account: { uid?: string; p
   }, [fetchApiKeys, invalidateList]);
 
   const generateNewKey = async () => {
+    if (!canGenerate) return;
     if (!newKeyName.trim()) {
       alert("Please enter a name for your API key");
       return;
@@ -114,6 +124,10 @@ function AccountKeys({ user, account }: { user: User; account: { uid?: string; p
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.error === 'UPGRADE_REQUIRED') {
+          setServerPaywall(true);
+          setShowGenerateModal(false);
+        }
         // Show more specific error messages from backend
         const errorMessage = generationErrorMessage(data);
         throw new Error(errorMessage);
@@ -246,8 +260,15 @@ DAAS_API_KEY=${keyStr}
           <p className="text-slate-400">Manage your authentication credentials for API access</p>
           <p className="text-sm text-slate-400 mt-2">{GENERATION_POLICY}</p>
         </div>
-        <button onClick={openGenerateModal} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Generate API key</button>
+        <button onClick={openGenerateModal} disabled={!canGenerate}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">Generate API key</button>
       </div>
+
+      {upgradeRequired && <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-5 text-amber-100">
+        Free Trial Ended. Existing keys remain visible and manageable, but new keys and protected API access require paid Pro.{' '}
+        <Link href="/dashboard/settings#subscription" className="font-semibold text-cyan-300">Upgrade to Pro</Link>
+      </div>}
+      {!entitlementStatus && <p role="status" className="text-slate-400">Verifying account entitlement before key generation…</p>}
 
       {/* Security Warning Banner */}
       <div className="glass-card rounded-xl p-6 border-l-4 border-amber-500 bg-gradient-to-r from-amber-500/10 to-transparent">
@@ -285,7 +306,7 @@ DAAS_API_KEY=${keyStr}
       </div>
 
       <CustomerUsageSummary />
-      <p className="text-sm text-slate-400">The account allowance is shared across keys: 50/month for Free (or a lower account limit), daily for paid plans, 500 total across an active trial. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
+      <p className="text-sm text-slate-400">The account allowance is shared across keys: 50/month for Free before Trial (or a lower account limit), daily for paid plans, 500 total across an active trial. Once Trial ends, protected API access requires paid Pro. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
       <RequestHistory />
 
       {/* API Keys List */}
@@ -319,7 +340,8 @@ DAAS_API_KEY=${keyStr}
               </p>
               <button
                 onClick={openGenerateModal}
-                className="px-6 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-all inline-flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+                disabled={!canGenerate}
+                className="px-6 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-all inline-flex items-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
               >
                 <Plus className="w-5 h-5" />
                 Generate Your First Key
@@ -578,7 +600,7 @@ DAAS_API_KEY=${keyStr}
                     </button>
                     <button
                       onClick={generateNewKey}
-                      disabled={!newKeyName.trim() || generatingKey}
+                      disabled={!canGenerate || !newKeyName.trim() || generatingKey}
                       className="flex-1 px-4 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {generatingKey ? (

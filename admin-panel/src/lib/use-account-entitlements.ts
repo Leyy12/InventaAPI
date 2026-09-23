@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useAdminAuth } from './firebase/admin-auth-context';
 export interface AccountEntitlement { plan: string; status: string; limit: number | null; used: number | null; active: boolean;
-  period?: 'daily' | 'monthly' | 'trial'; resetsAt?: string | null; holdUntil?: string | null;
+  period?: 'daily' | 'monthly' | 'trial' | 'upgrade_required'; resetsAt?: string | null; holdUntil?: string | null;
   trial?: { used: number; limit: number; active: boolean; expiresAt: string } }
 export function useAccountEntitlements(ids: string[]) {
   const { user } = useAdminAuth();

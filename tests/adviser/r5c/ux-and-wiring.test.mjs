@@ -38,15 +38,16 @@ test('revocation stays available with warning about only usable key and no refun
 // dependencies. No browser, SDK initialization or real HTTP call is involved.
 async function submit(response, name = 'Integration') {
   const handler = keys.slice(keys.indexOf('  const generateNewKey = async () => {'), keys.indexOf('  const revokeKey ='));
-  const state = { secrets: [], names: [], alerts: [], pending: [], refreshes: 0, calls: 0, bodies: [] };
+  const state = { secrets: [], names: [], alerts: [], pending: [], paywall: [], modal: [], refreshes: 0, calls: 0, bodies: [] };
   const run = new Function('newKeyName', 'user', 'fetch', 'process', 'alert', 'console', 'setGeneratingKey',
     'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setNewKeyName', 'fetchApiKeys', 'generationErrorMessage',
-    'selectedCustomerProducts', `${handler}; return generateNewKey();`);
+    'selectedCustomerProducts', 'canGenerate', 'setServerPaywall', 'setShowGenerateModal', `${handler}; return generateNewKey();`);
   await run(name, { email: 'fixture@example.test', getIdToken: async () => 'synthetic-token' },
     async (_url, options) => { state.calls++; state.bodies.push(JSON.parse(options.body)); return { ok: response.ok, json: async () => response.data }; },
     { env: { NEXT_PUBLIC_API_URL: 'http://127.0.0.1:9' } }, value => state.alerts.push(value), { error: () => {} },
     value => state.pending.push(value), value => state.secrets.push(value), value => state.names.push(value), () => {}, () => state.refreshes++, generationErrorMessage,
-    [{ id: 'canonical-product-id', name: 'Fixture Product' }]);
+    [{ id: 'canonical-product-id', name: 'Fixture Product' }], true,
+    value => state.paywall.push(value), value => state.modal.push(value));
   return state;
 }
 test('actual generation handler reveals successful one-time secret and refreshes metadata', async () => {
@@ -62,6 +63,12 @@ test('actual handler daily denial never reveals secret or refreshes list', async
   const state = await submit({ ok: false, data: { error: 'API_KEY_DAILY_GENERATION_LIMIT', nextEligibleAt: '2026-09-23T00:00:00.000Z' } });
   assert.deepEqual(state.secrets, []); assert.equal(state.refreshes, 0);
   assert.match(state.alerts[0], /2026-09-23 00:00 UTC/); assert.deepEqual(state.pending, [true, false]);
+});
+test('post-Trial generation denial presents Upgrade to Pro and no secret', async () => {
+  const state = await submit({ ok: false, data: { error: 'UPGRADE_REQUIRED' } });
+  assert.deepEqual(state.secrets, []); assert.equal(state.refreshes, 0);
+  assert.deepEqual(state.paywall, [true]); assert.deepEqual(state.modal, [false]);
+  assert.match(state.alerts[0], /Upgrade to Pro/);
 });
 test('actual handler invalid local name never contacts generation endpoint', async () => {
   const state = await submit({ ok: true, data: {} }, '  '); assert.equal(state.calls, 0); assert.deepEqual(state.secrets, []);

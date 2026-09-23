@@ -83,7 +83,7 @@ export default function SubscriptionExpiryBanner() {
           <span className="font-bold underline decoration-dotted">{timeLabel}</span>.
         </p>
         <p className={`text-xs mt-0.5 ${s.subtext}`}>
-          Mag-renew na para hindi ma-interrupt ang iyong API access at bumalik sa Free plan limits.
+          Mag-renew na para hindi ma-interrupt ang iyong API access.
         </p>
       </div>
 

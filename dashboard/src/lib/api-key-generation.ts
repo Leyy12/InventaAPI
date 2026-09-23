@@ -3,6 +3,7 @@ export const REVOCATION_WARNING = "Revoking a key does not restore today's gener
 
 // Presentation only. Eligibility is always decided by the backend transaction.
 export function generationErrorMessage(data: { error?: string; message?: string; nextEligibleAt?: unknown }): string {
+  if (data.error === 'UPGRADE_REQUIRED') return 'Your Free Trial has ended. Upgrade to Pro to continue using the API.';
   if (data.error !== 'API_KEY_DAILY_GENERATION_LIMIT') {
     return data.message || data.error || 'Unable to create your API key. Please try again later.';
   }
