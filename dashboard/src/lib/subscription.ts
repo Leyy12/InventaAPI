@@ -7,6 +7,7 @@ export interface SubscriptionState {
   subscriptionStartedAt: string | null;
   subscriptionExpiresAt: string | null;
   activePro: boolean;
+  activeTrial?: boolean;
   expired: boolean;
   canPurchasePro: boolean;
   secondsRemaining: number;

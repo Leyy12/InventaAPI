@@ -119,7 +119,7 @@ for (const field of fields) {
   test(`signup cannot assert ${field}`, async () => {
     const uid = 'signup-' + field.toLowerCase().replaceAll('_', '-');
     assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid),
-      { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, [field]: 'forged' })).status, 403);
+      { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', [field]: 'forged' })).status, 403);
   });
 }
 for (const state of ['deleting', 'deleted']) test(`${state} tombstone cannot be changed/deleted/recreated`, async () => {
@@ -132,6 +132,6 @@ for (const state of ['deleting', 'deleted']) test(`${state} tombstone cannot be 
 });
 test('ordinary Free signup and profile changes remain supported', async () => {
   const uid = 'valid-lifecycle';
-  assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50 })).status, 200);
+  assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' })).status, 200);
   assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { fullName: 'Safe' }, 'fullName')).status, 200);
 });

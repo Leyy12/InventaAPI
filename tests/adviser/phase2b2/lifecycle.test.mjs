@@ -14,14 +14,15 @@ import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
 const NOW = new Date('2026-09-20T10:00:00.000Z');
 const END = '2026-09-20T10:00:01.000Z';
 const owner = { uid: 'owner', role: 'Developer', plan: 'Pro', subscription_status: 'active', apiRequestLimit: 5000,
-  subscriptionStartedAt: '2026-08-21T10:00:01.000Z', subscriptionExpiresAt: END, selectedSegment: 'Grocery' };
+  subscriptionStartedAt: '2026-08-21T10:00:01.000Z', subscriptionExpiresAt: END, selectedSegment: 'Grocery', businessSegment: 'Grocery' };
 const free = { ...owner, plan: 'Free', subscription_status: 'inactive', apiRequestLimit: 50, subscriptionExpiresAt: '2026-09-19T10:00:00.000Z' };
 const key = { userId: 'owner', status: 'active', key: 'daas_one', plan: 'Pro', requestLimit: 5000 };
 const verifyIdToken = async (token, revoked) => { assert.equal(revoked, true); if (token !== 'owner-token') throw Error('invalid'); return { uid: 'owner' }; };
 function setup(account = owner) {
   const db = memoryFirestore({ 'users/owner': account, 'users/stranger': { ...free, uid: 'stranger' },
     'api_keys/one': key, 'api_keys/two': { ...key, key: 'daas_two' },
-    'account_api_usage/owner': { window: '2026-09-20', used: 0 } });
+    'account_api_usage/owner': { window: '2026-09-20', used: 0 },
+    'account_free_monthly_usage/owner': { window: '2026-09', used: 0 } });
   return db;
 }
 const consume = (db, now = NOW, keyId = 'one', extra = {}) => consumeAccountQuota(db, {
@@ -53,15 +54,17 @@ for (const [label, now, active] of [['before', NOW, true], ['exact', new Date(EN
 test('same key before/after expiry, second key cannot retain Pro or reset shared usage', async () => {
   const db = setup(); assert.equal((await consume(db)).usage.limit, 5000);
   const result = await consume(db, new Date(END), 'two');
-  assert.equal(result.usage.used, 2); assert.equal(result.usage.limit, 50);
-  db.seed('account_api_usage/owner', { window: '2026-09-20', used: 50 });
+  assert.equal(result.usage.used, 1); assert.equal(result.usage.limit, 50);
+  db.seed('account_free_monthly_usage/owner', { window: '2026-09', used: 50 });
   await assert.rejects(consume(db, new Date(END)), e => e.status === 429);
 });
-test('downgrade preserves usage above Free allowance and commits even on denial', async () => {
+test('downgrade preserves exhausted Free month and paid daily history and commits even on denial', async () => {
   const db = setup(); db.seed('account_api_usage/owner', { window: '2026-09-20', used: 4000 });
+  db.seed('account_free_monthly_usage/owner', { window: '2026-09', used: 50 });
   await assert.rejects(consume(db, new Date(END)), e => e.status === 429);
   assert.equal(db.read('users/owner').apiRequestLimit, 50);
   assert.equal(db.read('account_api_usage/owner').used, 4000);
+  assert.equal(db.read('account_free_monthly_usage/owner').used, 50);
 });
 test('expired account cannot use paid endpoint even with stale Pro key snapshot', async () => {
   const db = setup(); await assert.rejects(consume(db, new Date(END), 'one', { allowedPlans: ['pro'] }), e => e.status === 403);
@@ -217,6 +220,33 @@ test('Admin entitlement display joins account allowance and shared usage; Custom
   db.seed('users/owner', { ...owner, role: 'Admin', plan: 'Enterprise', apiRequestLimit: null });
   const result = await invoke(handler, { body: { ids: ['stranger', 'missing'] } });
   assert.equal(result.body.accounts.stranger.limit, 50); assert.equal(result.body.accounts.missing.active, false);
+});
+test('Admin shows Trial total separately from restored Free month; subscription status agrees on exhaustion', async () => {
+  const startedAt = NOW.toISOString(), expiresAt = '2026-09-27T10:00:00.000Z';
+  const db = setup({ ...free, trialVersion: 1, hasUsedFreeTrial: true, trialStartedAt: startedAt, trialExpiresAt: expiresAt });
+  db.seed('users/admin', { role: 'Admin' });
+  db.seed('account_trial_usage/owner', { startedAt, expiresAt, used: 499 });
+  db.seed('account_api_usage/owner', { window: '2026-09-20', used: 31 });
+  db.seed('account_free_monthly_usage/owner', { window: '2026-09', used: 2 });
+  const handler = createAdminEntitlements({ getDb: () => db, verifyIdToken: async () => ({ uid: 'admin' }), clock: () => NOW });
+  const active = (await invoke(handler, { body: { ids: ['owner'] } })).body.accounts.owner;
+  assert.equal(active.used, 499); assert.equal(active.limit, 500); assert.equal(active.period, 'trial');
+  await consume(db);
+  const ended = (await invoke(handler, { body: { ids: ['owner'] } })).body.accounts.owner;
+  assert.equal(ended.plan, 'Free'); assert.equal(ended.used, 2); assert.equal(ended.limit, 50); assert.equal(ended.period, 'monthly');
+  assert.equal(ended.trial.used, 500); assert.equal(ended.trial.limit, 500); assert.equal(ended.trial.active, false);
+  const status = (await invoke(handlers(db).status)).body;
+  assert.equal(status.plan, 'Free'); assert.equal(status.activeTrial, false);
+  assert.equal((await consume(db)).usage.used, 3);
+});
+test('Admin paid daily reporting is not replaced by malformed legacy Trial history', async () => {
+  const db = setup({ ...owner, hasUsedFreeTrial: true });
+  db.seed('users/admin', { role: 'Admin' });
+  db.seed('account_api_usage/owner', { window: '2026-09-20', used: 31 });
+  const handler = createAdminEntitlements({ getDb: () => db, verifyIdToken: async () => ({ uid: 'admin' }), clock: () => NOW });
+  const result = (await invoke(handler, { body: { ids: ['owner'] } })).body.accounts.owner;
+  assert.equal(result.plan, 'Pro'); assert.equal(result.limit, 5000); assert.equal(result.used, 31);
+  assert.equal(result.period, 'daily'); assert.equal(result.trialHistoryUnavailable, true);
 });
 test('status retry crossing expiry boundary returns Free without any write', async () => {
   const db = setup(); let now = NOW;

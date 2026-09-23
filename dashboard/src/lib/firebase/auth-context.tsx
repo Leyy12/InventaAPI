@@ -7,6 +7,7 @@ import { auth, db } from "./config";
 import { useRouter } from "next/navigation";
 import { readSubscription, type SubscriptionState } from '@/lib/subscription';
 import { createEntitlementPoller } from '@/lib/entitlement-poller';
+import { activeCustomerSegment } from '../../../../services/customer-segment.js';
 import { createAuthSession, createLogoutAction, beginCustomerLogout, cancelCustomerLogout,
   customerLogoutDestination, markPostLogoutLogin, profileRole, verifyWithin,
   type AuthStatus, type LogoutResult } from '../../../../services/auth-navigation';
@@ -172,6 +173,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   return <AuthContext.Provider value={{ user,
     appUser: appUser ? { ...appUser, plan: entitlement?.plan ?? 'Unavailable',
+      selectedSegment: activeCustomerSegment({ ...appUser, plan: entitlement?.plan ?? 'Unavailable' }) ?? undefined,
       apiRequestLimit: entitlement?.apiRequestLimit ?? (entitlement ? null : 0),
       subscription_status: entitlement?.subscription_status ?? 'unverified',
       subscriptionExpiresAt: entitlement?.subscriptionExpiresAt ?? null } : null,

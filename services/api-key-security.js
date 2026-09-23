@@ -120,8 +120,46 @@ export function publicKeyMetadata(id, key, entitlement, usage) {
     linkedProductIds: key.linkedProductIds || [], linkedVariantSelections: key.linkedVariantSelections || {},
     plan: entitlement.plan, requestLimit: entitlement.limit, requestsUsed: usage.used,
     usageScope: 'account', resetAt: usage.resetsAt,
+    quotaPeriod: usage.period || 'daily',
     quotaState: usage.holdUntil ? 'pending_clean_window' : 'active',
   };
+}
+
+// Separate from paid daily usage and daily key-generation markers. Never infer
+// this month's opening balance from a legacy daily/per-key counter.
+export function freeMonthlyUsage(stored, accountSnapshot, now = new Date(), cutoverAt = null) {
+  const window = now.toISOString().slice(0, 7);
+  const next = new Date(now); next.setUTCDate(1); next.setUTCHours(0, 0, 0, 0); next.setUTCMonth(next.getUTCMonth() + 1);
+  const resetsAt = next.toISOString();
+  if (stored) {
+    const start = typeof stored.window === 'string' ? new Date(`${stored.window}-01T00:00:00.000Z`) : new Date(NaN);
+    if (!/^\d{4}-\d{2}$/u.test(stored.window) || !Number.isFinite(start.getTime())
+      || start.toISOString().slice(0, 7) !== stored.window || stored.window > window
+      || !Number.isSafeInteger(stored.used) || stored.used < 0) {
+      throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Unable to verify monthly account usage.');
+    }
+    if (Object.hasOwn(stored, 'holdUntil')) {
+      start.setUTCMonth(start.getUTCMonth() + 1);
+      if (stored.holdUntil !== start.toISOString() || stored.used !== 0) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Unable to verify monthly cutover state.');
+    }
+    return { window, period: 'monthly', used: stored.window === window ? stored.used : 0, resetsAt,
+      ...(stored.window === window && stored.holdUntil ? { holdUntil: stored.holdUntil } : {}) };
+  }
+  let newAccount = false;
+  try {
+    const cutoff = new Date(cutoverAt), created = accountSnapshot?.createTime?.toDate();
+    newAccount = typeof cutoverAt === 'string' && cutoff.toISOString() === cutoverAt && cutoff <= now
+      && created instanceof Date && created > cutoff && created <= now;
+  } catch { /* Unknown provenance fails closed. */ }
+  return { window, period: 'monthly', used: 0, resetsAt, ...(!newAccount ? { holdUntil: resetsAt } : {}) };
+}
+
+export function trialUsage(stored, entitlement) {
+  if (!stored || stored.startedAt !== entitlement.startedAt || stored.expiresAt !== entitlement.expiresAt
+    || !Number.isSafeInteger(stored.used) || stored.used < 0 || stored.used > 500) {
+    throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Unable to verify trial usage.');
+  }
+  return { used: stored.used, period: 'trial', window: 'trial', resetsAt: entitlement.expiresAt };
 }
 
 export function sendSecurityError(res, error) {

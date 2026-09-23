@@ -27,7 +27,7 @@ test('the same existing API key dereferences the current product on every reques
   const options = {
     apiKeyData,
     loadProductById: memoryLoader(store),
-    userData: { plan: 'Free', selectedSegment: 'Grocery' },
+    userData: { plan: 'Free', businessSegment: 'Grocery' },
   };
 
   const before = await resolveCurrentCatalogProducts(options);
@@ -198,12 +198,12 @@ test('segment compatibility keeps Free access single-segment and fail-closed for
   const apiKeyData = { linkedProductIds: ['grocery', 'hardware'] };
 
   const grocery = await resolveCurrentCatalogProducts({
-    apiKeyData, loadProductById: memoryLoader(store), userData: { plan: 'Starter', selectedSegment: ' GROCERY ' },
+    apiKeyData, loadProductById: memoryLoader(store), userData: { plan: 'Starter', businessSegment: ' GROCERY ' },
   });
   assert.deepEqual(grocery.products.map(product => product.id), ['grocery']);
 
   const unknown = await resolveCurrentCatalogProducts({
-    apiKeyData, loadProductById: memoryLoader(store), userData: { plan: 'Free', selectedSegment: 'Clothing' },
+    apiKeyData, loadProductById: memoryLoader(store), userData: { plan: 'Free', businessSegment: 'Clothing' },
   });
   assert.deepEqual(unknown.products, []);
 });

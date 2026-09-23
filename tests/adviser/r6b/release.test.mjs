@@ -23,6 +23,15 @@ const backend = { NODE_ENV: 'production', TZ: 'UTC', FIREBASE_AUTH_MODE: 'servic
   DASHBOARD_URL: 'https://customer.r6b-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.r6b-fixture.net' };
 const options = { scope: 'backend', nodeVersion: 'v22.20.0' };
 
+test('monthly quota cutover is optional fail-closed configuration and validated independently', () => {
+  const absent = validateReleaseConfig(backend, options);
+  assert.ok(absent.warnings.some(item => item.name === 'FREE_MONTHLY_QUOTA_CUTOVER_AT'));
+  const invalid = validateReleaseConfig({ ...backend, FREE_MONTHLY_QUOTA_CUTOVER_AT: 'yesterday' }, options);
+  assert.ok(invalid.errors.some(item => item.name === 'FREE_MONTHLY_QUOTA_CUTOVER_AT'));
+  const valid = validateReleaseConfig({ ...backend, FREE_MONTHLY_QUOTA_CUTOVER_AT: '2026-09-23T00:00:00.000Z' }, options);
+  assert.ok(!valid.errors.some(item => item.name === 'FREE_MONTHLY_QUOTA_CUTOVER_AT'));
+});
+
 for (const origin of ['javascript:alert(1)', 'data:text/plain,test', 'file:///tmp', '//evil.example',
   'http://api.r6b-fixture.net', 'https://api.r6b-fixture.net/path', 'https://api.r6b-fixture.net/',
   'https://api.r6b-fixture.net?x=1', 'https://api.r6b-fixture.net#fragment',

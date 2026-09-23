@@ -132,12 +132,13 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       }
       // Read-only projection. Quota/management and optional scheduler normalize.
       return { plan: effective.plan, subscription_status: effective.status, activePro: effective.activePro,
+        activeTrial: effective.activeTrial === true,
         apiRequestLimit: effective.limit, subscriptionStartedAt: effective.startedAt,
         subscriptionExpiresAt: effective.expiresAt, lastSubscribedAt: account.lastSubscribedAt || null,
         expired: effective.expired, ...(effective.expired ? { expiredAt: effective.expiresAt } : {}), paymentConfirmed,
         canPurchasePro: effective.level < 2, serverTime: now.toISOString(),
-        secondsRemaining: effective.activePro ? Math.max(0, (Date.parse(effective.expiresAt) - now.getTime()) / 1000) : 0,
-        daysLeft: effective.activePro ? Math.ceil((Date.parse(effective.expiresAt) - now.getTime()) / 86400000) : 0 };
+        secondsRemaining: (effective.activePro || effective.activeTrial) ? Math.max(0, (Date.parse(effective.expiresAt) - now.getTime()) / 1000) : 0,
+        daysLeft: (effective.activePro || effective.activeTrial) ? Math.ceil((Date.parse(effective.expiresAt) - now.getTime()) / 86400000) : 0 };
     });
     return res.json(result);
   });

@@ -18,6 +18,7 @@ let emulator, port, scratch, startup = '', processError;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function valueField(value) {
+  if (typeof value === 'boolean') return { booleanValue: value };
   if (typeof value === 'number') return { integerValue: String(value) };
   if (Array.isArray(value)) return { arrayValue: { values: value.map(valueField) } };
   if (value && typeof value === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, val]) => [key, valueField(val)])) } };
@@ -85,8 +86,8 @@ before(async () => {
   // The emulator's fixed 'owner' bypass is ONLY for synthetic fixture seeding.
   // Every assertion below uses a mock customer/admin ID token or no token.
   for (const [path, data] of Object.entries({
-    'users/customer-a': { uid: 'customer-a', role: 'Developer', plan: 'Free', apiRequestLimit: 50 },
-    'users/customer-b': { uid: 'customer-b', role: 'Developer', plan: 'Free', apiRequestLimit: 50 },
+    'users/customer-a': { uid: 'customer-a', role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' },
+    'users/customer-b': { uid: 'customer-b', role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' },
     'users/administrator': { uid: 'administrator', role: 'Admin', plan: 'Enterprise', apiRequestLimit: 50 },
     'api_keys/key-a': { userId: 'customer-a', status: 'revoked', credentialHash: 'synthetic-hash', requestsUsed: 4 },
     'api_keys/key-b': { userId: 'customer-b', status: 'active', key: 'synthetic-legacy-key' },
@@ -193,3 +194,49 @@ test('profile createdAt is writable but Firestore creation metadata remains unch
   assert.equal(updated.body.fields.createdAt.stringValue, forged);
   assert.equal(updated.body.createTime, original.body.createTime);
 });
+
+for (const field of ['businessSegment', 'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt',
+  'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt']) {
+  test('Trial/ownership authority is not client-writable: ' + field, async () => {
+    const values = { businessSegment: 'Grocery', hasUsedFreeTrial: true, trialVersion: 1, trialStartedAt: '2026-09-23T00:00:00.000Z',
+      trialExpiresAt: '2026-09-30T00:00:00.000Z', trialExpiredAt: '', trialUsed: 0, trialQuota: 500, effectivePlan: 'Pro Trial', trialExhaustedAt: '2026-09-24T00:00:00.000Z' };
+    assert.equal((await call('PATCH', 'users/customer-a', tokens.customer, { [field]: values[field] }, field)).status, 403);
+    if (field !== 'businessSegment') {
+      const uid = 'signup-' + field.toLowerCase();
+      assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free',
+        apiRequestLimit: 50, businessSegment: 'Hardware', [field]: values[field] })).status, 403);
+    }
+  });
+}
+test('canonical signup and harmless profile updates still work; mismatched ownership context denied', async () => {
+  for (const segment of ['Grocery', 'Pharmacy', 'Hardware']) {
+    const uid = 'signup-' + segment.toLowerCase();
+    assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free',
+      apiRequestLimit: 50, businessSegment: segment, selectedSegment: segment })).status, 200);
+  }
+  assert.equal((await call('PATCH', 'users/customer-a', tokens.customer, { fullName: 'Safe Name' }, 'fullName')).status, 200);
+  assert.equal((await call('PATCH', 'users/customer-a', tokens.customer, { selectedSegment: 'Hardware' }, 'selectedSegment')).status, 200);
+  for (const segment of ['Grocery', 'Pharmacy', 'All', 'hardware']) {
+    assert.equal((await call('PATCH', 'users/customer-a', tokens.customer, { selectedSegment: segment }, 'selectedSegment')).status, 403);
+  }
+});
+test('active trial cannot switch ownership; paid account retains segment choice', async () => {
+  assert.equal((await call('PATCH', 'users/trial-customer', 'owner', { uid: 'trial-customer', role: 'Developer', plan: 'Free',
+    apiRequestLimit: 50, businessSegment: 'Hardware', hasUsedFreeTrial: true, trialVersion: 1 })).status, 200);
+  assert.equal((await call('PATCH', 'users/trial-customer', mockToken('trial-customer'), { selectedSegment: 'Grocery' }, 'selectedSegment')).status, 403);
+  assert.equal((await call('PATCH', 'users/trial-customer', mockToken('trial-customer'), { selectedSegment: 'Hardware' }, 'selectedSegment')).status, 200);
+  assert.equal((await call('PATCH', 'users/paid-customer', 'owner', { uid: 'paid-customer', role: 'Developer', plan: 'Pro',
+    apiRequestLimit: 5000, businessSegment: 'Hardware' })).status, 200);
+  assert.equal((await call('PATCH', 'users/paid-customer', mockToken('paid-customer'), { selectedSegment: 'Grocery' }, 'selectedSegment')).status, 200);
+});
+for (const collection of ['account_trial_usage', 'account_free_monthly_usage']) for (const role of ['customer', 'stranger', 'anonymous', 'admin']) {
+  test(collection + ' shared counter is server-only including creation and deletion: ' + role, async () => {
+    const path = collection + '/customer-a';
+    assert.equal((await call('PATCH', path, 'owner', { used: 499 })).status, 200);
+    assert.equal((await call('GET', path, tokens[role])).status, 403);
+    assert.equal((await call('GET', collection, tokens[role])).status, 403);
+    assert.equal((await call('PATCH', path, tokens[role], { used: 0 })).status, 403);
+    assert.equal((await call('PATCH', collection + '/forged', tokens[role], { used: 0 })).status, 403);
+    assert.equal((await call('DELETE', path, tokens[role])).status, 403);
+  });
+}

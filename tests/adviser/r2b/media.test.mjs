@@ -45,7 +45,7 @@ for (const [name, api] of Object.entries({ customer, admin })) {
 }
 
 test('Customer URL persists only as reviewed metadata before Admin publication', async () => {
-  const db = memoryFirestore({ 'users/customer': { role: 'Developer', plan: 'Free' }, 'users/admin': { role: 'Admin' } });
+  const db = memoryFirestore({ 'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, 'users/admin': { role: 'Admin' } });
   const handlers = createProductSubmissionHandlers({ getDb: () => db, now: () => new Date('2026-09-20T01:00:00.000Z'),
     makeId: () => 'media-review', verifyIdToken: async token => ({ uid: token }) });
   const result = await invoke(handlers.submit, { token: 'customer', headers: { 'idempotency-key': 'media-operation-0001' },

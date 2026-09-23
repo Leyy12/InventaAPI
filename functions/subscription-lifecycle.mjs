@@ -16,12 +16,31 @@ export function dateMillis(value) {
 function unavailable(code = 'ENTITLEMENT_UNAVAILABLE', status = 503) {
   throw Object.assign(new Error('Unable to verify account entitlement.'), { code, status });
 }
+export const TRIAL_LIMIT = 500;
+export function trialState(account, now = new Date()) {
+  const fields = ['hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt', 'trialExpiredAt', 'trialExhaustedAt'];
+  if (!fields.some(field => Object.hasOwn(account || {}, field))) return { used: false, active: false, expired: false, startedAt: null, expiresAt: null };
+  const start = dateMillis(account.trialStartedAt), end = dateMillis(account.trialExpiresAt);
+  if (account.trialVersion !== 1 || account.hasUsedFreeTrial !== true || !Number.isFinite(now.getTime())
+    || !Number.isFinite(start) || !Number.isFinite(end) || end - start !== 7 * 86400000 || start > now.getTime()) unavailable('TRIAL_UNAVAILABLE');
+  const eligiblePlan = ['free', 'starter'].includes(String(account.plan).toLowerCase());
+  const exhausted = Object.hasOwn(account, 'trialExhaustedAt');
+  const exhaustedAt = dateMillis(account.trialExhaustedAt);
+  if (exhausted && (!Number.isFinite(exhaustedAt) || exhaustedAt < start || exhaustedAt >= end || exhaustedAt > now.getTime())) unavailable('TRIAL_UNAVAILABLE');
+  return { used: true, active: eligiblePlan && !exhausted && now.getTime() < end, exhausted, expired: now.getTime() >= end,
+    startedAt: new Date(start).toISOString(), expiresAt: new Date(end).toISOString() };
+}
 export function evaluateEntitlement(account, now = new Date()) {
   if (accountBlocked(account)) unavailable('ACCOUNT_DISABLED', 403);
   if (!Number.isFinite(now.getTime())) unavailable();
   const name = typeof account.plan === 'string' ? account.plan.toLowerCase() : '';
   if (!Object.hasOwn(PLAN_LEVELS, name)) unavailable();
   const level = PLAN_LEVELS[name];
+  if (level === 0) {
+    const trial = trialState(account, now);
+    if (trial.active) return { plan: 'Pro Trial', level: 1, limit: TRIAL_LIMIT, status: 'trial', activePro: false,
+      activeTrial: true, expired: false, expiresAt: trial.expiresAt, startedAt: trial.startedAt, normalization: null };
+  }
   const end = dateMillis(account.subscriptionExpiresAt);
   const expiresAt = Number.isFinite(end) ? new Date(end).toISOString() : null;
   const start = dateMillis(account.subscriptionStartedAt ?? account.lastSubscribedAt);

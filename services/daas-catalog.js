@@ -1,10 +1,9 @@
 import {
   comparisonText,
-  normalizeSegment,
   projectProduct,
 } from './product-contract.js';
 
-const FREE_PLANS = new Set(['free', 'starter']);
+import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 
 function legacyProductDocumentId(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -63,9 +62,8 @@ export async function resolveCurrentCatalogProducts({
     .map(({ id, value }) => projectProduct(value, id))
     .filter(product => product?.visibility.visible === true);
 
-  const plan = comparisonText(userData?.plan);
-  if (FREE_PLANS.has(plan) && userData?.selectedSegment) {
-    const selectedSegment = normalizeSegment(userData.selectedSegment);
+  if (userData && restrictedSegmentAccount(userData)) {
+    const selectedSegment = activeCustomerSegment(userData);
     products = selectedSegment
       ? products.filter(product => product.segment === selectedSegment)
       : [];

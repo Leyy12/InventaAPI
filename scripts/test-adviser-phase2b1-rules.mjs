@@ -134,14 +134,14 @@ for (const field of protectedFields) {
   });
   test(`signup cannot forge entitlement ${field}`, async () => {
     const uid = `signup-${field.toLowerCase().replaceAll('_', '-')}`;
-    const profile = { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50 };
+    const profile = { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' };
     assert.equal((await call('PATCH', `users/${uid}`, mockToken(uid), { ...profile, [field]: 'forged' })).status, 403);
   });
 }
 test('valid Free signup and ordinary profile updates remain allowed', async () => {
   const uid = 'signup-valid';
   assert.equal((await call('PATCH', `users/${uid}`, mockToken(uid), { uid, role: 'Developer', plan: 'Free',
-    apiRequestLimit: 50, subscription_status: 'inactive' })).status, 200);
+    apiRequestLimit: 50, businessSegment: 'Hardware', subscription_status: 'inactive' })).status, 200);
   assert.equal((await call('PATCH', `users/${uid}`, mockToken(uid), { fullName: 'Example' }, 'fullName')).status, 200);
 });
 test('transaction history is private to owner/Admin; never another Customer', async () => {

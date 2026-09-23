@@ -26,9 +26,9 @@ status, expiration and injected server time. No browser clock is an authority.
 
 | Current state / event | Effective entitlement and persisted result |
 |---|---|
-| Free / Starter | Existing Free policy, at most 50/day; explicit lower server caps remain honored. Enterprise/Unlimited semantics remain unchanged. |
+| Free / Starter | Final quota contract: at most 50/UTC month; explicit lower server caps remain honored. Enterprise/Unlimited semantics remain unchanged. |
 | Pro / Professional, active, now < end | Pro, active, 5,000/day. |
-| Pro, now == end or now > end | Free, inactive, 50/day immediately, even without a status/dashboard request. |
+| Pro, now == end or now > end | Free, inactive, 50/UTC month; current monthly balance or migration hold applies even without a status/dashboard request. |
 | Expired Pro reaches quota or key-management evaluation | Transactionally persist Free/inactive/50; preserve subscription dates, audit history and used quota. |
 | Active Pro + genuinely new verified payment | Extend existing future end by the existing 30 runtime-local calendar days atomically. |
 | Expired Pro / Free + verified payment | Start a new 30-day period at server fulfillment time; any preserved future paid end is not shortened. |
@@ -39,16 +39,18 @@ status, expiration and injected server time. No browser clock is an authority.
 Missing/malformed Pro expiry fails closed with an unavailable/review response,
 never an invented term. Existing legacy `deletionRequested`, pending-deletion,
 disabled/deleted markers also block access. Historical receipts never reconstruct
-entitlement. No migration or trial policy is introduced.
+entitlement. The later [final quota contract](adviser-free-trial-quota-contract.md)
+adds monthly Free accounting and Trial without changing paid renewal semantics.
 
 ## Expiry and API keys
 
 Quota consumption evaluates entitlement inside the same transaction that reads
 the account, current key and shared usage. Expiry normalization commits even when
 access is refused for exhausted quota or a paid-only endpoint. Existing usage
-is not reset: e.g. 4,000 used before downgrade means no more requests under the
-50/day ceiling until normal UTC rollover. Another key cannot obtain a new budget.
-The Phase 2A clean-window cutover hold is preserved.
+is not reset: paid daily history is retained separately and the existing Free
+monthly balance resumes. An unknown monthly opening balance enters the approved
+next-UTC-month hold; daily history cannot establish it. Another key cannot obtain
+a new budget. Paid daily cutover behavior is preserved.
 
 Existing credentials continue under effective Free limits. Revocation and
 credential expiry remain separate checks. Key creation/mutations re-read the

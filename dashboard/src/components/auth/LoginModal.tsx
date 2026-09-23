@@ -11,6 +11,8 @@ import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkl
 import type { PlanId } from "@/config/plans";
 import { profileRole, adminLoginDestination } from '../../../../services/auth-navigation';
 import { PRODUCT_SEGMENTS, normalizeSegment } from '../../../../services/product-contract.js';
+import { loginSegmentAllowed } from '../../../../services/customer-segment.js';
+import { readSubscription } from '@/lib/subscription';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -112,7 +114,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   ) : (
     <>
       Choose the business segment your account accesses. This is required to log in, and your catalog is
-      tailored to it. Free plan includes 50 requests/day shared across your API keys; upgrade to{" "}
+      tailored to it. Free plan includes 50 requests/month shared across your API keys; upgrade to{" "}
       <span className="text-indigo-400">Pro</span> to unlock all segments.
     </>
   );
@@ -123,7 +125,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
 
     // Do not authenticate a request that has not supplied the required context.
     // This is UX validation only; authorization is still profile/plan based below.
-    const requestedSegment = normalizeSegment(segment);
+    const requestedSegment = SEGMENT_OPTIONS.some(option => option.id === segment) ? segment : null;
     if (!requestedSegment) {
       setSegmentBlocked(true);
       setShowSegment(true);
@@ -166,7 +168,9 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       }
 
       // Normal customer login
-      const plan = userData?.plan;
+      const effective = await readSubscription(user);
+      if (auth.currentUser !== user) throw new Error('Session ended during login.');
+      const plan = effective.plan;
       // Plan checks are case-insensitive and legacy-tolerant: the DB may hold
       // "free"/"Free", "pro"/"Pro", "Starter", etc.
       const normalizedPlan = String(plan ?? "").toLowerCase();
@@ -180,28 +184,20 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       // account type and must NOT trigger Business Segment validation.
       const paidPlans = ["pro", "enterprise", "professional", "unlimited"];
       const isPaidPlan = paidPlans.includes(normalizedPlan);
-      const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "enterprise";
-      const chosenSegment = normalizeSegment(segment) as SegmentId | null;
+      const chosenSegment = requestedSegment;
 
-      // existingSegment: check selectedSegment first (set by the login flow), then
-      // fall back to businessSegment (always written at signup). This prevents new
-      // Consumer users — who have businessSegment but never set selectedSegment —
-      // from being falsely blocked as "no segment" users.
-      const hasSelectedSegment = Object.prototype.hasOwnProperty.call(userData ?? {}, "selectedSegment");
+      // Free/Trial ownership comes only from businessSegment, never a mutable
+      // context preference. Paid accounts keep their existing segment choice.
       const normalizedSelectedSegment = normalizeSegment(userData?.selectedSegment);
-      const invalidStoredSegment = hasSelectedSegment && normalizedSelectedSegment === null;
-      const existingSegment = hasSelectedSegment
-        ? normalizedSelectedSegment
-        : normalizeSegment(userData?.businessSegment);
+      const existingSegment = isPaidPlan ? normalizedSelectedSegment : normalizeSegment(userData?.businessSegment);
 
       console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "existingSegment:", existingSegment, "isPaidPlan:", isPaidPlan);
 
-      const isFreePlan = normalizedPlan === "free" || normalizedPlan === "starter" || normalizedPlan === "basic" || !normalizedPlan;
       // Free/Basic/Starter accounts are restricted to their authoritative
       // profile segment. Paid accounts may choose any canonical segment, but
       // the chosen value is still stored only after server profile validation.
-      if (!chosenSegment || invalidStoredSegment || (isFreePlan && (!existingSegment || chosenSegment !== existingSegment))) {
-        try { await signOut(auth); } catch (signOutErr) { console.error("[LOGIN] Segment rejection sign-out failed:", signOutErr); }
+      if (!loginSegmentAllowed({ ...userData, plan }, chosenSegment)) {
+        await signOut(auth);
         setSegmentBlocked(true);
         setShowSegment(true);
         setError("That business segment is not available for this account.");
@@ -209,7 +205,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
         return;
       }
 
-      if (chosenSegment !== existingSegment) {
+      if (chosenSegment !== normalizedSelectedSegment) {
         try {
           await updateDoc(doc(db, "users", user.uid), { selectedSegment: chosenSegment });
           await refreshUserDoc();

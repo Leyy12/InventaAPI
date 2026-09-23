@@ -49,7 +49,7 @@ export default function PrivacyPolicyPage() {
               <p>The information we collect is used strictly for the following purposes:</p>
               <ul className="list-disc pl-5 space-y-2 mt-4 text-slate-400">
                 <li>To authenticate your access to the InventaAPI Dashboard and API services.</li>
-                <li>To monitor API rate limits (e.g., your 50 daily requests on the Free tier).</li>
+                <li>To monitor API rate limits (e.g., your 50 requests per UTC calendar month on the Free tier).</li>
                 <li>To notify you about changes to your account, subscription status, or product requests.</li>
                 <li>To maintain an audit trail of system access for security purposes.</li>
               </ul>

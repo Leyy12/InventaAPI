@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { useEffect, useState } from "react";
 import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import { customerReportScope } from "@/lib/reports";
+import { activeCustomerSegment } from '../../../../services/customer-segment.js';
 
 export default function DashboardPage() {
   const { user, appUser, loading, refreshUserDoc } = useAuth();
@@ -108,7 +109,7 @@ export default function DashboardPage() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-emerald-300">Payment confirmed. Your current subscription is shown below.</p>
           <p className="text-xs text-emerald-400/80 mt-0.5">
-            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited' : appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/day · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
+            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited' : appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/{appUser?.plan === 'Pro Trial' ? 'trial total' : appUser?.plan === 'Free' ? 'UTC month' : 'day'} · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
           </p>
         </div>
         <button
@@ -171,6 +172,7 @@ export default function DashboardPage() {
       </div>
 
       <CustomerUsageSummary />
+      <p className="text-sm text-cyan-300">Active Business Segment: {activeCustomerSegment(appUser) || 'Unavailable'}</p>
       {needsPreference && <p role="status" className="text-slate-300">Your account has no valid segment preference. Catalog reports require a confirmed segment; contact support. Your dashboard remains available.</p>}
 
       {/* Quick actions */}

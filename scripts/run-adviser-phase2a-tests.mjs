@@ -9,7 +9,7 @@ const sources = [
   'functions/subscription-lifecycle.mjs',
   ...tests, 'tests/adviser/phase2a/memory-firestore.mjs',
   'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
-  'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js',
+  'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js', 'services/customer-segment.js',
 ];
 for (const file of sources) {
   const source = readFileSync(resolve(root, file), 'utf8');

@@ -178,9 +178,11 @@ export default function SecurityCenterPage() {
                         </span>
                         <div className="mt-2">
                           <div className="flex justify-between text-[10px] text-slate-500 mb-1">
-                            <span>{entitlement?.used ?? '—'} used</span>
+                            <span>{entitlement?.used ?? '—'} used ({entitlement?.period || 'unverified'})</span>
                             <span>{entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'} limit</span>
                           </div>
+                          {entitlement?.holdUntil && <p className="text-xs text-amber-300">Monthly activation hold until {entitlement.holdUntil}</p>}
+                          {entitlement?.trial && !entitlement.trial.active && <p className="text-xs text-slate-400">Trial ended: {entitlement.trial.used} / 500 total</p>}
                           <div className="w-full bg-slate-800 rounded-full h-1 overflow-hidden">
                             <div
                               className={`h-full transition-all ${usedPct > 80 ? 'bg-red-500' : 'bg-emerald-500'}`}

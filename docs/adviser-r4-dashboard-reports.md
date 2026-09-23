@@ -71,12 +71,12 @@ unverified/missing-preference accounts start no listener. Logout/UID changes dis
 the session. Live listeners unsubscribe on unmount.
 
 Traffic is a bounded sample of stored telemetry, not comprehensive request history,
-daily quota consumption or service availability. No previous series or growth rate is
+quota consumption or service availability. No previous series or growth rate is
 generated. Hour keys include the UTC date. Unknown outcomes/latencies are excluded
 from their respective denominators; no samples means unavailable. Invalid timestamps
 are excluded and counted. Customer daily usage comes only from the backend account
 summary, never per-key counters or telemetry. Limits are not hardcoded: current Free
-50/day, Pro 5000/day and Enterprise behavior are supplied by the existing backend.
+50/UTC month, Pro 5000/day and Enterprise behavior are supplied by the existing backend.
 Unlimited/zero limits avoid division by zero. Stale UTC windows become unavailable;
 pending clean-window holds do not claim measured zero usage or a fresh allowance.
 

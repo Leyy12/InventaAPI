@@ -6,6 +6,7 @@ import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, M
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProductNotFound } from "@/components/product-request";
+import { activeCustomerSegment, scopeCustomerProducts } from '../../../../../services/customer-segment.js';
 import AddProductModal from "@/components/products/AddProductModal";
 import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -46,7 +47,8 @@ export default function ProductCatalogPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
   const [loading, setLoading] = useState(true);
-  const [activeSegment, setActiveSegment] = useState<string>("All");
+  const [paidSegment, setActiveSegment] = useState<string>("All");
+  const activeSegment = isFreePlan(appUser?.plan) ? activeCustomerSegment(appUser) || '' : paidSegment;
   const [searchQuery, setSearchQuery] = useState("");
   
   // API Key Generation State
@@ -92,12 +94,10 @@ export default function ProductCatalogPage() {
   // ==================== COMPUTED VALUES ====================
 
   const getFilteredProducts = useCallback(() => {
-    let filtered = products;
+    let filtered = scopeCustomerProducts(products, appUser);
     
     // Strict segment filter for Free users
-    if (isFreePlan(appUser?.plan) && appUser?.selectedSegment) {
-      filtered = filtered.filter(p => p.segment === appUser.selectedSegment);
-    } else if (activeSegment !== "All") {
+    if (!isFreePlan(appUser?.plan) && activeSegment !== "All") {
       filtered = filtered.filter(p => p.segment === activeSegment);
     }
     
@@ -116,18 +116,18 @@ export default function ProductCatalogPage() {
   const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
 
   const cartSummary = useMemo((): CartSummary => {
-    const selectedItems = products.filter(p => selectedProducts.has(p.id!));
+    const selectedItems = scopeCustomerProducts(products, appUser).filter(p => selectedProducts.has(p.id!));
     const bySegment = selectedItems.reduce((acc, p) => {
       acc[p.segment] = (acc[p.segment] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     
     return {
-      totalProducts: selectedProducts.size,
+      totalProducts: selectedItems.length,
       bySegment,
-      productIds: Array.from(selectedProducts)
+      productIds: selectedItems.map(product => product.id!)
     };
-  }, [products, selectedProducts]);
+  }, [products, selectedProducts, appUser]);
 
   // ==================== PRODUCT SELECTION ====================
 
@@ -231,7 +231,7 @@ export default function ProductCatalogPage() {
       }
       const idToken = await currentUser.getIdToken();
 
-      const selectedProductsList = products
+      const selectedProductsList = scopeCustomerProducts(products, appUser)
         .filter(p => selectedProducts.has(p.id!))
         .map(p => ({ id: p.id!, name: p.name, sku: p.sku || '', segment: p.segment }));
 

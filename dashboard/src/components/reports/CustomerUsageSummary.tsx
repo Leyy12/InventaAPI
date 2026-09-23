@@ -21,9 +21,9 @@ function Usage({ user }: { user: User }) {
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[["API keys (active status)", source.count ?? unavailable],
-        ["Requests used today (UTC)", quota?.used ?? unavailable],
-        ["Daily account limit", quota ? quota.limit === null ? "Unlimited" : quota.limit.toLocaleString() : unavailable],
-        ["Remaining today", quota ? quota.pending ? "On hold" : quota.remaining === null ? "Unlimited" : quota.remaining.toLocaleString() : unavailable]]
+        [quota?.period === 'trial' ? "Requests used during trial" : quota?.period === 'monthly' ? "Requests used this month (UTC)" : "Requests used today (UTC)", quota?.used ?? unavailable],
+        [quota?.period === 'trial' ? "Total trial allowance" : quota?.period === 'monthly' ? "Monthly account limit" : "Daily account limit", quota ? quota.limit === null ? "Unlimited" : quota.limit.toLocaleString() : unavailable],
+        [quota?.period === 'trial' ? "Remaining during trial" : quota?.period === 'monthly' ? "Remaining this month" : "Remaining today", quota ? quota.pending ? "On hold" : quota.remaining === null ? "Unlimited" : quota.remaining.toLocaleString() : unavailable]]
         .map(([label, value]) => <div key={label} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
           <p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold text-white">{value}</p>
         </div>)}
@@ -31,7 +31,7 @@ function Usage({ user }: { user: User }) {
     {source.status === "error" && <p role="alert" className="text-rose-300">Unable to load account usage. Retrying automatically.</p>}
     {source.status === "ready" && !quota && <p role="status" className="text-slate-400">Current quota unavailable; awaiting a fresh account summary.</p>}
     {quota?.pending && <p role="status" className="text-amber-300">Quota activation is on hold until {quota.resetsAt}. Prior usage is unavailable.</p>}
-    {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. Resets at {quota.resetsAt}. {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
+    {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. {quota.period === 'trial' ? 'Trial ends at' : 'Resets at'} {quota.resetsAt}. {quota.period === 'trial' && 'No daily reset.'} {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
   </section>;
 }
 export default function CustomerUsageSummary() {

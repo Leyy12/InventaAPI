@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const tests = ['tests/adviser/phase2b2/lifecycle.test.mjs', 'tests/adviser/phase2b2/wiring.test.mjs',
   'tests/adviser/phase2b2/polling.test.mjs'];
 const calendarTest = 'tests/adviser/phase2b2/calendar.test.mjs';
-const sources = ["functions/subscription-lifecycle.mjs","services/api-key-security.js","services/api-key-management.js","services/account-quota.js","services/daas-catalog.js","services/product-contract.js","services/payment-contract.js","services/payment-checkout.js","services/paymongo-checkout.js","services/payment-webhook.js","services/account-deletion.js","services/admin-entitlements.js","tests/adviser/phase2b1/memory-firestore.mjs","tests/adviser/phase2b2/lifecycle.test.mjs","tests/adviser/phase2b2/wiring.test.mjs"];
+const sources = ["functions/subscription-lifecycle.mjs","services/api-key-security.js","services/api-key-management.js","services/account-quota.js","services/daas-catalog.js",'services/product-contract.js', 'services/customer-segment.js',"services/payment-contract.js","services/payment-checkout.js","services/paymongo-checkout.js","services/payment-webhook.js","services/account-deletion.js","services/admin-entitlements.js","tests/adviser/phase2b1/memory-firestore.mjs","tests/adviser/phase2b2/lifecycle.test.mjs","tests/adviser/phase2b2/wiring.test.mjs"];
 sources.push('dashboard/src/lib/entitlement-poller.ts', 'tests/adviser/phase2b2/polling.test.mjs', calendarTest);
 for (const file of sources) {
   const source = readFileSync(resolve(root, file), 'utf8');

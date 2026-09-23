@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const modules = new Set(["services/catalog-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/catalog-import.js","services/catalog-management.js","services/product-contract.js","services/product-submission-contract.js","services/product-submissions.js","functions/subscription-lifecycle.mjs","tests/adviser/r2a/memory-firestore.mjs","tests/adviser/r3/catalog.test.mjs","tests/adviser/r3/import.test.mjs","tests/adviser/r3/wiring.test.mjs"].map(file => resolvePath(root, file)));
+const modules = new Set(["services/catalog-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/catalog-import.js","services/catalog-management.js",'services/product-contract.js', 'services/customer-segment.js',"services/product-submission-contract.js","services/product-submissions.js","functions/subscription-lifecycle.mjs","tests/adviser/r2a/memory-firestore.mjs","tests/adviser/r3/catalog.test.mjs","tests/adviser/r3/import.test.mjs","tests/adviser/r3/wiring.test.mjs"].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {
     if (!['node:test', 'node:assert/strict', 'node:crypto', 'node:fs'].includes(specifier)

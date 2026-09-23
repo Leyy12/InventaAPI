@@ -16,6 +16,6 @@ export interface CatalogReport {
 export type ReportSource = { status: 'loading' | 'error' | 'ready'; records: Record<string, unknown>[] };
 export function catalogReport(records: unknown[], selection?: ReportSelection): CatalogReport;
 export function reportView(source: ReportSource, selection: ReportSelection): { state: 'loading' | 'error' | 'empty' | 'ready'; report: CatalogReport | null };
-export function quotaSummary(usage: unknown, now?: Date): { used: number | null; limit: number | null; remaining: number | null; percent: number | null; pending: boolean; resetsAt: string } | null;
+export function quotaSummary(usage: unknown, now?: Date): { used: number | null; limit: number | null; remaining: number | null; percent: number | null; pending: boolean; resetsAt: string; period?: 'daily' | 'monthly' | 'trial' } | null;
 export function reportTimestamp(value: unknown): Date | null;
 export function telemetryReport(records: Record<string, unknown>[]): { recorded: number; excluded: number; successPercent: number | null; outcomeSamples: number; averageLatency: number | null; latencySamples: number; series: { hour: string; count: number }[] };

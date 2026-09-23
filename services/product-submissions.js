@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
+import { accountBlocked, evaluateEntitlement } from '../functions/subscription-lifecycle.mjs';
 import { prepareCatalogWrite } from './catalog-writer.js';
 import { submissionError, validateSubmissionContent } from './product-submission-contract.js';
+import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const idPattern = /^[a-zA-Z0-9_-]{1,128}$/u;
@@ -76,7 +77,11 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
     const operationRef = db.collection('product_submission_operations').doc(operationId);
     const ref = db.collection('product_requests').doc(makeId());
     return db.runTransaction(async tx => {
-      await account(tx, db, uid);
+      const owner = await account(tx, db, uid);
+      const scopedOwner = { ...owner, plan: evaluateEntitlement(owner, now()).plan };
+      if (restrictedSegmentAccount(scopedOwner) && content.segment !== activeCustomerSegment(scopedOwner)) {
+        throw submissionError(403, 'Product segment is outside your account business segment.');
+      }
       const operation = (await tx.get(operationRef)).data();
       if (operation) {
         if (operation.digest !== digest || operation.userId !== uid) throw submissionError(409, 'This operation was already used for different content.');

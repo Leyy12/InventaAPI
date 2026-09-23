@@ -482,7 +482,7 @@ except Exception as e:
 ## 💡 Additional Sections
 
 ### **5. RATE LIMITS**
-- Starter: 50 requests/day
+- Free / Starter: 50 requests per UTC calendar month (lower account caps retained); Trial: 500 total until seven days or exhaustion.
 - Professional: 5,000 requests/month
 - Enterprise: Unlimited
 

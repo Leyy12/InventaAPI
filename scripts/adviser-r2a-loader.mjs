@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const modules = new Set(["services/catalog-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/product-submission-contract.js","services/product-submissions.js","services/product-contract.js","functions/subscription-lifecycle.mjs","tests/adviser/r2a/memory-firestore.mjs","tests/adviser/r2a/submissions.test.mjs","tests/adviser/r2a/wiring.test.mjs","dashboard/src/lib/product-image-url.ts","admin-panel/src/lib/product-image-url.ts","admin-panel/src/lib/submission-review.ts","tests/adviser/r2a/review-ui.test.mjs"].map(file => resolvePath(root, file)));
+const modules = new Set(["services/catalog-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/product-submission-contract.js","services/product-submissions.js",'services/product-contract.js', 'services/customer-segment.js',"functions/subscription-lifecycle.mjs","tests/adviser/r2a/memory-firestore.mjs","tests/adviser/r2a/submissions.test.mjs","tests/adviser/r2a/wiring.test.mjs","dashboard/src/lib/product-image-url.ts","admin-panel/src/lib/product-image-url.ts","admin-panel/src/lib/submission-review.ts","tests/adviser/r2a/review-ui.test.mjs"].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {
     if (!['node:test', 'node:assert/strict', 'node:crypto', 'node:fs'].includes(specifier)

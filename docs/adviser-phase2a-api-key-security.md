@@ -33,6 +33,12 @@ Legacy plaintext and any pre-existing credential exposure remain residual risks:
 
 ## Authoritative status and account usage
 
+**Later quota-contract update:** the Phase 2A daily design below is historical
+for Free accounts. The [final client quota contract](adviser-free-trial-quota-contract.md)
+now uses `account_free_monthly_usage/{uid}`, 50/UTC month (lower caps retained),
+and a next-UTC-month unknown-opening-balance hold. Paid daily accounting remains;
+Trial uses a separate 500-total counter. Daily key generation is unchanged.
+
 Authentication requires exact `status: active`, a valid owner ID, and an unexpired credential if `expiresAt` exists. Both ISO/Date and Firestore Timestamp expiry are supported. No subscription-expiry field is used, and no expiry schedule is added.
 
 Every admitted DaaS request runs a Firestore transaction that reads the key, `users/{uid}`, and `account_api_usage/{uid}` before writing. It revalidates ownership, credential, state, optional credential expiry, account existence, account entitlement, and paid-endpoint eligibility. The same transaction consumes one account unit and updates per-key diagnostic usage/last-used fields. Those per-key fields never determine the allowance.

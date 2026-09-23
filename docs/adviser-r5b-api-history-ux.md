@@ -29,7 +29,7 @@ The Independent repository was not accessed or modified.
 ### Policy occurrence classification
 
 - No active literal one-request-per-day or once-per-day key-generation enforcement/copy was found.
-- Free 50/day and Pro 5,000/day in plan marketing, Free privacy-policy example and Pro-specific login description match the default contract. Marketing is not current-account authority; explicit lower server caps remain unchanged.
+- Free 50/UTC month and Pro 5,000/day in plan marketing, Free privacy-policy example and Pro-specific login description match the default contract. Marketing is not current-account authority; explicit lower server caps remain unchanged.
 - Free/Pro one-key feature text and unused `apiKeys: 1` marketing metadata were removed. Neutral shared-account copy replaces the claims; no new key limit is selected.
 - Generic paid-login success copy now points to the verified dashboard allowance. Only text changed in LoginModal/AuthEntry; R5A auth/navigation behavior is untouched.
 - Enterprise unlimited marketing remains in Enterprise context. Runtime displays show Unlimited only from verified backend `limit: null`. Existing `Unlimited` plan aliases remain untouched; Admin auth's display label is not quota authority.
@@ -42,7 +42,7 @@ The Independent repository was not accessed or modified.
 **RESOLVED:** “1 per day” means one successful API-key generation per account per
 UTC calendar day. R5B did not implement that rule; R5C implements it transactionally.
 See [R5C decisions and cutover](adviser-r5c-final-requirements.md) and the
-[authoritative system flow](system-flow.md). API request quotas remain Free 50/day (including existing lower server caps),
+[authoritative system flow](system-flow.md). API request quotas remain Free 50/UTC month (including existing lower server caps),
 Pro 5,000/day, existing Enterprise/unlimited behavior, shared ACCOUNT quota across
 keys, UTC windows and the existing cutover hold. Creation/revocation does not reset
 usage. R5C changes generation frequency only; credential format, subscription/payment

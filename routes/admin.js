@@ -9,6 +9,7 @@ const router = express.Router();
 router.get('/traffic', createAdminTrafficHandler({ getDb: () => getFirestore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
 router.post('/entitlements', createAdminEntitlements({ getDb: () => getFirestore(),
+  monthlyCutoverAt: process.env.FREE_MONTHLY_QUOTA_CUTOVER_AT,
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked) }));
 
 /**

@@ -46,8 +46,8 @@ test('Segment selection is profile/plan-authorized and cannot grant access clien
   const source = read('dashboard/src/components/auth/LoginModal.tsx');
   assert.match(source, /normalizeSegment\(userData\?\.selectedSegment\)/);
   assert.match(source, /normalizeSegment\(userData\?\.businessSegment\)/);
-  assert.match(source, /isFreePlan.*starter.*basic/);
-  assert.match(source, /chosenSegment !== existingSegment/);
+  assert.match(source, /await readSubscription\(user\)/);
+  assert.match(source, /loginSegmentAllowed\(\{ \.\.\.userData, plan \}, chosenSegment\)/);
   assert.match(source, /await signOut\(auth\)/);
   assert.match(source, /That business segment is not available for this account/);
   assert.match(source, /updateDoc\(doc\(db, "users", user\.uid\), \{ selectedSegment: chosenSegment \}\)/);

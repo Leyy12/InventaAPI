@@ -1,7 +1,7 @@
 import { authenticateCredential, sendSecurityError } from './api-key-security.js';
 import { consumeAccountQuota } from './account-quota.js';
 
-export function createDaaSSecurity({ getDb, clock = () => new Date(), cutoverAt = null }) {
+export function createDaaSSecurity({ getDb, clock = () => new Date(), cutoverAt = null, monthlyCutoverAt = null }) {
   return {
     authenticateApiKey: async (req, res, next) => {
       req.startTime = Date.now();
@@ -27,7 +27,7 @@ export function createDaaSSecurity({ getDb, clock = () => new Date(), cutoverAt 
       try {
         const result = await consumeAccountQuota(getDb(), {
           keyId: req.apiKeyData.id, userId: req.apiKeyData.userId, credential: req.apiCredential,
-          allowedPlans: req.requiredApiPlans, clock, cutoverAt,
+          allowedPlans: req.requiredApiPlans, clock, cutoverAt, monthlyCutoverAt,
         });
         req.apiKeyData = result.key;
         req.userPlanData = result.account;

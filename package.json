@@ -5,6 +5,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+    "test:adviser:free-trial": "node scripts/run-adviser-free-trial-tests.mjs",
     "start": "node server.js",
     "dev": "node server.js",
     "validate:release-config": "node scripts/validate-release-config.mjs",

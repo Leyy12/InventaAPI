@@ -137,7 +137,7 @@ Revocation remains available, with a warning about losing the only usable key
 after spending today's generation allowance. Clipboard failure keeps the secret
 visible; history, token storage and navigation are unchanged.
 
-Request policies remain Free default 50/day with existing lower account overrides,
+Request policies remain Free default 50/UTC month with existing lower account overrides,
 Pro 5,000/day, Enterprise unlimited; account-level quota is shared across keys.
 The existing 60/minute IP limiter, request cutover hold and subscription semantics
 remain. Generation does not emit fake request telemetry. R5B history retains its

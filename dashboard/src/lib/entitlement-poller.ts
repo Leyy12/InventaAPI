@@ -1,5 +1,6 @@
 interface TimedEntitlement {
   activePro: boolean;
+  activeTrial?: boolean;
   secondsRemaining: number;
 }
 
@@ -44,7 +45,7 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
       if (!running || request !== generation) return null;
       onState(state);
       const remaining = state.secondsRemaining * 1000 - (now() - requestedAt);
-      scheduleNext(state.activePro && Number.isFinite(remaining)
+      scheduleNext((state.activePro || state.activeTrial) && Number.isFinite(remaining)
         ? Math.min(30000, Math.max(100, remaining)) : 30000);
       return state;
     } catch {

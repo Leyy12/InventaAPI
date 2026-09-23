@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 for (const file of ['services/api-key-management.js', 'services/api-key-security.js', 'services/account-quota.js',
-  'services/product-contract.js', 'services/daas-catalog.js', 'functions/subscription-lifecycle.mjs',
+  'services/product-contract.js', 'services/customer-segment.js', 'services/daas-catalog.js', 'functions/subscription-lifecycle.mjs',
   'dashboard/src/lib/api-key-generation.ts', 'tests/adviser/phase2a/memory-firestore.mjs',
   'tests/adviser/r5c/generation.test.mjs']) {
   const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');

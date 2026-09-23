@@ -94,8 +94,9 @@ Password and before Login. Its options are the canonical Phase 1 product segment
 (`Grocery`, `Pharmacy`, and `Hardware`) imported from `services/product-contract.js`;
 the selector is UX context, not an authentication or entitlement authority. An empty
 selection is rejected before Firebase sign-in. After sign-in, the server-read user
-profile and plan remain authoritative: Free/Basic/Starter accounts must have a
-matching canonical profile segment, while paid accounts may choose any canonical
+profile and backend effective entitlement remain authoritative: Free/Starter and
+Pro Trial accounts must match `users.businessSegment` (not `selectedSegment`),
+while paid accounts may choose any canonical
 segment and have that active context persisted to `selectedSegment`. Invalid or
 missing profile segment data fails closed, signs out the newly authenticated SDK
 session, and leaves the user at the Login modal with a generic error. Signup's
@@ -201,7 +202,8 @@ authentication or end-to-end release certification. Existing auth-component lint
 findings are compared to the reviewed R4 source, not silently waived or broadly fixed.
 
 Remaining first-list work: API policy/history, final browser E2E/release certification.
-Free Trial remains deferred. Production provider/Node compatibility, existing lint
+R5A originally deferred Free Trial; the separate [integration review](adviser-free-trial-integration.md)
+now documents its local implementation. Production provider/Node compatibility, existing lint
 debt, secrets/configuration, coordinated quota cutover, and the actual Admin app
 origin remain operator/release inputs. No commit, push, merge, deployment, production
 Firebase access, live PayMongo call, Storage upload, or API History implementation

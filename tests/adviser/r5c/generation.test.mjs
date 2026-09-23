@@ -5,7 +5,7 @@ import { authenticateCredential, accountEntitlement } from '../../../services/ap
 import { consumeAccountQuota } from '../../../services/account-quota.js';
 import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
 
-const account = { role: 'Developer', plan: 'Free', apiRequestLimit: 50, selectedSegment: 'Grocery' };
+const account = { role: 'Developer', plan: 'Free', apiRequestLimit: 50, selectedSegment: 'Grocery', businessSegment: 'Grocery' };
 const legacy = { key: 'daas_existing_legacy', name: 'Historical key', status: 'active', userId: 'owner' };
 function setup(extra = {}) {
   let now = new Date('2026-09-22T12:00:00.000Z');
@@ -285,15 +285,16 @@ test('old same-day keys and multiple historical keys survive clean deployment cu
 
 for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5000, 5000], ['Enterprise', null, null]]) {
   test(`generation and shared request quota independent: ${plan}/${cap}`, async () => {
-    const usage = { window: '2026-09-22', used: 2 };
+    const usage = { window: plan === 'Free' ? '2026-09' : '2026-09-22', used: 2 };
+    const counter = plan === 'Free' ? 'account_free_monthly_usage/owner' : 'account_api_usage/owner';
     const profile = { ...account, plan, apiRequestLimit: cap, subscription_status: 'active', subscriptionExpiresAt: '2027-01-01' };
-    const { db, create, clock } = setup({ 'users/owner': profile, 'account_api_usage/owner': usage, 'api_keys/old': legacy });
+    const { db, create, clock } = setup({ 'users/owner': profile, [counter]: usage, 'api_keys/old': legacy });
     const made = await create(); assert.equal(made.statusCode, 200);
-    assert.deepEqual(db.read('account_api_usage/owner'), usage);
+    assert.deepEqual(db.read(counter), usage);
     assert.equal(accountEntitlement(profile, clock()).limit, expected);
     await consumeAccountQuota(db, { userId: 'owner', keyId: 'old', credential: legacy.key, clock });
     await consumeAccountQuota(db, { userId: 'owner', keyId: made.body.id, credential: made.body.key, clock });
-    assert.equal(db.read('account_api_usage/owner').used, 4); denied(await create());
+    assert.equal(db.read(counter).used, 4); denied(await create());
     assert.equal((await docs(db, 'api_telemetry')).length, 0);
   });
 }

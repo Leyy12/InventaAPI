@@ -129,6 +129,16 @@ export function validateReleaseConfig(env, {
       && (!/^\d+$/u.test(env.API_PORT) || !Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535)) {
       add(errors, 'MALFORMED_PUBLIC', 'API_PORT', 'public configuration must be a TCP port number');
     }
+    if (!isPresent(env.FREE_MONTHLY_QUOTA_CUTOVER_AT)) {
+      add(warnings, 'OPTIONAL_MISSING', 'FREE_MONTHLY_QUOTA_CUTOVER_AT',
+        'not set; Free accounts without an authoritative monthly counter enter a next-UTC-month hold');
+    } else if (!canonicalUtc(env.FREE_MONTHLY_QUOTA_CUTOVER_AT)) {
+      add(errors, 'MALFORMED_PUBLIC', 'FREE_MONTHLY_QUOTA_CUTOVER_AT',
+        'must be a canonical UTC timestamp for the coordinated monthly-quota cutover, not the old daily cutover');
+    } else if (new Date(env.FREE_MONTHLY_QUOTA_CUTOVER_AT) > now) {
+      add(warnings, 'FUTURE_VALUE', 'FREE_MONTHLY_QUOTA_CUTOVER_AT',
+        'monthly new-account exception remains inactive until this instant');
+    }
     if (!isPresent(env.API_QUOTA_CUTOVER_AT)) {
       add(warnings, 'OPTIONAL_MISSING', 'API_QUOTA_CUTOVER_AT',
         'not set; ambiguous accounts will intentionally enter the fail-closed clean-window hold');

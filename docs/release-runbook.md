@@ -1,5 +1,19 @@
 # Production release and rollback runbook
 
+## Free Trial integration review candidate
+
+The separate [Free Trial integration contract](adviser-free-trial-integration.md)
+defines one-time seven-day Pro Trial access, 500 total account-wide requests,
+owned-segment authority and rules/backend/frontend coordination. It is local
+review work only, not authorization to deploy. Existing release gates remain.
+
+The [final client quota contract](adviser-free-trial-quota-contract.md) changes
+Free to 50/UTC month (lower caps retained), ends Trial at expiry OR exhaustion,
+and specifies the approved monthly migration hold. Coordinate restrictive rules
+and all backend instances; do not infer a monthly opening balance from daily
+history or reuse the earlier daily cutover timestamp. No production value or
+migration is authorized by these local integration changes.
+
 Production is not the first test environment. Every production batch must be a
 reviewed atomic unit and must complete all gates below. Do not infer deployment
 targets from source-code comments or provider-generated environment variables.

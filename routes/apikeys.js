@@ -6,6 +6,7 @@ import { createApiHistoryHandler } from '../services/api-history.js';
 
 const router = express.Router();
 const handlers = createApiKeyHandlers({
+  monthlyCutoverAt: process.env.FREE_MONTHLY_QUOTA_CUTOVER_AT,
   getDb: () => getFirestore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
 });

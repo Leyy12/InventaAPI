@@ -19,7 +19,7 @@ export const SUBSCRIPTION_PLANS = {
     
     // Limits
     requestLimit: 50,
-    requestLimitDisplay: "50 requests/day",
+    requestLimitDisplay: "50 requests/month",
     
     // Description
     tagline: "For developers exploring the API or proof-of-concept testing",
@@ -27,7 +27,7 @@ export const SUBSCRIPTION_PLANS = {
     // Features (base features only)
     features: [
       "API keys share the account allowance",
-      "50 requests per day",
+      "50 requests per UTC calendar month",
       "Product Catalog endpoint",
       "Product Recommendations",
       "Community support"

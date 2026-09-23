@@ -172,7 +172,7 @@ export default function ApiPlaygroundPage() {
 
             {endpoint === "/daas/v1/catalog" && <div className="space-y-3">
               {(['q', 'page', 'perPage'] as const).map(field => <label key={field} className="block text-sm text-slate-300">
-                {field === 'q' ? 'Search product text' : field === 'page' ? 'Page number' : 'Products per page (not daily quota)'}
+                {field === 'q' ? 'Search product text' : field === 'page' ? 'Page number' : 'Products per page (not request quota)'}
                 <input type={field === 'q' ? 'text' : 'number'} min={field === 'q' ? undefined : 1} value={queryParams[field]}
                   onChange={e => setQueryParams({ ...queryParams, [field]: e.target.value })}
                   className="block w-full bg-slate-900 border border-slate-700 rounded-lg p-2" />

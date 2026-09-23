@@ -55,7 +55,7 @@ test('isolated runner blocks SDKs, process escape and network',async()=>{
 });
 test('actual shared copy handler reports success only after clipboard resolution; failure is truthful',async()=>{
   const code=source('dashboard/src/components/shared/CodeSnippet.tsx');
-  const body=code.match(/async function copy\(text: string, target: string\) \{([\s\S]*?)\n  \}\n  return/)?.[1];assert.ok(body);
+  const body=code.replaceAll('\r\n', '\n').match(/async function copy\(text: string, target: string\) \{([\s\S]*?)\n  \}\n  return/)?.[1];assert.ok(body);
   const make=new Function('navigator','setMessage','return async (text,target)=>{'+body+'}');
   const messages=[],writes=[];let finish;
   const copy=make({clipboard:{writeText:text=>{writes.push(text);return new Promise(resolve=>{finish=resolve;});}}},m=>messages.push(m));

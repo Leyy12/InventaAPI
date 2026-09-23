@@ -69,17 +69,17 @@ for(const invalid of [null,undefined,{...usage,scope:'key'},{...usage,used:NaN},
   test('unavailable quota does not become zero: '+JSON.stringify(invalid),()=>assert.equal(quotaSummary(invalid,now),null));
 }
 test('R5C generation frequency does not change shared request usage across existing keys',async()=>{
-  const db=memoryFirestore({'users/owner':{role:'Developer',plan:'Free',apiRequestLimit:50,selectedSegment:'Grocery'},
-    'account_api_usage/owner':{window:'2026-09-20',used:17}});
+  const db=memoryFirestore({'users/owner':{role:'Developer',plan:'Free',apiRequestLimit:50,selectedSegment:'Grocery',businessSegment:'Grocery'},
+    'account_free_monthly_usage/owner':{window:'2026-09',used:17}});
   let generationTime = new Date('2026-09-20T12:00:00Z');
   const handlers=createApiKeyHandlers({getDb:()=>db,clock:()=>generationTime,verifyIdToken:async()=>({uid:'owner'})});
   const first=await invoke(handlers.create,{body:{keyName:'First'}});
   generationTime = now;
-  await db.collection('account_api_usage').doc('owner').set({window:'2026-09-21',used:17});
+  // Crossing midnight for generation must not reset the existing monthly balance.
   const second=await invoke(handlers.create,{body:{keyName:'Second'}});
-  assert.equal(first.statusCode,200);assert.equal(second.statusCode,200);assert.equal(db.read('account_api_usage/owner').used,17);
+  assert.equal(first.statusCode,200);assert.equal(second.statusCode,200);assert.equal(db.read('account_free_monthly_usage/owner').used,17);
   for(const key of [first.body,second.body]) await consumeAccountQuota(db,{keyId:key.id,userId:'owner',credential:key.key,clock:()=>now});
-  assert.equal(db.read('account_api_usage/owner').used,19);
+  assert.equal(db.read('account_free_monthly_usage/owner').used,19);
   const metadata=(await invoke(handlers.list)).body;
   assert.equal(metadata.usage.scope,'account');assert.equal(metadata.usage.used,19);assert.equal(metadata.keys.length,2);
 });

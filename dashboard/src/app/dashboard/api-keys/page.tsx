@@ -258,7 +258,7 @@ DAAS_API_KEY=${keyStr}
       </div>
 
       <CustomerUsageSummary />
-      <p className="text-sm text-slate-400">The daily account allowance is shared across keys. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
+      <p className="text-sm text-slate-400">The account allowance is shared across keys: 50/month for Free (or a lower account limit), daily for paid plans, 500 total across an active trial. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
       <RequestHistory />
 
       {/* API Keys List */}
@@ -482,7 +482,7 @@ DAAS_API_KEY=${keyStr}
               <>
                 <div className="p-6 border-b border-slate-700">
                   <h3 className="text-xl font-bold text-white mb-1">Generate New API Key</h3>
-                  <p className="text-sm text-slate-400">{GENERATION_POLICY} This is separate from your daily API request quota.</p>
+                  <p className="text-sm text-slate-400">{GENERATION_POLICY} This is separate from your account API request quota.</p>
                 </div>
 
                 <div className="p-6">

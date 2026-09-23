@@ -21,8 +21,8 @@ test('isolated runtime blocks global network APIs', async () => {
   assert.throws(() => new globalThis.WebSocket('wss://example.invalid'));
 });
 function fixture(extra = {}) {
-  const db = memoryFirestore({ 'users/customer': { role: 'Developer', plan: 'Free' },
-    'users/admin': { role: 'Admin' }, 'users/stranger': { role: 'Developer' }, ...extra });
+  const db = memoryFirestore({ 'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' },
+    'users/admin': { role: 'Admin' }, 'users/stranger': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, ...extra });
   let serial = 0;
   const verified = [];
   const handlers = createProductSubmissionHandlers({ getDb: () => db, now: () => new Date(at), makeId: () => `request-${++serial}`,
@@ -87,7 +87,7 @@ for (const url of ['javascript:alert(1)', 'data:image/png;base64,a', 'file:///a'
   });
 }
 test('optional image omitted and empty accepted', async () => {
-  const f = fixture(); assert.equal((await f.submit({ body: { name: 'Plain', segment: 'Hardware', category: 'Tools' } })).statusCode, 201);
+  const f = fixture(); assert.equal((await f.submit({ body: { name: 'Plain', segment: 'Grocery', category: 'Food' } })).statusCode, 201);
   assert.equal(f.submissions()[0][1].content.image_url, '');
 });
 test('same explicit operation handles concurrent clicks and uncertain response retry', async () => {

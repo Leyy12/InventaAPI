@@ -16,7 +16,7 @@ const matrix = (sku = 'CAN-330', name = 'Coke') => [['name', 'brand', 'category'
 function fixture(extra = {}, deriveReservationId) {
   // Query phantom detection deliberately disabled. Claims/fence must provide safety.
   const db = memoryFirestore({ 'users/admin': { role: 'Admin' }, 'users/other-admin': { role: 'Admin' },
-    'users/customer': { role: 'Developer', plan: 'Free' }, ...extra }, { queryConflicts: false });
+    'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, ...extra }, { queryConflicts: false });
   let serial = 0, time = new Date('2026-09-20T12:00:00Z');
   const checked = [];
   const dependencies = { getDb: () => db, now: () => time, makeId: () => 'r3-' + (++serial), deriveReservationId,

@@ -7,4 +7,5 @@ export const { enforceRequestLimit } = createDaaSSecurity({
   // Optional operator assertion: all legacy traffic/writes ended at this time.
   // Unset/invalid configuration conservatively holds uninitialized accounts.
   cutoverAt: process.env.API_QUOTA_CUTOVER_AT,
+  monthlyCutoverAt: process.env.FREE_MONTHLY_QUOTA_CUTOVER_AT,
 });

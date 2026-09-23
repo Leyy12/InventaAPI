@@ -98,13 +98,17 @@ flowchart LR
   Data --> History[Existing recorded-request telemetry where recorded]
 ```
 
-Free defaults to 50 requests/day with existing lower account overrides. Pro is
+Free defaults to 50 requests/UTC calendar month with existing lower account overrides. Pro is
 5,000/day; Enterprise retains unlimited behavior. Existing request-quota cutover
 hold remains independent of key generation. All keys share request usage;
 generation neither consumes nor resets it. Customer history is still at most 50
 recent recorded API requests, not complete quota accounting or key-generation
 history. **Key Name** is the key alias at request time; no downstream Consumer
 registry or invented Consumer identity.
+
+Trial ends at seven days OR 500 total requests and returns to the preserved
+Free monthly balance; keys are not revoked. See the [monthly migration and
+Trial contract](adviser-free-trial-quota-contract.md) for holds and precedence.
 
 ## Payment and entitlement
 

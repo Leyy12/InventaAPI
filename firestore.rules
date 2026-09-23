@@ -77,7 +77,11 @@ service cloud.firestore {
                     && request.resource.data.get('subscription_status', 'inactive') == 'inactive'
                     && !request.resource.data.keys().hasAny(['subscriptionExpiresAt', 'lastSubscribedAt',
                       'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
-                      'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState']);
+                      'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState',
+                      'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt', 'trialExpiredAt',
+                      'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt'])
+                    && request.resource.data.businessSegment in ['Grocery', 'Pharmacy', 'Hardware']
+                    && (!('selectedSegment' in request.resource.data) || request.resource.data.selectedSegment == request.resource.data.businessSegment);
 
       // Users can update their own document but CANNOT change:
       //   - uid         (identity)
@@ -98,8 +102,13 @@ service cloud.firestore {
                     && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
                       'subscriptionExpiresAt', 'subscription_status', 'lastSubscribedAt',
                       'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
-                      'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState'])
-                    && (!('selectedSegment' in request.resource.data) || request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']);
+                      'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState',
+                      'businessSegment', 'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt',
+                      'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt'])
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['selectedSegment'])
+                      || (request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']
+                        && (resource.data.plan in ['Pro', 'pro', 'Professional', 'professional', 'Enterprise', 'enterprise', 'Unlimited', 'unlimited']
+                          || request.resource.data.selectedSegment == resource.data.get('businessSegment', ''))));
 
       // Server-controlled deletion retains the tombstone against recreation.
       allow delete: if false;
@@ -153,6 +162,8 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /catalog_control/{id} { allow read, write: if false; }
+    match /account_trial_usage/{id} { allow read, write: if false; }
+    match /account_free_monthly_usage/{id} { allow read, write: if false; }
     match /catalog_import_previews/{id} { allow read, write: if false; }
     match /catalog_import_results/{id} { allow read, write: if false; }
 

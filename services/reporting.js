@@ -7,7 +7,7 @@ export function reportSelection(value) {
 }
 export function customerReportScope(plan, preference) {
   if (['Pro', 'Enterprise', 'Unlimited'].includes(plan)) return { state: 'ready', segment: 'All', restricted: false };
-  if (!['Free', 'Basic', 'Starter'].includes(plan)) return { state: 'unavailable', segment: null, restricted: true };
+  if (!['Free', 'Basic', 'Starter', 'Pro Trial'].includes(plan)) return { state: 'unavailable', segment: null, restricted: true };
   const segment = normalizeSegment(preference);
   return { state: segment ? 'ready' : 'preference_required', segment, restricted: true };
 }
@@ -72,11 +72,12 @@ export function reportView(source, selection) {
 export function quotaSummary(usage, now = new Date()) {
   if (!usage || usage.scope !== 'account' || !Number.isSafeInteger(usage.used) || usage.used < 0
     || !(usage.limit === null || (Number.isSafeInteger(usage.limit) && usage.limit >= 0))
-    || usage.window !== now.toISOString().slice(0, 10)
+    || (usage.period === 'trial' ? usage.window !== 'trial' || usage.limit !== 500
+      : usage.period === 'monthly' ? usage.window !== now.toISOString().slice(0, 7) : usage.window !== now.toISOString().slice(0, 10))
     || !Number.isFinite(Date.parse(usage.resetsAt)) || Date.parse(usage.resetsAt) <= now.getTime()) return null;
   const pending = !!usage.holdUntil;
   if (pending && usage.holdUntil !== usage.resetsAt) return null;
-  return { used: pending ? null : usage.used, limit: usage.limit,
+  return { used: pending ? null : usage.used, limit: usage.limit, ...(['trial', 'monthly'].includes(usage.period) ? { period: usage.period } : {}),
     remaining: pending ? 0 : usage.limit === null ? null : Math.max(0, usage.limit - usage.used),
     percent: pending || usage.limit === null || usage.limit === 0 ? null : Math.min(100, (usage.used / usage.limit) * 100),
     pending, resetsAt: usage.resetsAt };

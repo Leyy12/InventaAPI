@@ -5,6 +5,7 @@ import { Settings2, Building2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from 'react';
 import SubscriptionModal from '@/components/subscription/SubscriptionModal';
+import { restrictedSegmentAccount, activeCustomerSegment } from '../../../../../services/customer-segment.js';
 
 export default function SettingsPage() {
   const { appUser, loading, entitlement } = useAuth();
@@ -19,8 +20,7 @@ export default function SettingsPage() {
     );
   }
 
-  // Only show this setting for Free plan users
-  const isFreePlan = appUser?.plan === "Free";
+  const segmentRestricted = restrictedSegmentAccount(appUser);
 
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
@@ -41,7 +41,7 @@ export default function SettingsPage() {
           Business Configuration
         </h2>
 
-        {isFreePlan ? (
+        {segmentRestricted ? (
           <div className="space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-lg border border-slate-800 bg-slate-900/50">
               <div>
@@ -52,7 +52,7 @@ export default function SettingsPage() {
                 </p>
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-sm">
                   <span className="text-slate-400">Current:</span>
-                  <span className="text-white font-medium">{appUser?.selectedSegment || "None"}</span>
+                  <span className="text-white font-medium">{activeCustomerSegment(appUser) || "Unavailable"}</span>
                 </div>
               </div>
             </div>

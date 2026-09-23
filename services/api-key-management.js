@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
-  usageForToday, validDocumentId,
+  usageForToday, validDocumentId, trialUsage, freeMonthlyUsage,
 } from './api-key-security.js';
 import { authorizedProductIds } from './daas-catalog.js';
 import { normalizeSegment } from './product-contract.js';
+import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 
 function scopeFromBody(body) {
   const full = body.linkedProductIds ?? [];
@@ -31,7 +32,7 @@ function keyName(value) {
   return value.trim();
 }
 
-export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new Date() }) {
+export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new Date(), monthlyCutoverAt = null }) {
   const authenticated = operation => async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -53,17 +54,26 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     const accountDoc = await tx.get(userRef);
     if (!accountDoc.exists) throw new ApiSecurityError(404, 'ACCOUNT_NOT_FOUND', 'Account not found.');
     const usageDoc = await tx.get(db.collection('account_api_usage').doc(uid));
+    const monthlyDoc = await tx.get(db.collection('account_free_monthly_usage').doc(uid));
     const account = accountDoc.data();
     const entitlement = accountEntitlement(account, clock());
+    const trialDoc = entitlement.activeTrial ? await tx.get(db.collection('account_trial_usage').doc(uid)) : null;
+    const usage = entitlement.level === 0 ? freeMonthlyUsage(monthlyDoc.exists ? monthlyDoc.data() : null, accountDoc, clock(), monthlyCutoverAt)
+      : entitlement.activeTrial ? trialUsage(trialDoc?.data(), entitlement) : usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
+    if (entitlement.activeTrial) {
+      const daily = usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
+      if (daily.holdUntil) Object.assign(usage, { holdUntil: daily.holdUntil, resetsAt: daily.holdUntil });
+    }
     if (entitlement.normalization) tx.update(userRef, entitlement.normalization);
-    return { account: { ...account, ...entitlement.normalization }, entitlement, usage: usageForToday(usageDoc.exists ? usageDoc.data() : null, clock()) };
+    return { account: { ...account, ...entitlement.normalization }, entitlement, usage };
     });
   }
 
   async function currentAccount(tx, db, uid, context) {
     const account = (await tx.get(db.collection('users').doc(uid))).data();
     const entitlement = accountEntitlement(account, clock());
-    if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment)) {
+    if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment
+      || account.businessSegment !== context.account.businessSegment)) {
       throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
     }
     return entitlement;
@@ -81,16 +91,18 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
   }
 
   async function validateScope(db, scope, context) {
-    const selected = normalizeSegment(context.account.selectedSegment);
+    const scopedAccount = { ...context.account, plan: context.entitlement.plan };
+    const restricted = restrictedSegmentAccount(scopedAccount);
+    const selected = activeCustomerSegment(scopedAccount);
     const ids = authorizedProductIds(scope);
-    if (context.entitlement.level === 0 && ids.length && !selected) {
+    if (restricted && ids.length && !selected) {
       throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Select a supported account segment first.');
     }
     for (const id of ids) {
       const snapshot = await db.collection('products').doc(id).get();
       if (!snapshot.exists) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'A selected product no longer exists.');
       const product = snapshot.data();
-      if (context.entitlement.level === 0 && normalizeSegment(product.segment || product.businessType) !== selected) {
+      if (restricted && normalizeSegment(product.segment || product.businessType) !== selected) {
         throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Product is outside your account segment.');
       }
     }

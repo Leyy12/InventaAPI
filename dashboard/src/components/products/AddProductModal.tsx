@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { normalizeProductImageUrl } from "@/lib/product-image-url";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { activeCustomerSegment, restrictedSegmentAccount } from '../../../../services/customer-segment.js';
 
 interface AddProductModalProps {
   open: boolean;
@@ -24,7 +25,8 @@ interface VariantRow {
 }
 
 export default function AddProductModal({ open, onClose, onAdded }: AddProductModalProps) {
-  const { user } = useAuth();
+  const { user, appUser } = useAuth();
+  const segmentLocked = restrictedSegmentAccount(appUser);
   const busy = useRef(false);
   const attempt = useRef<{ uid: string; key: string; body: string } | null>(null);
   const [pending, setPending] = useState(false);
@@ -32,7 +34,8 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
 
   const [name, setName]             = useState("");
   const [brand, setBrand]           = useState("");
-  const [segment, setSegment]       = useState("");
+  const [paidSegment, setSegment]   = useState("");
+  const segment = segmentLocked ? activeCustomerSegment(appUser) || '' : paidSegment;
   const [category, setCategory]     = useState("");
   const [description, setDescription] = useState("");
   const [variants, setVariants]     = useState<VariantRow[]>([{ flavor: "", size: "", sku: "", price: "" }]);
@@ -154,7 +157,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             </div>
             <div>
               <label className={labelCls}>Segment *</label>
-              <select value={segment} onChange={e => setSegment(e.target.value)} className={inputCls}>
+              <select aria-label="Segment" disabled={segmentLocked} value={segment} onChange={e => setSegment(e.target.value)} className={inputCls}>
                 <option value="">— Select Segment —</option>
                 <option value="Grocery">Grocery</option>
                 <option value="Hardware">Hardware</option>

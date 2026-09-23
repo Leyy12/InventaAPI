@@ -21,6 +21,7 @@ const dashboardRoutes = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Products", href: "/dashboard/products", icon: Package },
   { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
+  { name: "7-Day Pro Trial", href: "/dashboard/free-trial", icon: Shield },
   { name: "Documentation", href: "/docs", icon: BookOpen },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Privacy", href: "/dashboard/privacy", icon: Shield },
