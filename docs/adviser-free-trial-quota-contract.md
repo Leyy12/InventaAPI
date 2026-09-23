@@ -102,12 +102,14 @@ index is required (new quota reads are direct document lookups).
 ## Release inventory and backlog
 
 Later coordinated release requires backend, Customer, Admin, restrictive rules
-and the changed packaged shared Functions lifecycle module. No new Function or
-schedule, dependency, lockfile or index is introduced. A real-browser release
+and the changed packaged shared Functions lifecycle module. At the approved core
+checkpoint no new Function or schedule, dependency, lockfile or index was introduced;
+the subsequent uncommitted [Phase 2 client TODO](adviser-free-trial-integration.md#phase-2-client-todo-implementation--uncommitted)
+adds a scheduled email Function without altering quota or entitlement authority. A real-browser release
 gate and review of trustworthy existing ownership remain required. This task
 does not authorize release.
 
-Separately deferred client TODOs:
+Phase 2 client TODOs now implemented locally and awaiting review:
 
 - Day-4 Trial warning email and daily Trial monitoring.
 - Linked Products must display the products the Customer selected.

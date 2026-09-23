@@ -32,6 +32,7 @@ const iconForType = (type: Notification["type"]) => {
     case "product_request_rejected":
       return <X className="w-4 h-4 text-rose-400" />;
     case "subscription_expiring":
+    case "trial_expiring":
       return <AlertTriangle className="w-4 h-4 text-amber-400" />;
     default:
       return <ShieldAlert className="w-4 h-4 text-slate-400" />;

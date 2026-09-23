@@ -9,9 +9,11 @@ also records the approved migration hold, Admin projection and Settings fixes.
 
 Implementation on `adviser/free-trial-integration`, based on production commit
 `0f392700b6f921c55e478d2a8ea1469c3c54ad1e`.
+The approved core is locally checkpointed at `f7987647194ecb0cbf40b1c0de8ae071450cc928`;
+the Phase 2 client TODO changes below remain uncommitted for review.
 Reference only: `origin/client/free-trial` at
 `5a914d6489155ecc56a3c487454e2ee33825af84`.
-No merge, rebase, wholesale cherry-pick, commit, push, deployment or production access.
+No merge, rebase, wholesale cherry-pick, push, deployment or production access.
 The original Client checkout and the Independent reference repository were not modified.
 
 This is a review candidate, not a production release certification.
@@ -95,9 +97,59 @@ Admin/import changes. The approximately 52 MB historic data blob was not ported.
 The reference Upload File design is **not** implemented: images remain HTTPS
 URL-only metadata in the existing secure submission/review architecture.
 
-Optional day-4/expiry notifications are **deferred**. No email job, long-running
-watcher, startup listener or new scheduled Function is introduced. Expiry is
-server-time entitlement evaluation independently of notification delivery.
+At the core checkpoint, day-4/expiry notifications were deferred. Phase 2 adds
+the scheduled warning described below; expiry remains server-time entitlement
+evaluation independently of notification delivery. There is still no
+long-running watcher, startup listener or browser-authoritative timer.
+
+## Phase 2 client TODO implementation — uncommitted
+
+`monitorFreeTrials` is a Firebase v2 scheduled Function in `asia-southeast1`,
+Node 22, at `0 */6 * * *` **UTC**. It examines only indexed
+`users.trialExpiresAt` values in the active three-day warning window, in
+bounded pages. The warning threshold is exactly `trialStartedAt + 4 × 24 hours`
+UTC, with the original seven-day `trialExpiresAt` still in the future. It
+re-reads the user and authoritative `account_trial_usage/{uid}` counter before
+claiming a send. Expired, exhausted (500/500), paid-superseded, disabled,
+deleted, and unnotifiable accounts are skipped. No key is revoked and no
+entitlement, quota, segment or payment state is changed by the scheduler.
+
+The server-only delivery adapter calls Resend `POST /emails` with a frozen
+payload and deterministic idempotency key. A Firestore transaction on
+`trial_warning_deliveries/{hash(uid,trialStartedAt)}` serializes concurrent
+attempts; a seven-minute lease exceeds the Function timeout. Resend acceptance
+with an email ID is the success boundary, after which an in-app notification
+and `accepted` marker are written. Failed/uncertain sends are **not** marked
+sent. Retries reuse the identical payload/key within 23 hours. Because Resend
+retains keys for only 24 hours, an unresolved attempt beyond 23 hours becomes
+`needs_review` and is never resent automatically; an operator must inspect
+provider delivery evidence. This trades a possible missing warning for no
+automatic duplicate. API Trial expiry does not depend on delivery.
+
+The release operator must configure Firebase Secret Manager
+`RESEND_API_KEY` for this Function and a verified
+`TRIAL_WARNING_FROM_EMAIL` parameter. Both are new deployment gates; no
+credentials or live email were used in this local implementation. The
+`--scope=functions` release validator checks the sender and a supplied secret
+without printing it; the operator must independently verify the bound Secret
+Manager value and sender domain before deployment. No new Firestore composite
+index is needed: the scheduler uses one range/order field and direct document
+lookups. The existing notifications index serves the in-app bell.
+
+Admin Security Center and API Key Inventory now render current product names
+resolved from Firestore `products/{id}` for the canonical persisted key-link
+ID union (full, partial variant and legacy ID links); embedded/browser names
+are ignored. Zero links display an empty state; one or many names display in
+a compact three-name list with a remainder count. Only linked IDs are read;
+the Admin-only key inventory and existing Customer segment restrictions are
+unchanged. Security Center no longer renders the raw `api_keys.userId` subline
+under the Customer identity; its join/search/backend identity remain intact.
+
+The Customer generated-key success modal emphasizes the persisted `name`
+(`Key Name`) and separately shows the raw credential under “API Key — shown
+once.” Copy uses the secret, not the name. Dismissal clears both in-memory
+values. Existing key history continues to show the name and masked prefix,
+never a recoverable raw credential.
 
 ## Validation before the final quota correction (historical)
 

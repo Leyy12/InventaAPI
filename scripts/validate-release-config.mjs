@@ -67,6 +67,17 @@ export function validateReleaseConfig(env, {
   const dashboard = scope === 'all' || scope === 'dashboard';
   const admin = scope === 'all' || scope === 'admin';
 
+  if (scope === 'functions') {
+    required('TRIAL_WARNING_FROM_EMAIL', {
+      valid: value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value) && notPlaceholder(value),
+      expectation: 'a verified sender email address',
+    });
+    required('RESEND_API_KEY', {
+      secret: true, valid: value => /^re_\S+$/u.test(value) && notPlaceholder(value),
+      expectation: 'a non-placeholder Resend secret (bound through Firebase Secret Manager)',
+    });
+  }
+
   if (backend) {
     required('NODE_ENV', { valid: value => value === mode, expectation: mode });
     required('FIREBASE_AUTH_MODE', {

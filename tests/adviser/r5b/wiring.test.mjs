@@ -32,7 +32,7 @@ test('copy targets are deliberate, contextual and report clipboard failure',()=>
   assert.match(snippets,/Copy endpoint/);assert.match(snippets,/Copy example/);assert.match(snippets,/await navigator.clipboard.writeText/);
   assert.match(snippets,/Copy failed/);assert.doesNotMatch(snippets,/useEffect|apiKey:/);
   for(const path of ['api-keys','products']) {
-    const ui=source(`dashboard/src/app/dashboard/${path}/page.tsx`);assert.match(ui,/Copy API key/);assert.match(ui,/await navigator.clipboard.writeText/);assert.match(ui,/Copy failed/);
+    const ui=source(`dashboard/src/app/dashboard/${path}/page.tsx`);assert.match(ui,/Copy API key/i);assert.match(ui,/await navigator.clipboard.writeText/);assert.match(ui,/Copy failed/);
   }
 });
 test('placeholder examples centralized across keys/docs/playground and admin route is not a DaaS example',()=>{

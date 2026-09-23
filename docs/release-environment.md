@@ -56,6 +56,21 @@ Firebase Functions independently call `initializeApp()` and use managed identity
 they do not need the root backend's private-key variables. An operator needing
 root managed identity must obtain a separate reviewed initializer implementation.
 
+## Free Trial warning Function configuration — release gate
+
+The uncommitted Phase 2 `monitorFreeTrials` Function requires
+`TRIAL_WARNING_FROM_EMAIL` (a verified sender email, non-secret Firebase
+parameter) and `RESEND_API_KEY` (server-only Firebase Secret Manager secret
+bound only to that Function). Set/verify both in the intended Firebase project
+before any authorized deployment; no value is selected in this repository.
+Run `validate-release-config.mjs --scope=functions --mode=production` with an
+operator-provided environment for local format preflight, then independently
+verify Secret Manager binding and sender-domain ownership. Never copy the
+Resend secret to Customer/Admin bundles or Git. Resend delivery itself and
+deployed-origin email behavior still require a separately authorized sandbox
+test. `FREE_MONTHLY_QUOTA_CUTOVER_AT` remains a distinct mandatory coordinated
+release input as described above.
+
 ## Current capstone payment contract (R6C)
 
 Use `PAYMONGO_MODE=test` with a PayMongo Test Secret Key and the signing secret

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { ShieldCheck, Key, Activity, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Key, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
+import { LinkedProducts, useLinkedProductNames } from "@/components/admin/LinkedProducts";
 
 export default function SecurityCenterPage() {
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -15,6 +16,7 @@ export default function SecurityCenterPage() {
 
   const loading = !usersReady || !keysReady;
   const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId));
+  const linkedProducts = useLinkedProductNames(apiKeys);
 
   useEffect(() => {
     // Listener 1: Users — build lookup map by userId
@@ -168,7 +170,6 @@ export default function SecurityCenterPage() {
                         <div className="text-xs text-slate-400 mt-0.5">
                           {k.userEmail || user.email || "No email"}
                         </div>
-                        <div className="text-[10px] text-slate-600 font-mono mt-1">{k.userId}</div>
                       </td>
 
                       {/* Plan & Usage bar */}
@@ -194,12 +195,7 @@ export default function SecurityCenterPage() {
 
                       {/* Linked Products */}
                       <td className="p-4 align-top">
-                        <div className="flex items-center gap-1.5">
-                          <Activity className="w-3 h-3 text-slate-500" />
-                          <span className="text-sm text-slate-300">
-                            {k.linkedProductIds?.length ?? 0} products
-                          </span>
-                        </div>
+                        <LinkedProducts link={k} {...linkedProducts} />
                       </td>
 
                       {/* Timeline */}

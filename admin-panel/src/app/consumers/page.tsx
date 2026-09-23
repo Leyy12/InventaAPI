@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Users, Search, Activity, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Users, Search, CheckCircle2, AlertTriangle } from "lucide-react";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
+import { LinkedProducts, useLinkedProductNames } from "@/components/admin/LinkedProducts";
 
 type KeyRow = { id: string; userId: string; name?: string; userEmail?: string; status?: string; linkedProductIds?: string[]; createdAt?: string; lastUsed?: string };
 type OwnerRow = { id: string; businessName?: string; fullName?: string; email?: string };
@@ -18,6 +19,7 @@ export default function ConsumersPage() {
 
   const loading = !usersReady || !keysReady;
   const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId));
+  const linkedProducts = useLinkedProductNames(apiKeys);
 
   useEffect(() => {
     const unavailable = () => { setReadError(true); setApiKeys([]); setUsersMap({}); };
@@ -188,15 +190,7 @@ export default function ConsumersPage() {
 
                       {/* Linked Products */}
                       <td className="p-4 align-top">
-                        <div className="flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5 text-slate-500" />
-                          <span className="text-sm text-slate-300">
-                            {k.linkedProductIds?.length ?? 0}
-                          </span>
-                        </div>
-                        {(k.linkedProductIds?.length ?? 0) > 0 && (
-                          <p className="text-[10px] text-slate-600 mt-0.5">products linked</p>
-                        )}
+                        <LinkedProducts link={k} {...linkedProducts} />
                       </td>
 
                       {/* Timeline */}

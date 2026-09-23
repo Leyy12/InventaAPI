@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const sources = ["functions/subscription-lifecycle.mjs","services/free-trial.js","services/api-key-security.js","services/api-key-management.js","services/account-quota.js","services/daas-security.js","services/daas-catalog.js","services/product-contract.js","services/customer-segment.js","services/reporting.js","services/product-submissions.js","services/product-submission-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/catalog-contract.js","tests/adviser/phase2a/memory-firestore.mjs","tests/adviser/r2a/memory-firestore.mjs","dashboard/src/lib/entitlement-poller.ts","tests/adviser/free-trial/trial.test.mjs"];
+sources.push('functions/trial-warning.mjs', 'functions/trial-warning-email.mjs', 'admin-panel/src/lib/linked-product-names.ts', 'dashboard/src/lib/linked-product-selection.ts', 'tests/adviser/free-trial/phase2.test.mjs');
 for (const file of sources) {
   const source = readFileSync(resolve(root, file), 'utf8');
   if (/\b(?:fetch|require)\s*\(|\bprocess\.(?:env|binding|getBuiltinModule)\b|\beval\s*\(|new\s+Function\b/u.test(source)) {

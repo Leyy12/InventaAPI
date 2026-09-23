@@ -38,18 +38,22 @@ test('revocation stays available with warning about only usable key and no refun
 // dependencies. No browser, SDK initialization or real HTTP call is involved.
 async function submit(response, name = 'Integration') {
   const handler = keys.slice(keys.indexOf('  const generateNewKey = async () => {'), keys.indexOf('  const revokeKey ='));
-  const state = { secrets: [], alerts: [], pending: [], refreshes: 0, calls: 0 };
+  const state = { secrets: [], names: [], alerts: [], pending: [], refreshes: 0, calls: 0, bodies: [] };
   const run = new Function('newKeyName', 'user', 'fetch', 'process', 'alert', 'console', 'setGeneratingKey',
-    'setNewlyGeneratedKey', 'setNewKeyName', 'fetchApiKeys', 'generationErrorMessage', `${handler}; return generateNewKey();`);
+    'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setNewKeyName', 'fetchApiKeys', 'generationErrorMessage',
+    'selectedCustomerProducts', `${handler}; return generateNewKey();`);
   await run(name, { email: 'fixture@example.test', getIdToken: async () => 'synthetic-token' },
-    async () => { state.calls++; return { ok: response.ok, json: async () => response.data }; },
+    async (_url, options) => { state.calls++; state.bodies.push(JSON.parse(options.body)); return { ok: response.ok, json: async () => response.data }; },
     { env: { NEXT_PUBLIC_API_URL: 'http://127.0.0.1:9' } }, value => state.alerts.push(value), { error: () => {} },
-    value => state.pending.push(value), value => state.secrets.push(value), () => {}, () => state.refreshes++, generationErrorMessage);
+    value => state.pending.push(value), value => state.secrets.push(value), value => state.names.push(value), () => {}, () => state.refreshes++, generationErrorMessage,
+    [{ id: 'canonical-product-id', name: 'Fixture Product' }]);
   return state;
 }
 test('actual generation handler reveals successful one-time secret and refreshes metadata', async () => {
   const state = await submit({ ok: true, data: { key: 'synthetic-one-time-secret' } });
-  assert.deepEqual(state.secrets, ['synthetic-one-time-secret']); assert.equal(state.refreshes, 1);
+  assert.deepEqual(state.secrets, ['synthetic-one-time-secret']); assert.deepEqual(state.names, ['Integration']); assert.equal(state.refreshes, 1);
+  assert.deepEqual(state.bodies[0].linkedProductIds, ['canonical-product-id']);
+  assert.equal('linkedProducts' in state.bodies[0], false);
   assert.deepEqual(state.pending, [true, false]); assert.deepEqual(state.alerts, []);
   assert.match(keys, /won&apos;t be able to see it again/);
   assert.match(products, /you won't see it again/);

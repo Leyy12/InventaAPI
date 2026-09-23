@@ -18,7 +18,8 @@ export type NotificationType =
   | "product_request_submitted"   // customer submits a request → admin sees it
   | "product_request_approved"    // admin approves → customer sees it
   | "product_request_rejected"    // admin rejects → customer sees it
-  | "subscription_expiring";      // system → customer sees it
+  | "subscription_expiring"       // system → customer sees it
+  | "trial_expiring";             // scheduled server warning → customer
 
 export interface Notification {
   id: string;

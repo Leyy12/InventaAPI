@@ -6,6 +6,15 @@ import cors from 'cors';
 import { frontendReleaseConfig } from '../../../scripts/frontend-release-config.mjs';
 import { validateReleaseConfig, validReleaseOrigin, formatValidation } from '../../../scripts/validate-release-config.mjs';
 
+test('Trial warning Functions release requires a verified sender and server-only Resend secret', () => {
+  const options = { scope: 'functions', nodeVersion: 'v22.20.0' };
+  const missing = validateReleaseConfig({}, options);
+  assert.equal(missing.ok, false);
+  assert.ok(missing.errors.some(issue => issue.name === 'TRIAL_WARNING_FROM_EMAIL'));
+  assert.ok(missing.errors.some(issue => issue.name === 'RESEND_API_KEY'));
+  assert.equal(validateReleaseConfig({ TRIAL_WARNING_FROM_EMAIL: 'trial@verified.test', RESEND_API_KEY: 're_synthetic' }, options).ok, true);
+});
+
 const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
 const frontend = {
   NODE_ENV: 'production', NEXT_PUBLIC_API_URL: 'https://api.r6b-fixture.net',

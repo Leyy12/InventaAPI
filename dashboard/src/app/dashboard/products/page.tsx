@@ -11,6 +11,7 @@ import AddProductModal from "@/components/products/AddProductModal";
 import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
+import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -19,6 +20,7 @@ interface CartSummary {
   totalProducts: number;
   bySegment: Record<string, number>;
   productIds: string[];
+  linkedProducts: { id: string; name: string }[];
 }
 
 // ==================== CONSTANTS ====================
@@ -56,6 +58,7 @@ export default function ProductCatalogPage() {
   const [keyName, setKeyName] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [generatedKeyName, setGeneratedKeyName] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Add Product (to existing API key) Modal State
@@ -116,7 +119,7 @@ export default function ProductCatalogPage() {
   const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
 
   const cartSummary = useMemo((): CartSummary => {
-    const selectedItems = scopeCustomerProducts(products, appUser).filter(p => selectedProducts.has(p.id!));
+    const selectedItems = selectedLinkedProducts(products, appUser, selectedProducts);
     const bySegment = selectedItems.reduce((acc, p) => {
       acc[p.segment] = (acc[p.segment] || 0) + 1;
       return acc;
@@ -125,7 +128,8 @@ export default function ProductCatalogPage() {
     return {
       totalProducts: selectedItems.length,
       bySegment,
-      productIds: selectedItems.map(product => product.id!)
+      productIds: selectedItems.map(product => product.id!),
+      linkedProducts: selectedItems.map(product => ({ id: product.id!, name: product.name || 'Product unavailable' }))
     };
   }, [products, selectedProducts, appUser]);
 
@@ -231,16 +235,15 @@ export default function ProductCatalogPage() {
       }
       const idToken = await currentUser.getIdToken();
 
-      const selectedProductsList = scopeCustomerProducts(products, appUser)
-        .filter(p => selectedProducts.has(p.id!))
+      const selectedItems = selectedLinkedProducts(products, appUser, selectedProducts);
+      const selectedProductsList = selectedItems
         .map(p => ({ id: p.id!, name: p.name, sku: p.sku || '', segment: p.segment }));
 
       const finalLinkedProductIds: string[] = [];
       const finalLinkedVariantSelections: Record<string, string[]> = {};
 
-      selectedProducts.forEach(productId => {
-        const product = products.find(p => p.id === productId);
-        if (!product) return;
+      selectedItems.forEach(product => {
+        const productId = product.id!;
         
         const selectedVars = selectedVariants[productId];
         if (product.variants && product.variants.length > 0 && selectedVars && selectedVars.size > 0 && selectedVars.size < product.variants.length) {
@@ -273,6 +276,7 @@ export default function ProductCatalogPage() {
         throw new Error(generationErrorMessage(data));
       }
 
+      setGeneratedKeyName(typeof data.name === 'string' && data.name.trim() ? data.name : keyName.trim());
       setGeneratedKey(data.key);
     } catch (error) {
       console.error("Error generating API key:", error);
@@ -363,6 +367,7 @@ DAAS_API_KEY=${generatedKey}
               onClick={() => { 
                 setShowGenModal(true); 
                 setGeneratedKey(null); 
+                setGeneratedKeyName(null);
                 setKeyName(""); 
                 setCopied(false); 
               }}
@@ -647,7 +652,12 @@ DAAS_API_KEY=${generatedKey}
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
           <div className="w-full max-w-md glass-card rounded-2xl border border-slate-700 shadow-2xl p-8 animate-in fade-in zoom-in duration-200 relative">
             <button
-              onClick={() => setShowGenModal(false)}
+              onClick={() => {
+                setShowGenModal(false);
+                setGeneratedKey(null);
+                setGeneratedKeyName(null);
+                setCopied(false);
+              }}
               className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
             >
               <X className="w-5 h-5" />
@@ -660,7 +670,7 @@ DAAS_API_KEY=${generatedKey}
                 <h3 className="text-2xl font-bold text-white text-center mb-1">Generate API Key</h3>
                 <p className="text-sm text-slate-400 text-center mb-3">{GENERATION_POLICY} API request quotas are separate.</p>
                 <p className="text-sm text-slate-400 text-center mb-6">
-                  This key will be linked to <span className="text-indigo-400 font-semibold">{selectedProducts.size} selected product{selectedProducts.size !== 1 ? 's' : ''}</span>.
+                  This key will be linked to <span className="text-indigo-400 font-semibold">{cartSummary.totalProducts} selected product{cartSummary.totalProducts !== 1 ? 's' : ''}</span>.
                 </p>
                 <div className="mb-6">
                   <label className="text-sm font-medium text-slate-300 mb-2 block">KEY NAME <span className="text-red-400">*</span></label>
@@ -676,13 +686,13 @@ DAAS_API_KEY=${generatedKey}
                 </div>
                 <div className="bg-slate-900/60 border border-slate-700 rounded-xl p-4 mb-6">
                   <p className="text-xs text-slate-400 mb-2 font-medium">LINKED PRODUCTS</p>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(cartSummary.bySegment).map(([seg, cnt]) => (
-                      <span key={seg} className="px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
-                        {seg}: {cnt}
-                      </span>
-                    ))}
-                  </div>
+                  {cartSummary.linkedProducts.length === 0 ? (
+                    <p className="text-sm text-slate-500">No products selected. This key will not be linked to a specific product.</p>
+                  ) : (
+                    <ul className="max-h-36 overflow-y-auto space-y-1 text-sm text-slate-200" aria-label="Selected linked products">
+                      {cartSummary.linkedProducts.map(product => <li key={product.id} className="truncate">{product.name}</li>)}
+                    </ul>
+                  )}
                 </div>
                 <div className="flex gap-3">
                   <button
@@ -710,11 +720,25 @@ DAAS_API_KEY=${generatedKey}
                   <Check className="w-8 h-8 text-emerald-400" />
                 </div>
                 <h3 className="text-2xl font-bold text-white text-center mb-2">API Key Generated!</h3>
+                <div className="bg-slate-950 border border-indigo-500/40 rounded-xl p-4 mb-4">
+                  <p className="text-xs font-semibold text-indigo-300 mb-2">Key Name</p>
+                  <p className="text-xl font-bold text-white break-words">{generatedKeyName}</p>
+                </div>
                 <p className="text-sm text-slate-400 text-center mb-6">
-                  Your key is now active and linked to your selected products. <strong className="text-amber-400">Copy it now</strong> — you won't see it again.
+                  Your key is active and linked to the products shown above. <strong className="text-amber-400">Copy it now</strong> — you won't see it again.
                 </p>
+                <div className="bg-slate-900/60 border border-slate-700 rounded-xl p-4 mb-4">
+                  <p className="text-xs text-slate-400 mb-2 font-medium">LINKED PRODUCTS</p>
+                  {cartSummary.linkedProducts.length === 0 ? (
+                    <p className="text-sm text-slate-500">No products selected.</p>
+                  ) : (
+                    <ul className="max-h-28 overflow-y-auto space-y-1 text-sm text-slate-200">
+                      {cartSummary.linkedProducts.map(product => <li key={product.id} className="truncate">{product.name}</li>)}
+                    </ul>
+                  )}
+                </div>
                 <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
-                  <p className="text-xs font-medium text-emerald-400 mb-2">YOUR NEW API KEY</p>
+                  <p className="text-xs font-medium text-emerald-400 mb-2">API Key — shown once</p>
                   <div className="bg-slate-900 rounded-lg p-3 mb-3 break-all font-mono text-sm text-emerald-300 select-all">
                     {generatedKey}
                   </div>

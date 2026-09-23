@@ -9,6 +9,8 @@ import CustomerUsageSummary from '@/components/reports/CustomerUsageSummary';
 import RequestHistory from '@/components/api/RequestHistory';
 import { apiKeyRequest } from "@/lib/api-keys";
 import { GENERATION_POLICY, REVOCATION_WARNING, generationErrorMessage } from '@/lib/api-key-generation';
+import { scopeCustomerProducts } from '../../../../../services/customer-segment.js';
+import type { Product } from '@/lib/firebase/products-service';
 
 interface ApiKey {
   id: string;
@@ -25,17 +27,23 @@ interface ApiKey {
 }
 
 export default function ApiKeysPage() {
-  const { user } = useAuth();
-  return user ? <AccountKeys key={user.uid} user={user} /> : null;
+  const { user, appUser } = useAuth();
+  return user ? <AccountKeys key={user.uid} user={user} account={appUser} /> : null;
 }
-function AccountKeys({ user }: { user: User }) {
+function AccountKeys({ user, account }: { user: User; account: { uid?: string; plan?: unknown; businessSegment?: unknown; selectedSegment?: unknown } | null }) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [generatingKey, setGeneratingKey] = useState(false);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
+  const [generatedKeyName, setGeneratedKeyName] = useState<string | null>(null);
+  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [productsLoading, setProductsLoading] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
+  const selectedCustomerProducts = scopeCustomerProducts(availableProducts, account).filter(product =>
+    typeof product.id === 'string' && selectedProductIds.has(product.id));
   
   const [listError, setListError] = useState(false);
   const listGeneration = useRef(0);
@@ -54,6 +62,17 @@ function AccountKeys({ user }: { user: User }) {
     }
   }, [user]);
   const invalidateList = useCallback(() => { listGeneration.current++; }, []);
+
+  useEffect(() => {
+    if (!showGenerateModal) return;
+    let active = true;
+    setProductsLoading(true);
+    void import('@/lib/firebase/products-service').then(({ getAllProducts }) => getAllProducts())
+      .then(products => { if (active) setAvailableProducts(scopeCustomerProducts(products, account)); })
+      .catch(() => { if (active) setAvailableProducts([]); })
+      .finally(() => { if (active) setProductsLoading(false); });
+    return () => { active = false; };
+  }, [showGenerateModal, account?.uid, account?.plan, account?.businessSegment, account?.selectedSegment]);
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(() => { if (active) void fetchApiKeys(); });
@@ -66,6 +85,7 @@ function AccountKeys({ user }: { user: User }) {
       return;
     }
 
+    const submittedName = newKeyName.trim();
     setGeneratingKey(true);
     try {
       if (!user) {
@@ -81,7 +101,8 @@ function AccountKeys({ user }: { user: User }) {
         },
         body: JSON.stringify({
           userEmail: user.email || "",
-          keyName: newKeyName.trim(),
+          keyName: submittedName,
+          linkedProductIds: selectedCustomerProducts.flatMap(product => typeof product.id === 'string' ? [product.id] : []),
           // SECURITY: Do NOT send plan - let backend determine from user's actual Firestore data
         })
       });
@@ -94,6 +115,8 @@ function AccountKeys({ user }: { user: User }) {
         throw new Error(errorMessage);
       }
       
+      if (typeof data.key !== "string" || !data.key) throw new Error("The generated API key could not be displayed. Contact support before retrying.");
+      setGeneratedKeyName(typeof data.name === "string" && data.name.trim() ? data.name : submittedName);
       setNewlyGeneratedKey(data.key);
       setNewKeyName("");
       fetchApiKeys();
@@ -428,8 +451,20 @@ DAAS_API_KEY=${keyStr}
                   Save this key now. You won&apos;t be able to see it again!
                 </p>
 
+                <div className="bg-slate-950 border border-indigo-500/40 rounded-xl p-4 mb-4">
+                  <p className="text-xs font-semibold text-indigo-300 mb-2">Key Name</p>
+                  <p className="text-xl font-bold text-white break-words">{generatedKeyName}</p>
+                </div>
+                <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 mb-4">
+                  <p className="text-xs font-semibold text-indigo-300 mb-2">LINKED PRODUCTS</p>
+                  {selectedCustomerProducts.length ? (
+                    <ul className="space-y-1 text-sm text-slate-200">
+                      {selectedCustomerProducts.map(product => <li key={product.id}>{product.name}</li>)}
+                    </ul>
+                  ) : <p className="text-sm text-slate-400">No products selected. This key is not linked to a specific product.</p>}
+                </div>
                 <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
-                  <label className="text-xs font-medium text-emerald-400 mb-2 block">YOUR NEW API KEY</label>
+                  <label className="text-xs font-medium text-emerald-400 mb-2 block">API Key — shown once</label>
                   <div className="bg-slate-900 rounded-lg p-3 mb-3 break-all font-mono text-sm text-emerald-300">
                     {newlyGeneratedKey}
                   </div>
@@ -441,7 +476,7 @@ DAAS_API_KEY=${keyStr}
                     className="w-full px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-medium transition-all flex items-center justify-center gap-2 mb-3"
                   >
                     <Copy className="w-4 h-4" />
-                    Copy API key
+                    Copy API Key
                   </button>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -471,6 +506,7 @@ DAAS_API_KEY=${keyStr}
                   onClick={() => {
                     setShowGenerateModal(false);
                     setNewlyGeneratedKey(null);
+                    setGeneratedKeyName(null);
                   }}
                   className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium transition-all"
                 >
@@ -501,6 +537,29 @@ DAAS_API_KEY=${keyStr}
                     <p className="text-xs text-slate-500 mt-2">
                       Give your key a descriptive name to identify where it&apos;s used
                     </p>
+                  </div>
+
+                  <div className="mb-6">
+                    <p className="text-sm font-medium text-slate-300 mb-2">LINKED PRODUCTS</p>
+                    <p className="text-xs text-slate-500 mb-3">Choose products for this key. Names come from the current catalog; the server validates and stores canonical product IDs.</p>
+                    {productsLoading ? <p className="text-sm text-slate-400">Loading products…</p> : availableProducts.length ? (
+                      <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-2 space-y-1">
+                        {availableProducts.filter(product => typeof product.id === 'string').map(product => (
+                          <label key={product.id} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm text-slate-200 hover:bg-slate-800">
+                            <input type="checkbox" checked={selectedProductIds.has(product.id!)} onChange={() => setSelectedProductIds(current => {
+                              const next = new Set(current);
+                              if (next.has(product.id!)) next.delete(product.id!); else next.add(product.id!);
+                              return next;
+                            })} />
+                            <span>{product.name || 'Product unavailable'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : <p className="text-sm text-slate-400">No eligible products are available. You can still create an unlinked key.</p>}
+                    <p className="text-xs text-slate-400 mt-3">Selected products:</p>
+                    {selectedCustomerProducts.length ? <ul className="mt-1 space-y-1 text-sm text-slate-200">
+                      {selectedCustomerProducts.map(product => <li key={product.id}>{product.name}</li>)}
+                    </ul> : <p className="text-sm text-slate-500 mt-1">No products selected.</p>}
                   </div>
 
                   <div className="flex gap-3">

@@ -14,6 +14,14 @@ and all backend instances; do not infer a monthly opening balance from daily
 history or reuse the earlier daily cutover timestamp. No production value or
 migration is authorized by these local integration changes.
 
+The uncommitted [Phase 2 client TODO implementation](adviser-free-trial-integration.md#phase-2-client-todo-implementation--uncommitted)
+adds the `monitorFreeTrials` scheduled Function and Admin/Customer UI changes.
+Before any separately authorized release, verify the Resend Secret Manager
+binding and sender, run the Functions-scoped config preflight, and exercise
+email/notification delivery in an isolated non-production environment.
+Uncertain sends older than 23 hours require manual provider-evidence review;
+never blindly retry them. No new composite Firestore index is required.
+
 Production is not the first test environment. Every production batch must be a
 reviewed atomic unit and must complete all gates below. Do not infer deployment
 targets from source-code comments or provider-generated environment variables.
