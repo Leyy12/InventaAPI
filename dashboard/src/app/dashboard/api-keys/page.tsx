@@ -38,11 +38,12 @@ function AccountKeys({ user, account }: { user: User; account: { uid?: string; p
   const [generatingKey, setGeneratingKey] = useState(false);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
   const [generatedKeyName, setGeneratedKeyName] = useState<string | null>(null);
-  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [loadedProducts, setLoadedProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [productsLoading, setProductsLoading] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
-  const selectedCustomerProducts = scopeCustomerProducts(availableProducts, account).filter(product =>
+  const availableProducts = scopeCustomerProducts(loadedProducts, account);
+  const selectedCustomerProducts = availableProducts.filter(product =>
     typeof product.id === 'string' && selectedProductIds.has(product.id));
   
   const [listError, setListError] = useState(false);
@@ -62,17 +63,20 @@ function AccountKeys({ user, account }: { user: User; account: { uid?: string; p
     }
   }, [user]);
   const invalidateList = useCallback(() => { listGeneration.current++; }, []);
+  const openGenerateModal = () => {
+    setProductsLoading(true);
+    setShowGenerateModal(true);
+  };
 
   useEffect(() => {
     if (!showGenerateModal) return;
     let active = true;
-    setProductsLoading(true);
     void import('@/lib/firebase/products-service').then(({ getAllProducts }) => getAllProducts())
-      .then(products => { if (active) setAvailableProducts(scopeCustomerProducts(products, account)); })
-      .catch(() => { if (active) setAvailableProducts([]); })
+      .then(products => { if (active) setLoadedProducts(scopeCustomerProducts(products, account)); })
+      .catch(() => { if (active) setLoadedProducts([]); })
       .finally(() => { if (active) setProductsLoading(false); });
     return () => { active = false; };
-  }, [showGenerateModal, account?.uid, account?.plan, account?.businessSegment, account?.selectedSegment]);
+  }, [showGenerateModal, account]);
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(() => { if (active) void fetchApiKeys(); });
@@ -242,7 +246,7 @@ DAAS_API_KEY=${keyStr}
           <p className="text-slate-400">Manage your authentication credentials for API access</p>
           <p className="text-sm text-slate-400 mt-2">{GENERATION_POLICY}</p>
         </div>
-        <button onClick={() => setShowGenerateModal(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Generate API key</button>
+        <button onClick={openGenerateModal} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Generate API key</button>
       </div>
 
       {/* Security Warning Banner */}
@@ -314,7 +318,7 @@ DAAS_API_KEY=${keyStr}
                 Generate your first API key to start making authenticated requests to our platform
               </p>
               <button
-                onClick={() => setShowGenerateModal(true)}
+                onClick={openGenerateModal}
                 className="px-6 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-all inline-flex items-center gap-2 shadow-lg shadow-indigo-500/20"
               >
                 <Plus className="w-5 h-5" />
