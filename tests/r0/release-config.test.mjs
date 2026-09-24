@@ -4,7 +4,6 @@ import { formatValidation, validateReleaseConfig } from '../../scripts/validate-
 
 const complete = {
   NODE_ENV: 'production',
-  TZ: 'UTC', // Synthetic test choice, not a production timezone decision.
   FIREBASE_AUTH_MODE: 'service_account_env',
   FIREBASE_PROJECT_ID: 'inventa-release',
   FIREBASE_CLIENT_EMAIL: 'release@inventa-release.iam.gserviceaccount.com',
@@ -31,6 +30,12 @@ test('complete production configuration passes without contacting external servi
   });
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
+});
+
+test('production backend validation does not require an ambient timezone', () => {
+  const result = validateReleaseConfig(complete, { scope: 'backend', nodeVersion: 'v22.20.0' });
+  assert.equal(result.ok, true);
+  assert.ok(!result.errors.some(error => error.name === 'TZ'));
 });
 
 test('missing secrets are distinguished from malformed public configuration', () => {

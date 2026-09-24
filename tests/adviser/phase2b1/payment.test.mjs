@@ -135,10 +135,10 @@ test('status: redirect/order before fulfillment is not payment proof', async () 
   assert.equal((await invoke(env.status)).body.paymentConfirmed, false);
 });
 test('status: Phase 2B2 reports effective Free without mutating the account', async () => {
-  const env = setup(); env.db.seed('users/owner', { ...customer, plan: 'Pro', subscriptionExpiresAt: '2020-01-01' });
+  const env = setup(); env.db.seed('users/owner', { ...customer, plan: 'Pro', subscriptionExpiresAt: '2020-01-01T00:00:00.000Z' });
   assert.equal((await invoke(env.status)).body.expired, true);
   assert.equal(env.db.read('users/owner').plan, 'Pro');
-  assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2020-01-01');
+  assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2020-01-01T00:00:00.000Z');
 });
 
 test('provider client: fixed v1 URL, Basic secret username, fixed terms and server reference', async () => {

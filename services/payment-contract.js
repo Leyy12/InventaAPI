@@ -1,7 +1,7 @@
 import { validDocumentId } from './api-key-security.js';
 import { accountBlocked, evaluateEntitlement, dateMillis } from '../functions/subscription-lifecycle.mjs';
 
-// Existing price/quota/duration; preserve 30 runtime-local calendar days per term.
+// Existing price/quota/duration; each paid term spans 30 UTC calendar days.
 export const PRO_PURCHASE = Object.freeze({ plan: 'Pro', amount: 149900, currency: 'PHP', durationDays: 30, apiRequestLimit: 5000 });
 export const PAYMENT_COLLECTIONS = Object.freeze({ orders: 'payment_orders', locks: 'payment_checkout_locks',
   sessions: 'payment_sessions', events: 'payment_events', payments: 'transactions' });
@@ -66,6 +66,8 @@ export function requireCustomer(account, uid) {
 
 export function requirePurchasable(account, now) {
   requirePayment(['free', 'starter', 'pro', 'professional'].includes(account.plan?.toLowerCase()), 'PLAN_UNAVAILABLE', 'This account cannot purchase Pro.');
+  requirePayment(account.subscriptionExpiresAt == null || Number.isFinite(dateMillis(account.subscriptionExpiresAt)),
+    'ENTITLEMENT_UNAVAILABLE', 'Subscription needs review before purchase.', 409);
   requirePayment(!['pro', 'professional'].includes(account.plan?.toLowerCase())
     || dateMillis(account.subscriptionExpiresAt) <= now.getTime() || account.subscription_status === 'active',
   'ACTIVE_PRO', 'Unresolved subscription requires review.');

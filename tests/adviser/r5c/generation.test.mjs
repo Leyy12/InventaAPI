@@ -287,7 +287,7 @@ for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5
   test(`generation and shared request quota independent: ${plan}/${cap}`, async () => {
     const usage = { window: plan === 'Free' ? '2026-09' : '2026-09-22', used: 2 };
     const counter = plan === 'Free' ? 'account_free_monthly_usage/owner' : 'account_api_usage/owner';
-    const profile = { ...account, plan, apiRequestLimit: cap, subscription_status: 'active', subscriptionExpiresAt: '2027-01-01' };
+    const profile = { ...account, plan, apiRequestLimit: cap, subscription_status: 'active', subscriptionExpiresAt: '2027-01-01T00:00:00.000Z' };
     const { db, create, clock } = setup({ 'users/owner': profile, [counter]: usage, 'api_keys/old': legacy });
     const made = await create(); assert.equal(made.statusCode, 200);
     assert.deepEqual(db.read(counter), usage);

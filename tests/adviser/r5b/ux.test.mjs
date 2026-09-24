@@ -56,7 +56,7 @@ test('expired Pro resolves to Free 50 despite a cached high account limit',()=>{
   assert.equal(result.plan,'Free');assert.equal(result.limit,50);
 });
 for (const [plan,limit] of [['Free',50],['Pro',5000],['Enterprise',null]]) test('unchanged backend entitlement '+plan,()=>{
-  assert.equal(evaluateEntitlement({plan,apiRequestLimit:limit,subscription_status:'active',subscriptionExpiresAt:'2027-01-01'},now).limit,limit);
+  assert.equal(evaluateEntitlement({plan,apiRequestLimit:limit,subscription_status:'active',subscriptionExpiresAt:'2027-01-01T00:00:00.000Z'},now).limit,limit);
 });
 const usage={scope:'account',window:'2026-09-21',used:17,limit:50,resetsAt:'2026-09-22T00:00:00Z'};
 test('authoritative account quota shows used/limit/remaining/reset, never telemetry-derived',()=>{

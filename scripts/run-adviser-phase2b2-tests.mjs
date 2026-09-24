@@ -20,7 +20,7 @@ const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP']
 Object.assign(env, { NODE_ENV: 'test', ADVISER_TEST_EXTERNAL_IO: 'disabled',
   FIREBASE_PROJECT_ID: 'demo-inventa-payment', FIRESTORE_EMULATOR_HOST: '127.0.0.1:9' });
 console.log('[phase2b2] Fixed module allowlist; no Firebase SDK, secrets, network, or real provider requests.');
-for (const run of [{ files: tests, env }, ...['UTC', 'America/New_York'].map(TZ => ({
+for (const run of [{ files: tests, env }, ...['UTC', 'America/New_York', 'Asia/Manila', 'Europe/Berlin'].map(TZ => ({
   files: [calendarTest], env: { ...env, TZ },
 }))]) {
   console.log(`[phase2b2] ${run.env.TZ || 'lifecycle + deterministic polling'} validation`);

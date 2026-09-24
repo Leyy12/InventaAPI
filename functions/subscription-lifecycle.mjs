@@ -9,8 +9,27 @@ export function accountBlocked(account) {
 }
 export function dateMillis(value) {
   try {
-    if (value == null || value === '' || !(typeof value === 'string' || value instanceof Date || typeof value.toDate === 'function')) return NaN;
-    return (typeof value.toDate === 'function' ? value.toDate() : new Date(value)).getTime();
+    if (value instanceof Date) return value.getTime();
+    if (value && typeof value.toDate === 'function') {
+      const date = value.toDate();
+      return date instanceof Date ? date.getTime() : NaN;
+    }
+    if (typeof value !== 'string') return NaN;
+    // Paid and Trial timestamps must identify an instant, never a local date.
+    const match = /^(\d{4})[\-](\d{2})[\-](\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|([+-])(\d{2}):(\d{2}))$/u.exec(value);
+    if (!match) return NaN;
+    const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = '', zone, sign, offsetHourText, offsetMinuteText] = match;
+    const year = Number(yearText), month = Number(monthText), day = Number(dayText);
+    const hour = Number(hourText), minute = Number(minuteText), second = Number(secondText);
+    const offsetHour = Number(offsetHourText || 0), offsetMinute = Number(offsetMinuteText || 0);
+    if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59
+      || offsetHour > 23 || offsetMinute > 59) return NaN;
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
+    date.setUTCHours(hour, minute, second, Number(fraction.padEnd(3, '0').slice(0, 3)));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return NaN;
+    const offset = zone.toUpperCase() === 'Z' ? 0 : (sign === '+' ? 1 : -1) * (offsetHour * 60 + offsetMinute);
+    return date.getTime() - offset * 60000;
   } catch { return NaN; }
 }
 function unavailable(code = 'ENTITLEMENT_UNAVAILABLE', status = 503) {
@@ -76,12 +95,13 @@ export function renewalPeriod(account, now, days = 30) {
   const entitlement = evaluateEntitlement(account, now);
   if (entitlement.level === 2) unavailable('PLAN_UNAVAILABLE', 409);
   // Preserve paid time even if an older normalization retained its future date.
-  const priorEnd = dateMillis(account.subscriptionExpiresAt);
+  const hasPriorEnd = account.subscriptionExpiresAt != null;
+  const priorEnd = hasPriorEnd ? dateMillis(account.subscriptionExpiresAt) : NaN;
+  if (hasPriorEnd && !Number.isFinite(priorEnd)) unavailable();
   const start = new Date(Math.max(now.getTime(), Number.isFinite(priorEnd) ? priorEnd : 0));
   const end = new Date(start);
-  // Preserve the pre-Phase-2B2 runtime-local calendar/DST semantics. The actual
-  // production runtime timezone remains a release input, not a new UTC policy.
-  end.setDate(end.getDate() + days);
+  // The paid term is 30 UTC calendar days, independent of the host timezone.
+  end.setUTCDate(end.getUTCDate() + days);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 export async function normalizeExpiredAccount(db, uid, clock = () => new Date()) {

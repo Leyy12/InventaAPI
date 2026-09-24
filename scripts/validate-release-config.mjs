@@ -131,10 +131,6 @@ export function validateReleaseConfig(env, {
     if (isPresent(env.DASHBOARD_URL) && isPresent(env.NEXT_PUBLIC_APP_URL) && env.DASHBOARD_URL !== env.NEXT_PUBLIC_APP_URL) {
       add(errors, 'ORIGIN_MISMATCH', 'NEXT_PUBLIC_APP_URL', 'must match DASHBOARD_URL: both identify the Customer origin');
     }
-    required('TZ', { valid: value => {
-      if (value !== 'UTC' && !/^[A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?$/u.test(value)) return false;
-      try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; }
-    }, expectation: 'UTC or an explicit supported IANA timezone chosen for the existing subscription calendar behavior' });
     const apiPort = Number(env.API_PORT);
     if (isPresent(env.API_PORT)
       && (!/^\d+$/u.test(env.API_PORT) || !Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535)) {

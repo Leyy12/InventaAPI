@@ -25,7 +25,7 @@ const frontend = {
   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-r6b-validation.firebasestorage.app',
   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '1234567890', NEXT_PUBLIC_FIREBASE_APP_ID: '1:1234567890:web:abcdef123456',
 };
-const backend = { NODE_ENV: 'production', TZ: 'UTC', FIREBASE_AUTH_MODE: 'service_account_env',
+const backend = { NODE_ENV: 'production', FIREBASE_AUTH_MODE: 'service_account_env',
   FIREBASE_PROJECT_ID: 'demo-r6b-validation', FIREBASE_CLIENT_EMAIL: 'synthetic@demo-r6b-validation.iam.gserviceaccount.com',
   FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_NOT_A_KEY\n-----END PRIVATE KEY-----',
   PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
@@ -176,9 +176,17 @@ test('Customer origins must agree across payment and DaaS links', () => {
   assert.ok(validateReleaseConfig({ ...backend, NEXT_PUBLIC_APP_URL: 'https://other.r6b-fixture.net' }, options).errors
     .some(issue => issue.code === 'ORIGIN_MISMATCH'));
 });
-test('timezone must be an explicit supported operator choice without changing calendar policy', () => {
-  for (const TZ of ['', 'not-a-zone', 'PHT', '+08:00']) assert.ok(validateReleaseConfig({ ...backend, TZ }, options).errors.some(issue => issue.name === 'TZ'));
-  for (const TZ of ['UTC', 'Asia/Manila', 'America/New_York']) assert.equal(validateReleaseConfig({ ...backend, TZ }, options).ok, true);
+test('backend production validation does not depend on reserved ambient TZ', () => {
+  assert.equal(validateReleaseConfig(backend, options).ok, true);
+  for (const TZ of ['UTC', 'Asia/Manila', 'America/New_York', 'not-a-zone']) {
+    assert.equal(validateReleaseConfig({ ...backend, TZ }, options).ok, true);
+  }
+  for (const name of ['FIREBASE_AUTH_MODE', 'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_PRIVATE_KEY', 'PAYMONGO_MODE', 'PAYMONGO_SECRET_KEY', 'PAYMONGO_WEBHOOK_SECRET',
+    'DASHBOARD_URL', 'NEXT_PUBLIC_APP_URL']) {
+    const invalid = { ...backend }; delete invalid[name];
+    assert.ok(validateReleaseConfig(invalid, options).errors.some(issue => issue.name === name), name);
+  }
 });
 test('redacted failure messages contain variable names, never supplied credentials', () => {
   const text = formatValidation(validateReleaseConfig({ ...backend, FIREBASE_PRIVATE_KEY: 'PRIVATE_SENTINEL',

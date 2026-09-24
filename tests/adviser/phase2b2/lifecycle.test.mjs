@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateEntitlement, normalizeExpiredAccount } from '../../../functions/subscription-lifecycle.mjs';
+import { dateMillis, evaluateEntitlement, normalizeExpiredAccount, renewalPeriod } from '../../../functions/subscription-lifecycle.mjs';
 import { consumeAccountQuota } from '../../../services/account-quota.js';
 import { authenticateCredential, issueCredential } from '../../../services/api-key-security.js';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
@@ -74,9 +74,36 @@ for (const patch of [{ status: 'revoked' }, { expiresAt: NOW.toISOString() }]) t
   const db = setup(); db.seed('api_keys/one', { ...key, ...patch });
   await assert.rejects(consume(db), e => e.status === 401);
 });
-for (const expiry of [undefined, 'invalid', true]) test(`ambiguous Pro expiry ${String(expiry)} fails closed`, async () => {
+for (const expiry of [undefined, 'invalid', true, '2026-10-20', '2026-10-20T10:00:00', '2026-10-20T10:00:00.000', '']) test(`ambiguous Pro expiry ${String(expiry)} fails closed`, async () => {
   const db = setup({ ...owner, subscriptionExpiresAt: expiry });
   await assert.rejects(consume(db), e => e.status === 503);
+});
+test('paid instant normalization accepts only valid explicitly zoned instants or server date objects', () => {
+  const expected = Date.parse('2026-10-20T10:00:00.123Z');
+  for (const value of [new Date(expected), { toDate: () => new Date(expected) },
+    '2026-10-20T10:00:00.123Z', '2026-10-20T18:00:00.123+08:00',
+    '2026-10-20T06:00:00.123-04:00']) assert.equal(dateMillis(value), expected);
+  for (const value of ['2026-10-20', '2026-10-20T10:00:00', '2026-10-20T10:00:00.123',
+    '2026-02-30T10:00:00Z', '2026-10-20T25:00:00Z', '2026-10-20T10:00:00+24:00',
+    'invalid', '', new Date(NaN), { toDate: () => '2026-10-20T10:00:00Z' },
+    { toDate: () => new Date(NaN) }, { toDate: () => { throw Error('bad timestamp'); } }, {}]) {
+    assert.ok(Number.isNaN(dateMillis(value)), String(value));
+  }
+});
+test('initial purchase has no previous expiry; present invalid expiry blocks checkout and fulfillment', async () => {
+  const initial = { ...free, subscriptionExpiresAt: undefined };
+  assert.equal(renewalPeriod(initial, NOW).start, NOW.toISOString());
+  assert.equal(renewalPeriod({ ...free, subscriptionExpiresAt: null }, NOW).start, NOW.toISOString());
+  assert.throws(() => renewalPeriod({ ...free, subscriptionExpiresAt: { toDate: () => 'bad' } }, NOW), error => error.status === 503);
+  for (const invalid of ['', '2026-10-20', '2026-10-20T10:00:00', new Date(NaN)]) {
+    const account = { ...free, subscriptionExpiresAt: invalid };
+    assert.throws(() => renewalPeriod(account, NOW), error => error.status === 503);
+    const db = setup(account), p = payment(db), before = db.dump();
+    assert.equal((await invoke(handlers(db).checkout)).statusCode, 409);
+    await assert.rejects(fulfillPayment(db, p.value, NOW));
+    assert.equal(JSON.stringify(db.dump()), JSON.stringify(before));
+    assert.equal(db.userWrites, 0);
+  }
 });
 test('inactive Pro never grants paid access', async () => {
   assert.equal((await consume(setup({ ...owner, subscription_status: 'inactive' }))).usage.limit, 50);

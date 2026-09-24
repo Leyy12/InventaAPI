@@ -42,7 +42,6 @@ does not initialize Firebase or call PayMongo, and it never prints secret values
 | `PAYMONGO_WEBHOOK_SECRET` | Yes | Yes | Opaque, non-placeholder signing secret for the webhook endpoint in the matching PayMongo mode. No undocumented prefix is assumed. Backend only. |
 | `DASHBOARD_URL` | Yes | No | Customer origin for checkout redirects. Canonical non-local HTTPS origin, with no trailing slash, path, query or fragment. |
 | `NEXT_PUBLIC_APP_URL` | Yes | No | Same exact value as `DASHBOARD_URL`, used in backend DaaS/product action links. Despite its name, this is a backend input. |
-| `TZ` | Yes | No | Explicit `UTC` or supported IANA timezone. Operator must preserve the existing business calendar for +30-day subscription terms; R6B selects no production value. |
 | `API_QUOTA_CUTOVER_AT` | No | No | Canonical UTC `YYYY-MM-DDTHH:mm:ss.sssZ`. It is one operator assertion shared identically by all backend instances. Never invent or backdate it. A future coordinated value is accepted with a warning, but the proven-new-account exception remains inactive and fail-closed until that instant. Missing/invalid runtime state also invokes the Phase 2A fail-closed clean-window hold. |
 | `FREE_MONTHLY_QUOTA_CUTOVER_AT` | No* | No* | **Set this for the coordinated production release** to the same canonical UTC instant on every backend instance, after the monthly policy is active everywhere. Only accounts provably created after it (Firestore creation metadata, not profile fields) may open an absent monthly counter immediately. Missing, invalid, future or ambiguous evidence means a next-UTC-month hold. Runtime validation deliberately keeps it optional/fail-closed, but release operations should supply it. Never reuse/backdate the old daily cutover. No production value is selected here. |
 | `VERCEL` | Provider-managed | No | Read by `server.js` to suppress `listen()`. Its presence does not prove Vercel is the production target. Do not set it manually as deployment evidence. |
@@ -92,6 +91,18 @@ mode prefix. The current routes remain Checkout Sessions via
 `GET /api/v1/checkout/subscription-status`, and
 `POST /api/webhooks/paymongo` for `checkout_session.payment.paid` fulfillment.
 Price remains 149900 centavos, PHP, Pro, 30 calendar days.
+
+Paid terms are **30 UTC calendar days**, preserving the UTC time of day. The
+renewal anchor is the later of a valid prior subscription expiry and the
+verified server fulfillment instant; an absent expiry anchors at fulfillment.
+Authoritative prior expiries may be a valid JavaScript `Date`, a Firestore
+Timestamp-like value whose `toDate()` returns a valid `Date`, or an ISO/RFC3339
+date-time string with explicit `Z` or numeric UTC offset. Ambiguous, date-only,
+offset-free, and invalid **present** expiries fail closed; they never become a
+new term starting now. Ambient runtime timezone is not authoritative. Vercel
+reserves `TZ`; it is not required and must not be added as a release setting.
+This does not change Free quota's UTC calendar month, API-key generation's UTC
+calendar day, or Trial's exact seven elapsed UTC 24-hour periods.
 
 `DASHBOARD_URL` must equal `NEXT_PUBLIC_APP_URL`. Success uses
 `/dashboard?payment=success&order=<orderId>`; cancel uses `/?payment=cancelled`.

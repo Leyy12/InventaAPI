@@ -69,8 +69,14 @@ Next startup. No real provider/project/hostname or deploy command is inferred.
 The root backend must pass its release validator before `npm start`. R0's claimed
 application-default root credential path was incorrect; it is now rejected by the
 validator. Use the implemented environment credential triple. Functions use their
-separate managed identity. Explicit operator-approved `TZ` preserves the existing
-subscription calendar behavior; do not pick or change it during deployment by accident.
+separate managed identity. Paid terms add 30 UTC calendar days from the later of
+valid prior expiry and verified fulfillment instant, preserving UTC time of day.
+Accepted prior expiries are valid `Date`, Firestore Timestamp-like `toDate()`, or
+explicitly zoned ISO/RFC3339 date-time strings; ambiguous or invalid present
+values fail closed. Ambient timezone is not authoritative. Vercel reserves `TZ`:
+do not require or set it for this release. Free quota uses UTC calendar months,
+API-key generation UTC calendar days, and Trial exact seven elapsed UTC
+24-hour periods. Do not use the ad-hoc `scripts/set-expiry.js` for paid renewal.
 
 For the current capstone release, keep `NODE_ENV=production` and explicitly set
 `PAYMONGO_MODE=test`. Supply a PayMongo Test Secret Key (`sk_test_`) and the signing
@@ -105,7 +111,7 @@ marker-rule ordering, backend clock synchronization and marker retention/growth
 gates open. Also retain actual origins/targets, `NEXT_PUBLIC_ADMIN_APP_ORIGIN`,
 Node 22 provider support, shared-source packaging, catalog/report/listener scale,
 lint debt, PayMongo sandbox, production secrets/config, `API_QUOTA_CUTOVER_AT`,
-runtime timezone, R3 production audit/conflict resolution/reservation backfill and
+R3 production audit/conflict resolution/reservation backfill and
 write-freeze rollout, deployed-origin browser E2E, rollback validation and final
 release certification. R6A resolves none of these deployment gates.
 
