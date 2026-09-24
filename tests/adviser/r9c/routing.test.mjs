@@ -51,7 +51,11 @@ after(async () => {
 });
 function get(path) {
   return new Promise((resolve, reject) => {
-    const req = request({ hostname: '127.0.0.1', port: server.address().port, path, method: 'GET', agent: false }, res => {
+    const req = request({
+      hostname: '127.0.0.1', port: server.address().port, path, method: 'GET', agent: false,
+      // The fixture sets VERCEL=1, so model the platform-overwritten IP headers.
+      headers: { 'x-forwarded-for': '203.0.113.77', 'x-vercel-forwarded-for': '203.0.113.77' },
+    }, res => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', chunk => { body += chunk; });

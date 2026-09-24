@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+import { createIpRateLimiter, trustedRateLimitIp } from './services/rate-limit-client-ip.js';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -105,15 +105,12 @@ app.use((req, res, next) => {
 });
 
 // 3. Express Rate Limit: Prevent Denial of Service (DoS) and brute-force scanning
-const limiter = rateLimit({
+const { verifyClientIp, limiter } = createIpRateLimiter({
     windowMs: 60 * 1000, // 1 minute
     max: 60, // limit each IP/SME to 60 requests per minute
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-    message: { error: "Too many requests. Please try again after 1 minute to maintain system security. Maximum 60 requests per minute." }
 });
-app.use('/api/', limiter);
-app.use('/daas/', limiter);
+app.use('/api/', verifyClientIp, limiter);
+app.use('/daas/', verifyClientIp, limiter);
 
 // 4. Data Compression: Ensure JSON responses are lightweight for Mobile Computing
 app.use(compression());
@@ -138,7 +135,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // --- Request Logging for Security Auditing ---
 app.use((req, res, next) => {
     // Legacy consumers may still send apiKey in the query; never log queries.
-    console.log(`[AUDIT] ${new Date().toISOString()} - ${req.method} ${req.path} - IP: ${req.ip}`);
+    console.log(`[AUDIT] ${new Date().toISOString()} - ${req.method} ${req.path} - IP: ${trustedRateLimitIp(req) ?? 'unverified'}`);
     next();
 });
 

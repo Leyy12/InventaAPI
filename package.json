@@ -5,6 +5,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+    "test:rate-limit": "node --test --test-reporter=spec tests/rate-limit/client-ip.test.mjs",
     "test:adviser:free-trial": "node scripts/run-adviser-free-trial-tests.mjs",
     "start": "node server.js",
     "dev": "node server.js",
@@ -44,6 +45,7 @@
     "google-auth-library": "^11.0.0",
     "googleapis": "^173.0.0",
     "helmet": "^8.0.0",
+    "ipaddr.js": "1.9.1",
     "jsonwebtoken": "^9.0.2",
     "sharp": "^0.35.4"
   },

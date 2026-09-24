@@ -1,0 +1,11 @@
+# Vercel API rate-limit client IP
+
+The root API is deployed directly on Vercel. Vercel's [request-header contract](https://vercel.com/docs/headers/request-headers) says it overwrites `X-Forwarded-For` with the public client IP to prevent spoofing, and provides the same address in `X-Vercel-Forwarded-For`. This selection is **not** a generic reverse-proxy policy. A topology change requires a separate trust review.
+
+When Vercel sets its server-side `VERCEL=1` marker, the 60 requests/minute limiter prefers `X-Vercel-Forwarded-For` and requires it to agree with Vercel's overwritten `X-Forwarded-For`. If the primary header is absent, the latter is the explicit fallback. Missing, malformed, comma-separated, or conflicting values produce a fail-closed 503 before any rate-limit bucket is consumed. `X-Real-IP` and other client-supplied headers never select a bucket. Outside Vercel, the limiter uses the direct socket address and ignores forwarding headers. Express `trust proxy` remains false.
+
+Strict IP validation precedes `ipaddr.js` canonicalization. IPv4-mapped IPv6 collapses to its IPv4 address; alternate textual forms of the same IPv6 address share a key. Different exact IP addresses retain separate keys, matching the existing per-IP contract rather than grouping IPv6 subnets. The same limiter instance still covers `/api/` and `/daas/`, including public products, authentication routes, and `/daas/v1/health`; the 60th request succeeds and the 61st is limited within a one-minute window. This remains the existing process-local limiter, not a distributed quota. Account, Free-monthly, and Trial quotas are separate and unchanged.
+
+The former default `express-rate-limit` key generator read Express `req.ip`. With `trust proxy=false`, Vercel's socket address was shared among callers and `X-Forwarded-For` triggered `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`. The new custom key path uses only the validated client IP and leaves `trust proxy` unchanged. It also makes the existing request-audit IP field use the same trusted source.
+
+No Production deployment, cutover activation, or data migration is part of this local remediation. Before a later controlled deployment, revalidate direct-Vercel header behavior and the absence of rate-limit proxy errors in bounded Production logs.
