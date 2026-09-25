@@ -9,7 +9,7 @@ import { createDaaSSecurity, requirePlan } from '../../../services/daas-security
 import { activeCustomerSegment, loginSegmentAllowed, scopeCustomerProducts } from '../../../services/customer-segment.js';
 import { createProductSubmissionHandlers } from '../../../services/product-submissions.js';
 import { quotaSummary, customerReportScope } from '../../../services/reporting.js';
-import { freeMonthlyUsage } from '../../../services/api-key-security.js';
+import { authenticateCredential, freeMonthlyUsage } from '../../../services/api-key-security.js';
 import { createEntitlementPoller } from '../../../dashboard/src/lib/entitlement-poller.ts';
 import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
 import { memoryFirestore as catalogDb, invoke as submissionInvoke } from '../r2a/memory-firestore.mjs';
@@ -18,7 +18,7 @@ const START = '2026-09-23T12:00:00.000Z', END = '2026-09-30T12:00:00.000Z';
 const owner = { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', selectedSegment: 'Grocery' };
 const key = { userId: 'owner', key: 'daas_trial_a', status: 'active', linkedProductIds: [] };
 const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
-function fixture(account = {}, extra = {}, metadata = {}) {
+function fixture(account = {}, extra = {}, metadata = {}, auth = {}) {
   let at = START;
   const clock = () => new Date(at);
   const db = memoryFirestore({ 'users/owner': { ...owner, ...account }, 'api_keys/key-a': key,
@@ -26,14 +26,15 @@ function fixture(account = {}, extra = {}, metadata = {}) {
     'account_api_usage/owner': { window: '2026-09-23', used: 2 },
     'account_free_monthly_usage/owner': { window: '2026-09', used: 2 },
     'products/tool': { name: 'Tool', segment: 'Hardware' }, 'products/food': { name: 'Food', segment: 'Grocery' }, ...extra }, metadata);
-  const verifyIdToken = async (token, revoked) => { assert.equal(revoked, true);
-    if (token !== 'owner-token') throw new Error('Invalid'); return { uid: 'owner' }; };
-  const handlers = createFreeTrialHandlers({ getDb: () => db, verifyIdToken, clock });
+  const verifyIdToken = auth.verify ?? (async (token, revoked) => { assert.equal(revoked, true);
+    if (token !== 'owner-token') throw new Error('Invalid'); return { uid: 'owner' }; });
+  const handlers = createFreeTrialHandlers({ getDb: () => db, verifyIdToken, clock,
+    revokeRefreshTokens: auth.revoke ?? (async () => {}) });
   const keys = createApiKeyHandlers({ getDb: () => db, verifyIdToken, clock });
   const consume = (b = false, more = {}) => consumeAccountQuota(db, { keyId: b ? 'key-b' : 'key-a',
     userId: 'owner', credential: b ? 'daas_trial_b' : key.key, clock, ...more });
   return { db, clock, handlers, keys, consume, time: value => { at = value; },
-    activate: options => invoke(handlers.activate, options), status: () => invoke(handlers.status) };
+    activate: options => invoke(handlers.activate, options), status: options => invoke(handlers.status, options) };
 }
 test('isolated suite blocks SDK, HTTP and production bootstrap', async () => {
   for (const specifier of ['firebase-admin', 'node:https', '../../../database/firebase.js']) await assert.rejects(import(specifier));
@@ -75,6 +76,131 @@ test('eligible Free activates once with server UTC dates, preserving ownership a
   assert.equal(evaluateEntitlement(account, f.clock()).plan, 'Pro Trial');
   assert.equal((await f.status()).body.status, 'active'); assert.equal((await f.activate()).statusCode, 409);
   assert.deepEqual(f.db.read('account_api_usage/owner'), { window: '2026-09-23', used: 2 });
+});
+test('activation revokes Firebase sessions before committing, without revoking API keys or counters', async () => {
+  const calls = [];
+  let f;
+  f = fixture({}, {}, {}, { revoke: async uid => {
+    calls.push(uid);
+    assert.equal(f.db.read('users/owner').hasUsedFreeTrial, undefined);
+    assert.equal(f.db.read('account_trial_usage/owner'), undefined);
+  } });
+  const result = await f.activate();
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.reauthenticationRequired, true);
+  assert.deepEqual(calls, ['owner']);
+  assert.equal(f.db.read('account_trial_usage/owner').used, 0);
+  assert.deepEqual(f.db.read('account_free_monthly_usage/owner'), { window: '2026-09', used: 2 });
+  assert.equal(f.db.read('users/owner').businessSegment, 'Hardware');
+  assert.equal(f.db.read('api_keys/key-a').status, 'active');
+  assert.equal((await authenticateCredential(f.db, key.key)).id, 'key-a');
+});
+test('revoked Firebase ID token is denied; a normally reauthenticated token can inspect Trial', async () => {
+  let revoked = false;
+  const f = fixture({}, {}, {}, {
+    verify: async (token, checkRevoked) => {
+      assert.equal(checkRevoked, true);
+      if (token === 'owner-token' && revoked) throw new Error('auth/id-token-revoked');
+      if (token !== 'owner-token' && token !== 'fresh-token') throw new Error('Invalid');
+      return { uid: 'owner' };
+    },
+    revoke: async uid => { assert.equal(uid, 'owner'); revoked = true; },
+  });
+  assert.equal((await f.activate()).statusCode, 200);
+  assert.equal((await f.status()).statusCode, 401);
+  assert.equal((await invoke(f.keys.list)).statusCode, 401);
+  assert.equal((await f.status({ token: 'fresh-token' })).body.status, 'active');
+  assert.equal((await invoke(f.keys.list, { token: 'fresh-token' })).statusCode, 200);
+  assert.equal((await authenticateCredential(f.db, key.key)).id, 'key-a');
+});
+test('Auth revocation failure leaves Trial untouched and a retry starts it once', async () => {
+  let attempts = 0;
+  const f = fixture({}, {}, {}, { revoke: async () => {
+    if (++attempts === 1) throw new Error('Transient Firebase Auth failure');
+  } });
+  const failed = await f.activate();
+  assert.equal(failed.statusCode, 503);
+  assert.equal(failed.body.error, 'TRIAL_ACTIVATION_UNAVAILABLE');
+  assert.equal(failed.body.reauthenticationRequired, true);
+  assert.equal(f.db.read('users/owner').hasUsedFreeTrial, undefined);
+  assert.equal(f.db.read('account_trial_usage/owner'), undefined);
+  assert.equal(f.db.read('api_keys/key-a').status, 'active');
+  assert.equal((await f.activate()).statusCode, 200);
+  assert.equal(attempts, 2);
+  assert.equal(f.db.read('users/owner').trialStartedAt, START);
+  assert.equal(f.db.read('users/owner').trialExpiresAt, END);
+  assert.equal(f.db.read('account_trial_usage/owner').used, 0);
+});
+test('ambiguous Auth response after remote revocation requires a new login before retry', async () => {
+  let revoked = false, attempts = 0;
+  const f = fixture({}, {}, {}, {
+    verify: async (token, checkRevoked) => {
+      assert.equal(checkRevoked, true);
+      if (token === 'owner-token' && revoked) throw new Error('auth/id-token-revoked');
+      if (!['owner-token', 'fresh-token'].includes(token)) throw new Error('Invalid');
+      return { uid: 'owner' };
+    },
+    revoke: async () => { revoked = true; if (++attempts === 1) throw new Error('Lost Auth response'); },
+  });
+  const failed = await f.activate();
+  assert.equal(failed.statusCode, 503);
+  assert.equal(failed.body.reauthenticationRequired, true);
+  assert.equal(f.db.read('account_trial_usage/owner'), undefined);
+  assert.equal((await f.activate()).statusCode, 401);
+  assert.equal((await f.activate({ token: 'fresh-token' })).statusCode, 200);
+  assert.equal(attempts, 2);
+  assert.equal(f.db.read('users/owner').trialStartedAt, START);
+});
+test('post-revocation Firestore failure requires re-login and does not consume Trial', async () => {
+  let revoked = false, calls = 0;
+  const f = fixture({}, {}, {}, {
+    verify: async (token, checkRevoked) => {
+      assert.equal(checkRevoked, true);
+      if (token === 'owner-token' && revoked) throw new Error('auth/id-token-revoked');
+      if (!['owner-token', 'fresh-token'].includes(token)) throw new Error('Invalid');
+      return { uid: 'owner' };
+    },
+    revoke: async () => { revoked = true; },
+  });
+  const run = f.db.runTransaction;
+  f.db.runTransaction = async callback => {
+    if (++calls === 2) f.db.failCommit = true;
+    try { return await run(callback); } finally { f.db.failCommit = false; }
+  };
+  const failed = await f.activate();
+  assert.equal(failed.statusCode, 503);
+  assert.equal(failed.body.reauthenticationRequired, true);
+  assert.equal(f.db.read('users/owner').hasUsedFreeTrial, undefined);
+  assert.equal(f.db.read('account_trial_usage/owner'), undefined);
+  assert.equal((await f.activate()).statusCode, 401);
+  assert.equal((await f.activate({ token: 'fresh-token' })).statusCode, 200);
+  assert.equal(f.db.read('users/owner').trialStartedAt, START);
+  assert.equal(f.db.read('users/owner').trialExpiresAt, END);
+});
+test('retry after success cannot extend dates, reset usage, or revoke another session', async () => {
+  let revocations = 0, revoked = false;
+  const f = fixture({}, {}, {}, {
+    verify: async (token, checkRevoked) => {
+      assert.equal(checkRevoked, true);
+      if (token === 'owner-token' && revoked) throw new Error('auth/id-token-revoked');
+      if (!['owner-token', 'fresh-token'].includes(token)) throw new Error('Invalid');
+      return { uid: 'owner' };
+    },
+    revoke: async () => { revocations++; revoked = true; },
+  });
+  assert.equal((await f.activate()).statusCode, 200);
+  const before = f.db.read('users/owner');
+  const counter = f.db.read('account_trial_usage/owner');
+  f.time('2026-09-24T12:00:00.000Z');
+  assert.equal((await f.activate()).statusCode, 401);
+  assert.equal((await f.status({ token: 'fresh-token' })).body.status, 'active');
+  const repeat = await f.activate({ token: 'fresh-token' });
+  assert.equal(repeat.statusCode, 409);
+  assert.equal(repeat.body.error, 'TRIAL_ALREADY_USED');
+  assert.equal(revocations, 1);
+  assert.equal(f.db.read('users/owner').trialStartedAt, before.trialStartedAt);
+  assert.equal(f.db.read('users/owner').trialExpiresAt, before.trialExpiresAt);
+  assert.deepEqual(f.db.read('account_trial_usage/owner'), counter);
 });
 test('concurrent activation grants exactly once', async () => {
   const f = fixture(), attempts = await Promise.all(Array.from({ length: 10 }, () => f.activate()));
@@ -264,6 +390,8 @@ test('entitlement poller clears stale UI and refreshes at Trial expiry', async (
 });
 test('route, scoped UI, server counter and URL-only wiring', () => {
   assert.match(read('server.js'), /app\.use\('\/api\/v1\/free-trial'/);
+  assert.match(read('routes/freetrial.js'), /revokeRefreshTokens: uid => getAuth\(\)\.revokeRefreshTokens\(uid\)/);
+  assert.match(read('services/free-trial.js'), /verifyIdToken\(match\[1\], true\)/);
   assert.match(read('dashboard/src/lib/firebase/auth-context.tsx'), /activeCustomerSegment/);
   assert.match(read('dashboard/src/app/dashboard/products/page.tsx'), /scopeCustomerProducts\(products, appUser\)/);
   assert.match(read('dashboard/src/app/dashboard/page.tsx'), /Active Business Segment/);
@@ -271,6 +399,9 @@ test('route, scoped UI, server counter and URL-only wiring', () => {
   assert.match(add, /disabled=\{segmentLocked\}/); assert.doesNotMatch(add, /uploadBytes|addDoc|setDoc/);
   const trial = read('dashboard/src/app/dashboard/free-trial/page.tsx');
   assert.match(trial, /generation\.current !== request/); assert.match(trial, /setResult\(null\)/);
+  assert.match(trial, /reauthenticationRequired/);
+  assert.match(trial, /await logout\(\)/);
+  assert.doesNotMatch(trial, /await refreshUserDoc\(\)/);
   assert.doesNotMatch(trial, /localStorage|sessionStorage|updateDoc|setDoc/);
   assert.ok(/requirePlan\(\['pro', 'enterprise'\]\)/.test(read('routes/daas.js')));
   assert.ok(/max: 60/.test(read('server.js')));

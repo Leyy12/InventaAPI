@@ -17,7 +17,7 @@ export default function FreeTrialPage() {
 }
 
 function TrialPanel({ user }: { user: User }) {
-  const { refreshUserDoc } = useAuth();
+  const { logout } = useAuth();
   const [result, setResult] = useState<{ uid: string; trial: Trial } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,19 +60,32 @@ function TrialPanel({ user }: { user: User }) {
     if (!user || busy || !trial?.eligible) return;
     const request = generation.current;
     setBusy(true); setError('');
+    let mayHaveRevoked = false;
+    let logoutAttempted = false;
     try {
       const token = await user.getIdToken();
+      // Once submitted, a lost response may conceal a successful revocation.
+      // In that case we must leave the old browser session conservatively.
+      mayHaveRevoked = true;
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/free-trial/activate`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: AbortSignal.timeout(15000),
       });
       const data = await response.json();
+      if (!response.ok && response.status < 500 && data.reauthenticationRequired !== true) mayHaveRevoked = false;
       if (!response.ok) throw new Error(data.message || 'Activation unavailable.');
+      if (data.reauthenticationRequired !== true) throw new Error('Unable to confirm session revocation.');
       if (request !== generation.current) return;
-      await refreshUserDoc();
-      if (request !== generation.current) return;
-      setResult(null); setRefresh(value => value + 1);
+      logoutAttempted = true;
+      const ended = await logout();
+      if (!ended.ok) throw new Error('Trial activated, but automatic sign-out failed. Sign out manually and log in again.');
     } catch (failure) {
-      if (request === generation.current) setError(failure instanceof Error ? failure.message : 'Activation unavailable.');
+      if (request !== generation.current) return;
+      if (mayHaveRevoked && !logoutAttempted) {
+        window.alert('Trial activation could not be confirmed. Sign in again and check Trial status before retrying.');
+        logoutAttempted = true;
+        const ended = await logout();
+        if (!ended.ok && request === generation.current) setError('Sign-out failed. Sign out manually and log in again before continuing.');
+      } else setError(failure instanceof Error ? failure.message : 'Activation unavailable.');
     } finally { if (request === generation.current) setBusy(false); }
   }
 
