@@ -38,14 +38,15 @@ test('revocation stays available with warning about only usable key and no refun
 // dependencies. No browser, SDK initialization or real HTTP call is involved.
 async function submit(response, name = 'Integration') {
   const handler = keys.slice(keys.indexOf('  const generateNewKey = async () => {'), keys.indexOf('  const revokeKey ='));
-  const state = { secrets: [], names: [], alerts: [], pending: [], paywall: [], modal: [], refreshes: 0, calls: 0, bodies: [] };
+  const state = { secrets: [], names: [], productNames: [], alerts: [], pending: [], paywall: [], modal: [], refreshes: 0, calls: 0, bodies: [], errors: [] };
   const run = new Function('newKeyName', 'user', 'fetch', 'process', 'alert', 'console', 'setGeneratingKey',
-    'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setNewKeyName', 'fetchApiKeys', 'generationErrorMessage',
+    'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setGeneratedProductNames', 'setNewKeyName', 'fetchApiKeys', 'generationErrorMessage',
     'selectedCustomerProducts', 'canGenerate', 'setServerPaywall', 'setShowGenerateModal', `${handler}; return generateNewKey();`);
   await run(name, { email: 'fixture@example.test', getIdToken: async () => 'synthetic-token' },
     async (_url, options) => { state.calls++; state.bodies.push(JSON.parse(options.body)); return { ok: response.ok, json: async () => response.data }; },
-    { env: { NEXT_PUBLIC_API_URL: 'http://127.0.0.1:9' } }, value => state.alerts.push(value), { error: () => {} },
-    value => state.pending.push(value), value => state.secrets.push(value), value => state.names.push(value), () => {}, () => state.refreshes++, generationErrorMessage,
+    { env: { NEXT_PUBLIC_API_URL: 'http://127.0.0.1:9' } }, value => state.alerts.push(value), { error: value => state.errors.push(value) },
+    value => state.pending.push(value), value => state.secrets.push(value), value => state.names.push(value),
+    value => state.productNames.push(value), () => {}, () => state.refreshes++, generationErrorMessage,
     [{ id: 'canonical-product-id', name: 'Fixture Product' }], true,
     value => state.paywall.push(value), value => state.modal.push(value));
   return state;
@@ -53,11 +54,50 @@ async function submit(response, name = 'Integration') {
 test('actual generation handler reveals successful one-time secret and refreshes metadata', async () => {
   const state = await submit({ ok: true, data: { key: 'synthetic-one-time-secret' } });
   assert.deepEqual(state.secrets, ['synthetic-one-time-secret']); assert.deepEqual(state.names, ['Integration']); assert.equal(state.refreshes, 1);
+  assert.deepEqual(state.productNames, [['Fixture Product']]);
   assert.deepEqual(state.bodies[0].linkedProductIds, ['canonical-product-id']);
   assert.equal('linkedProducts' in state.bodies[0], false);
-  assert.deepEqual(state.pending, [true, false]); assert.deepEqual(state.alerts, []);
+  assert.deepEqual(state.pending, [true, false]); assert.deepEqual(state.alerts, []); assert.deepEqual(state.errors, []);
   assert.match(keys, /won&apos;t be able to see it again/);
   assert.match(products, /you won't see it again/);
+});
+test('one-time secret state survives entitlement and list refresh without weakening account isolation', async () => {
+  const session = keys.slice(keys.indexOf('function AccountKeysSession('), keys.indexOf('function AccountKeys('));
+  const child = keys.slice(keys.indexOf('function AccountKeys('), keys.indexOf('  const [apiKeys,'));
+  assert.match(keys, /<AccountKeysSession key=\{user\.uid\}/);
+  assert.match(session, /<AccountKeys key=\{props\.entitlementStatus\}/);
+  assert.match(session, /\[showGenerateModal, setShowGenerateModal\] = useState\(false\)/);
+  assert.match(session, /\[newlyGeneratedKey, setNewlyGeneratedKey\] = useState<string \| null>\(null\)/);
+  assert.match(session, /\[generatedKeyName, setGeneratedKeyName\] = useState<string \| null>\(null\)/);
+  assert.match(session, /\[generatedProductNames, setGeneratedProductNames\] = useState<string\[\]>\(\[\]\)/);
+  assert.doesNotMatch(child, /useState.*(?:showGenerateModal|newlyGeneratedKey|generatedKeyName|generatedProductNames)/);
+  const result = await submit({ ok: true, data: { key: 'synthetic-one-time-secret' } });
+  assert.deepEqual(result.secrets, ['synthetic-one-time-secret']);
+  assert.equal(result.refreshes, 1);
+  assert.deepEqual(result.modal, []); // background refresh does not dismiss success
+  assert.match(keys, /\{newlyGeneratedKey \? \(/); // success view remains bound to the session state
+  assert.match(keys, /\{generatedProductNames\.map/); // product labels also survive child remount
+});
+test('explicit dismissal clears every secret-bearing success field; reopen cannot restore it', () => {
+  const dismissal = keys.match(/onClick=\{\(\) => \{(\s*setShowGenerateModal\(false\);\s*setNewlyGeneratedKey\(null\);\s*setGeneratedKeyName\(null\);\s*setGeneratedProductNames\(\[\]\);\s*)\}\}/);
+  assert.ok(dismissal, 'success dismissal must clear the modal, secret, and related metadata');
+  const state = { modal: true, secret: 'synthetic-one-time-secret', name: 'Fixture', products: ['Fixture Product'] };
+  new Function('setShowGenerateModal', 'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setGeneratedProductNames', dismissal[1])(
+    value => { state.modal = value; }, value => { state.secret = value; }, value => { state.name = value; }, value => { state.products = value; });
+  assert.deepEqual(state, { modal: false, secret: null, name: null, products: [] });
+  const openSource = keys.slice(keys.indexOf('  const openGenerateModal = () => {'), keys.indexOf('  useEffect(() => {'));
+  const reopen = new Function('canGenerate', 'setProductsLoading', 'setShowGenerateModal', `${openSource}; return openGenerateModal;`)(
+    true, () => {}, value => { state.modal = value; });
+  reopen();
+  assert.equal(state.modal, true);
+  assert.equal(state.secret, null);
+});
+test('full reload/navigation has no recovery channel for the one-time secret', () => {
+  const session = keys.slice(keys.indexOf('function AccountKeysSession('), keys.indexOf('function AccountKeys('));
+  assert.match(session, /useState<string \| null>\(null\)/);
+  assert.match(keys, /return user \? <AccountKeysSession key=\{user\.uid\}/);
+  assert.doesNotMatch(keys, /localStorage|sessionStorage|document\.cookie|indexedDB|navigator\.sendBeacon/);
+  assert.doesNotMatch(keys, /console\.log\([^)]*newlyGeneratedKey|console\.error\([^)]*newlyGeneratedKey/);
 });
 test('actual handler daily denial never reveals secret or refreshes list', async () => {
   const state = await submit({ ok: false, data: { error: 'API_KEY_DAILY_GENERATION_LIMIT', nextEligibleAt: '2026-09-23T00:00:00.000Z' } });

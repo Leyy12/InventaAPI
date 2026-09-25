@@ -30,19 +30,41 @@ interface ApiKey {
 export default function ApiKeysPage() {
   const { user, appUser, entitlement } = useAuth();
   const entitlementStatus = entitlement?.subscription_status ?? null;
-  return user ? <AccountKeys key={`${user.uid}:${entitlementStatus}`} user={user} account={appUser}
+  return user ? <AccountKeysSession key={user.uid} user={user} account={appUser}
     entitlementStatus={entitlementStatus} paidAccess={entitlement?.activePro === true || ['Enterprise', 'Unlimited'].includes(entitlement?.plan ?? '')} /> : null;
 }
-function AccountKeys({ user, account, entitlementStatus, paidAccess }: { user: User;
+type AccountKeysProps = { user: User;
   account: { uid?: string; plan?: unknown; businessSegment?: unknown; selectedSegment?: unknown } | null;
-  entitlementStatus: string | null; paidAccess: boolean }) {
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
+  entitlementStatus: string | null; paidAccess: boolean };
+
+// Keep the one-time success view within the account/route lifetime, not the
+// entitlement-keyed list lifetime. A refreshed entitlement may remount the
+// list, but changing accounts or leaving this page still discards the secret.
+function AccountKeysSession(props: AccountKeysProps) {
   const [showGenerateModal, setShowGenerateModal] = useState(false);
-  const [newKeyName, setNewKeyName] = useState("");
-  const [generatingKey, setGeneratingKey] = useState(false);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
   const [generatedKeyName, setGeneratedKeyName] = useState<string | null>(null);
+  const [generatedProductNames, setGeneratedProductNames] = useState<string[]>([]);
+
+  return <AccountKeys key={props.entitlementStatus} {...props} showGenerateModal={showGenerateModal}
+    setShowGenerateModal={setShowGenerateModal} newlyGeneratedKey={newlyGeneratedKey}
+    setNewlyGeneratedKey={setNewlyGeneratedKey} generatedKeyName={generatedKeyName}
+    setGeneratedKeyName={setGeneratedKeyName} generatedProductNames={generatedProductNames}
+    setGeneratedProductNames={setGeneratedProductNames} />;
+}
+
+function AccountKeys({ user, account, entitlementStatus, paidAccess, showGenerateModal, setShowGenerateModal,
+  newlyGeneratedKey, setNewlyGeneratedKey, generatedKeyName, setGeneratedKeyName,
+  generatedProductNames, setGeneratedProductNames }: AccountKeysProps & {
+  showGenerateModal: boolean; setShowGenerateModal: (value: boolean) => void;
+  newlyGeneratedKey: string | null; setNewlyGeneratedKey: (value: string | null) => void;
+  generatedKeyName: string | null; setGeneratedKeyName: (value: string | null) => void;
+  generatedProductNames: string[]; setGeneratedProductNames: (value: string[]) => void;
+}) {
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [generatingKey, setGeneratingKey] = useState(false);
   const [loadedProducts, setLoadedProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [productsLoading, setProductsLoading] = useState(false);
@@ -135,6 +157,7 @@ function AccountKeys({ user, account, entitlementStatus, paidAccess }: { user: U
       
       if (typeof data.key !== "string" || !data.key) throw new Error("The generated API key could not be displayed. Contact support before retrying.");
       setGeneratedKeyName(typeof data.name === "string" && data.name.trim() ? data.name : submittedName);
+      setGeneratedProductNames(selectedCustomerProducts.map(product => product.name || 'Product unavailable'));
       setNewlyGeneratedKey(data.key);
       setNewKeyName("");
       fetchApiKeys();
@@ -483,9 +506,9 @@ DAAS_API_KEY=${keyStr}
                 </div>
                 <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 mb-4">
                   <p className="text-xs font-semibold text-indigo-300 mb-2">LINKED PRODUCTS</p>
-                  {selectedCustomerProducts.length ? (
+                  {generatedProductNames.length ? (
                     <ul className="space-y-1 text-sm text-slate-200">
-                      {selectedCustomerProducts.map(product => <li key={product.id}>{product.name}</li>)}
+                      {generatedProductNames.map((name, index) => <li key={`${index}:${name}`}>{name}</li>)}
                     </ul>
                   ) : <p className="text-sm text-slate-400">No products selected. This key is not linked to a specific product.</p>}
                 </div>
@@ -533,6 +556,7 @@ DAAS_API_KEY=${keyStr}
                     setShowGenerateModal(false);
                     setNewlyGeneratedKey(null);
                     setGeneratedKeyName(null);
+                    setGeneratedProductNames([]);
                   }}
                   className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium transition-all"
                 >
