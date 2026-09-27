@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-react";
@@ -21,6 +21,8 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   const searchParams = useSearchParams();
 
   const [loginStarted, setLoginStarted] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const planIntent = searchParams.get('pendingPlan');
   const initialPlan: PlanId | null = planIntent === 'free' || planIntent === 'pro' || planIntent === 'enterprise'
     ? planIntent : searchParams.get('choosePlan') === 'true' || searchParams.get('payment') === 'cancelled' ? 'pro' : null;
@@ -34,6 +36,20 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Pre-check: already-active Pro modal shown BEFORE checkout is opened.
   const [showAlreadyProModal, setShowAlreadyProModal] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        mobileMenuButtonRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     if (!loginOnly && !loading && !user && consumePostLogoutLogin()) setShowLoginModal(true);
@@ -296,19 +312,41 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
               <a href="#features" className="hover:text-white transition-colors">Features</a>
               <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
               <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
-              <a href="#" className="hover:text-white transition-colors">API Docs</a>
+              <a href="/docs" className="hover:text-white transition-colors">API Docs</a>
 
             </div>
             <div className="flex items-center gap-4 text-sm">
               <button
                 type="button"
-                onClick={() => setShowLoginModal(true)}
+                ref={mobileMenuButtonRef}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-slate-200 transition-colors hover:border-indigo-300/50 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 md:hidden"
+                aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="landing-mobile-navigation"
+                onClick={() => setMobileMenuOpen((open) => !open)}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  {mobileMenuOpen ? <path d="M18 6 6 18M6 6l12 12" /> : <path d="M4 6h16M4 12h16M4 18h16" />}
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMobileMenuOpen(false); setShowLoginModal(true); }}
                 aria-haspopup="dialog"
                 className="inline-flex items-center rounded-full border border-indigo-400/35 bg-indigo-500/10 px-4 py-2 text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
               >
                 Login
               </button>
             </div>
+          </div>
+          <div
+            id="landing-mobile-navigation"
+            className={`${mobileMenuOpen ? "flex" : "hidden"} md:hidden flex-col gap-1 border-t border-white/10 bg-[#020617] pb-3 pt-2`}
+          >
+            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Features</a>
+            <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">How it Works</a>
+            <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Pricing</a>
+            <a href="/docs" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">API Docs</a>
           </div>
         </div>
       </nav>

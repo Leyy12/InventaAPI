@@ -46,6 +46,31 @@ test('Landing page offers the guided hero, feature, and pricing journey', () => 
   assert.doesNotMatch(source, /hardware, grocery, and electronics/);
 });
 
+test('Landing navigation exposes accessible mobile links and the existing Docs route', () => {
+  const source = read('dashboard/src/components/auth/AuthEntry.tsx');
+  const navigation = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
+  const mobileNavigation = navigation.slice(navigation.indexOf('id="landing-mobile-navigation"'));
+
+  assert.ok(read('dashboard/src/app/docs/page.tsx'));
+  assert.equal((navigation.match(/href="\/docs"/g) || []).length, 2);
+  assert.match(navigation, /aria-label=\{mobileMenuOpen \? "Close navigation menu" : "Open navigation menu"\}/);
+  assert.match(navigation, /aria-expanded=\{mobileMenuOpen\}/);
+  assert.match(navigation, /aria-controls="landing-mobile-navigation"/);
+  assert.match(navigation, /ref=\{mobileMenuButtonRef\}/);
+  assert.match(navigation, /setMobileMenuOpen\(false\); setShowLoginModal\(true\)/);
+  assert.match(navigation, /md:hidden/);
+  assert.match(source, /event\.key === "Escape"[\s\S]*?setMobileMenuOpen\(false\)[\s\S]*?mobileMenuButtonRef\.current\?\.focus\(\)/);
+  for (const [label, href] of [
+    ['Features', '#features'],
+    ['How it Works', '#how-it-works'],
+    ['Pricing', '#pricing'],
+    ['API Docs', '/docs'],
+  ]) {
+    assert.match(mobileNavigation, new RegExp(`href="${href.replace('#', '\\#')}"[^>]*>[\\s\\S]*?${label}`));
+    assert.match(mobileNavigation, /onClick=\{\(\) => setMobileMenuOpen\(false\)\}/);
+  }
+});
+
 test('Login modal exposes close, Escape, dialog semantics, and existing form paths', () => {
   const source = read('dashboard/src/components/auth/LoginModal.tsx');
   assert.match(source, /role="dialog"/);
