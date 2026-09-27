@@ -244,8 +244,18 @@ for (const app of ['customer', 'admin']) {
     assert.ok(retry > 0 && retry < source.indexOf('{children}'));
     assert.match(source, /const screen = authScreen\(authStatus\)/);
     assert.match(source, /initializing: screen !== 'ready'/);
-    assert.match(source, /onClick=\{retryVerification\}>Retry verification/);
-    assert.match(source, /We couldn&apos;t verify your account right now/);
+    if (app === 'customer') {
+      assert.match(source, /<SessionRecoveryState[\s\S]*onRetry=\{retryVerification\}/);
+      assert.match(source, /onReturnToLogin=\{\(\) => \{ void logout\(\); \}\}/);
+      const recovery = read('dashboard/src/components/auth/SessionLoadingScreen.tsx');
+      assert.match(recovery, /We couldn&apos;t verify your account right now/);
+      assert.match(recovery, /onClick=\{onRetry\}[\s\S]*Try Again/);
+      assert.match(recovery, /onClick=\{onReturnToLogin\}[\s\S]*Return to Login/);
+      assert.match(recovery, /role="alert"/);
+    } else {
+      assert.match(source, /onClick=\{retryVerification\}>Retry verification/);
+      assert.match(source, /We couldn&apos;t verify your account right now/);
+    }
     assert.match(source, /role="alert"[\s\S]*Retry logout/);
     for (const path of ['/', '/login', '/dashboard']) {
       const screen = authScreen('unverified'); assert.equal(screen, 'retry');

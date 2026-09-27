@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-react";
 import LoginModal from "@/components/auth/LoginModal";
+import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
@@ -256,7 +257,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
 
   // Do not flash marketing content while Firebase is restoring an authenticated
   // session; the single navigation decision above resolves first.
-  if (loading || destination) return <p role="status">Checking session…</p>;
+  if (loading || destination) return <SessionLoadingScreen variant="public" />;
 
   return (
     <div className="min-h-screen bg-[#020617] text-white selection:bg-indigo-500/30 overflow-x-hidden">

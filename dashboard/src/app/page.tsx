@@ -2,10 +2,11 @@
 
 import { Suspense } from 'react';
 import AuthEntry from '@/components/auth/AuthEntry';
+import SessionLoadingScreen from '@/components/auth/SessionLoadingScreen';
 
 function RootEntry() {
   return <AuthEntry />;
 }
 export default function LandingPage() {
-  return <Suspense fallback={<p role="status">Checking session…</p>}><RootEntry /></Suspense>;
+  return <Suspense fallback={<SessionLoadingScreen variant="public" />}><RootEntry /></Suspense>;
 }

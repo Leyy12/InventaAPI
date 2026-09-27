@@ -7,6 +7,7 @@ import { customerPublicPath, navigationDecision, profileRole, adminLoginDestinat
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import SubscriptionExpiryBanner from "@/components/shared/SubscriptionExpiryBanner";
+import SessionLoadingScreen, { SessionRecoveryState } from "@/components/auth/SessionLoadingScreen";
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -32,17 +33,19 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     <p>{logoutError}</p>
     <button disabled={logoutBusy} onClick={() => { void logout(); }}>Retry logout</button>
   </div>;
-  if (screen === 'retry' && pathname !== '/signup') return <div role="alert">
-    <p>We couldn&apos;t verify your account right now. Please try again.</p>
-    <button onClick={retryVerification}>Retry verification</button>
-    {logoutNotice}
-  </div>;
+  if (screen === 'retry' && pathname !== '/signup') return <SessionRecoveryState
+    onRetry={retryVerification}
+    onReturnToLogin={() => { void logout(); }}
+    busy={logoutBusy}
+    notice={logoutNotice}
+  />;
   if (!loading && role === 'admin') return <div>
     <p role="status">Use the separate Admin application. If navigation does not continue, contact the operator for its configured address.</p>
     <button disabled={logoutBusy} onClick={() => { void logout(); }}>Sign out</button>
     {logoutNotice}
   </div>;
-  if (!isPublicRoute && (loading || role !== 'customer')) return <p role="status">Checking session…</p>;
+  if (!isPublicRoute && (loading || role !== 'customer')) return <SessionLoadingScreen
+    key={loading ? 'workspace' : 'public'} variant={loading ? 'workspace' : 'public'} />;
 
   if (isPublicRoute) {
     return (
