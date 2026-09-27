@@ -6,13 +6,14 @@ const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 
 const keys = read('dashboard/src/app/dashboard/api-keys/page.tsx');
 const products = read('dashboard/src/app/dashboard/products/page.tsx');
 
-test('generation policy explicitly separates account UTC day from request quota on both entry points', () => {
+test('generation policy remains on Products and is absent from the management-only API Keys page', () => {
   assert.equal(GENERATION_POLICY, 'API keys can be generated once per account per UTC day.');
-  for (const source of [keys, products]) {
-    assert.match(source, /\{GENERATION_POLICY\}/);
-    assert.match(source, /generationErrorMessage\(data\)/);
-    assert.match(source, /API request quota/);
-  }
+  assert.match(products, /\{GENERATION_POLICY\}/);
+  assert.match(products, /generationErrorMessage\(data\)/);
+  assert.match(products, /API request quotas are separate/);
+  assert.doesNotMatch(keys, /generationErrorMessage|showGenerateModal|generateNewKey|\/generate/u);
+  assert.match(keys, /New API keys are created from/);
+  assert.match(keys, /href="\/dashboard\/products"/);
 });
 test('generation denial has its own message and explicit server UTC boundary', () => {
   const message = generationErrorMessage({ error: 'API_KEY_DAILY_GENERATION_LIMIT', nextEligibleAt: '2026-09-23T00:00:00.000Z' });
@@ -31,91 +32,108 @@ for (const error of ['ACCOUNT_DISABLED', 'QUOTA_EXCEEDED', 'SERVICE_UNAVAILABLE'
 });
 test('revocation stays available with warning about only usable key and no refund', () => {
   assert.match(REVOCATION_WARNING, /does not restore/); assert.match(REVOCATION_WARNING, /only usable key/);
-  assert.match(keys, /\$\{REVOCATION_WARNING\}/); assert.match(keys, /method: 'DELETE'/);
+  assert.match(keys, /\$\{REVOCATION_WARNING\}/); assert.match(keys, /method: "DELETE"/);
 });
 
-// Execute the actual API Keys event handler with synthetic UI/Firebase/network
-// dependencies. No browser, SDK initialization or real HTTP call is involved.
-async function submit(response, name = 'Integration') {
-  const handler = keys.slice(keys.indexOf('  const generateNewKey = async () => {'), keys.indexOf('  const revokeKey ='));
-  const state = { secrets: [], names: [], productNames: [], alerts: [], pending: [], paywall: [], modal: [], refreshes: 0, calls: 0, bodies: [], errors: [] };
-  const run = new Function('newKeyName', 'user', 'fetch', 'process', 'alert', 'console', 'setGeneratingKey',
-    'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setGeneratedProductNames', 'setNewKeyName', 'fetchApiKeys', 'generationErrorMessage',
-    'selectedCustomerProducts', 'canGenerate', 'setServerPaywall', 'setShowGenerateModal', `${handler}; return generateNewKey();`);
-  await run(name, { email: 'fixture@example.test', getIdToken: async () => 'synthetic-token' },
-    async (_url, options) => { state.calls++; state.bodies.push(JSON.parse(options.body)); return { ok: response.ok, json: async () => response.data }; },
-    { env: { NEXT_PUBLIC_API_URL: 'http://127.0.0.1:9' } }, value => state.alerts.push(value), { error: value => state.errors.push(value) },
-    value => state.pending.push(value), value => state.secrets.push(value), value => state.names.push(value),
-    value => state.productNames.push(value), () => {}, () => state.refreshes++, generationErrorMessage,
-    [{ id: 'canonical-product-id', name: 'Fixture Product' }], true,
-    value => state.paywall.push(value), value => state.modal.push(value));
+// Execute the actual replacement event handler with synthetic UI and request
+// dependencies. No browser, SDK initialization, or real HTTP call is involved.
+async function replace(response, options = {}) {
+  const handler = keys.slice(keys.indexOf('  const replaceKey = async () => {'), keys.indexOf('  const copySecret = async () => {'));
+  const state = { secrets: [], pending: [], paywall: [], selected: [], errors: [], refreshes: 0, calls: 0, paths: [] };
+  const selectedKey = options.selectedKey === undefined ? { id: 'old-id', name: 'Integration' } : options.selectedKey;
+  const replacingRef = { current: false };
+  const run = new Function('selectedKey', 'replacingRef', 'upgradeRequired', 'entitlementStatus',
+    'setReplacing', 'setReplaceError', 'apiKeyRequest', 'user', 'setSelectedKey',
+    'setReplacement', 'setCopyFeedback', 'fetchApiKeys', 'ApiKeyRequestError', 'setServerUpgradeRequired',
+    `${handler}; return replaceKey();`);
+  await run(selectedKey, replacingRef, options.upgradeRequired || false,
+    options.entitlementStatus === undefined ? 'inactive' : options.entitlementStatus,
+    value => state.pending.push(value), value => state.errors.push(value),
+    async (_user, path, request) => {
+      state.calls++; state.paths.push([path, request.method]);
+      if (response.error) {
+        const failure = new Error(response.message || response.error);
+        failure.code = response.error;
+        throw failure;
+      }
+      return response;
+    },
+    { uid: 'owner' }, value => state.selected.push(value), value => state.secrets.push(value),
+    () => {}, () => { state.refreshes++; }, Error,
+    value => state.paywall.push(value));
   return state;
 }
-test('actual generation handler reveals successful one-time secret and refreshes metadata', async () => {
-  const state = await submit({ ok: true, data: { key: 'synthetic-one-time-secret' } });
-  assert.deepEqual(state.secrets, ['synthetic-one-time-secret']); assert.deepEqual(state.names, ['Integration']); assert.equal(state.refreshes, 1);
-  assert.deepEqual(state.productNames, [['Fixture Product']]);
-  assert.deepEqual(state.bodies[0].linkedProductIds, ['canonical-product-id']);
-  assert.equal('linkedProducts' in state.bodies[0], false);
-  assert.deepEqual(state.pending, [true, false]); assert.deepEqual(state.alerts, []); assert.deepEqual(state.errors, []);
-  assert.match(keys, /won&apos;t be able to see it again/);
+test('actual replacement handler reveals one-time secret and refreshes masked metadata', async () => {
+  const state = await replace({ success: true, id: 'new-id', name: 'Integration', key: 'synthetic-one-time-secret' });
+  assert.deepEqual(state.secrets, [{ id: 'new-id', name: 'Integration', secret: 'synthetic-one-time-secret' }]);
+  assert.deepEqual(state.paths, [['/old-id/replace', 'POST']]);
+  assert.equal(state.refreshes, 1);
+  assert.deepEqual(state.pending, [true, false]);
+  assert.deepEqual(state.selected, [null]);
+  assert.match(keys, /Save this key now\. For security, InventaAPI will not display it again/);
   assert.match(products, /you won't see it again/);
 });
-test('one-time secret state survives entitlement and list refresh without weakening account isolation', async () => {
-  const session = keys.slice(keys.indexOf('function AccountKeysSession('), keys.indexOf('function AccountKeys('));
-  const child = keys.slice(keys.indexOf('function AccountKeys('), keys.indexOf('  const [apiKeys,'));
-  assert.match(keys, /<AccountKeysSession key=\{user\.uid\}/);
-  assert.match(session, /<AccountKeys key=\{props\.entitlementStatus\}/);
-  assert.match(session, /\[showGenerateModal, setShowGenerateModal\] = useState\(false\)/);
-  assert.match(session, /\[newlyGeneratedKey, setNewlyGeneratedKey\] = useState<string \| null>\(null\)/);
-  assert.match(session, /\[generatedKeyName, setGeneratedKeyName\] = useState<string \| null>\(null\)/);
-  assert.match(session, /\[generatedProductNames, setGeneratedProductNames\] = useState<string\[\]>\(\[\]\)/);
-  assert.doesNotMatch(child, /useState.*(?:showGenerateModal|newlyGeneratedKey|generatedKeyName|generatedProductNames)/);
-  const result = await submit({ ok: true, data: { key: 'synthetic-one-time-secret' } });
-  assert.deepEqual(result.secrets, ['synthetic-one-time-secret']);
+test('replacement secret survives a list refresh but not account switch or route reload', async () => {
+  const session = keys.slice(keys.indexOf('function AccountKeysSession('));
+  assert.match(keys, /key=\{user\.uid\}/);
+  assert.match(session, /\[replacement, setReplacement\] = useState<OneTimeReplacement \| null>\(null\)/);
+  assert.doesNotMatch(session, /key=\{(?:props\.)?entitlementStatus\}/);
+  const result = await replace({ success: true, id: 'new-id', key: 'synthetic-one-time-secret' });
   assert.equal(result.refreshes, 1);
-  assert.deepEqual(result.modal, []); // background refresh does not dismiss success
-  assert.match(keys, /\{newlyGeneratedKey \? \(/); // success view remains bound to the session state
-  assert.match(keys, /\{generatedProductNames\.map/); // product labels also survive child remount
+  assert.equal(result.secrets[0].secret, 'synthetic-one-time-secret');
+  assert.match(keys, /replacement\.secret/);
 });
-test('explicit dismissal clears every secret-bearing success field; reopen cannot restore it', () => {
-  const dismissal = keys.match(/onClick=\{\(\) => \{(\s*setShowGenerateModal\(false\);\s*setNewlyGeneratedKey\(null\);\s*setGeneratedKeyName\(null\);\s*setGeneratedProductNames\(\[\]\);\s*)\}\}/);
-  assert.ok(dismissal, 'success dismissal must clear the modal, secret, and related metadata');
-  const state = { modal: true, secret: 'synthetic-one-time-secret', name: 'Fixture', products: ['Fixture Product'] };
-  new Function('setShowGenerateModal', 'setNewlyGeneratedKey', 'setGeneratedKeyName', 'setGeneratedProductNames', dismissal[1])(
-    value => { state.modal = value; }, value => { state.secret = value; }, value => { state.name = value; }, value => { state.products = value; });
-  assert.deepEqual(state, { modal: false, secret: null, name: null, products: [] });
-  const openSource = keys.slice(keys.indexOf('  const openGenerateModal = () => {'), keys.indexOf('  useEffect(() => {'));
-  const reopen = new Function('canGenerate', 'setProductsLoading', 'setShowGenerateModal', `${openSource}; return openGenerateModal;`)(
-    true, () => {}, value => { state.modal = value; });
-  reopen();
-  assert.equal(state.modal, true);
-  assert.equal(state.secret, null);
+test('actual success dismissal clears the only secret-bearing replacement state', () => {
+  const source = keys.slice(keys.indexOf('  const dismissReplacement = () => {'), keys.indexOf('  const revokeKey = async'));
+  const state = { replacement: { secret: 'synthetic-one-time-secret' }, feedback: 'Copied', focused: false };
+  const dismiss = new Function('copyTimerRef', 'clearTimeout', 'setReplacement', 'setCopyFeedback', 'headingRef',
+    `${source}; return dismissReplacement;`)({ current: null }, () => {},
+      value => { state.replacement = value; }, value => { state.feedback = value; },
+      { current: { focus: () => { state.focused = true; } } });
+  dismiss();
+  assert.deepEqual(state, { replacement: null, feedback: '', focused: true });
 });
 test('full reload/navigation has no recovery channel for the one-time secret', () => {
-  const session = keys.slice(keys.indexOf('function AccountKeysSession('), keys.indexOf('function AccountKeys('));
-  assert.match(session, /useState<string \| null>\(null\)/);
-  assert.match(keys, /return user \? <AccountKeysSession key=\{user\.uid\}/);
+  const session = keys.slice(keys.indexOf('function AccountKeysSession('));
+  assert.match(session, /useState<OneTimeReplacement \| null>\(null\)/);
+  assert.match(keys, /key=\{user\.uid\}/);
   assert.doesNotMatch(keys, /localStorage|sessionStorage|document\.cookie|indexedDB|navigator\.sendBeacon/);
-  assert.doesNotMatch(keys, /console\.log\([^)]*newlyGeneratedKey|console\.error\([^)]*newlyGeneratedKey/);
+  assert.doesNotMatch(keys, /console\.(?:log|error)\([^)]*(?:replacement|secret)/);
 });
-test('actual handler daily denial never reveals secret or refreshes list', async () => {
-  const state = await submit({ ok: false, data: { error: 'API_KEY_DAILY_GENERATION_LIMIT', nextEligibleAt: '2026-09-23T00:00:00.000Z' } });
+test('replacement is not an ordinary daily generation and never contacts the generation endpoint', async () => {
+  const state = await replace({ success: true, id: 'new-id', key: 'synthetic-one-time-secret' });
+  assert.deepEqual(state.paths, [['/old-id/replace', 'POST']]);
+  assert.doesNotMatch(keys, /api_key_generation_days|nextEligibleAt|\/generate/u);
+});
+test('post-Trial replacement denial presents Upgrade to Pro and no secret', async () => {
+  const state = await replace({ error: 'UPGRADE_REQUIRED', message: 'Upgrade to Pro to continue using the API.' });
   assert.deepEqual(state.secrets, []); assert.equal(state.refreshes, 0);
-  assert.match(state.alerts[0], /2026-09-23 00:00 UTC/); assert.deepEqual(state.pending, [true, false]);
+  assert.deepEqual(state.paywall, [true]); assert.deepEqual(state.selected, []);
+  assert.match(state.errors.at(-1), /Upgrade to Pro/);
 });
-test('post-Trial generation denial presents Upgrade to Pro and no secret', async () => {
-  const state = await submit({ ok: false, data: { error: 'UPGRADE_REQUIRED' } });
-  assert.deepEqual(state.secrets, []); assert.equal(state.refreshes, 0);
-  assert.deepEqual(state.paywall, [true]); assert.deepEqual(state.modal, [false]);
-  assert.match(state.alerts[0], /Upgrade to Pro/);
+test('replacement cannot run without a selected owned key or verified entitlement', async () => {
+  for (const options of [{ selectedKey: null }, { entitlementStatus: null }, { upgradeRequired: true }]) {
+    const state = await replace({ success: true, id: 'new-id', key: 'synthetic-one-time-secret' }, options);
+    assert.equal(state.calls, 0); assert.deepEqual(state.secrets, []);
+  }
 });
-test('actual handler invalid local name never contacts generation endpoint', async () => {
-  const state = await submit({ ok: true, data: {} }, '  '); assert.equal(state.calls, 0); assert.deepEqual(state.secrets, []);
-});
-test('clipboard success is awaited; failure retains visible secret', () => {
-  for (const source of [keys, products]) assert.match(source, /await navigator\.clipboard\.writeText/);
-  assert.match(keys, /Copy failed\. Save the displayed key manually before closing/);
+test('clipboard copies exact replacement secret; failure retains visible secret', async () => {
+  const source = keys.slice(keys.indexOf('  const copySecret = async () => {'), keys.indexOf('  const dismissReplacement = () => {'));
+  const values = []; const feedback = [];
+  const copy = new Function('replacement', 'navigator', 'setCopyFeedback', 'copyTimerRef', 'clearTimeout', 'setTimeout',
+    `${source}; return copySecret;`)({ secret: 'synthetic-one-time-secret' },
+      { clipboard: { writeText: async value => values.push(value) } },
+      value => feedback.push(value), { current: null }, () => {}, () => 1);
+  await copy();
+  assert.deepEqual(values, ['synthetic-one-time-secret']);
+  assert.deepEqual(feedback, ['Copied']);
+  const failed = new Function('replacement', 'navigator', 'setCopyFeedback', 'copyTimerRef', 'clearTimeout', 'setTimeout',
+    `${source}; return copySecret;`)({ secret: 'synthetic-one-time-secret' },
+      { clipboard: { writeText: async () => { throw new Error('denied'); } } },
+      value => feedback.push(value), { current: null }, () => {}, () => 1);
+  await failed();
+  assert.match(feedback.at(-1), /Copy failed/);
+  assert.match(keys, /\{replacement\.secret\}/);
   assert.match(products, /Copy failed\. Save the displayed API key manually before leaving/);
 });
 test('60/minute IP limiter and backend-mediated generation route remain', () => {

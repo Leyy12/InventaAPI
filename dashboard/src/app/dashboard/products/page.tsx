@@ -2,7 +2,7 @@
 import { GENERATION_POLICY, generationErrorMessage } from '@/lib/api-key-generation';
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Database, ShoppingCart, Check, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
+import { Database, ShoppingCart, Check, Copy, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProductNotFound } from "@/components/product-request";
@@ -759,8 +759,8 @@ DAAS_API_KEY=${generatedKey}
                   onClick={handleCopyAndClose}
                   className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 mb-3"
                 >
-                  {copied ? <Check className="w-5 h-5" /> : <Key className="w-5 h-5" />}
-                  {copied ? "Copied! Going to API Keys..." : "Copy API key & Go to API Keys →"}
+                  {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                  {copied ? "Copied" : "Copy API Key"}
                 </button>
 
                 <div className="grid grid-cols-2 gap-3">

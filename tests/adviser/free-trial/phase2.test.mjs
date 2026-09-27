@@ -117,7 +117,8 @@ test('Customer and Admin surfaces expose Upgrade Required without hiding key his
   assert.match(trial, /trial\.eligible && <button/);
   assert.match(trial, /trial\.upgradeRequired &&/);
   assert.match(trial, /View upgrade options/);
-  assert.match(keys, /disabled=\{!canGenerate\}/);
+  assert.match(keys, /disabled=\{replacing \|\| upgradeRequired\}/);
+  assert.doesNotMatch(keys, /Generate Your First Key|onClick=\{openGenerateModal\}/);
   assert.match(keys, /Active API Keys/);
   assert.match(keys, /Upgrade to Pro/);
   assert.match(settings, /activeCustomerSegment\(appUser\)/);
@@ -166,15 +167,15 @@ test('Customer linked-key success modal keeps Key Name, product names and one-ti
   assert.match(page, /setGeneratedKey\(null\)/u);
   assert.match(page, /setGeneratedKeyName\(null\)/u);
 });
-test('Customer API Keys generation modal selects scoped catalog products and submits canonical IDs', () => {
-  const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/api-keys/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /getAllProducts/u);
-  assert.match(page, /scopeCustomerProducts\(products, account\)/u);
-  assert.match(page, /LINKED PRODUCTS/u);
-  assert.match(page, /availableProducts\.filter\(product => typeof product\.id === 'string'\)/u);
-  assert.match(page, /selectedCustomerProducts\.map\(product => <li key=\{product\.id\}>\{product\.name\}<\/li>\)/u);
-  assert.match(page, /linkedProductIds: selectedCustomerProducts\.flatMap\(product => typeof product\.id === 'string'/u);
-  assert.match(page, /No eligible products are available\. You can still create an unlinked key\./u);
+test('Products remains the scoped catalog generation entry point; API Keys cannot generate', () => {
+  const products = readFileSync(new URL('../../../dashboard/src/app/dashboard/products/page.tsx', import.meta.url), 'utf8');
+  const keys = readFileSync(new URL('../../../dashboard/src/app/dashboard/api-keys/page.tsx', import.meta.url), 'utf8');
+  assert.match(products, /selectedLinkedProducts\(products, appUser, selectedProducts\)/u);
+  assert.match(products, /linkedProductIds: finalLinkedProductIds/u);
+  assert.match(products, /linkedVariantSelections: finalLinkedVariantSelections/u);
+  assert.match(products, /api\/v1\/api-keys\/generate/u);
+  assert.match(keys, /href="\/dashboard\/products"/u);
+  assert.doesNotMatch(keys, /api\/v1\/api-keys\/generate|Generate Your First Key|generateNewKey/u);
 });
 test('Admin linked-product displays resolve Firestore names and Security Center hides only the raw UID subline', () => {
   const component = readFileSync(new URL('../../../admin-panel/src/components/admin/LinkedProducts.tsx', import.meta.url), 'utf8');
@@ -187,14 +188,12 @@ test('Admin linked-product displays resolve Firestore names and Security Center 
   assert.match(security, /k\.userEmail \|\| user\.email/u);
   assert.match(security, /user\.businessName \|\| user\.fullName/u);
 });
-test('generated key modal separates persisted name from one-time secret and copies the secret', () => {
+test('replacement success separates one-time secret from persisted metadata and clears on dismissal', () => {
   const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/api-keys/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /setGeneratedKeyName\(typeof data\.name/u);
-  assert.match(page, /Key Name<\/p>/u);
-  assert.match(page, /API Key — shown once/u);
-  assert.match(page, /navigator\.clipboard\.writeText\(newlyGeneratedKey\)/u);
-  assert.match(page, /setNewlyGeneratedKey\(null\)/u);
-  assert.match(page, /setGeneratedKeyName\(null\)/u);
+  assert.match(page, /setReplacement\(\{ id: data\.id, name: data\.name \|\| selectedKey\.name, secret: data\.key \}\)/u);
+  assert.match(page, /New API Key — shown once/u);
+  assert.match(page, /navigator\.clipboard\.writeText\(replacement\.secret\)/u);
+  assert.match(page, /setReplacement\(null\)/u);
   assert.doesNotMatch(page, /localStorage\.setItem|sessionStorage\.setItem/u);
 });
 test('scheduled Function is UTC, paged, index-light and not entitlement authority', () => {

@@ -20,6 +20,7 @@ router.get('/history', createApiHistoryHandler({
   documentId: FieldPath.documentId(),
 }));
 router.get('/:id', handlers.view);
+router.post('/:id/replace', handlers.replace);
 router.patch('/:id/products', handlers.products);
 router.patch('/:id', handlers.rename);
 // Preserve the existing DELETE-as-revocation contract; account usage is never deleted.

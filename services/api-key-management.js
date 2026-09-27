@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { trialState } from '../functions/subscription-lifecycle.mjs';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
-  usageForToday, validDocumentId, trialUsage, freeMonthlyUsage, upgradeRequiredError,
+  usageForToday, validDocumentId, trialUsage, freeMonthlyUsage, upgradeRequiredError, assertActiveKey,
 } from './api-key-security.js';
 import { authorizedProductIds } from './daas-catalog.js';
 import { normalizeSegment } from './product-contract.js';
@@ -175,6 +175,46 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       });
       await audit(db, 'API Key Generated', actor, issued.id);
       return res.json({ success: true, ...publicKeyMetadata(issued.id, key, context.entitlement, context.usage), key: issued.credential });
+    }),
+    replace: authenticated(async (req, res, actor, db) => {
+      const oldRef = refFor(db, req.params.id);
+      const context = await accountContext(db, actor.uid);
+      if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
+      const issued = issueCredential();
+      const record = await db.runTransaction(async tx => {
+        const entitlement = await currentAccount(tx, db, actor.uid, context);
+        if (entitlement.upgradeRequired) throw upgradeRequiredError();
+        const oldKey = assertOwner(await tx.get(oldRef), actor.uid);
+        assertActiveKey(oldKey, clock());
+        const newRef = db.collection('api_keys').doc(issued.id);
+        if ((await tx.get(newRef)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key replacement.');
+        const now = clock();
+        // Only allowlisted, non-secret fields survive rotation. In particular, a
+        // legacy plaintext `key` and unknown future fields are never copied.
+        const replacement = {
+          ...issued.stored,
+          name: oldKey.name || 'Replacement API key',
+          userId: actor.uid, userEmail: actor.email || '',
+          status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
+          plan: entitlement.plan, requestLimit: entitlement.limit,
+          linkedProductIds: Array.isArray(oldKey.linkedProductIds) ? oldKey.linkedProductIds : [],
+          linkedVariantSelections: oldKey.linkedVariantSelections && typeof oldKey.linkedVariantSelections === 'object'
+            && !Array.isArray(oldKey.linkedVariantSelections) ? oldKey.linkedVariantSelections : {},
+          linkedProducts: Array.isArray(oldKey.linkedProducts)
+            ? oldKey.linkedProducts.filter(value => validDocumentId(value?.id)).map(value => ({ id: value.id })) : [],
+          productAvailability: oldKey.productAvailability || {},
+          ...(oldKey.expiresAt != null ? { expiresAt: oldKey.expiresAt } : {}),
+          replacesKeyId: oldRef.id, rotationReason: 'replacement',
+        };
+        tx.update(oldRef, { status: 'revoked', revokedAt: now,
+          replacedByKeyId: issued.id, rotationReason: 'replacement' });
+        tx.set(newRef, replacement);
+        return replacement;
+      });
+      await audit(db, 'API Key Replaced', actor, oldRef.id);
+      return res.json({ success: true,
+        ...publicKeyMetadata(issued.id, record, context.entitlement, context.usage),
+        key: issued.credential });
     }),
     rename: authenticated(async (req, res, actor, db) => {
       const name = keyName(req.body?.name);

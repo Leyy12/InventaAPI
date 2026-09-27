@@ -22,13 +22,14 @@ test('static wiring: all management routes use tested authenticated handlers', (
   const routes = source('../routes/apikeys.js');
   for (const [verb, path, handler] of [
     ['post', '/generate', 'create'], ['get', '/', 'list'], ['get', '/:id', 'view'],
+    ['post', '/:id/replace', 'replace'],
     ['patch', '/:id/products', 'products'], ['patch', '/:id', 'rename'], ['delete', '/:id', 'revoke'],
   ]) assert.ok(routes.includes(`router.${verb}('${path}', handlers.${handler})`));
   assert.match(routes, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);
-  // R5B adds one separately tested, token-scoped history reader; the six
-  // original management handlers above remain unchanged.
+  // History remains token-scoped; replacement adds a separately tested
+  // authenticated, transactionally guarded management handler.
   assert.match(routes, /router\.get\('\/history', createApiHistoryHandler\(/u);
-  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 7);
+  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 8);
 });
 
 test('static wiring: both DaaS endpoints consume account quota, with paid plan checked in transaction', () => {
@@ -100,7 +101,7 @@ test('first-party secret transport uses headers, not URL construction or secret 
     const page = source(`../dashboard/src/app/dashboard/${path}`);
     assert.doesNotMatch(page, /[?&]apiKey=|console\.(?:log|error|warn)\([^\n]*(?:newlyGeneratedKey|generatedKey|\bapiKey\b)/u);
     assert.doesNotMatch(page, /(?:localStorage|sessionStorage)\.setItem/u);
-    assert.match(page, /x-api-key/u);
+    if (path !== 'api-keys/page.tsx') assert.match(page, /x-api-key/u);
   }
   const server = source('../server.js');
   assert.doesNotMatch(server, /\$\{req\.(?:originalUrl|url)\}/u);
