@@ -11,11 +11,39 @@ test('Customer root is Landing for fresh and returning unauthenticated browsers'
   assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /if \(loading \|\| destination\) return/);
 });
 
-test('Landing Login opens the modal in place and preserves Signup navigation', () => {
+test('Landing Login opens the modal in place and Create Account remains available', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
   assert.match(source, /setShowLoginModal\(true\)/);
-  assert.match(source, /proceed\('\/signup'\)/);
+  assert.match(source, /aria-haspopup="dialog"/);
+  assert.match(read('dashboard/src/components/auth/LoginModal.tsx'), /Create Account/);
   assert.doesNotMatch(source, /proceed\('\/login'\)/);
+});
+
+test('Landing page offers the guided hero, feature, and pricing journey', () => {
+  const source = read('dashboard/src/components/auth/AuthEntry.tsx');
+  const header = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
+  assert.match(header, /Features/);
+  assert.match(header, /How it Works/);
+  assert.match(header, /Pricing/);
+  assert.match(header, /API Docs/);
+  assert.match(header, />\s*Login\s*</);
+  assert.doesNotMatch(header, />\s*Sign Up\s*</);
+  assert.match(source, /href="#features"[\s\S]*?Get Started →/);
+  assert.match(source, /href="#pricing"[\s\S]*?View Plans/);
+  assert.match(source, /href="#how-it-works"[\s\S]*?See How It Works →/);
+  assert.match(source, /href="#pricing"[\s\S]*?View Plans →/);
+  assert.match(source, /flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-5/);
+  assert.match(source, /focus-visible:ring-2/);
+  assert.match(source, /min-h-screen[^"]*overflow-x-hidden/);
+  for (const id of ['features', 'how-it-works', 'pricing']) {
+    assert.match(source, new RegExp('<section id="' + id + '" className="scroll-mt-20'));
+  }
+  const styles = read('dashboard/src/app/globals.css');
+  assert.match(styles, /scroll-behavior:\s*smooth/);
+  assert.match(styles, /prefers-reduced-motion:\s*reduce/);
+  assert.match(styles, /:focus-visible/);
+  assert.match(source, /Grocery, Pharmacy, and Hardware/);
+  assert.doesNotMatch(source, /hardware, grocery, and electronics/);
 });
 
 test('Login modal exposes close, Escape, dialog semantics, and existing form paths', () => {

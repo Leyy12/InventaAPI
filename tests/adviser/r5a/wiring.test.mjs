@@ -13,7 +13,10 @@ test('root always renders Landing and does not consult browser visit state', () 
 test('Landing Login opens a dismissible modal while Signup remains a route', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
   assert.match(source, /onClick=\{\(\) => setShowLoginModal\(true\)\}/);
-  assert.ok(source.includes("proceed('/signup')"));
+  const header = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
+  assert.doesNotMatch(header, />\s*Sign Up\s*</);
+  assert.match(read('dashboard/src/components/auth/LoginModal.tsx'), /Create Account/);
+  assert.match(read('dashboard/src/app/signup/page.tsx'), /Create Account/);
   assert.ok(source.includes('if (!loginOnly) { setPendingPlan(plan); setShowLoginModal(true); return; }'));
   assert.doesNotMatch(source, /completeLanding|browserStorage/);
 });

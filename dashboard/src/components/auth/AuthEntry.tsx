@@ -46,10 +46,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
     if (destination && destination !== 'admin-app') router.replace(destination);
   }, [destination, router]);
 
-  const proceed = (target: string) => {
-    router.push(target);
-  };
-
   // Check for error query params from admin panel redirects.
   // Each handler runs ONCE, then the consumed params are stripped from the URL
   // so a reload/back-navigation does not re-open the modals or toasts.
@@ -304,8 +300,14 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
 
             </div>
             <div className="flex items-center gap-4 text-sm">
-              <button onClick={() => setShowLoginModal(true)} className="hover:text-white transition-colors">Login</button>
-              <button onClick={() => proceed('/signup')} className="hover:text-white transition-colors">Sign Up</button>
+              <button
+                type="button"
+                onClick={() => setShowLoginModal(true)}
+                aria-haspopup="dialog"
+                className="inline-flex items-center rounded-full border border-indigo-400/35 bg-indigo-500/10 px-4 py-2 text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
+              >
+                Login
+              </button>
             </div>
           </div>
         </div>
@@ -331,11 +333,26 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
           <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
             Stop building your product catalog from scratch. Consume our standardized, highly-available REST API to power your Point of Sale, Inventory, or E-Commerce applications instantly.
           </p>
+
+          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-5">
+            <a
+              href="#features"
+              className="inline-flex min-h-12 items-center justify-center rounded-full bg-indigo-600 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/15 transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
+            >
+              Get Started →
+            </a>
+            <a
+              href="#pricing"
+              className="inline-flex min-h-11 items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
+            >
+              View Plans
+            </a>
+          </div>
         </div>
       </section>
 
       {/* Features Grid */}
-      <section id="features" className="py-24 border-t border-white/5 bg-slate-900/50">
+      <section id="features" className="scroll-mt-20 py-24 border-t border-white/5 bg-slate-900/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Enterprise Features, SME Scale</h2>
@@ -344,7 +361,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
 
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { icon: Database, title: "Centralized Catalog", desc: "Access thousands of pre-validated products across hardware, grocery, and electronics." },
+              { icon: Database, title: "Centralized Catalog", desc: "Access thousands of pre-validated products across Grocery, Pharmacy, and Hardware." },
               { icon: Zap, title: "REST API Access", desc: "Lightning-fast JSON endpoints with predictable structures and robust filtering." },
               { icon: ShieldCheck, title: "Secure & Reliable", desc: "JWT authentication, rate limiting, and enterprise-grade security built-in." },
               { icon: Server, title: "Data-as-a-Service", desc: "We maintain the data, handle variations, and host images. You just consume it." },
@@ -360,11 +377,20 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
               </div>
             ))}
           </div>
+
+          <div className="mt-12 text-center">
+            <a
+              href="#how-it-works"
+              className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/5 px-5 py-2.5 text-sm font-medium text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
+            >
+              See How It Works →
+            </a>
+          </div>
         </div>
       </section>
 
       {/* How It Works */}
-      <section id="how-it-works" className="py-24 relative overflow-hidden">
+      <section id="how-it-works" className="scroll-mt-20 py-24 relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">How InventaAPI Works</h2>
@@ -392,11 +418,20 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
               <p className="text-slate-400 text-sm">Render the rich product data seamlessly into your POS, E-Commerce, or Inventory dashboard.</p>
             </div>
           </div>
+
+          <div className="mt-12 text-center">
+            <a
+              href="#pricing"
+              className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/5 px-5 py-2.5 text-sm font-medium text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
+            >
+              View Plans →
+            </a>
+          </div>
         </div>
       </section>
 
       {/* Pricing / Subscription Section */}
-      <section id="pricing" className="py-24 border-t border-white/5 bg-slate-900/50">
+      <section id="pricing" className="scroll-mt-20 py-24 border-t border-white/5 bg-slate-900/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple, transparent pricing.<br />Scale as you grow.</h2>
