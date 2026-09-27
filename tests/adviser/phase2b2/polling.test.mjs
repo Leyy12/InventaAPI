@@ -88,3 +88,39 @@ test('polling: unresolved I/O cannot remove the future retry', async () => {
   const h = harness(); h.poller.start(); await h.advance(0); await h.advance(30000);
   assert.equal(h.pending.length, 2); assert.equal(h.timers.size, 1); h.poller.stop();
 });
+test('routine refresh retains verified Free and UPGRADE_REQUIRED without a null flash', async () => {
+  for (const state of [free, { ...free, plan: 'Upgrade Required', subscription_status: 'upgrade_required' }]) {
+    const h = harness(); h.poller.start(); await h.advance(0);
+    h.pending[0].resolve(state); await flush();
+    const writes = h.writes.length;
+    await h.advance(30000);
+    assert.equal(h.state, state);
+    assert.equal(h.writes.length, writes);
+    h.pending[1].resolve({ ...state }); await flush();
+    assert.equal(h.writes.slice(1).includes(null), false);
+    h.poller.stop();
+  }
+});
+test('active Trial and Pro stay visible during refresh, then clear at the server-derived expiry', async () => {
+  for (const state of [{ ...pro, activePro: false, activeTrial: true, secondsRemaining: 31 }, { ...pro, secondsRemaining: 31 }]) {
+    const h = harness(); h.poller.start(); await h.advance(0); h.pending[0].resolve(state); await flush();
+    await h.advance(30000); assert.equal(h.state, state);
+    await h.advance(1000); assert.equal(h.state, null);
+    assert.equal(h.pending.length, 3);
+    h.poller.stop();
+  }
+});
+test('failed latest re-verification clears a previously verified entitlement', async () => {
+  const h = harness(); h.poller.start(); await h.advance(0); h.pending[0].resolve(free); await flush();
+  await h.advance(30000); assert.equal(h.state, free);
+  h.pending[1].reject(Error('verification unavailable')); await flush();
+  assert.equal(h.state, null); assert.equal(h.timers.size, 1);
+  h.poller.stop();
+});
+test('a stale previous-session result cannot publish after stop and restart', async () => {
+  const h = harness(); h.poller.start(); await h.advance(0);
+  h.poller.stop(); h.poller.start(); await h.advance(0);
+  h.pending[1].resolve(free); await flush();
+  h.pending[0].resolve(pro); await flush();
+  assert.equal(h.state, free); h.poller.stop();
+});

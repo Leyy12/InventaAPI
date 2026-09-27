@@ -8,11 +8,12 @@ import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import SubscriptionExpiryBanner from "@/components/shared/SubscriptionExpiryBanner";
 import SessionLoadingScreen, { SessionRecoveryState } from "@/components/auth/SessionLoadingScreen";
+import { customerProtectedReady } from '@/lib/customer-readiness';
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, appUser, loading, logout, authStatus, logoutError, logoutBusy, retryVerification } = useAuth();
+  const { user, appUser, entitlement, loading, logout, authStatus, logoutError, logoutBusy, retryVerification } = useAuth();
   const role = user ? profileRole(appUser) : null;
   const isPublicRoute = customerPublicPath(pathname);
   const rejected = authStatus === 'denied' || authStatus === 'invalid';
@@ -44,8 +45,9 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     <button disabled={logoutBusy} onClick={() => { void logout(); }}>Sign out</button>
     {logoutNotice}
   </div>;
-  if (!isPublicRoute && (loading || role !== 'customer')) return <SessionLoadingScreen
-    key={loading ? 'workspace' : 'public'} variant={loading ? 'workspace' : 'public'} />;
+  if (!isPublicRoute && !customerProtectedReady({ loading, authStatus, role, entitlement })) return <SessionLoadingScreen
+    key={authStatus === 'verified' && role === 'customer' ? 'workspace' : 'public'}
+    variant={authStatus === 'verified' && role === 'customer' ? 'workspace' : 'public'} />;
 
   if (isPublicRoute) {
     return (

@@ -82,7 +82,7 @@ test('actual entitlement poller drives one quota request per completed verificat
   const poller = createEntitlementPoller({ schedule: c.schedule, cancel: c.cancel, now: c.now,
     read: () => new Promise(resolve => verifications.push(resolve)), onState: state => h.verify('a', state) });
   poller.start(); await c.advance(0); verifications[0](pro); await flush(); h.reads[0].resolve(response(5000)); await flush();
-  await c.advance(30000); assert.equal(h.summary, null); assert.equal(h.reads.length, 1);
+  await c.advance(30000); assert.equal(h.summary.limit, 5000); assert.equal(h.reads.length, 1);
   verifications[1]({ ...pro, serverTime: '2026-09-20T10:00:30Z' }); await flush(); assert.equal(h.reads.length, 2);
   poller.stop(); h.verify(null, null); assert.equal(c.timers.size, 0); assert.equal(h.c.timers.size, 0);
 });

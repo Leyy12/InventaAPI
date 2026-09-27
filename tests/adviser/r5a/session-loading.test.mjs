@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createAuthSession, authScreen, navigationDecision, profileRole } from '../../../services/auth-navigation.ts';
+import { customerProtectedReady } from '../../../dashboard/src/lib/customer-readiness.ts';
 
 const read = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
 const entry = read('dashboard/src/components/auth/AuthEntry.tsx');
@@ -13,7 +14,8 @@ const admin = read('admin-panel/src/components/layout/AdminLayoutWrapper.tsx');
 
 test('public root and Login restoration use the neutral branded state, never raw checking text', () => {
   for (const source of [entry, root, login, layout]) assert.doesNotMatch(source, /Checking session\.\.\.|Checking session…/);
-  assert.match(entry, /if \(loading \|\| destination\) return <SessionLoadingScreen variant="public"/);
+  assert.match(entry, /if \(loading \|\| destination\) return <SessionLoadingScreen/);
+  assert.match(entry, /authStatus === 'verified' && user && profileRole\(appUser\) === 'customer' \? 'workspace' : 'public'/);
   assert.match(root, /Suspense fallback=\{<SessionLoadingScreen variant="public"/);
   assert.match(login, /Suspense fallback=\{<SessionLoadingScreen variant="public"/);
   assert.match(loading, /Preparing InventaAPI…/);
@@ -21,14 +23,32 @@ test('public root and Login restoration use the neutral branded state, never raw
 });
 
 test('protected pending routes render only a data-free workspace shell before children', () => {
-  const guard = layout.indexOf("if (!isPublicRoute && (loading || role !== 'customer'))");
+  const guard = layout.indexOf('if (!isPublicRoute && !customerProtectedReady({ loading, authStatus, role, entitlement }))');
   assert.ok(guard > 0 && guard < layout.indexOf('<Sidebar />') && guard < layout.indexOf('{children}'));
-  assert.match(layout, /variant=\{loading \? 'workspace' : 'public'\}/);
+  assert.match(layout, /variant=\{authStatus === 'verified' && role === 'customer' \? 'workspace' : 'public'\}/);
   assert.match(loading, /variant === "public"/);
   assert.match(loading, /Preparing your workspace…/);
   assert.match(loading, /Your dashboard will appear when it is ready\./);
   assert.doesNotMatch(loading, /\b(useAuth|appUser|entitlement|apiKey|products|quota|email|children)\b/i);
   assert.doesNotMatch(loading, /\b(fetch|localStorage|sessionStorage)\s*\(/);
+});
+
+test('protected Customer content waits for authoritative entitlement, including on hard refresh', () => {
+  const ready = entitlement => customerProtectedReady({ loading: false, authStatus: 'verified', role: 'customer', entitlement });
+  assert.equal(ready(null), false);
+  assert.equal(customerProtectedReady({ loading: true, authStatus: 'initializing', role: null, entitlement: null }), false);
+  assert.equal(customerProtectedReady({ loading: false, authStatus: 'unverified', role: 'customer', entitlement: { plan: 'Pro' } }), false);
+  for (const entitlement of [
+    { plan: 'Free', subscription_status: 'free' },
+    { plan: 'Trial', subscription_status: 'trialing' },
+    { plan: 'Pro', subscription_status: 'active' },
+    { plan: 'Free', subscription_status: 'upgrade_required' },
+  ]) assert.equal(ready(entitlement), true, entitlement.subscription_status);
+  assert.equal(customerProtectedReady({ loading: false, authStatus: 'unauthenticated', role: null, entitlement: { plan: 'Pro' } }), false);
+  assert.equal(customerProtectedReady({ loading: false, authStatus: 'verified', role: 'admin', entitlement: { plan: 'Pro' } }), false);
+  assert.ok(layout.indexOf('customerProtectedReady') < layout.indexOf('<Sidebar />'));
+  assert.ok(layout.indexOf('customerProtectedReady') < layout.indexOf('{children}'));
+  assert.match(layout, /entitlement \}\)\) return <SessionLoadingScreen/);
 });
 
 test('workspace details wait 240 ms; status, decorative and reduced-motion semantics remain accessible', () => {

@@ -28,7 +28,7 @@ test('explicit Login route exists; signup no longer redirects to Landing', () =>
 });
 test('Customer guard hides protected children before auth/role verification', () => {
   const source = read('dashboard/src/components/layout/LayoutWrapper.tsx');
-  assert.ok(source.indexOf("if (!isPublicRoute && (loading || role !== 'customer'))") < source.indexOf('<Sidebar'));
+  assert.ok(source.indexOf('if (!isPublicRoute && !customerProtectedReady({ loading, authStatus, role, entitlement }))') < source.indexOf('<Sidebar'));
   assert.match(source, /navigationDecision/); assert.doesNotMatch(source, /landingSeen|completeLanding/);
 });
 test('Customer session never trusts browser profiles or auto-recreates missing accounts', () => {

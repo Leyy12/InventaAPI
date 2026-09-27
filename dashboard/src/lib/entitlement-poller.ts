@@ -20,6 +20,14 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
   let running = false;
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let current: T | null = null;
+  let activeUntil: number | null = null;
+
+  function clearState() {
+    if (current !== null) onState(null);
+    current = null;
+    activeUntil = null;
+  }
 
   function clearTimer() {
     if (timer !== undefined) cancel(timer);
@@ -36,21 +44,35 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
     if (!running) return null;
     const request = ++generation;
     const requestedAt = now();
+    // A verified active state is usable only until its server-derived deadline.
+    // Routine reads must not blank a still-valid entitlement in the meantime.
+    if (activeUntil !== null && requestedAt >= activeUntil) clearState();
     // Install the next attempt BEFORE awaiting I/O. Even a superseded, failed,
     // or never-resolving request cannot strand the polling chain.
-    scheduleNext(30000);
-    onState(null);
+    scheduleNext(activeUntil === null ? 30000 : Math.min(30000, Math.max(0, activeUntil - requestedAt)));
     try {
       const state = await read();
       if (!running || request !== generation) return null;
-      onState(state);
       const remaining = state.secondsRemaining * 1000 - (now() - requestedAt);
-      scheduleNext((state.activePro || state.activeTrial) && Number.isFinite(remaining)
-        ? Math.min(30000, Math.max(100, remaining)) : 30000);
+      if (state.activePro || state.activeTrial) {
+        // Invalid or already-expired active claims cannot reopen protected UI.
+        if (!Number.isFinite(remaining) || remaining <= 0) {
+          clearState();
+          scheduleNext(30000);
+          return null;
+        }
+        activeUntil = now() + remaining;
+      } else {
+        activeUntil = null;
+      }
+      current = state;
+      onState(state);
+      scheduleNext(activeUntil === null ? 30000 : Math.min(30000, Math.max(0, activeUntil - now())));
       return state;
     } catch {
-      // The latest failed verification remains null; a stale failure cannot
-      // clear newer data. The already-installed timer continues independently.
+      // A failed latest verification is not permission to retain an old plan.
+      // Superseded failures cannot clear a newer successful response.
+      if (running && request === generation) clearState();
       return null;
     }
   }
@@ -59,6 +81,9 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
     start() {
       if (running) return;
       running = true;
+      current = null;
+      activeUntil = null;
+      onState(null);
       scheduleNext(0);
     },
     stop() {

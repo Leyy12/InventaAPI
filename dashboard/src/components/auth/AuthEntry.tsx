@@ -16,7 +16,7 @@ import { consumePostLogoutLogin, navigationDecision, profileRole } from '../../.
 const ACTIVE_PAID_PLANS = ["Pro", "Enterprise", "Professional", "Unlimited"];
 
 export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }) {
-  const { user, appUser, loading, entitlement } = useAuth();
+  const { user, appUser, loading, authStatus, entitlement } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -257,7 +257,8 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
 
   // Do not flash marketing content while Firebase is restoring an authenticated
   // session; the single navigation decision above resolves first.
-  if (loading || destination) return <SessionLoadingScreen variant="public" />;
+  if (loading || destination) return <SessionLoadingScreen
+    variant={authStatus === 'verified' && user && profileRole(appUser) === 'customer' ? 'workspace' : 'public'} />;
 
   return (
     <div className="min-h-screen bg-[#020617] text-white selection:bg-indigo-500/30 overflow-x-hidden">
