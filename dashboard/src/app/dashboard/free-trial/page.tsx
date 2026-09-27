@@ -11,12 +11,12 @@ type Trial = { eligible: boolean; active: boolean; exhausted: boolean; expired: 
   status: string; startedAt: string | null; expiresAt: string | null;
   serverTime: string; secondsRemaining: number; allowance: number; used: number; remaining: number };
 
-export default function FreeTrialPage() {
+export default function FreeTrialPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
-  return user ? <TrialPanel key={user.uid} user={user} /> : null;
+  return user ? <TrialPanel key={user.uid} user={user} embedded={embedded} /> : null;
 }
 
-function TrialPanel({ user }: { user: User }) {
+function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
   const { logout } = useAuth();
   const [result, setResult] = useState<{ uid: string; trial: Trial } | null>(null);
   const [error, setError] = useState('');
@@ -90,7 +90,7 @@ function TrialPanel({ user }: { user: User }) {
   }
 
   return <div className="max-w-3xl mx-auto space-y-6">
-    <h1 className="text-3xl font-bold text-white flex items-center gap-2"><Zap className="text-amber-400" />7-Day Pro Trial</h1>
+    {!embedded && <h1 className="text-3xl font-bold text-white flex items-center gap-2"><Zap className="text-amber-400" />7-Day Pro Trial</h1>}
     <p className="text-slate-400">One trial per Free account. Pro API features, 500 total requests shared by every key, until seven days or 500 requests, whichever comes first. Your owned business segment stays the same.</p>
     {error && <p role="alert" className="text-rose-300">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry status</button></p>}
     {!trial ? <p role="status">Checking trial eligibility and usage…</p> :
@@ -108,7 +108,7 @@ function TrialPanel({ user }: { user: User }) {
         {trial.upgradeRequired && <>
           <p>{trial.endReason === 'exhausted' ? 'Trial quota exhausted' : 'Seven-day Trial expired'}: {trial.used} / 500 total requests used. Protected API access is paused until you upgrade to Pro. Existing key records remain available and can work again after a valid paid upgrade.</p>
           <p>Trial already used. Your account and business segment remain available; this Trial cannot be activated again.</p>
-          <Link className="inline-flex rounded-lg bg-indigo-600 px-5 py-3 text-white" href="/dashboard/settings#subscription">Upgrade to Pro</Link>
+          <Link className="inline-flex rounded-lg bg-indigo-600 px-5 py-3 text-white" href="/dashboard/plan-billing#upgrade">View upgrade options</Link>
         </>}
         {trial.status === 'paid' && trial.hasUsedFreeTrial && <p>Trial history: {trial.used} / 500 total requests used. Paid entitlement currently controls API access.</p>}
         {trial.eligible && <button disabled={busy} onClick={activate} className="rounded-lg bg-indigo-600 px-5 py-3 disabled:opacity-50">{busy ? 'Activating…' : 'Activate 7-Day Trial'}</button>}

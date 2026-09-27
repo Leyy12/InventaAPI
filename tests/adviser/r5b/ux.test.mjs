@@ -68,17 +68,21 @@ test('unlimited remains explicit null, not Infinity',()=>{
 for(const invalid of [null,undefined,{...usage,scope:'key'},{...usage,used:NaN},{...usage,limit:Infinity},{...usage,window:'2026-09-20'}]) {
   test('unavailable quota does not become zero: '+JSON.stringify(invalid),()=>assert.equal(quotaSummary(invalid,now),null));
 }
-test('R5C generation frequency does not change shared request usage across existing keys',async()=>{
+test('Free issuance denial does not change shared request usage across existing keys',async()=>{
   const db=memoryFirestore({'users/owner':{role:'Developer',plan:'Free',apiRequestLimit:50,selectedSegment:'Grocery',businessSegment:'Grocery'},
-    'account_free_monthly_usage/owner':{window:'2026-09',used:17}});
+    'account_free_monthly_usage/owner':{window:'2026-09',used:17},
+    'api_keys/old-a':{userId:'owner',key:'daas_old_a',status:'active'},
+    'api_keys/old-b':{userId:'owner',key:'daas_old_b',status:'active'}});
   let generationTime = new Date('2026-09-20T12:00:00Z');
   const handlers=createApiKeyHandlers({getDb:()=>db,clock:()=>generationTime,verifyIdToken:async()=>({uid:'owner'})});
   const first=await invoke(handlers.create,{body:{keyName:'First'}});
   generationTime = now;
   // Crossing midnight for generation must not reset the existing monthly balance.
   const second=await invoke(handlers.create,{body:{keyName:'Second'}});
-  assert.equal(first.statusCode,200);assert.equal(second.statusCode,200);assert.equal(db.read('account_free_monthly_usage/owner').used,17);
-  for(const key of [first.body,second.body]) await consumeAccountQuota(db,{keyId:key.id,userId:'owner',credential:key.key,clock:()=>now});
+  assert.equal(first.statusCode,403);assert.equal(first.body.error,'TRIAL_REQUIRED');
+  assert.equal(second.statusCode,403);assert.equal(second.body.error,'TRIAL_REQUIRED');
+  assert.equal(db.read('account_free_monthly_usage/owner').used,17);
+  for(const [keyId,credential] of [['old-a','daas_old_a'],['old-b','daas_old_b']]) await consumeAccountQuota(db,{keyId,userId:'owner',credential,clock:()=>now});
   assert.equal(db.read('account_free_monthly_usage/owner').used,19);
   const metadata=(await invoke(handlers.list)).body;
   assert.equal(metadata.usage.scope,'account');assert.equal(metadata.usage.used,19);assert.equal(metadata.keys.length,2);

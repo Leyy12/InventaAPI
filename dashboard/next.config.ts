@@ -16,5 +16,8 @@ export default function nextConfig(phase: string): NextConfig {
     async rewrites() {
       return releaseRewrites;
     },
+    async redirects() {
+      return [{ source: '/dashboard/free-trial', destination: '/dashboard/plan-billing', permanent: false }];
+    },
   };
 }

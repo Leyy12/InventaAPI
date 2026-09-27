@@ -244,7 +244,9 @@ test('UTC midnight, new session/device and key revocation never reset/refund tri
 });
 test('daily key-generation marker survives activation; later keys share quota and owned segment', async () => {
   const f = fixture(), options = { body: { keyName: 'Synthetic', linkedProductIds: ['tool'] } };
-  assert.equal((await invoke(f.keys.create, options)).statusCode, 200); await f.activate(); await f.consume();
+  assert.equal((await invoke(f.keys.create, options)).body.error, 'TRIAL_REQUIRED');
+  await f.activate(); await f.consume();
+  assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
   assert.equal((await invoke(f.keys.create, options)).statusCode, 409);
   f.time('2026-09-24T00:00:00.000Z'); assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
   assert.equal(f.db.read('account_trial_usage/owner').used, 1);
@@ -508,5 +510,5 @@ test('Settings uses shared segment policy; quota copy distinguishes monthly, dai
   assert.match(settings, /activeCustomerSegment\(appUser\)/);
   assert.match(read('dashboard/src/config/plans.ts'), /50 requests\/month/);
   assert.match(read('dashboard/src/components/reports/CustomerUsageSummary.tsx'), /Monthly account limit/);
-  assert.match(read('dashboard/src/app/dashboard/free-trial/page.tsx'), /Upgrade to Pro/);
+  assert.match(read('dashboard/src/app/dashboard/plan-billing/page.tsx'), /Get Pro/);
 });

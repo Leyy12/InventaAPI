@@ -3,13 +3,10 @@
 import { useAuth } from "@/lib/firebase/auth-context";
 import { Settings2, Building2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from 'react';
-import SubscriptionModal from '@/components/subscription/SubscriptionModal';
 import { restrictedSegmentAccount, activeCustomerSegment } from '../../../../../services/customer-segment.js';
 
 export default function SettingsPage() {
   const { appUser, loading, entitlement } = useAuth();
-  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
 
   if (loading || !entitlement) {
     return (
@@ -33,10 +30,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="glass-card rounded-xl p-6 md:p-8">
-        {entitlement.canPurchasePro && <button id="subscription" onClick={() => setSubscriptionOpen(true)}
-          className="mb-6 text-indigo-400 font-semibold">{entitlement.activePro ? 'Renew Pro — 30 more days'
-            : entitlement.subscription_status === 'upgrade_required' ? 'Upgrade to Pro' : 'Subscribe to Pro'}</button>}
-        <SubscriptionModal isOpen={subscriptionOpen} onClose={() => setSubscriptionOpen(false)} />
+        <p id="subscription" className="mb-8 text-sm text-slate-300">Manage your subscription in <Link href="/dashboard/plan-billing" className="font-semibold text-indigo-300">Plan & Billing</Link>.</p>
         <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-indigo-400" />
           Business Configuration

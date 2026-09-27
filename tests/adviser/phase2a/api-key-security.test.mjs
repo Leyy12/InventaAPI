@@ -11,6 +11,11 @@ const NOW = new Date('2026-09-17T12:00:00.000Z');
 const clock = () => new Date(NOW);
 const legacy = { key: 'daas_old_credential', name: 'Existing integration', userId: 'owner', status: 'active', linkedProductIds: [] };
 const account = { plan: 'Free', apiRequestLimit: 3, selectedSegment: 'Grocery', businessSegment: 'Grocery' };
+const trialAccount = { ...account, hasUsedFreeTrial: true, trialVersion: 1,
+  trialStartedAt: NOW.toISOString(), trialExpiresAt: '2026-09-24T12:00:00.000Z' };
+const paidAccount = { ...account, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 'active',
+  subscriptionExpiresAt: '2026-10-17T12:00:00.000Z' };
+const trialCounter = { used: 0, startedAt: NOW.toISOString(), expiresAt: '2026-09-24T12:00:00.000Z' };
 const product = { name: 'Rice', segment: 'Grocery', category: 'Grains', status: 'Active' };
 function setup(extra = {}, metadata = {}) {
   const db = memoryFirestore({ 'users/owner': account, 'users/other': account,
@@ -78,8 +83,8 @@ test('new credentials use the secure versioned format and independent random val
   }
 });
 
-test('create uses verified identity and account entitlement; only creation returns the raw secret', async () => {
-  const { db, handlers } = setup();
+test('eligible creation uses verified identity and account entitlement; only creation returns the raw secret', async () => {
+  const { db, handlers } = setup({ 'users/owner': trialAccount, 'account_trial_usage/owner': trialCounter });
   const created = await invoke(handlers.create, { body: { keyName: 'New integration', userId: 'other',
     userEmail: 'forged@example.test', plan: 'Enterprise', requestLimit: 99999, status: 'revoked',
     key: 'daas_attacker_plaintext', credentialVersion: 1, credentialHash: 'attacker-hash' } });
@@ -87,8 +92,8 @@ test('create uses verified identity and account entitlement; only creation retur
   const stored = db.read(`api_keys/${created.body.id}`);
   assert.equal(stored.userId, 'owner');
   assert.equal(stored.userEmail, 'owner@example.test');
-  assert.equal(stored.plan, 'Free');
-  assert.equal(stored.requestLimit, 3);
+  assert.equal(stored.plan, 'Pro Trial');
+  assert.equal(stored.requestLimit, 500);
   assert.equal(stored.status, 'active');
   assert.equal(JSON.stringify(stored).includes(created.body.key), false);
   assert.equal(Object.hasOwn(stored, 'key'), false);
@@ -181,7 +186,8 @@ test('product-scope replacement removes stale legacy authorization without repla
 });
 
 test('scope validates identifiers and enforces the server account segment on creation and update', async () => {
-  const { handlers } = setup({ 'products/hammer': { ...product, segment: 'Hardware' } });
+  const { handlers } = setup({ 'products/hammer': { ...product, segment: 'Hardware' },
+    'users/owner': trialAccount, 'account_trial_usage/owner': trialCounter });
   for (const operation of ['create', 'products']) {
     const base = { keyName: 'Scoped key' };
     assert.equal((await invoke(handlers[operation], { body: { ...base, linkedProductIds: ['hammer'] } })).statusCode, 403);
@@ -191,18 +197,18 @@ test('scope validates identifiers and enforces the server account segment on cre
   }
 });
 
-test('all keys consume one allowance; creating, revoking, and replacing keys never resets usage', async () => {
+test('legacy Free keys consume one allowance; denied creation and revocation never reset usage', async () => {
   const { db, handlers } = setup({ 'api_keys/key-b': { ...legacy, key: 'daas_second_credential', requestsUsed: 0 } });
   await activate(db);
   assert.equal((await consume(db)).usage.remaining, 2);
   assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 1);
   const created = await invoke(handlers.create, { body: { keyName: 'Key C' } });
-  assert.equal(created.body.requestsUsed, 2);
+  assert.equal(created.statusCode, 403); assert.equal(created.body.error, 'TRIAL_REQUIRED');
   assert.equal((await invoke(handlers.revoke)).statusCode, 200);
-  assert.equal((await consume(db, created.body.id, created.body.key)).usage.remaining, 0);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 0);
   const replacement = await invoke(handlers.create, { body: { keyName: 'Replacement key' } });
-  assert.equal(replacement.body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
-  await assert.rejects(consume(db, created.body.id, created.body.key), error => error.status === 429);
+  assert.equal(replacement.body.error, 'TRIAL_REQUIRED');
+  await assert.rejects(consume(db, 'key-b', 'daas_second_credential'), error => error.status === 429);
   await db.collection('api_keys').doc('key-b').delete();
   assert.equal(db.read('account_free_monthly_usage/owner').used, 3);
 });
@@ -293,7 +299,7 @@ test('different accounts have separate counters while secure and legacy keys sha
 
 test('secure credentials are revalidated after revocation and hash changes, not only at initial lookup', async () => {
   for (const change of [{ status: 'revoked' }, { credentialHash: '0'.repeat(64) }]) {
-    const { db, handlers } = setup();
+    const { db, handlers } = setup({ 'users/owner': paidAccount });
     const created = await invoke(handlers.create, { body: { keyName: 'Secure key' } });
     await authenticateCredential(db, created.body.key, NOW);
     await db.collection('api_keys').doc(created.body.id).update(change);

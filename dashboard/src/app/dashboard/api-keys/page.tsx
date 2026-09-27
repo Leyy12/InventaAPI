@@ -10,6 +10,7 @@ import CustomerUsageSummary from '@/components/reports/CustomerUsageSummary';
 import RequestHistory from '@/components/api/RequestHistory';
 import { apiKeyRequest } from "@/lib/api-keys";
 import { GENERATION_POLICY, REVOCATION_WARNING, generationErrorMessage } from '@/lib/api-key-generation';
+import { useTrialOnboarding } from '@/lib/use-trial-onboarding';
 import { scopeCustomerProducts } from '../../../../../services/customer-segment.js';
 import type { Product } from '@/lib/firebase/products-service';
 
@@ -30,12 +31,15 @@ interface ApiKey {
 export default function ApiKeysPage() {
   const { user, appUser, entitlement } = useAuth();
   const entitlementStatus = entitlement?.subscription_status ?? null;
+  const trialRequired = entitlement?.plan === 'Free' && entitlementStatus === 'inactive';
+  const trialOnboarding = useTrialOnboarding(user, trialRequired);
   return user ? <AccountKeysSession key={user.uid} user={user} account={appUser}
-    entitlementStatus={entitlementStatus} paidAccess={entitlement?.activePro === true || ['Enterprise', 'Unlimited'].includes(entitlement?.plan ?? '')} /> : null;
+    entitlementStatus={entitlementStatus} trialRequired={trialRequired} trialEligible={trialOnboarding?.eligible === true}
+    paidAccess={entitlement?.activePro === true || ['Enterprise', 'Unlimited'].includes(entitlement?.plan ?? '')} /> : null;
 }
 type AccountKeysProps = { user: User;
   account: { uid?: string; plan?: unknown; businessSegment?: unknown; selectedSegment?: unknown } | null;
-  entitlementStatus: string | null; paidAccess: boolean };
+  entitlementStatus: string | null; paidAccess: boolean; trialRequired: boolean; trialEligible: boolean };
 
 // Keep the one-time success view within the account/route lifetime, not the
 // entitlement-keyed list lifetime. A refreshed entitlement may remount the
@@ -53,7 +57,7 @@ function AccountKeysSession(props: AccountKeysProps) {
     setGeneratedProductNames={setGeneratedProductNames} />;
 }
 
-function AccountKeys({ user, account, entitlementStatus, paidAccess, showGenerateModal, setShowGenerateModal,
+function AccountKeys({ user, account, entitlementStatus, paidAccess, trialRequired, trialEligible, showGenerateModal, setShowGenerateModal,
   newlyGeneratedKey, setNewlyGeneratedKey, generatedKeyName, setGeneratedKeyName,
   generatedProductNames, setGeneratedProductNames }: AccountKeysProps & {
   showGenerateModal: boolean; setShowGenerateModal: (value: boolean) => void;
@@ -69,9 +73,11 @@ function AccountKeys({ user, account, entitlementStatus, paidAccess, showGenerat
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [productsLoading, setProductsLoading] = useState(false);
   const [serverPaywall, setServerPaywall] = useState(false);
+  const [serverTrialRequired, setServerTrialRequired] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState<{ [key: string]: boolean }>({});
   const upgradeRequired = entitlementStatus === 'upgrade_required' || (serverPaywall && !paidAccess);
-  const canGenerate = entitlementStatus !== null && !upgradeRequired;
+  const generationLocked = trialRequired || serverTrialRequired;
+  const canGenerate = entitlementStatus !== null && !upgradeRequired && !generationLocked;
   const availableProducts = scopeCustomerProducts(loadedProducts, account);
   const selectedCustomerProducts = availableProducts.filter(product =>
     typeof product.id === 'string' && selectedProductIds.has(product.id));
@@ -146,6 +152,10 @@ function AccountKeys({ user, account, entitlementStatus, paidAccess, showGenerat
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.error === 'TRIAL_REQUIRED') {
+          setServerTrialRequired(true);
+          setShowGenerateModal(false);
+        }
         if (data.error === 'UPGRADE_REQUIRED') {
           setServerPaywall(true);
           setShowGenerateModal(false);
@@ -283,13 +293,20 @@ DAAS_API_KEY=${keyStr}
           <p className="text-slate-400">Manage your authentication credentials for API access</p>
           <p className="text-sm text-slate-400 mt-2">{GENERATION_POLICY}</p>
         </div>
-        <button onClick={openGenerateModal} disabled={!canGenerate}
+        {!generationLocked && <button onClick={openGenerateModal} disabled={!canGenerate}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">Generate API key</button>
+        }
       </div>
 
+      {generationLocked && <section role="status" className="rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-5 space-y-2">
+        <h2 className="text-lg font-semibold text-white">API Access Locked</h2>
+        <p className="text-sm text-slate-300">Start your 7-Day Pro Trial to generate a new API key and begin integrating InventaAPI. Existing keys remain visible and manageable.</p>
+        {trialEligible ? <Link href="/dashboard/plan-billing" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Start 7-Day Pro Trial</Link>
+          : <Link href="/dashboard/plan-billing" className="font-semibold text-cyan-300">Check trial eligibility in Plan & Billing</Link>}
+      </section>}
       {upgradeRequired && <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-5 text-amber-100">
         Free Trial Ended. Existing keys remain visible and manageable, but new keys and protected API access require paid Pro.{' '}
-        <Link href="/dashboard/settings#subscription" className="font-semibold text-cyan-300">Upgrade to Pro</Link>
+        <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro</Link>
       </div>}
       {!entitlementStatus && <p role="status" className="text-slate-400">Verifying account entitlement before key generation…</p>}
 
@@ -329,7 +346,7 @@ DAAS_API_KEY=${keyStr}
       </div>
 
       <CustomerUsageSummary />
-      <p className="text-sm text-slate-400">The account allowance is shared across keys: 50/month for Free before Trial (or a lower account limit), daily for paid plans, 500 total across an active trial. Once Trial ends, protected API access requires paid Pro. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
+      <p className="text-sm text-slate-400">Existing Free keys retain the 50/month account allowance (or a lower account limit), but new keys require Trial activation. Active Trial keys share 500 total requests; paid plans have their own account allowance. Once Trial ends, protected API access requires paid Pro. Creating a key does not reset usage. Current authorized product updates appear on subsequent requests through the same valid key; no regeneration is required.</p>
       <RequestHistory />
 
       {/* API Keys List */}
@@ -361,14 +378,14 @@ DAAS_API_KEY=${keyStr}
               <p className="text-sm text-slate-400 mb-6 max-w-md mx-auto">
                 Generate your first API key to start making authenticated requests to our platform
               </p>
-              <button
+              {!generationLocked && <button
                 onClick={openGenerateModal}
                 disabled={!canGenerate}
                 className="px-6 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-all inline-flex items-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
               >
                 <Plus className="w-5 h-5" />
                 Generate Your First Key
-              </button>
+              </button>}
             </div>
           ) : (
             <div className="space-y-4">
@@ -486,7 +503,7 @@ DAAS_API_KEY=${keyStr}
       </div>
 
       {/* Generate New Key Modal */}
-      {showGenerateModal && (
+      {showGenerateModal && (canGenerate || newlyGeneratedKey) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-lg glass-card rounded-2xl border border-slate-700 shadow-2xl animate-in zoom-in slide-in-from-bottom-4 duration-200">
             {newlyGeneratedKey ? (

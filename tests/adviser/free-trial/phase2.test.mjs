@@ -116,7 +116,7 @@ test('Customer and Admin surfaces expose Upgrade Required without hiding key his
   assert.match(dashboard, /Free Trial Ended — Upgrade Required/);
   assert.match(trial, /trial\.eligible && <button/);
   assert.match(trial, /trial\.upgradeRequired &&/);
-  assert.match(trial, /Upgrade to Pro/);
+  assert.match(trial, /View upgrade options/);
   assert.match(keys, /disabled=\{!canGenerate\}/);
   assert.match(keys, /Active API Keys/);
   assert.match(keys, /Upgrade to Pro/);

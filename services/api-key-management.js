@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { trialState } from '../functions/subscription-lifecycle.mjs';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
   usageForToday, validDocumentId, trialUsage, freeMonthlyUsage, upgradeRequiredError,
@@ -72,8 +73,12 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
 
   async function currentAccount(tx, db, uid, context, requireIssuance = false) {
     const account = (await tx.get(db.collection('users').doc(uid))).data();
-    const entitlement = accountEntitlement(account, clock());
+    const now = clock();
+    const entitlement = accountEntitlement(account, now);
     if (requireIssuance && entitlement.upgradeRequired) throw upgradeRequiredError();
+    if (requireIssuance && entitlement.level === 0 && !trialState(account, now).used) {
+      throw new ApiSecurityError(403, 'TRIAL_REQUIRED', 'Start your 7-Day Pro Trial before generating a new API key.');
+    }
     if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment
       || account.businessSegment !== context.account.businessSegment)) {
       throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
@@ -134,6 +139,9 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const name = keyName(body.keyName);
       const context = await accountContext(db, actor.uid);
       if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
+      if (context.entitlement.level === 0 && !trialState(context.account, clock()).used) {
+        throw new ApiSecurityError(403, 'TRIAL_REQUIRED', 'Start your 7-Day Pro Trial before generating a new API key.');
+      }
       const scope = scopeFromBody(body);
       await validateScope(db, scope, context);
       const issued = issueCredential();

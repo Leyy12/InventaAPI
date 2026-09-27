@@ -23,7 +23,7 @@ function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean
     <p className="text-slate-200">Protected API access is paused until you upgrade to Pro. Your account and existing API keys remain available.</p>
     <p className="text-sm text-slate-300">Active API keys: {source.count ?? unavailable}</p>
     {source.status === 'error' && <p role="alert">Unable to load API-key history. Retrying automatically.</p>}
-    <Link href="/dashboard/settings#subscription" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">Upgrade to Pro</Link>
+    <Link href="/dashboard/plan-billing#upgrade" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">View paid plans</Link>
   </section>;
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

@@ -2,31 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  Key,
-  BookOpen,
-  Package,
-  BarChart3,
-  LogOut,
-  Shield,
-  Settings
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
-
-const dashboardRoutes = [
-  { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Products", href: "/dashboard/products", icon: Package },
-  { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
-  { name: "7-Day Pro Trial", href: "/dashboard/free-trial", icon: Shield },
-  { name: "Documentation", href: "/docs", icon: BookOpen },
-  { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-  { name: "Privacy", href: "/dashboard/privacy", icon: Shield },
-  { name: "Settings", href: "/dashboard/settings", icon: Settings },
-];
+import { dashboardRoutes, routeActive } from './dashboard-navigation';
 
 // Helper: Map legacy plan values to correct display names
 function getPlanDisplayName(plan: string | undefined): string {
@@ -34,6 +14,8 @@ function getPlanDisplayName(plan: string | undefined): string {
   const planLower = plan.toLowerCase();
   if (planLower === "starter" || planLower === "free" || planLower === "deleted") return "Free";
   if (planLower === "pro" || planLower === "professional") return "Pro";
+  if (planLower === "pro trial") return "7-Day Pro Trial";
+  if (planLower === "upgrade required") return "Upgrade Required";
   if (planLower === "enterprise" || planLower === "unlimited") return "Enterprise";
   return plan.charAt(0).toUpperCase() + plan.slice(1); // fallback with capitalized first letter
 }
@@ -41,10 +23,6 @@ function getPlanDisplayName(plan: string | undefined): string {
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, appUser, logout, loading } = useAuth();
-
-  // Prevent SSR/hydration mismatch: only render real user info after client mounts
-  const [isMounted, setIsMounted] = useState(false);
-  useEffect(() => { setIsMounted(true); }, []);
 
   return (
     <aside className="w-64 glass border-r border-slate-800/60 hidden md:flex flex-col relative z-20">
@@ -69,11 +47,12 @@ export default function Sidebar() {
           Customer Workspace
         </div>
         {dashboardRoutes.map((route) => {
-          const isActive = pathname === route.href || (pathname.startsWith(route.href) && route.href !== "/dashboard");
+          const isActive = routeActive(pathname, route.href);
           return (
             <Link
               key={route.href}
               href={route.href}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
                 isActive
@@ -101,7 +80,7 @@ export default function Sidebar() {
 
       {/* User profile snippet at bottom */}
       <div className="p-4 border-t border-slate-800/60 flex flex-col gap-2">
-        {(!isMounted || loading || !user) ? (
+        {(loading || !user) ? (
           <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
             <div className="w-8 h-8 rounded-full bg-slate-800/80 animate-pulse"></div>
             <div className="flex flex-col gap-1">
@@ -110,7 +89,7 @@ export default function Sidebar() {
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors">
+          <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 border border-slate-500/30 flex items-center justify-center text-xs font-bold uppercase text-slate-100">
               {user?.email?.charAt(0) || "U"}
             </div>
@@ -122,14 +101,14 @@ export default function Sidebar() {
                 const planName = getPlanDisplayName(appUser?.plan);
                 const isPro = planName === "Pro" || planName === "Enterprise";
                 return (
-                  <span className={cn(
+                  <Link href="/dashboard/plan-billing" aria-label={`Plan & Billing: ${planName}`} className={cn(
                     "text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded-full w-fit mt-1 border",
                     isPro 
                       ? "bg-indigo-500/15 text-indigo-400 border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]" 
                       : "bg-slate-800/80 text-slate-400 border-slate-700"
                   )}>
-                    {planName} Plan
-                  </span>
+                    {planName === '7-Day Pro Trial' || planName === 'Upgrade Required' ? planName : `${planName} Plan`}
+                  </Link>
                 );
               })()}
             </div>
