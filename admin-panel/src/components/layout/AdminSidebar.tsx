@@ -125,7 +125,7 @@ export default function AdminSidebar() {
               logout();
             }
           }}
-          className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 hover:text-blue-300 hover:bg-blue-950/30 transition-colors"
+          className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
         >
           <LogOut className="w-3 h-3" />
           Sign Out
