@@ -13,8 +13,8 @@ const orderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const orderPath = `payment_orders/${orderId}`;
 const paymentPath = 'transactions/paymongo_test_pay_abc123';
 const customer = { uid: 'owner', role: 'Developer', plan: 'Free', apiRequestLimit: 50 };
-const providerOrder = () => ({ id: orderId, mode: 'test', idempotencyKey: `checkout-test-${orderId}`,
-  providerRequestBody: JSON.stringify(checkoutPayload({ id: orderId }, config.dashboardUrl)) });
+const providerOrder = () => ({ id: orderId, ...PRO_PURCHASE, mode: 'test', idempotencyKey: `checkout-test-${orderId}`,
+  providerRequestBody: JSON.stringify(checkoutPayload({ id: orderId, ...PRO_PURCHASE }, config.dashboardUrl)) });
 function setup(options = {}) {
   const db = memoryFirestore({ 'users/owner': customer, 'users/stranger': { ...customer, uid: 'stranger' } });
   let calls = 0, dbCalls = 0;

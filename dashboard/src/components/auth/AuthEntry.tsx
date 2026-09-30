@@ -11,9 +11,12 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
 import { consumePostLogoutLogin, navigationDecision, profileRole } from '../../../../services/auth-navigation';
 
-// Paid plans that block the checkout when already active (single source of truth
-// shared by openSubscription and the routing effect).
-const ACTIVE_PAID_PLANS = ["Pro", "Enterprise", "Professional", "Unlimited"];
+const purchaseBlocked = (plan: PlanId, entitlement: ReturnType<typeof useAuth>['entitlement']) => {
+  if (!entitlement) return true;
+  if (plan === 'pro_max') return !entitlement.canPurchaseProMax;
+  if (plan === 'pro') return !entitlement.canPurchasePro || entitlement.activePro && entitlement.plan === 'Pro';
+  return false;
+};
 
 export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }) {
   const { user, appUser, loading, authStatus, entitlement } = useAuth();
@@ -25,7 +28,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const planIntent = searchParams.get('pendingPlan');
-  const initialPlan: PlanId | null = planIntent === 'free' || planIntent === 'pro' || planIntent === 'enterprise'
+  const initialPlan: PlanId | null = planIntent === 'free' || planIntent === 'pro' || planIntent === 'pro_max'
     ? planIntent : searchParams.get('choosePlan') === 'true' || searchParams.get('payment') === 'cancelled' ? 'pro' : null;
   const explicitLogin = searchParams.get('login') === 'true' || searchParams.get('logout') === 'true';
   const [showLoginModal, setShowLoginModal] = useState(loginOnly || explicitLogin);
@@ -107,7 +110,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
     // routing useEffect (which waits for auth to resolve) opens the correct modal:
     // LoginModal for unauthenticated visitors, SubscriptionModal for logged-in ones.
     if (searchParams.get("choosePlan") === "true") {
-      setPendingPlan("pro");
+      setPendingPlan(initialPlan ?? 'pro');
       handled = true;
     }
 
@@ -115,7 +118,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
     // As explicitly requested, cancellation should return the user to the Login Modal
     // so they start the Pro plan journey over and re-confirm their login.
     if (searchParams.get("payment") === "cancelled") {
-      setPendingPlan("pro");
+      setPendingPlan(initialPlan ?? 'pro');
       setShowLoginModal(true);
       setModalError("Payment was not completed. You can try again below.");
       handled = true;
@@ -129,7 +132,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
       const base = loginOnly ? '/login' : '/';
       router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
     }
-  }, [searchParams, router, loginOnly]);
+  }, [searchParams, router, loginOnly, initialPlan]);
 
   // Single decision point for plan clicks, run only AFTER Firebase auth has settled.
   // During the initial onAuthStateChanged, `user` is still null even for logged-in
@@ -162,16 +165,10 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
       // loading window is deferred here — so this pre-check MUST be duplicated in
       // the routing effect for the "already Pro" modal to open (otherwise the
       // checkout/GCash modal would wrongly appear for paid subscribers).
-      const currentPlan: string = appUser?.plan ?? "";
-      if (ACTIVE_PAID_PLANS.includes(currentPlan)) {
-        const expiresAt = appUser?.subscriptionExpiresAt;
-        const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-        if (!isExpired) {
-          setPendingPlan(null);
-          setShowAlreadyProModal(true);
-          return;
-        }
-        // Expired Pro — fall through to the normal checkout so they can renew.
+      if (purchaseBlocked(pendingPlan, entitlement)) {
+        setPendingPlan(null);
+        setShowAlreadyProModal(true);
+        return;
       }
       // Logged in + paid: open the upgrade/subscription modal directly, no login.
       setSelectedPlan(pendingPlan);
@@ -215,19 +212,16 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
       // Clear any stale pendingPlan from a previous deferred click.
       setPendingPlan(null);
 
-      const currentPlan: string = appUser?.plan ?? "";
-      const isCurrentlyPaid = ACTIVE_PAID_PLANS.includes(currentPlan);
+      // Auth restoration can settle before authoritative subscription status.
+      // Defer the purchase choice until that separate verification completes.
+      if (!entitlement) {
+        setPendingPlan(plan);
+        return;
+      }
 
-      if (isCurrentlyPaid) {
-        const expiresAt = appUser?.subscriptionExpiresAt;
-        const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
-
-        if (!isExpired) {
-          // Active Pro/Enterprise — show the "already subscribed" modal, skip checkout.
-          setShowAlreadyProModal(true);
-          return;
-        }
-        // Expired Pro — fall through to normal checkout so they can renew.
+      if (purchaseBlocked(plan, entitlement)) {
+        setShowAlreadyProModal(true);
+        return;
       }
 
       // Free user (or expired Pro) logged in — open the checkout/subscription modal.
@@ -554,19 +548,20 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
               </button>
             </div>
 
-            {/* Enterprise Plan */}
+            {/* Pro Max Plan */}
             <div className="glass-card p-8 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all">
               <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.enterprise.displayName.toUpperCase()}</h3>
+                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.pro_max.displayName.toUpperCase()}</h3>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold">{SUBSCRIPTION_PLANS.enterprise.priceDisplay}</span>
+                  <span className="text-4xl font-extrabold">{SUBSCRIPTION_PLANS.pro_max.priceDisplay}</span>
+                  <span className="text-slate-400 text-sm">{SUBSCRIPTION_PLANS.pro_max.billingCycle}</span>
                 </div>
-                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.enterprise.tagline}</p>
+                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.pro_max.tagline}</p>
               </div>
 
               <div className="space-y-3 mb-8">
                 <p className="text-xs font-semibold text-emerald-400 mb-2">Everything in Pro, and:</p>
-                {SUBSCRIPTION_PLANS.enterprise.incrementalFeatures.map((feature) => (
+                {SUBSCRIPTION_PLANS.pro_max.incrementalFeatures.map((feature) => (
                   <div key={feature} className="flex items-start gap-2 text-sm">
                     <span className="text-emerald-400 mt-0.5">✓</span>
                     <span className="text-slate-300">{feature}</span>
@@ -575,10 +570,11 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
               </div>
 
               <button
-                onClick={() => openSubscription("enterprise")}
+                onClick={() => openSubscription("pro_max")}
                 className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
-                {SUBSCRIPTION_PLANS.enterprise.ctaText} →
+                {SUBSCRIPTION_PLANS.pro_max.ctaText} →
               </button>
+              <p className="mt-4 text-xs text-slate-500">*Unlimited account quota. Standard security, abuse-prevention, and rate limits still apply.</p>
             </div>
           </div>
         </div>
@@ -657,11 +653,11 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
 
             {/* Badge */}
             <span className="inline-block text-[11px] font-bold bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full border border-indigo-500/30 uppercase tracking-widest mb-4">
-              Pro · Active
+              Current plan · Active
             </span>
 
             <h2 className="text-xl font-bold text-white mb-2">
-              You're already on the Pro plan
+              Your current plan is already active
             </h2>
 
             <p className="text-sm text-slate-400 mb-1">

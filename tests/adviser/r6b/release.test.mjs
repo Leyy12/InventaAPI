@@ -208,15 +208,21 @@ test('history index exactly matches account equality and descending timestamp/do
   assert.match(read('services/api-history.js'), /where\('userId', '==', actor.uid\)/);
   assert.match(read('services/admin-traffic.js'), /orderBy\('timestamp', 'desc'\)\s*\.orderBy\(documentId, 'desc'\).limit\(ADMIN_TRAFFIC_LIMIT\)/);
 });
-test('R6D preserves the production legacy notification index in the ten-index release set', () => {
+test('R6D preserves the production legacy notification index alongside the additive customer-sales index', () => {
   const config = JSON.parse(read('firestore.indexes.json'));
-  assert.equal(config.indexes.length, 10);
+  assert.equal(config.indexes.length, 11);
   const matches = config.indexes.filter(index => index.collectionGroup === 'notifications'
     && index.fields.some(field => field.fieldPath === 'user_email'));
   assert.deepEqual(matches, [{ collectionGroup: 'notifications', queryScope: 'COLLECTION', fields: [
     { fieldPath: 'user_email', order: 'ASCENDING' }, { fieldPath: 'is_read', order: 'ASCENDING' },
     { fieldPath: 'created_at', order: 'DESCENDING' }, { fieldPath: '__name__', order: 'DESCENDING' },
   ] }]);
+  assert.deepEqual(config.indexes.filter(index => index.collectionGroup === 'customer_sales'), [
+    { collectionGroup: 'customer_sales', queryScope: 'COLLECTION', fields: [
+      { fieldPath: 'userId', order: 'ASCENDING' }, { fieldPath: 'occurredAt', order: 'ASCENDING' },
+      { fieldPath: '__name__', order: 'ASCENDING' },
+    ] },
+  ]);
   assert.deepEqual(config.fieldOverrides, []);
   assert.equal(JSON.parse(read('firebase.json')).storage, undefined);
 });

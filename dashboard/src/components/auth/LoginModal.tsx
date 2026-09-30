@@ -82,13 +82,13 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   // - Pro/Enterprise: checkout handoff (PayMongo flow).
   // - Free: dedicated Free-plan login.
   // - No pendingPlan (plain login, no plan context): generic fallback.
-  const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "enterprise";
+  const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "pro_max";
   const isFreeFlow = pendingPlan === "free";
 
   const modalTitle = isUpgradeIntent
     ? pendingPlan === "pro"
       ? "Login to continue to your Pro upgrade"
-      : "Login to continue to Enterprise"
+      : "Login to continue to Pro Max"
     : isFreeFlow
       ? "Login to continue to InventaAPI Free"
       : "Welcome to InventaAPI";
@@ -108,7 +108,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
           unlock <span className="text-indigo-400">Pro</span> (5,000 requests/day, all segments).
         </>
       ) : (
-        <>set up <span className="text-indigo-400">Enterprise</span>.</>
+        <>unlock <span className="text-indigo-400">Pro Max</span> (unlimited account quota, all segments).</>
       )}
     </>
   ) : (
@@ -182,7 +182,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       //
       // Upgrading to Pro ONLY changes the subscription plan. It does NOT change the
       // account type and must NOT trigger Business Segment validation.
-      const paidPlans = ["pro", "enterprise", "professional", "unlimited"];
+      const paidPlans = ["pro", "pro max", "enterprise", "professional", "unlimited"];
       const isPaidPlan = paidPlans.includes(normalizedPlan);
       const chosenSegment = requestedSegment;
 
@@ -227,7 +227,8 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       // entire block and fall through to the plain-login redirect below.
       // This prevents a stale pendingPlan="pro" (from a previously closed upgrade
       // modal) from hijacking a Free user's plain login.
-      if ((pendingPlan === "pro" || pendingPlan === "enterprise") && !isPaidPlan) {
+      if ((pendingPlan === "pro" || pendingPlan === "pro_max")
+        && (!isPaidPlan || pendingPlan === 'pro_max' && effective.canPurchaseProMax)) {
         // Free/Starter user who explicitly came through a Pro/Enterprise CTA —
         // continue the upgrade journey: open the plan chooser → GCash checkout.
         setSuccess("Login successful!");
@@ -239,7 +240,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
         return;
       }
 
-      if ((pendingPlan === "pro" || pendingPlan === "enterprise") && isPaidPlan) {
+      if ((pendingPlan === "pro" || pendingPlan === "pro_max") && isPaidPlan) {
         // Already on a paid plan and clicked Pro CTA — skip checkout, go to dashboard.
         setSuccess("You already have an active subscription! Redirecting to your dashboard...");
         setTimeout(() => {

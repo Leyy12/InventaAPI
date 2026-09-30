@@ -107,7 +107,7 @@ service cloud.firestore {
                       'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt'])
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['selectedSegment'])
                       || (request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']
-                        && (resource.data.plan in ['Pro', 'pro', 'Professional', 'professional', 'Enterprise', 'enterprise', 'Unlimited', 'unlimited']
+                        && (resource.data.plan in ['Pro', 'pro', 'Professional', 'professional', 'Pro Max', 'Enterprise', 'enterprise', 'Unlimited', 'unlimited']
                           || request.resource.data.selectedSegment == resource.data.get('businessSegment', ''))));
 
       // Server-controlled deletion retains the tombstone against recreation.
@@ -164,6 +164,9 @@ service cloud.firestore {
     match /catalog_control/{id} { allow read, write: if false; }
     match /account_trial_usage/{id} { allow read, write: if false; }
     match /account_free_monthly_usage/{id} { allow read, write: if false; }
+    // Completed sales are written and queried only by authenticated backend
+    // handlers. Even the account owner cannot tamper with analytics history.
+    match /customer_sales/{id} { allow read, write: if false; }
     match /catalog_import_previews/{id} { allow read, write: if false; }
     match /catalog_import_results/{id} { allow read, write: if false; }
 

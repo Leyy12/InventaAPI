@@ -82,7 +82,7 @@ export function loginEntryQuery(params: URLSearchParams): string {
   const out = new URLSearchParams();
   for (const key of ['login', 'registered', 'choosePlan']) if (params.get(key) === 'true') out.set(key, 'true');
   if (params.get('payment') === 'cancelled') out.set('payment', 'cancelled');
-  if (['free', 'pro', 'enterprise'].includes(params.get('pendingPlan') || '')) out.set('pendingPlan', params.get('pendingPlan')!);
+  if (['free', 'pro', 'pro_max', 'enterprise'].includes(params.get('pendingPlan') || '')) out.set('pendingPlan', params.get('pendingPlan')!);
   if (['admin_auth_failed', 'token_expired', 'admin_only', 'user_not_found'].includes(params.get('error') || '')) out.set('error', params.get('error')!);
   return out.toString();
 }

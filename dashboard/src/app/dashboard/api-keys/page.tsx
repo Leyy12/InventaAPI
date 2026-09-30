@@ -199,8 +199,8 @@ function AccountKeysSession({ user, entitlementStatus, trialRequired, trialEligi
         </Link>
       </section>}
       {upgradeRequired && <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-5 text-amber-100">
-        Free Trial Ended. Existing keys remain visible and revocable, but replacement and protected API access require paid Pro.{" "}
-        <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro</Link>
+        Free Trial Ended. Existing keys remain visible and revocable, but replacement and protected API access require paid Pro or Pro Max.{" "}
+        <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro or Pro Max</Link>
       </div>}
       {entitlementStatus === null && <p role="status" className="text-slate-400">Verifying account entitlement before key replacement…</p>}
 
@@ -209,7 +209,7 @@ function AccountKeysSession({ user, entitlementStatus, trialRequired, trialEligi
         <p className="text-sm text-slate-300">Secrets are shown only once. Store them securely and never put them in public repositories or client-side code. Replacing a key immediately revokes the old credential; revoking alone creates nothing.</p>
       </div>
       <CustomerUsageSummary />
-      <p className="text-sm text-slate-400">Existing Free keys retain their 50/month account allowance. Active Trial keys share 500 total requests. Once Trial ends, protected API access requires paid Pro. Replacing a key does not reset or consume account quota.</p>
+      <p className="text-sm text-slate-400">Existing Free keys retain their 50/month account allowance. Active Trial keys share 500 total requests. Once Trial ends, protected API access requires paid Pro or Pro Max. Replacing a key does not reset or consume account quota.</p>
       <RequestHistory />
 
       <section className="glass-card rounded-xl border border-slate-700">

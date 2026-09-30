@@ -6,7 +6,7 @@ export function reportSelection(value) {
   return value === 'All' ? 'All' : normalizeSegment(value);
 }
 export function customerReportScope(plan, preference) {
-  if (['Pro', 'Enterprise', 'Unlimited'].includes(plan)) return { state: 'ready', segment: 'All', restricted: false };
+  if (['Pro', 'Pro Max', 'Enterprise', 'Unlimited'].includes(plan)) return { state: 'ready', segment: 'All', restricted: false };
   if (!['Free', 'Basic', 'Starter', 'Pro Trial', 'Upgrade Required'].includes(plan)) return { state: 'unavailable', segment: null, restricted: true };
   const segment = normalizeSegment(preference);
   return { state: segment ? 'ready' : 'preference_required', segment, restricted: true };

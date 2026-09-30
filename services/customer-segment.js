@@ -2,7 +2,7 @@ import { normalizeSegment, PRODUCT_SEGMENTS } from './product-contract.js';
 
 // Ownership is independent of Pro Trial feature entitlement. Unknown plans fail closed.
 export function restrictedSegmentAccount(account) {
-  return !['pro', 'professional', 'enterprise', 'unlimited'].includes(String(account?.plan || '').toLowerCase());
+  return !['pro', 'professional', 'pro max', 'enterprise', 'unlimited'].includes(String(account?.plan || '').toLowerCase());
 }
 export function activeCustomerSegment(account) {
   return normalizeSegment(restrictedSegmentAccount(account) ? account?.businessSegment : account?.selectedSegment);

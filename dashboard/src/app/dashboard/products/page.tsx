@@ -34,7 +34,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
 function isFreePlan(plan: string | undefined): boolean {
   if (!plan) return true; // no plan at all = Free-tier access
   const p = plan.toLowerCase();
-  return !['pro', 'professional', 'enterprise', 'unlimited'].includes(p);
+  return !['pro', 'professional', 'pro max', 'enterprise', 'unlimited'].includes(p);
 }
 
 

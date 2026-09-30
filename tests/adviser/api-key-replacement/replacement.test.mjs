@@ -97,8 +97,8 @@ test('failed transaction keeps the original secret active and creates no success
   assert.equal((await authenticateCredential(f.db, f.oldSecret, NOW)).id, f.oldId);
 });
 
-test('paid Pro and legacy Free active keys rotate without consuming generation or request quotas', async () => {
-  for (const account of [paid, free]) {
+test('paid Pro, Pro Max and legacy Free active keys rotate without consuming generation or request quotas', async () => {
+  for (const account of [paid, { ...paid, plan: 'Pro Max', apiRequestLimit: null }, free]) {
     const f = fixture(account);
     const result = await invoke(f.handlers.replace, { id: f.oldId });
     assert.equal(result.statusCode, 200);
@@ -107,6 +107,9 @@ test('paid Pro and legacy Free active keys rotate without consuming generation o
     assert.equal(f.db.read('api_key_generation_days/marker').keyId, f.oldId);
     assert.equal(f.db.read('account_free_monthly_usage/owner').used, 12);
     assert.equal(f.db.read('account_trial_usage/owner').used, 2);
+    await assert.rejects(authenticateCredential(f.db, f.oldSecret, NOW), error => error.status === 401);
+    assert.equal((await authenticateCredential(f.db, result.body.key, NOW)).id, result.body.id);
+    assert.equal(JSON.stringify(f.db.read(`api_keys/${result.body.id}`)).includes(result.body.key), false);
   }
 });
 

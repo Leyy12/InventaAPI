@@ -14,7 +14,7 @@ exports.downgradeExpiredSubscriptions = onSchedule({
     const { normalizeExpiredAccount } = await import('./subscription-lifecycle.mjs');
     const db = getFirestore();
     let downgraded = 0;
-    for (const plan of ['Pro', 'pro', 'Professional', 'professional']) {
+    for (const plan of ['Pro', 'pro', 'Professional', 'professional', 'Pro Max', 'pro max']) {
         const users = await db.collection('users').where('plan', '==', plan).get();
         for (const user of users.docs) {
             // Re-read in a transaction: a concurrent renewal cannot be lost.

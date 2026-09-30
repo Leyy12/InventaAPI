@@ -1,8 +1,9 @@
 import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
-import { requirePlan, enforceRequestLimit } from '../middleware/planGate.js';
+import { requirePaidSubscription, enforceRequestLimit } from '../middleware/planGate.js';
 import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts } from '../services/daas-catalog.js';
 import { createDaaSSecurity } from '../services/daas-security.js';
+import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 
 // Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
 // server.js imports database/firebase.js first, so getDb() is always ready here.
@@ -16,6 +17,7 @@ function getDb() {
 const router = express.Router();
 
 const { authenticateApiKey } = createDaaSSecurity({ getDb });
+const intelligence = createDaaSIntelligenceHandlers({ getDb });
 
 // DaaS Health Check
 router.get('/health', (req, res) => {
@@ -266,47 +268,10 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
     }
 });
 
-// DaaS Sales Analytics Feed Endpoint (Pro+ Only, Rate Limited)
-// Returns aggregated transaction data for Professional and Enterprise tiers
-router.get('/sales-feed', authenticateApiKey, requirePlan(['pro', 'enterprise']), enforceRequestLimit, (req, res) => {
-    const latencyMs = Date.now() - req.startTime;
-    const ts = new Date();
-    
-    getDb().collection('api_telemetry').add({
-        apiKeyId: req.apiKeyData.id,
-        userId: req.apiKeyData.userId,
-        keyName: req.apiKeyData.name,
-        endpoint: '/sales-feed',
-        method: 'GET',
-        statusCode: 200,
-        success: true,
-        latencyMs,
-        timestamp: ts
-    }).catch(console.error);
-    
-    getDb().collection('audit_logs').add({
-        action: 'API Request',
-        userId: req.apiKeyData.userId,
-        email: req.apiKeyData.userEmail || req.apiKeyData.name,
-        endpoint: '/sales-feed',
-        status: 200,
-        timestamp: ts
-    }).catch(console.error);
-
-    // Generate or fetch some clean, mock aggregated sales data for B2B analytics
-    res.json({
-        summary: {
-            totalRevenue: 48250.00,
-            totalTransactions: 142,
-            averageOrderValue: 339.79,
-            currency: "PHP"
-        },
-        salesFeed: [
-            { id: "TXN-001", amount: 490.00, segment: "hardware", timestamp: new Date().toISOString() },
-            { id: "TXN-002", amount: 1200.00, segment: "hardware", timestamp: new Date().toISOString() },
-            { id: "TXN-003", amount: 45.00, segment: "grocery", timestamp: new Date().toISOString() }
-        ]
-    });
-});
+// Authenticated integrations submit completed sales; the same account quota,
+// IP limiter, key ownership, and segment rules apply as to catalog requests.
+router.post('/sales', authenticateApiKey, enforceRequestLimit, intelligence.sale);
+router.get('/recommendations', authenticateApiKey, enforceRequestLimit, intelligence.recommendations);
+router.get('/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence.feed);
 
 export default router;

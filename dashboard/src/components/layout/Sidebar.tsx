@@ -16,6 +16,7 @@ function getPlanDisplayName(plan: string | undefined): string {
   if (planLower === "pro" || planLower === "professional") return "Pro";
   if (planLower === "pro trial") return "7-Day Pro Trial";
   if (planLower === "upgrade required") return "Upgrade Required";
+  if (planLower === "pro max") return "Pro Max";
   if (planLower === "enterprise" || planLower === "unlimited") return "Enterprise";
   return plan.charAt(0).toUpperCase() + plan.slice(1); // fallback with capitalized first letter
 }
@@ -99,7 +100,7 @@ export default function Sidebar() {
               </span>
               {(() => {
                 const planName = getPlanDisplayName(appUser?.plan);
-                const isPro = planName === "Pro" || planName === "Enterprise";
+                const isPro = planName === "Pro" || planName === "Pro Max" || planName === "Enterprise";
                 return (
                   <Link href="/dashboard/plan-billing" aria-label={`Plan & Billing: ${planName}`} className={cn(
                     "text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded-full w-fit mt-1 border",

@@ -111,7 +111,7 @@ export default function DashboardPage() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-emerald-300">Payment confirmed. Your current subscription is shown below.</p>
           <p className="text-xs text-emerald-400/80 mt-0.5">
-            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited' : appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/{appUser?.plan === 'Pro Trial' ? 'trial total' : appUser?.plan === 'Free' ? 'UTC month' : 'day'} · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
+            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited account quota' : `${appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/${appUser?.plan === 'Pro Trial' ? 'trial total' : appUser?.plan === 'Free' ? 'UTC month' : 'day'}`} · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
           </p>
         </div>
         <button

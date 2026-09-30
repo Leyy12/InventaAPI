@@ -89,8 +89,8 @@ function SignupPageInner() {
       // Forward the existing pending plan intent to the explicit Login route.
       // ?registered=true auto-opens the LoginModal; ?choosePlan=true then
       // opens the SubscriptionModal after the user logs in.
-      const redirectUrl = pendingPlan && pendingPlan !== "free"
-        ? `/login?registered=true&choosePlan=true`
+      const redirectUrl = (pendingPlan === 'pro' || pendingPlan === 'pro_max')
+        ? `/login?registered=true&choosePlan=true&pendingPlan=${pendingPlan}`
         : `/login?registered=true`;
       router.push(redirectUrl);
     } catch (err: any) {

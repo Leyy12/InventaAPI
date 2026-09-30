@@ -5,18 +5,25 @@ export function memoryFirestore(initial = {}) {
   const db = { retries: 0, commits: 0, failRead: null, failWrite: null, failCommit: false, userWrites: 0 };
   const snapshot = path => ({ id: path.split('/').at(-1), exists: records.has(path), data: () => structuredClone(records.get(path)?.data) });
   const document = path => ({ path, id: path.split('/').at(-1), get: async () => snapshot(path) });
-  const collection = (name, filters = [], maximum = Infinity) => ({
+  const collection = (name, filters = [], maximum = Infinity, ordering = null) => ({
     doc: id => document(`${name}/${id}`),
     add: async data => { const ref = document(`${name}/auto-${records.size}`); await db.runTransaction(async tx => tx.set(ref, data)); return ref; },
     where: (field, op, value) => {
-      if (op !== '==') throw new Error('Unsupported query');
-      return collection(name, [...filters, [field, value]], maximum);
+      if (!['==', '>=', '<'].includes(op)) throw new Error('Unsupported query');
+      return collection(name, [...filters, [field, op, value]], maximum, ordering);
     },
-    limit: value => collection(name, filters, value),
+    orderBy: (field, direction = 'asc') => collection(name, filters, maximum, [field, direction]),
+    limit: value => collection(name, filters, value, ordering),
     get: async () => {
       if (name.startsWith(db.failRead || '\0')) throw new Error('query unavailable');
       const docs = [...records.keys()].filter(path => path.split('/')[0] === name).map(snapshot)
-        .filter(doc => filters.every(([field, value]) => doc.data()[field] === value)).slice(0, maximum);
+        .filter(doc => filters.every(([field, op, value]) => op === '==' ? doc.data()[field] === value
+          : op === '>=' ? doc.data()[field] >= value : doc.data()[field] < value));
+      if (ordering) docs.sort((a, b) => {
+        const left = a.data()[ordering[0]], right = b.data()[ordering[0]];
+        return (left < right ? -1 : left > right ? 1 : a.id.localeCompare(b.id)) * (ordering[1] === 'desc' ? -1 : 1);
+      });
+      docs.splice(maximum);
       return { docs, empty: !docs.length, size: docs.length };
     },
   });

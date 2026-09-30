@@ -20,7 +20,7 @@ function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean
   const unavailable = source.status === "loading" ? "Loading…" : "Unavailable";
   if (upgradeRequired) return <section aria-label="Account API usage" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-6 space-y-3">
     <h2 className="text-lg font-semibold text-amber-200">Free Trial Ended — Upgrade Required</h2>
-    <p className="text-slate-200">Protected API access is paused until you upgrade to Pro. Your account and existing API keys remain available.</p>
+    <p className="text-slate-200">Protected API access is paused until you upgrade to Pro or Pro Max. Your account and existing API keys remain available.</p>
     <p className="text-sm text-slate-300">Active API keys: {source.count ?? unavailable}</p>
     {source.status === 'error' && <p role="alert">Unable to load API-key history. Retrying automatically.</p>}
     <Link href="/dashboard/plan-billing#upgrade" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">View paid plans</Link>

@@ -28,6 +28,7 @@ import accountRouter from './routes/account.js';
 import freetrialRouter from './routes/freetrial.js';
 import adminRouter from './routes/admin.js';
 import contactRouter from './routes/contact.js';
+import customerInsightsRouter from './routes/customer-insights.js';
 
 
 
@@ -152,6 +153,7 @@ app.use('/api/v1/account', accountRouter);
 app.use('/api/v1/free-trial', freetrialRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/contact', contactRouter);
+app.use('/api/v1/customer/insights', customerInsightsRouter);
 
 // --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
 app.use('/api/webhooks', webhooksRouter);

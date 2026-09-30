@@ -3,7 +3,13 @@
  * Used by both pricing page and upgrade modal
  */
 
-import { Zap, ShieldCheck, Building2, LucideIcon } from "lucide-react";
+import { Zap, ShieldCheck, Building2 } from "lucide-react";
+
+// Each advertised Pro Max capability has an explicit system test mapping.
+export const PRO_MAX_CAPABILITY_IDS = [
+  'unlimited_account_quota', 'all_segments', 'product_recommendations', 'real_sales_feed',
+  'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term',
+] as const;
 
 export const SUBSCRIPTION_PLANS = {
   free: {
@@ -28,16 +34,17 @@ export const SUBSCRIPTION_PLANS = {
     features: [
       "API keys share the account allowance",
       "50 requests per UTC calendar month",
+      "One Business Segment",
       "Product Catalog endpoint",
       "Product Recommendations",
-      "Community support"
+      "API Key Management",
+      "API Usage & History",
+      "Eligible once-only 7-Day Pro Trial"
     ],
     
     // Exclusions (for visual comparison)
     exclusions: [
-      "Sales Analytics Feed",
-      "Priority Support",
-      "Custom Business Segment"
+      "Real Sales Analytics Feed"
     ],
     
     // UI
@@ -72,16 +79,18 @@ export const SUBSCRIPTION_PLANS = {
     incrementalFeatures: [
       "API keys share the account allowance",
       "5,000 requests per day",
-      "Full Product Catalog + Recommendations",
-      "Sales Analytics Feed",
+      "Paid linked-product catalog access",
+      "Product Recommendations",
+      "Real Sales Analytics Feed",
       "All Business Segments",
-      "Email + Chat Support"
+      "Multiple API Keys",
+      "API Playground",
+      "Usage & Integration History",
+      "30-Day Renewable Subscription"
     ],
     
     // Exclusions (for visual comparison)
-    exclusions: [
-      "Custom Endpoints"
-    ],
+    exclusions: [],
     
     // UI
     ctaText: "Subscribe Now",
@@ -93,46 +102,47 @@ export const SUBSCRIPTION_PLANS = {
     badgeColor: "text-indigo-400",
   },
   
-  enterprise: {
+  pro_max: {
     // Identifiers
-    id: "enterprise",
-    name: "Enterprise",
-    displayName: "Enterprise",
+    id: "pro_max",
+    name: "Pro Max",
+    displayName: "Pro Max",
     
     // Pricing
-    price: null,
-    priceDisplay: "Custom",
-    billingCycle: "pricing",
+    price: 4999,
+    priceDisplay: "₱4,999",
+    billingCycle: "/month",
     
     // Limits
-    requestLimit: null, // unlimited
-    requestLimitDisplay: "Unlimited requests",
+    requestLimit: null,
+    requestLimitDisplay: "Unlimited account API quota*",
     
     // Description
-    tagline: "For large-scale ERP integrations and multi-branch businesses",
+    tagline: "For high-volume API usage",
     
     // Incremental features (adds to Pro)
     incrementalFeatures: [
+      "Unlimited account API quota*",
+      "All Business Segments",
+      "Product Recommendations",
+      "Real Sales Analytics Feed",
       "Multiple API Keys",
-      "Unlimited requests",
-      "All endpoints + Custom routes",
-      "Priority dedicated support",
-      "Custom Business Segments",
-      "99.9% SLA Guarantee",
-      "NDA + Custom data agreement"
+      "API Playground",
+      "Usage & Integration History",
+      "30-day renewable subscription"
     ],
     
     // No exclusions - includes everything
     exclusions: [],
     
     // UI
-    ctaText: "Contact Sales",
+    ctaText: "Get Pro Max",
     highlighted: false,
     badge: null,
     icon: Building2,
-    gradient: "from-emerald-600 to-teal-600",
-    accent: "border-emerald-500/50 bg-emerald-950/50",
-    badgeColor: "text-emerald-400",
+    gradient: "from-sky-600 to-indigo-600",
+    accent: "border-sky-500/40 bg-sky-950/30",
+    badgeColor: "text-sky-300",
   },
 } as const;
 
@@ -157,10 +167,10 @@ export function getCumulativeFeatures(planId: PlanId): { header: string | null; 
     };
   }
   
-  if (planId === "enterprise") {
+  if (planId === "pro_max") {
     return {
       header: "Everything in Pro, and:",
-      features: SUBSCRIPTION_PLANS.enterprise.incrementalFeatures
+      features: SUBSCRIPTION_PLANS.pro_max.incrementalFeatures
     };
   }
   

@@ -1,5 +1,14 @@
 // Shared by Express and the existing deployable Functions package. No SDK/I/O.
-export const PLAN_LEVELS = Object.freeze({ free: 0, starter: 0, pro: 1, professional: 1, enterprise: 2, unlimited: 2 });
+export const PLAN_LEVELS = Object.freeze({ free: 0, starter: 0, pro: 1, professional: 1,
+  'pro max': 2, enterprise: 2, unlimited: 2 });
+export const planKind = value => {
+  const name = typeof value === 'string' ? value.toLowerCase() : '';
+  if (name === 'pro max') return 'pro_max';
+  if (name === 'pro' || name === 'professional') return 'pro';
+  if (name === 'free' || name === 'starter') return 'free';
+  if (name === 'enterprise' || name === 'unlimited') return 'legacy_unlimited';
+  return null;
+};
 export const FREE_ENTITLEMENT = Object.freeze({ plan: 'Free', apiRequestLimit: 50, subscription_status: 'inactive' });
 export function accountBlocked(account) {
   return !account || account.disabled === true || account.deleted === true || account.deletedAt != null
@@ -57,9 +66,9 @@ export function trialState(account, now = new Date()) {
 export function evaluateEntitlement(account, now = new Date()) {
   if (accountBlocked(account)) unavailable('ACCOUNT_DISABLED', 403);
   if (!Number.isFinite(now.getTime())) unavailable();
-  const name = typeof account.plan === 'string' ? account.plan.toLowerCase() : '';
-  if (!Object.hasOwn(PLAN_LEVELS, name)) unavailable();
-  const level = PLAN_LEVELS[name];
+  const kind = planKind(account.plan);
+  if (!kind) unavailable();
+  const level = kind === 'free' ? 0 : kind === 'pro' ? 1 : 2;
   if (level === 0) {
     const trial = trialState(account, now);
     if (trial.active) return { plan: 'Pro Trial', level: 1, limit: TRIAL_LIMIT, status: 'trial', activePro: false,
@@ -70,8 +79,9 @@ export function evaluateEntitlement(account, now = new Date()) {
   const expiresAt = Number.isFinite(end) ? new Date(end).toISOString() : null;
   const start = dateMillis(account.subscriptionStartedAt ?? account.lastSubscribedAt);
   const startedAt = Number.isFinite(start) ? new Date(start).toISOString() : null;
-  if (level === 1) {
+  if (kind === 'pro' || kind === 'pro_max') {
     // Missing/malformed dates never confer paid access or invent a renewal base.
+    if (kind === 'pro_max' && account.apiRequestLimit !== null) unavailable();
     if (!Number.isFinite(end)) unavailable();
     const expired = now.getTime() >= end;
     const activePro = !expired && account.subscription_status === 'active';
@@ -80,7 +90,8 @@ export function evaluateEntitlement(account, now = new Date()) {
       if (trial.used) return upgradeRequired(trial, { expired, expiresAt, startedAt,
         normalization: { ...FREE_ENTITLEMENT } });
     }
-    return { plan: activePro ? 'Pro' : 'Free', level: activePro ? 1 : 0, limit: activePro ? 5000 : 50,
+    return { plan: activePro ? kind === 'pro_max' ? 'Pro Max' : 'Pro' : 'Free', level: activePro ? level : 0,
+      limit: activePro ? kind === 'pro_max' ? null : 5000 : 50,
       status: activePro ? 'active' : 'inactive', activePro, expired, expiresAt, startedAt,
       normalization: !activePro ? { ...FREE_ENTITLEMENT } : null };
   }
@@ -93,7 +104,7 @@ export function evaluateEntitlement(account, now = new Date()) {
 }
 export function renewalPeriod(account, now, days = 30) {
   const entitlement = evaluateEntitlement(account, now);
-  if (entitlement.level === 2) unavailable('PLAN_UNAVAILABLE', 409);
+  if (planKind(account.plan) === 'legacy_unlimited') unavailable('PLAN_UNAVAILABLE', 409);
   // Preserve paid time even if an older normalization retained its future date.
   const hasPriorEnd = account.subscriptionExpiresAt != null;
   const priorEnd = hasPriorEnd ? dateMillis(account.subscriptionExpiresAt) : NaN;

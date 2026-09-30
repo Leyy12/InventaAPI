@@ -164,6 +164,8 @@ export default function ApiPlaygroundPage() {
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
               >
                 <option value="/daas/v1/catalog">GET /daas/v1/catalog (Product Catalog)</option>
+                <option value="/daas/v1/recommendations">GET /daas/v1/recommendations (Product Recommendations)</option>
+                <option value="/daas/v1/sales-feed">GET /daas/v1/sales-feed (Paid Sales Analytics)</option>
                 <option value="/daas/v1/health">GET /daas/v1/health (Health Check)</option>
               </select>
               <p className="text-xs text-slate-500 mt-1">

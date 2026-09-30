@@ -111,6 +111,11 @@ test('navigation, legacy route and locked onboarding UI retain the authoritative
   assert.match(overview, /entitlement\?\.plan === 'Free' && entitlement\?\.subscription_status === 'inactive'/);
   assert.match(overview, /Unlock API access/);
   assert.match(keys, /API Access Locked/);
-  assert.match(keys, /trialRequired \|\| serverTrialRequired/);
+  // The released management-only page has no generation request/error state.
+  // Retain the locked notice and verify server denial is surfaced by Products.
+  assert.match(keys, /trialRequired && <section role="status"/);
+  assert.doesNotMatch(keys, /api\/v1\/api-keys\/generate|serverTrialRequired/);
+  assert.match(source('dashboard/src/app/dashboard/products/page.tsx'), /throw new Error\(generationErrorMessage\(data\)\)/);
+  assert.match(source('dashboard/src/lib/api-key-generation.ts'), /data\.error === 'TRIAL_REQUIRED'/);
   assert.match(keys, /Start 7-Day Pro Trial/);
 });

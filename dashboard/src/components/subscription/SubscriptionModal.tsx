@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { X, Check, ArrowLeft, Loader2, ExternalLink } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId, getCumulativeFeatures } from "@/config/plans";
-import EnterpriseContactForm from "./EnterpriseContactForm";
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -31,10 +30,8 @@ export default function SubscriptionModal({
   // Step 1: Plan selection
   // Step 2: Redirecting to GCash (loading state)
   // Step 3: Error state
-  // Step 4: Enterprise contact form
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [errorMessage, setErrorMessage] = useState("");
-  const [showEnterpriseForm, setShowEnterpriseForm] = useState(false);
 
   // Initialize with error if provided
   useEffect(() => {
@@ -59,7 +56,6 @@ export default function SubscriptionModal({
 
   if (!isOpen) return null;
 
-  const currentPlan = SUBSCRIPTION_PLANS[selectedPlan];
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
 
   // ── HANDLERS ──────────────────────────────────────────────────────────────
@@ -71,26 +67,8 @@ export default function SubscriptionModal({
     router.push('/dashboard');
   };
 
-  const handleSelectEnterprise = () => {
-    setShowEnterpriseForm(true);
-    setStep(4);
-  };
-
-  const handleEnterpriseFormClose = () => {
-    setShowEnterpriseForm(false);
-    setStep(1);
-  };
-
-  const handleEnterpriseFormSuccess = () => {
-    setShowEnterpriseForm(false);
-    setStep(1);
-    onClose();
-    // Show success message (could be a toast/notification in production)
-    alert("Thank you! Your inquiry has been submitted. Our team will contact you within 24 hours.");
-    router.push('/dashboard');
-  };
-
-  const handleProCheckout = async () => {
+  const handlePaidCheckout = async () => {
+    if (selectedPlan !== 'pro' && selectedPlan !== 'pro_max') return;
     if (!user?.uid) {
       setErrorMessage("You are not logged in. Please log in before subscribing.");
       setStep(3);
@@ -104,7 +82,7 @@ export default function SubscriptionModal({
       const response = await fetch(`${API_BASE}/api/v1/checkout/create-gcash`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ plan: selectedPlan }),
         cache: "no-store",
       });
 
@@ -144,8 +122,7 @@ export default function SubscriptionModal({
 
   const handleContinue = () => {
     if (selectedPlan === "free") return handleSelectFree();
-    if (selectedPlan === "enterprise") return handleSelectEnterprise();
-    if (selectedPlan === "pro") return handleProCheckout();
+    if (selectedPlan === "pro" || selectedPlan === "pro_max") return handlePaidCheckout();
   };
 
   const resetAndClose = () => {
@@ -193,7 +170,8 @@ export default function SubscriptionModal({
         {step === 1 && (
           <div className="p-6">
             {(() => {
-              if (entitlement && !entitlement.canPurchasePro && selectedPlan === "pro") {
+              if (entitlement && (selectedPlan === 'pro' && !entitlement.canPurchasePro
+                || selectedPlan === 'pro_max' && !entitlement.canPurchaseProMax)) {
                 return (
                   <div className="text-center py-6">
                     <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -271,29 +249,28 @@ export default function SubscriptionModal({
                   </div>
 
                   {/* CTA */}
-                  {selectedPlan === 'pro' && entitlement?.activePro && (
+                  {(selectedPlan === 'pro' || selectedPlan === 'pro_max') && entitlement?.activePro && (
                     <p className="text-xs text-slate-400 mb-3">Renewal adds 30 calendar days to your existing expiry.</p>
                   )}
                   <button
                     onClick={handleContinue}
-                    disabled={selectedPlan === 'pro' && !entitlement?.canPurchasePro}
+                    disabled={selectedPlan === 'pro' && !entitlement?.canPurchasePro
+                      || selectedPlan === 'pro_max' && !entitlement?.canPurchaseProMax}
                     id="subscription-modal-continue-btn"
                     className={`
                       w-full font-bold py-3.5 rounded-xl transition-all shadow-lg text-white
-                      ${selectedPlan === "pro"
+                      ${selectedPlan === "pro" || selectedPlan === "pro_max"
                         ? "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-indigo-500/30"
-                        : selectedPlan === "enterprise"
-                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
                         : "bg-slate-700 hover:bg-slate-600"
                       }
                     `}
                   >
                     {selectedPlan === "pro" && (entitlement?.activePro ? "Renew with GCash →" : "Pay with GCash →")}
+                    {selectedPlan === "pro_max" && (entitlement?.plan === 'Pro Max' && entitlement.activePro ? "Renew Pro Max with GCash →" : "Get Pro Max with GCash →")}
                     {selectedPlan === "free" && "Use Free Plan"}
-                    {selectedPlan === "enterprise" && "Contact Sales →"}
                   </button>
 
-                  {selectedPlan === "pro" && (
+                  {(selectedPlan === "pro" || selectedPlan === "pro_max") && (
                     <p className="text-xs text-slate-500 text-center mt-3">
                       🔒 Secure checkout via PayMongo · GCash · DPA 2012 Compliant
                     </p>
@@ -330,7 +307,7 @@ export default function SubscriptionModal({
             <div className="mt-8 bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
               <p className="text-xs text-slate-500">
                 <strong className="text-slate-400">Note:</strong> After successful payment,
-                you'll automatically receive Pro access. No manual confirmation needed.
+                your selected paid plan becomes active only after verified payment. No manual confirmation is needed.
               </p>
             </div>
           </div>
@@ -356,7 +333,7 @@ export default function SubscriptionModal({
                 Go Back
               </button>
               <button
-                onClick={handleProCheckout}
+                onClick={handlePaidCheckout}
                 id="subscription-modal-retry-btn"
                 className="flex-[2] bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25 text-sm flex items-center justify-center gap-2"
               >
@@ -368,21 +345,6 @@ export default function SubscriptionModal({
         )}
       </div>
 
-      {/* ── STEP 4: Enterprise Contact Form (rendered separately over backdrop) ── */}
-      {showEnterpriseForm && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
-            onClick={handleEnterpriseFormClose}
-          />
-          <div className="relative z-10">
-            <EnterpriseContactForm
-              onClose={handleEnterpriseFormClose}
-              onSuccess={handleEnterpriseFormSuccess}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

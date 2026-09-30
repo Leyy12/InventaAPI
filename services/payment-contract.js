@@ -1,8 +1,14 @@
 import { validDocumentId } from './api-key-security.js';
-import { accountBlocked, evaluateEntitlement, dateMillis } from '../functions/subscription-lifecycle.mjs';
+import { accountBlocked, evaluateEntitlement, dateMillis, planKind } from '../functions/subscription-lifecycle.mjs';
 
 // Existing price/quota/duration; each paid term spans 30 UTC calendar days.
-export const PRO_PURCHASE = Object.freeze({ plan: 'Pro', amount: 149900, currency: 'PHP', durationDays: 30, apiRequestLimit: 5000 });
+export const PRO_PURCHASE = Object.freeze({ planId: 'pro', plan: 'Pro', amount: 149900,
+  currency: 'PHP', durationDays: 30, apiRequestLimit: 5000 });
+export const PRO_MAX_PURCHASE = Object.freeze({ planId: 'pro_max', plan: 'Pro Max', amount: 499900,
+  currency: 'PHP', durationDays: 30, apiRequestLimit: null });
+export const PURCHASE_CATALOG = Object.freeze({ pro: PRO_PURCHASE, pro_max: PRO_MAX_PURCHASE });
+export const purchaseForIntent = planId => typeof planId === 'string' && Object.hasOwn(PURCHASE_CATALOG, planId)
+  ? PURCHASE_CATALOG[planId] : null;
 export const PAYMENT_COLLECTIONS = Object.freeze({ orders: 'payment_orders', locks: 'payment_checkout_locks',
   sessions: 'payment_sessions', events: 'payment_events', payments: 'transactions' });
 
@@ -22,7 +28,13 @@ export const providerId = (id, prefix) => typeof id === 'string' && new RegExp(`
 export const orderIdValid = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(id);
 export const modeKey = (mode, id) => `${mode}_${id}`;
 export const refFor = (db, name, id) => db.collection(PAYMENT_COLLECTIONS[name]).doc(id);
-export const matchesPurchase = order => order && Object.entries(PRO_PURCHASE).every(([key, value]) => order[key] === value);
+export const matchesPurchase = order => {
+  const purchase = purchaseForIntent(order?.planId ?? (order?.plan === 'Pro' ? 'pro' : null));
+  // Pre-catalog Pro orders lacked planId; only those exact historical terms
+  // retain their original fulfillment contract. Pro Max always requires its ID.
+  return !!purchase && (order.planId === purchase.planId || purchase.planId === 'pro' && order.planId === undefined)
+    && Object.entries(purchase).every(([key, value]) => key === 'planId' || order[key] === value);
+};
 
 export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, dashboardUrl }) {
   const keyMode = /^sk_(test|live)_\S+$/u.exec(secretKey || '')?.[1];
@@ -64,11 +76,13 @@ export function requireCustomer(account, uid) {
   requirePayment(!accountBlocked(account) && account.uid === uid && account.role === 'Developer', 'ACCOUNT_UNAVAILABLE', 'Customer account unavailable.', 403);
 }
 
-export function requirePurchasable(account, now) {
-  requirePayment(['free', 'starter', 'pro', 'professional'].includes(account.plan?.toLowerCase()), 'PLAN_UNAVAILABLE', 'This account cannot purchase Pro.');
+export function requirePurchasable(account, now, purchase = PRO_PURCHASE) {
+  const kind = planKind(account.plan);
+  requirePayment(['free', 'pro', 'pro_max'].includes(kind) && purchaseForIntent(purchase.planId)
+    && !(kind === 'pro_max' && purchase.planId === 'pro'), 'PLAN_UNAVAILABLE', 'This account cannot purchase that plan.');
   requirePayment(account.subscriptionExpiresAt == null || Number.isFinite(dateMillis(account.subscriptionExpiresAt)),
     'ENTITLEMENT_UNAVAILABLE', 'Subscription needs review before purchase.', 409);
-  requirePayment(!['pro', 'professional'].includes(account.plan?.toLowerCase())
+  requirePayment(!['pro', 'pro_max'].includes(kind)
     || dateMillis(account.subscriptionExpiresAt) <= now.getTime() || account.subscription_status === 'active',
   'ACTIVE_PRO', 'Unresolved subscription requires review.');
   try { evaluateEntitlement(account, now); }

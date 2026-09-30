@@ -9,6 +9,7 @@ import FreeTrialPage from '../free-trial/page';
 export default function PlanBillingPage() {
   const { entitlement, loading } = useAuth();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchasePlan, setPurchasePlan] = useState<'pro' | 'pro_max'>('pro');
 
   if (loading || !entitlement) return <p role="status" className="p-8 text-slate-300">Verifying your plan and billing status…</p>;
 
@@ -30,6 +31,8 @@ export default function PlanBillingPage() {
         {entitlement.subscriptionExpiresAt && <p className="text-slate-300">Subscription expiry: {new Date(entitlement.subscriptionExpiresAt).toUTCString()}</p>}
         <p className="text-slate-300">{entitlement.plan === 'Pro'
           ? '5,000 account API requests per UTC day.'
+          : entitlement.plan === 'Pro Max'
+          ? 'Unlimited account API quota. Standard security, abuse protection, and IP rate limits still apply.'
           : 'Your paid account allowance is governed by your current entitlement.'}</p>
       </>}
       {!paid && !trial && !upgradeRequired && <p className="text-slate-300">API key creation begins when you activate your one-time 7-Day Pro Trial. The trial includes 500 total API requests across your keys.</p>}
@@ -42,12 +45,16 @@ export default function PlanBillingPage() {
       <h2 className="text-xl font-semibold text-white">{paid ? 'Manage your paid plan' : 'Upgrade options'}</h2>
       <p className="text-sm text-slate-400">Purchases are confirmed by the server; visiting this page does not start a checkout or activate a trial.</p>
       <div className="flex flex-wrap gap-3">
-        {entitlement.canPurchasePro && <button type="button" onClick={() => setPurchaseOpen(true)}
+        {entitlement.canPurchasePro && <button type="button" onClick={() => { setPurchasePlan('pro'); setPurchaseOpen(true); }}
           className="rounded-lg bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-500">
           {paid && entitlement.plan === 'Pro' ? 'Renew Pro' : 'Get Pro'}
         </button>}
+        {entitlement.canPurchaseProMax && <button type="button" onClick={() => { setPurchasePlan('pro_max'); setPurchaseOpen(true); }}
+          className="rounded-lg bg-sky-600 px-5 py-3 font-semibold text-white hover:bg-sky-500">
+          {paid && entitlement.plan === 'Pro Max' ? 'Renew Pro Max' : 'Get Pro Max'}
+        </button>}
       </div>
     </section>
-    <SubscriptionModal isOpen={purchaseOpen} selectedPlan="pro" onClose={() => setPurchaseOpen(false)} />
+    <SubscriptionModal isOpen={purchaseOpen} selectedPlan={purchasePlan} onClose={() => setPurchaseOpen(false)} />
   </div>;
 }

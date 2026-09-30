@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { checkoutPayload } from './paymongo-checkout.js';
-import { evaluateEntitlement } from '../functions/subscription-lifecycle.mjs';
-import { PRO_PURCHASE, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
+import { evaluateEntitlement, planKind } from '../functions/subscription-lifecycle.mjs';
+import { purchaseForIntent, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
 
 // Provider retention is 24h. Stop at 23h to leave a clock/network safety margin.
@@ -23,9 +23,12 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
   const authenticate = operation => authenticatedPayment({ getDb, verifyIdToken }, operation);
   const checkout = authenticate(async (req, res, uid, db) => {
     const body = req.body || {};
-    requirePayment(body.plan === undefined || body.plan === PRO_PURCHASE.plan, 'UNSUPPORTED_PLAN', 'Only Pro is purchasable.', 400);
+    const purchase = purchaseForIntent(body.plan === undefined ? 'pro' : body.plan);
+    requirePayment(purchase, 'UNSUPPORTED_PLAN', 'Unsupported purchase plan.', 400);
+    requirePayment(!['planId', 'purchaseId', 'planName', 'discount', 'discountAmount'].some(field => Object.hasOwn(body, field)),
+      'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     for (const field of ['amount', 'currency', 'durationDays', 'apiRequestLimit']) {
-      requirePayment(body[field] === undefined || body[field] === PRO_PURCHASE[field], 'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
+      requirePayment(body[field] === undefined || body[field] === purchase[field], 'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     }
     const config = getConfig();
     const id = newOrderId();
@@ -36,12 +39,13 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       const now = clock();
       const account = (await tx.get(db.collection('users').doc(uid))).data();
       requireCustomer(account, uid);
-      requirePurchasable(account, now);
+      requirePurchasable(account, now, purchase);
       const lock = (await tx.get(lockRef)).data();
       if (lock) {
         requirePayment(orderIdValid(lock.orderId), 'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
         const previous = (await tx.get(refFor(db, 'orders', lock.orderId))).data();
-        requirePayment(previous?.userId === uid && previous.mode === config.mode && matchesPurchase(previous),
+        requirePayment(previous?.userId === uid && previous.mode === config.mode && matchesPurchase(previous)
+          && (previous.planId ?? 'pro') === purchase.planId,
           'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
         if (previous.state === 'pending') {
           const binding = (await tx.get(refFor(db, 'sessions', modeKey(previous.mode, previous.sessionId)))).data();
@@ -60,7 +64,7 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       }
       const orderRef = refFor(db, 'orders', id);
       requirePayment(!(await tx.get(orderRef)).exists, 'ORDER_COLLISION', 'Checkout unavailable.', 503);
-      const order = { id, userId: uid, ...PRO_PURCHASE, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
+      const order = { id, userId: uid, ...purchase, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
         idempotencyKey: `checkout-${config.mode}-${id}`, providerKeyFingerprint: keyFingerprint(config.secretKey),
         attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
       order.providerRequestBody = JSON.stringify(checkoutPayload(order, config.dashboardUrl));
@@ -136,7 +140,9 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
         apiRequestLimit: effective.limit, subscriptionStartedAt: effective.startedAt,
         subscriptionExpiresAt: effective.expiresAt, lastSubscribedAt: account.lastSubscribedAt || null,
         expired: effective.expired, ...(effective.expired ? { expiredAt: effective.expiresAt } : {}), paymentConfirmed,
-        canPurchasePro: effective.level < 2, serverTime: now.toISOString(),
+        canPurchasePro: effective.level < 2 && planKind(account.plan) !== 'pro_max',
+        canPurchaseProMax: effective.level < 2 || planKind(account.plan) === 'pro_max',
+        serverTime: now.toISOString(),
         secondsRemaining: (effective.activePro || effective.activeTrial) ? Math.max(0, (Date.parse(effective.expiresAt) - now.getTime()) / 1000) : 0,
         daysLeft: (effective.activePro || effective.activeTrial) ? Math.ceil((Date.parse(effective.expiresAt) - now.getTime()) / 86400000) : 0 };
     });

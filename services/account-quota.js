@@ -15,7 +15,8 @@ function provablyPostCutover(accountSnapshot, cutoverAt, now) {
   } catch { return false; }
 }
 
-export async function consumeAccountQuota(db, { keyId, userId, credential, allowedPlans = null, cutoverAt = null, monthlyCutoverAt = null, clock = () => new Date() }) {
+export async function consumeAccountQuota(db, { keyId, userId, credential, allowedPlans = null, paidSubscriptionRequired = false,
+  cutoverAt = null, monthlyCutoverAt = null, clock = () => new Date() }) {
   const keyRef = db.collection('api_keys').doc(keyId);
   const userRef = db.collection('users').doc(userId);
   const usageRef = db.collection('account_api_usage').doc(userId);
@@ -40,6 +41,9 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
     const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
     if (entitlement.upgradeRequired) return { denied: upgradeRequiredError() };
+    if (paidSubscriptionRequired && (entitlement.level < 1 || entitlement.activeTrial)) {
+      return { denied: new ApiSecurityError(403, 'PLAN_UPGRADE_REQUIRED', 'A paid subscription is required for sales analytics.') };
+    }
     if (allowedPlans && entitlement.level < Math.min(...allowedPlans.map(plan => PLAN_LEVELS[plan] ?? Infinity))) {
       return { denied: new ApiSecurityError(403, 'PLAN_UPGRADE_REQUIRED', 'Your account plan does not include this endpoint.') };
     }

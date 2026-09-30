@@ -18,6 +18,8 @@ let emulator, port, scratch, startup = '', processError;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function valueField(value) {
+  if (value === null) return { nullValue: null };
+  if (typeof value === 'boolean') return { booleanValue: value };
   if (typeof value === 'number') return { integerValue: String(value) };
   if (Array.isArray(value)) return { arrayValue: { values: value.map(valueField) } };
   if (value && typeof value === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, val]) => [key, valueField(val)])) } };
@@ -134,4 +136,28 @@ test('ordinary Free signup and profile changes remain supported', async () => {
   const uid = 'valid-lifecycle';
   assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' })).status, 200);
   assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { fullName: 'Safe' }, 'fullName')).status, 200);
+});
+
+test('Pro Max may choose a paid segment but cannot forge plan, quota, paid expiry, or Trial state', async () => {
+  const uid = 'pro-max-owner', path = `users/${uid}`, token = mockToken(uid);
+  assert.equal((await call('PATCH', path, 'owner', { uid, role: 'Developer', plan: 'Pro Max',
+    apiRequestLimit: null, businessSegment: 'Grocery', selectedSegment: 'Grocery',
+    subscription_status: 'active', subscriptionExpiresAt: '2026-10-27T12:00:00.000Z' })).status, 200);
+  assert.equal((await call('PATCH', path, token, { selectedSegment: 'Pharmacy' }, 'selectedSegment')).status, 200);
+  for (const [field, value] of [['plan', 'Enterprise'], ['apiRequestLimit', 5000],
+    ['subscriptionExpiresAt', '2099-01-01T00:00:00.000Z'], ['hasUsedFreeTrial', false]]) {
+    assert.equal((await call('PATCH', path, token, { [field]: value }, field)).status, 403, field);
+  }
+});
+
+test('customer sales are server-only for owner, other customer, admin, and anonymous browsers', async () => {
+  const path = 'customer_sales/synthetic-sale';
+  const row = { userId: 'customer-a', externalTransactionId: 'synthetic', currency: 'PHP', totalMinor: 100 };
+  assert.equal((await call('PATCH', path, 'owner', row)).status, 200);
+  for (const token of [tokens.customer, tokens.stranger, tokens.admin, tokens.anonymous]) {
+    assert.equal((await call('GET', path, token)).status, 403);
+    assert.equal((await call('PATCH', path, token, { totalMinor: 999 }, 'totalMinor')).status, 403);
+    assert.equal((await call('DELETE', path, token)).status, 403);
+    assert.equal((await call('PATCH', 'customer_sales/new-sale', token, row)).status, 403);
+  }
 });

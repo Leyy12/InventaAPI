@@ -226,43 +226,30 @@ Ang bawat industry ay may **sariling kulay scheme** para maging personalized:
 
 ---
 
-### 5. ✨ **RECOMMENDATIONS PAGE** (AI Insights)
+### 5. **PRODUCT RECOMMENDATIONS** (deterministic, not AI)
 **Route:** `/dashboard/recommendations`
 
-**Purpose:** AI-powered product suggestions and business insights
+The implemented page requests Firebase-authenticated, account-owned recommendations
+from `/api/v1/customer/insights/recommendations`. DaaS integrations use
+`GET /daas/v1/recommendations` with an API key and the normal account quota.
+Only visible products within the current account/key and segment scope are
+eligible. Recent account-owned completed sales determine factual unit-based
+ranking and reasons when available. Without supporting sales, the response
+identifies its basis as `catalog` and orders eligible products deterministically.
+An empty authorized catalog produces an empty state—not fabricated trends.
+No AI/ML model, seasonal forecast, market percentage, confidence score, or
+competitor signal is implemented or advertised.
 
-**Components:**
-1. **AI Suggestions Panel**
-   - "Trending in Your Industry" section
-   - List of recommended products:
-     - Product image
-     - Product name
-     - Reason for recommendation (e.g., "High demand this season")
-     - Add to catalog button
-   - Industry-specific examples:
-     - **Hardware:** "Cement sales increase during rainy season"
-     - **Pharmacy:** "Flu season: stock up on cold medicine"
-     - **Grocery:** "Back-to-school: snacks & beverages trending"
-     - **Boutique:** "Summer dresses in high demand"
+### 6. **REAL SALES ANALYTICS**
+**Route:** `/dashboard/analytics` → Sales Analytics tab
 
-2. **Inventory Insights**
-   - "Products to Stock" recommendations
-   - Based on:
-     - Historical sales data
-     - Seasonal trends
-     - Market analysis
-     - Competitor insights
-   - Each insight shows:
-     - Product name
-     - Expected demand percentage
-     - Confidence score
-     - Trend indicator (↑ rising, ↓ declining)
-
-3. **Market Intelligence**
-   - Industry news/updates
-   - Price trend alerts
-   - New product releases
-   - Supplier recommendations
+Integrations submit completed PHP sales through `POST /daas/v1/sales`.
+Server-owned documents are idempotent per account and reject consumer PII.
+`GET /daas/v1/sales-feed` and the Customer Firebase-authenticated report use
+the same 90-day-bounded aggregation: actual sales, transactions, units,
+average transaction value, UTC daily series, and top products. Free/Trial
+cannot read the paid feed; Pro and Pro Max can. No-sales accounts receive
+zero/empty data with `hasData: false`. The older API Usage/Catalog tab remains.
 
 ---
 
@@ -487,8 +474,8 @@ Neutrals:   Background: #0F172A (Slate 900)
 - [ ] Products page (catalog + sandbox)
 - [ ] API Keys page (generation + management)
 - [ ] Documentation page (full guide)
-- [ ] Recommendations page (AI insights)
-- [ ] Analytics page (detailed reports)
+- [x] Recommendations page (deterministic authorized catalog/sales inputs)
+- [x] Analytics page (existing reports plus real account-owned sales)
 - [ ] Mobile responsive sidebar
 - [ ] Backend API integration
 - [ ] Real data from database

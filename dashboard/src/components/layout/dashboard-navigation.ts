@@ -1,4 +1,4 @@
-import { LayoutDashboard, Key, BookOpen, Package, BarChart3, Shield, CreditCard, Settings } from 'lucide-react';
+import { LayoutDashboard, Key, BookOpen, Package, BarChart3, Lightbulb, Shield, CreditCard, Settings } from 'lucide-react';
 
 export const dashboardRoutes = [
   { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
@@ -6,6 +6,7 @@ export const dashboardRoutes = [
   { name: 'API Keys', href: '/dashboard/api-keys', icon: Key },
   { name: 'Documentation', href: '/docs', icon: BookOpen },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
+  { name: 'Recommendations', href: '/dashboard/recommendations', icon: Lightbulb },
   { name: 'Privacy', href: '/dashboard/privacy', icon: Shield },
   { name: 'Plan & Billing', href: '/dashboard/plan-billing', icon: CreditCard },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },

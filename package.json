@@ -7,6 +7,7 @@
   "scripts": {
     "test:rate-limit": "node --test --test-reporter=spec tests/rate-limit/client-ip.test.mjs",
     "test:adviser:free-trial": "node scripts/run-adviser-free-trial-tests.mjs",
+    "test:adviser:pro-max": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/pro-max/*.test.mjs",
     "start": "node server.js",
     "dev": "node server.js",
     "validate:release-config": "node scripts/validate-release-config.mjs",

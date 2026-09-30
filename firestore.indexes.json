@@ -1,6 +1,15 @@
 {
   "indexes": [
     {
+      "collectionGroup": "customer_sales",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "api_telemetry",
       "queryScope": "COLLECTION",
       "fields": [

@@ -27,7 +27,8 @@ export function createDaaSSecurity({ getDb, clock = () => new Date(), cutoverAt 
       try {
         const result = await consumeAccountQuota(getDb(), {
           keyId: req.apiKeyData.id, userId: req.apiKeyData.userId, credential: req.apiCredential,
-          allowedPlans: req.requiredApiPlans, clock, cutoverAt, monthlyCutoverAt,
+          allowedPlans: req.requiredApiPlans, paidSubscriptionRequired: req.paidSubscriptionRequired === true,
+          clock, cutoverAt, monthlyCutoverAt,
         });
         req.apiKeyData = result.key;
         req.userPlanData = result.account;
@@ -50,4 +51,8 @@ export function requirePlan(allowedPlans) {
     req.requiredApiPlans = allowedPlans.map(plan => plan.toLowerCase());
     return next();
   };
+}
+export function requirePaidSubscription(req, _res, next) {
+  req.paidSubscriptionRequired = true;
+  return next();
 }

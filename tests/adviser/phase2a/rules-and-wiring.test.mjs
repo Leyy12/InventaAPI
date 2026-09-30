@@ -32,10 +32,13 @@ test('static wiring: all management routes use tested authenticated handlers', (
   assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 8);
 });
 
-test('static wiring: both DaaS endpoints consume account quota, with paid plan checked in transaction', () => {
+test('static wiring: protected DaaS endpoints consume account quota, with paid sales checked in transaction', () => {
   const routes = source('../routes/daas.js');
   assert.match(routes, /router\.get\('\/catalog', authenticateApiKey, enforceRequestLimit/u);
-  assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePlan\(\['pro', 'enterprise'\]\), enforceRequestLimit/u);
+  assert.match(routes, /router\.post\('\/sales', authenticateApiKey, enforceRequestLimit/u);
+  assert.match(routes, /router\.get\('\/recommendations', authenticateApiKey, enforceRequestLimit/u);
+  assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit/u);
+  assert.match(source('../services/account-quota.js'), /paidSubscriptionRequired && \(entitlement\.level < 1 \|\| entitlement\.activeTrial\)/u);
   assert.match(routes, /requestsUsed: req\.requestUsage\.used/u);
   assert.doesNotMatch(routes, /req\.apiKeyData\.plan/u);
   assert.match(source('../server.js'), /methods: \[[^\]]*'PATCH'/u);

@@ -10,6 +10,7 @@ export interface SubscriptionState {
   activeTrial?: boolean;
   expired: boolean;
   canPurchasePro: boolean;
+  canPurchaseProMax: boolean;
   secondsRemaining: number;
   serverTime: string;
 }

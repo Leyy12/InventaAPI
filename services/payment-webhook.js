@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
-import { PRO_PURCHASE, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
+import { providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
 
 // Existing five-minute policy retained. PayMongo recommends a freshness check,
@@ -46,11 +46,12 @@ export function paymentFromEvent(event, mode) {
     && paymentAttrs.disputed !== true && (paymentAttrs.refunds === undefined
       || (Array.isArray(paymentAttrs.refunds) && paymentAttrs.refunds.length === 0)), 'INVALID_PAYMENT_STATE');
   for (const source of [paymentAttrs, intent.attributes]) {
-    requirePayment(source.amount === PRO_PURCHASE.amount && source.currency === PRO_PURCHASE.currency, 'PURCHASE_MISMATCH');
+    requirePayment(Number.isSafeInteger(source.amount) && source.amount > 0 && source.currency === 'PHP', 'PURCHASE_MISMATCH');
   }
   requirePayment(Array.isArray(attrs.line_items) && attrs.line_items.length === 1
-    && attrs.line_items[0]?.amount === PRO_PURCHASE.amount && attrs.line_items[0]?.currency === PRO_PURCHASE.currency
-    && attrs.line_items[0]?.quantity === 1, 'PURCHASE_MISMATCH');
+    && attrs.line_items[0]?.quantity === 1
+    && [intent.attributes, attrs.line_items[0]].every(source => source.amount === paymentAttrs.amount
+      && source.currency === paymentAttrs.currency), 'PURCHASE_MISMATCH');
   return { eventId: root.id, sessionId: session.id, paymentId: payment.id, paymentIntentId: intent.id,
     mode, amount: paymentAttrs.amount, currency: paymentAttrs.currency };
 }
@@ -65,7 +66,8 @@ export async function fulfillPayment(db, payment, time) {
     requirePayment(order && order.id === binding.orderId && order.userId === binding.userId
       && binding.sessionId === payment.sessionId && binding.mode === payment.mode
       && order.sessionId === payment.sessionId && order.paymentIntentId === payment.paymentIntentId
-      && order.mode === payment.mode && matchesPurchase(order), 'ORDER_MISMATCH');
+      && order.mode === payment.mode && matchesPurchase(order)
+      && payment.amount === order.amount && payment.currency === order.currency, 'ORDER_MISMATCH');
     requirePayment(['pending', 'processed', 'review_required'].includes(order.state), 'INVALID_ORDER_STATE');
     const eventRef = refFor(db, 'events', modeKey(payment.mode, payment.eventId));
     const paymentRef = refFor(db, 'payments', `paymongo_${modeKey(payment.mode, payment.paymentId)}`);
@@ -98,7 +100,7 @@ export async function fulfillPayment(db, payment, time) {
       return { duplicate: false, reviewRequired: true };
     }
     requireCustomer(account, order.userId);
-    requirePurchasable(account, now);
+    requirePurchasable(account, now, { planId: order.planId ?? 'pro' });
     const processedAt = now.toISOString();
     const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
     tx.set(paymentRef, { ...evidence, userEmail: typeof account.email === 'string' ? account.email : '',

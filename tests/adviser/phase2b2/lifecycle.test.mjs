@@ -32,7 +32,8 @@ const handlers = (db, clock = () => NOW) => createPaymentHandlers({ getDb: () =>
   createSession: async () => ({ sessionId: 'cs_new', paymentIntentId: 'pi_new', checkoutUrl: 'https://checkout.paymongo.com/new' }) });
 function payment(db, label = 'a') {
   const id = `${label.repeat(8)}-${label.repeat(4)}-4${label.repeat(3)}-8${label.repeat(3)}-${label.repeat(12)}`;
-  const value = { mode: 'test', eventId: `evt_${label}`, sessionId: `cs_${label}`, paymentId: `pay_${label}`, paymentIntentId: `pi_${label}` };
+  const value = { mode: 'test', eventId: `evt_${label}`, sessionId: `cs_${label}`, paymentId: `pay_${label}`,
+    paymentIntentId: `pi_${label}`, amount: PRO_PURCHASE.amount, currency: PRO_PURCHASE.currency };
   db.seed(`payment_orders/${id}`, { id, userId: 'owner', state: 'pending', ...PRO_PURCHASE, ...value });
   db.seed(`payment_sessions/test_cs_${label}`, { orderId: id, userId: 'owner', mode: 'test', sessionId: value.sessionId });
   return { value, id };

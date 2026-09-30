@@ -230,7 +230,7 @@ test('review: actual signup provisions profile before subsequent protected acces
   assert.deepEqual(events, ['create', 'profile', 'signout']); assert.equal(unexpectedLogout, 0);
   assert.equal(profiles.get(user.uid).role, 'Developer'); assert.equal(profiles.get(user.uid).plan, 'Free');
   assert.equal(profiles.get(user.uid).apiRequestLimit, 50); assert.equal(profiles.get(user.uid).businessSegment, 'Grocery');
-  assert.equal(landingSeen(storage), false); assert.deepEqual(routes, ['/login?registered=true&choosePlan=true']);
+  assert.equal(landingSeen(storage), false); assert.deepEqual(routes, ['/login?registered=true&choosePlan=true&pendingPlan=pro']);
   auth.currentUser = user; await gate.accept(user);
   assert.equal(navigationDecision({ path: '/login', initializing: current.loading, role: profileRole(current.profile) }), '/dashboard');
   gate.stop();
