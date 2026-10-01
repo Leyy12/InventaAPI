@@ -16,18 +16,20 @@ const customer = { uid: 'owner', role: 'Developer', plan: 'Free', apiRequestLimi
 const orderPath = id => `payment_orders/${id}`;
 
 // All provider work is injected and simulated. No SDK, credentials, or HTTP I/O.
-function fixture({ failFirst = false } = {}) {
+function fixture({ failFirst = false, mode = 'test' } = {}) {
   const db = memoryFirestore({ 'users/owner': customer });
   const attempts = [], sessions = new Map();
   let instant = NOW.getTime();
-  const handlers = createPaymentHandlers({ getDb: () => db, getConfig: () => config,
+  let settings = { ...config, mode, secretKey: `sk_${mode}_SYNTHETIC_LOCAL_ONLY` };
+  const handlers = createPaymentHandlers({ getDb: () => db, getConfig: () => settings,
     clock: () => new Date(instant), newOrderId: randomUUID,
     verifyIdToken: async (token, checkRevoked) => {
       assert.equal(checkRevoked, true);
       if (token !== 'owner-token') throw Error('Invalid synthetic token');
       return { uid: 'owner' };
     },
-    createSession: async ({ order }) => {
+    createSession: async ({ config: current, order }) => {
+      assert.equal(order.mode, current.mode);
       assert.equal(db.read(orderPath(order.id)).state, 'creating');
       assert.equal(db.read('payment_checkout_locks/owner').orderId, order.id);
       attempts.push(structuredClone(order));
@@ -39,15 +41,16 @@ function fixture({ failFirst = false } = {}) {
       return sessions.get(order.id);
     },
   });
-  return { db, handlers, attempts, advance: ms => { instant += ms; } };
+  return { db, handlers, attempts, advance: ms => { instant += ms; },
+    configure: nextMode => { settings = { ...settings, mode: nextMode, secretKey: `sk_${nextMode}_SYNTHETIC_LOCAL_ONLY` }; } };
 }
 function paymentFor(order, label) {
   return { mode: order.mode, eventId: `evt_${label}`, paymentId: `pay_${label}`,
     sessionId: order.sessionId, paymentIntentId: order.paymentIntentId,
     amount: order.amount, currency: order.currency };
 }
-async function completed(plan = 'pro') {
-  const env = fixture();
+async function completed(plan = 'pro', mode = 'test') {
+  const env = fixture({ mode });
   assert.equal(evaluateEntitlement(env.db.read('users/owner'), NOW).plan, 'Upgrade Required');
   const checkout = await invoke(env.handlers.checkout, { body: { plan } });
   assert.equal(checkout.statusCode, 200);
@@ -63,9 +66,14 @@ function preserveHistory(db, before) {
   }
 }
 
-for (const [previous, requested] of [['pro', 'pro_max'], ['pro', 'pro'], ['pro_max', 'pro_max']]) {
-  test(`processed ${previous} -> ${requested}: new canonical checkout preserves historical payment and owner`, async () => {
-    const env = await completed(previous);
+for (const [previousMode, currentMode, previous, requested] of [
+  ['test', 'test', 'pro', 'pro_max'], ['test', 'test', 'pro', 'pro'], ['test', 'test', 'pro_max', 'pro_max'],
+  ['test', 'live', 'pro', 'pro'], ['test', 'live', 'pro', 'pro_max'], ['test', 'live', 'pro_max', 'pro_max'],
+  ['live', 'live', 'pro', 'pro_max'], ['live', 'test', 'pro', 'pro_max'],
+]) {
+  test(`processed ${previousMode} ${previous} -> ${currentMode} ${requested}: fresh canonical checkout and immutable history`, async () => {
+    const env = await completed(previous, previousMode);
+    env.configure(currentMode);
     const before = env.db.dump();
     const response = await invoke(env.handlers.checkout, { body: { plan: requested, userId: 'owner' } });
     assert.equal(response.statusCode, 200);
@@ -73,8 +81,9 @@ for (const [previous, requested] of [['pro', 'pro_max'], ['pro', 'pro'], ['pro_m
     const order = env.db.read(orderPath(response.body.orderId));
     const purchase = purchaseForIntent(requested);
     for (const [field, value] of Object.entries(purchase)) assert.equal(order[field], value, field);
-    assert.equal(order.userId, 'owner'); assert.equal(order.mode, 'test');
+    assert.equal(order.userId, 'owner'); assert.equal(order.mode, currentMode);
     assert.equal(order.state, 'pending'); assert.equal(order.currency, 'PHP');
+    assert.equal(order.amount, requested === 'pro' ? 149900 : 499900);
     assert.notEqual(order.sessionId, before[orderPath(env.oldId)].sessionId);
     assert.notEqual(order.paymentIntentId, before[orderPath(env.oldId)].paymentIntentId);
     assert.notEqual(order.idempotencyKey, before[orderPath(env.oldId)].idempotencyKey);
@@ -83,13 +92,20 @@ for (const [previous, requested] of [['pro', 'pro_max'], ['pro', 'pro'], ['pro_m
     assert.equal(payload.line_items[0].currency, 'PHP');
     assert.equal(payload.metadata.planId, requested);
     assert.equal(payload.reference_number, order.id);
-    assert.deepEqual(env.db.read(`payment_sessions/test_${order.sessionId}`), {
-      orderId: order.id, userId: 'owner', mode: 'test', sessionId: order.sessionId,
+    assert.deepEqual(env.db.read(`payment_sessions/${currentMode}_${order.sessionId}`), {
+      orderId: order.id, userId: 'owner', mode: currentMode, sessionId: order.sessionId,
     });
     preserveHistory(env.db, before);
     assert.equal(env.attempts.length, 2);
     // Creation alone must not grant/extend entitlement; only bound fulfillment does.
     const paid = paymentFor(order, 'new');
+    if (currentMode !== previousMode) {
+      // A terminal lock exception must not let a wrong-mode payment fulfill the NEW order.
+      await assert.rejects(fulfillPayment(env.db, { ...paid, mode: previousMode }, NOW),
+        error => error.code === 'UNBOUND_SESSION');
+      preserveHistory(env.db, before);
+      assert.equal(env.db.read(orderPath(order.id)).state, 'pending');
+    }
     assert.deepEqual(await fulfillPayment(env.db, paid, NOW), { duplicate: false });
     assert.equal(env.db.read('users/owner').plan, purchase.plan);
     assert.equal(env.db.read('users/owner').apiRequestLimit, purchase.apiRequestLimit);
@@ -101,6 +117,24 @@ for (const [previous, requested] of [['pro', 'pro_max'], ['pro', 'pro'], ['pro_m
     assert.deepEqual(env.db.dump(), fulfilled);
     assert.deepEqual(env.db.read(orderPath(env.oldId)), before[orderPath(env.oldId)]);
   });
+}
+
+for (const state of ['pending', 'creating', 'retryable']) {
+  for (const [previousMode, currentMode, requested] of [
+    ['test', 'live', 'pro'], ['test', 'live', 'pro_max'], ['live', 'test', 'pro'],
+  ]) {
+    test(`unresolved ${state} ${previousMode} Pro -> ${currentMode} ${requested}: mode mismatch fails closed`, async () => {
+      const env = fixture({ mode: previousMode });
+      const first = await invoke(env.handlers.checkout, { body: { plan: 'pro' } });
+      env.db.seed(orderPath(first.body.orderId), { ...env.db.read(orderPath(first.body.orderId)), state });
+      env.configure(currentMode);
+      env.advance(60001);
+      const before = env.db.dump();
+      const response = await invoke(env.handlers.checkout, { body: { plan: requested } });
+      assert.equal(response.statusCode, 409); assert.equal(response.body.code, 'CHECKOUT_REVIEW');
+      assert.deepEqual(env.db.dump(), before); assert.equal(env.attempts.length, 1);
+    });
+  }
 }
 
 test('processed legacy Pro order without planId allows new canonical Pro Max intent', async () => {
@@ -121,9 +155,12 @@ test('processed Pro Max never bypasses the existing no-downgrade lifecycle rule'
 });
 
 for (const state of ['pending', 'creating', 'retryable']) {
-  for (const [previous, requested] of [['pro', 'pro_max'], ['pro_max', 'pro']]) {
-    test(`unresolved ${state} ${previous} -> ${requested}: fails closed without another checkout`, async () => {
-      const env = fixture();
+  for (const [mode, previous, requested] of [
+    ['test', 'pro', 'pro_max'], ['test', 'pro_max', 'pro'],
+    ['live', 'pro', 'pro_max'], ['live', 'pro_max', 'pro'],
+  ]) {
+    test(`unresolved ${state} ${mode} ${previous} -> ${requested}: fails closed without another checkout`, async () => {
+      const env = fixture({ mode });
       const first = await invoke(env.handlers.checkout, { body: { plan: previous } });
       const old = env.db.read(orderPath(first.body.orderId));
       env.db.seed(orderPath(old.id), { ...old, state });
@@ -147,9 +184,9 @@ for (const state of ['review_required', 'cancelled', 'expired', 'unknown']) {
     assert.deepEqual(env.db.dump(), before); assert.equal(env.attempts.length, 1);
   });
 }
-for (const plan of ['pro', 'pro_max']) {
-  test(`pending ${plan}: same-plan retries return the original order/session`, async () => {
-    const env = fixture();
+for (const [mode, plan] of ['test', 'live'].flatMap(mode => ['pro', 'pro_max'].map(plan => [mode, plan]))) {
+  test(`pending ${mode} ${plan}: same-plan retries return the original order/session`, async () => {
+    const env = fixture({ mode });
     const first = await invoke(env.handlers.checkout, { body: { plan } });
     const before = env.db.dump();
     for (let i = 0; i < 3; i++) {
@@ -159,8 +196,8 @@ for (const plan of ['pro', 'pro_max']) {
     assert.deepEqual(env.db.dump(), before); assert.equal(env.attempts.length, 1);
   });
   for (const state of ['creating', 'retryable']) {
-    test(`recoverable ${state} ${plan}: lease and same persisted intent remain enforced`, async () => {
-      const env = fixture({ failFirst: true });
+    test(`recoverable ${state} ${mode} ${plan}: lease and same persisted intent remain enforced`, async () => {
+      const env = fixture({ failFirst: true, mode });
       assert.equal((await invoke(env.handlers.checkout, { body: { plan } })).statusCode, 503);
       const old = env.db.read(orderPath(env.attempts[0].id));
       env.db.seed(orderPath(old.id), { ...old, state });
@@ -179,9 +216,10 @@ for (const plan of ['pro', 'pro_max']) {
   }
 }
 
-for (const mixed of [false, true]) {
-  test(`processed history: concurrent ${mixed ? 'different' : 'same'}-plan requests create one new live intent`, async () => {
+for (const [mode, mixed] of ['test', 'live'].flatMap(mode => [false, true].map(mixed => [mode, mixed]))) {
+  test(`processed Test history: concurrent ${mixed ? 'different' : 'same'}-plan requests create one new ${mode} intent`, async () => {
     const env = await completed(), before = env.db.dump();
+    env.configure(mode);
     const requested = Array.from({ length: 20 }, (_, i) => mixed && i % 2 ? 'pro' : 'pro_max');
     const results = await Promise.all(requested.map(plan => invoke(env.handlers.checkout, { body: { plan } })));
     assert.ok(results.some(result => result.statusCode === 200));
@@ -190,6 +228,7 @@ for (const mixed of [false, true]) {
     assert.notEqual(newId, env.oldId); assert.equal(env.attempts.length, 2);
     const pending = Object.values(env.db.dump()).filter(record => record.state === 'pending');
     assert.equal(pending.length, 1); assert.equal(pending[0].id, newId);
+    assert.equal(pending[0].mode, mode);
     for (let i = 0; i < results.length; i++) {
       if (results[i].statusCode === 200) assert.equal(results[i].body.orderId, newId);
       if (requested[i] !== pending[0].planId) {
@@ -202,11 +241,13 @@ for (const mixed of [false, true]) {
   });
 }
 
-for (const [label, patch] of Object.entries({ owner: { userId: 'stranger' }, mode: { mode: 'live' },
+for (const [label, patch] of Object.entries({ owner: { userId: 'stranger' }, mode: { mode: 'unknown' },
+  missingMode: { mode: undefined },
   amount: { amount: 1 }, currency: { currency: 'USD' }, plan: { plan: 'Pro Max' } })) {
   test(`processed history: invalid ${label} cannot unlock a new checkout`, async () => {
     const env = await completed();
     env.db.seed(orderPath(env.oldId), { ...env.db.read(orderPath(env.oldId)), ...patch });
+    env.configure('live');
     const before = env.db.dump();
     const response = await invoke(env.handlers.checkout, { body: { plan: 'pro_max' } });
     assert.equal(response.statusCode, 409); assert.equal(response.body.code, 'CHECKOUT_REVIEW');

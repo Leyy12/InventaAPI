@@ -44,10 +44,11 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       if (lock) {
         requirePayment(orderIdValid(lock.orderId), 'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
         const previous = (await tx.get(refFor(db, 'orders', lock.orderId))).data();
-        // Completed orders are history, not unresolved purchase intents. Keep
-        // plan equality for recovery only; owner/mode/purchase checks still apply.
-        requirePayment(previous?.userId === uid && previous.mode === config.mode && matchesPurchase(previous)
-          && (previous.state === 'processed' || (previous.planId ?? 'pro') === purchase.planId),
+        // Completed orders are immutable history. Validate their owner, mode and
+        // canonical terms, but require current mode/plan equality only for recovery.
+        requirePayment(previous?.userId === uid && ['test', 'live'].includes(previous.mode) && matchesPurchase(previous)
+          && (previous.state === 'processed' || previous.mode === config.mode
+            && (previous.planId ?? 'pro') === purchase.planId),
           'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
         if (previous.state === 'pending') {
           const binding = (await tx.get(refFor(db, 'sessions', modeKey(previous.mode, previous.sessionId)))).data();
