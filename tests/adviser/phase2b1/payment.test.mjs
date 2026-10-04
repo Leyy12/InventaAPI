@@ -64,6 +64,26 @@ function signed(event = fixture(), timestamp = Math.floor(now.getTime() / 1000),
   return { rawBody, headers: { 'paymongo-signature': `t=${timestamp},te=${digest},li=` } };
 }
 const attrs = event => event.data.attributes.data.attributes;
+
+for (const legacyPlanId of [undefined, 'pro']) test(`saved historical Pro 5000 snapshot (${legacyPlanId}) settles to 500 without rewriting evidence`, async () => {
+  const env = await ready();
+  const historicalBody = env.db.read(orderPath).providerRequestBody.replace('500 API requests/day', '5,000 API requests/day');
+  env.db.seed(orderPath, { ...env.db.read(orderPath), apiRequestLimit: 5000, providerRequestBody: historicalBody });
+  if (legacyPlanId === undefined) {
+    const historical = env.db.read(orderPath); delete historical.planId;
+    env.db.seed(orderPath, historical);
+  }
+  assert.equal(matchesPurchase(env.db.read(orderPath)), true);
+  const paid = await invoke(env.webhook, signed());
+  assert.equal(paid.statusCode, 200); assert.equal(paid.body.processed, true);
+  assert.equal(env.db.read(orderPath).apiRequestLimit, 5000);
+  assert.equal(env.db.read(orderPath).providerRequestBody, historicalBody);
+  assert.equal(env.db.read('users/owner').apiRequestLimit, 500);
+  assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2026-10-20T10:00:00.000Z');
+  assert.equal((await invoke(env.status, { query: { orderId } })).body.paymentConfirmed, true);
+  const before = env.db.dump(); assert.equal((await invoke(env.webhook, signed())).body.duplicate, true);
+  assert.deepEqual(env.db.dump(), before);
+});
 const unchanged = (env, before) => { assert.deepEqual(env.db.dump(), before); assert.equal(env.db.userWrites, 0); };
 
 const liveBilling = (extra = {}) => paymentConfiguration({ mode: 'live', nodeEnv: 'production',
@@ -281,7 +301,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
     assert.equal(payload.line_items[0].amount, purchase.planId === 'pro' ? 149900 : 499900);
     assert.equal(payload.line_items[0].currency, 'PHP');
     assert.equal(order.durationDays, 30);
-    assert.equal(order.apiRequestLimit, purchase.planId === 'pro' ? 5000 : null);
+    assert.equal(order.apiRequestLimit, purchase.planId === 'pro' ? 500 : null);
     assert.equal(order.userId, 'owner');
   });
 
@@ -437,7 +457,7 @@ test('signature: valid raw fixture grants only stored owner; body/metadata ignor
   const response = await invoke(env.webhook, { ...signed(), body: { userId: 'stranger' } });
   assert.equal(response.statusCode, 200); assert.equal(response.body.duplicate, false);
   assert.equal(env.db.read('users/owner').plan, 'Pro');
-  assert.equal(env.db.read('users/owner').apiRequestLimit, 5000);
+  assert.equal(env.db.read('users/owner').apiRequestLimit, 500);
   assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2026-10-20T10:00:00.000Z');
   assert.equal(env.db.read('users/owner').lastSubscribedAt, now.toISOString());
   assert.deepEqual(env.db.read('users/stranger'), stranger);
@@ -783,7 +803,7 @@ for (const plan of ['pro', 'pro_max']) test(`replacement: ${plan} expires GCash,
   assert.equal(old.state, 'superseded'); assert.equal(old.providerStatus, 'expired');
   assert.equal(old.sessionId, original.sessionId); assert.equal(old.providerRequestBody, original.providerRequestBody);
   assert.equal(old.supersededBy, current.id); assert.equal(current.durationDays, 30);
-  assert.equal(current.apiRequestLimit, plan === 'pro' ? 5000 : null);
+  assert.equal(current.apiRequestLimit, plan === 'pro' ? 500 : null);
   assert.equal(env.db.read('payment_sessions/test_cs_abc123').state, 'superseded');
   assert.deepEqual(env.db.read('payment_checkout_locks/owner'), { orderId: current.id, sessionId: 'cs_fresh123', mode: 'test' });
   const second = await invoke(env.checkout, { body: { plan } });
@@ -869,7 +889,7 @@ test('fence: current fresh QR Ph session still fulfills Pro atomically once', as
   const event = fixture(); event.data.attributes.data.id = 'cs_fresh123';
   attrs(event).payment_intent.id = 'pi_fresh123'; attrs(event).payments[0].attributes.payment_intent_id = 'pi_fresh123';
   assert.equal((await invoke(env.webhook, signed(event))).body.processed, true);
-  assert.equal(env.db.read('users/owner').plan, 'Pro'); assert.equal(env.db.read('users/owner').apiRequestLimit, 5000);
+  assert.equal(env.db.read('users/owner').plan, 'Pro'); assert.equal(env.db.read('users/owner').apiRequestLimit, 500);
   assert.equal(env.db.read(`payment_orders/${response.body.orderId}`).state, 'processed');
   assert.equal((await invoke(env.webhook, signed(event))).body.duplicate, true); assert.equal(env.db.userWrites, 1);
 });

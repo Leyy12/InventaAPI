@@ -98,19 +98,19 @@ flowchart LR
   Data --> History[Existing recorded-request telemetry where recorded]
 ```
 
-Free defaults to 50 requests/UTC calendar month with existing lower account overrides. Pro is
-5,000/day; Enterprise retains unlimited behavior. Existing request-quota cutover
+Active Free Trial lasts 7 days, permits 0–50 unique linked products and one active API key,
+with no account request quota. Pro is 500/day; Pro Max and legacy Enterprise retain unlimited behavior. Existing request-quota cutover
 hold remains independent of key generation. All keys share request usage;
 generation neither consumes nor resets it. Customer history is still at most 50
 recent recorded API requests, not complete quota accounting or key-generation
 history. **Key Name** is the key alias at request time; no downstream Consumer
 registry or invented Consumer identity.
 
-Trial ends at seven days OR 500 total requests. Protected API access and new
-key generation then require paid Pro; existing keys and Customer application
+Trial ends at seven days, not at a request-count boundary. Protected API access and new
+key generation then require paid Pro or Pro Max; existing keys and Customer application
 access remain. Paid expiry after a used Trial restores Upgrade Required, not
-Free API access. See the [monthly migration and Trial contract](adviser-free-trial-quota-contract.md)
-for holds and precedence.
+Free API access. See the [current entitlement limits](entitlement-50-500-unlimited.md)
+for legacy over-cap handling, preserved UTC holds and precedence.
 
 ## Payment and entitlement
 

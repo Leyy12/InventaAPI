@@ -9,8 +9,8 @@ activation in Test Mode fails closed. The override accepts only 500 centavos.
 Never expose these settings through `NEXT_PUBLIC_*` or configure the frontends.
 
 Canonical/display prices remain Pro 149900 and Pro Max 499900 centavos.
-Their plan IDs, 30 UTC calendar-day terms, Pro 5000/day quota and Pro Max
-unlimited account allowance do not change. Browser-supplied billing/discount
+Their plan IDs, 30 UTC calendar-day terms, Pro 500/day quota and Pro Max
+unlimited account allowance follow the [current entitlement contract](entitlement-50-500-unlimited.md). Billing amounts do not select or override quota. Browser-supplied billing/discount
 fields cannot select the actual charge.
 
 New discounted orders save `billingProfile=global_live_test_v1`, the canonical

@@ -23,10 +23,10 @@ by the existing atomic replacement test matrix.
 
 | Effective state | Account request allowance | Business segments | Sales feed |
 | --- | --- | --- | --- |
-| Free | 50 per UTC month | Authoritative registered segment | No |
-| Active once-only 7-day Pro Trial | 500 total | Authoritative registered segment | No |
+| Free before session initialization | No protected allowance | Authoritative registered segment | No |
+| Active once-only 7-day Free Trial | No request quota; 0–50 linked products, one active key | Authoritative registered segment | No |
 | Upgrade Required | Protected DaaS access denied | Registered segment retained | No |
-| Active Pro | 5,000 per UTC day | Grocery, Pharmacy, Hardware | Yes |
+| Active Pro | 500 per UTC day | Grocery, Pharmacy, Hardware | Yes |
 | Active Pro Max | Unlimited account quota; usage still recorded | Grocery, Pharmacy, Hardware | Yes |
 
 Pro costs ₱1,499 (`149900` PHP minor units); Pro Max costs ₱4,999

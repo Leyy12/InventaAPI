@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const modules = new Set(['services/auth-navigation.ts', 'functions/subscription-lifecycle.mjs', 'dashboard/src/lib/customer-readiness.ts',
+const modules = new Set(['services/auth-navigation.ts', 'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs', 'dashboard/src/lib/customer-readiness.ts',
   'tests/adviser/r5a/navigation.test.mjs', 'tests/adviser/r5a/session.test.mjs', 'tests/adviser/r5a/wiring.test.mjs', 'tests/adviser/r5a/landing-login-modal.test.mjs', 'tests/adviser/r5a/session-loading.test.mjs'].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {

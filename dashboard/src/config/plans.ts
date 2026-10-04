@@ -3,6 +3,7 @@
  * Used by both pricing page and upgrade modal
  */
 
+import { PRO_DAILY_REQUEST_LIMIT, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
 import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
@@ -25,15 +26,14 @@ export const SUBSCRIPTION_PLANS = {
     
     // Limits
     requestLimit: null,
-    requestLimitDisplay: "50–500 included products",
+    requestLimitDisplay: `Up to ${TRIAL_MAX_PRODUCTS} products`,
     
     // Description
     tagline: "For developers exploring the API or proof-of-concept testing",
     
     // Features (base features only)
     features: [
-      "Minimum 50 products",
-      "Up to 500 products",
+      `Up to ${TRIAL_MAX_PRODUCTS} products`,
       "One API key",
       "One Business Segment",
       "Product Catalog endpoint",
@@ -71,8 +71,8 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: 5000,
-    requestLimitDisplay: "5,000 requests/day",
+    requestLimit: PRO_DAILY_REQUEST_LIMIT,
+    requestLimitDisplay: `${PRO_DAILY_REQUEST_LIMIT} requests/day`,
     
     // Description
     tagline: "For active businesses needing reliable, fast data integration",
@@ -80,7 +80,7 @@ export const SUBSCRIPTION_PLANS = {
     // Incremental features (adds to Free)
     incrementalFeatures: [
       "API keys share the account allowance",
-      "5,000 requests per day",
+      `${PRO_DAILY_REQUEST_LIMIT} requests per day`,
       "Paid linked-product catalog access",
       "Product Recommendations",
       "Real Sales Analytics Feed",

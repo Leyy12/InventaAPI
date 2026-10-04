@@ -14,7 +14,7 @@ test('UI gets authoritative plan/quota/expiry and does not retain cached Pro on 
   assert.match(auth, /poller\.stop\(\)/);
   assert.match(source('dashboard/src/lib/entitlement-poller.ts'), /secondsRemaining/);
 });
-test('Pro is 5000/day, renewal is offered, redirects still require backend proof', () => {
+test('Pro is 500/day, renewal is offered, redirects still require backend proof', () => {
   const page = source('dashboard/src/app/dashboard/page.tsx');
   assert.doesNotMatch(page, /Unlimited requests & segments/);
   assert.match(page, /result\.paymentConfirmed === true/);

@@ -170,18 +170,18 @@ test('DaaS ingestion validates key-linked current products and never accepts cro
   assert.equal(Object.keys(db.dump()).filter(key => key.startsWith('customer_sales/')).length, 1);
 });
 
-test('Pro Max unlimited remains measured past 5000; Pro denies request 5001; paid-only gate excludes Trial', async () => {
+test('Pro Max unlimited remains measured past 500; Pro denies request 501; paid-only gate excludes Trial', async () => {
   const db = seed();
   db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a' });
-  db.seed('account_api_usage/a', { window: '2026-09-27', used: 5000 });
+  db.seed('account_api_usage/a', { window: '2026-09-27', used: 500 });
   await assert.rejects(consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW }),
     error => error.status === 429);
   db.seed('users/a', account('a', 'Pro Max'));
   const admitted = await consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
-  assert.equal(admitted.usage.used, 5001); assert.equal(admitted.usage.limit, null);
+  assert.equal(admitted.usage.used, 501); assert.equal(admitted.usage.limit, null);
   assert.equal(admitted.usage.unlimited, true);
   const beyond = await consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
-  assert.equal(beyond.usage.used, 5002);
+  assert.equal(beyond.usage.used, 502);
   db.seed('users/a', { ...account('a'), plan: 'Free', apiRequestLimit: 50, hasUsedFreeTrial: true, trialVersion: 1,
     trialStartedAt: '2026-09-26T12:00:00.000Z', trialExpiresAt: '2026-10-03T12:00:00.000Z' });
   await assert.rejects(consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a',

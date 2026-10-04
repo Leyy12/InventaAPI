@@ -25,7 +25,7 @@ function handlers(account = free) {
 }
 
 test('authoritative purchase catalog preserves exact Pro and Pro Max terms', () => {
-  assert.deepEqual(PRO_PURCHASE, { planId: 'pro', plan: 'Pro', amount: 149900, currency: 'PHP', durationDays: 30, apiRequestLimit: 5000 });
+  assert.deepEqual(PRO_PURCHASE, { planId: 'pro', plan: 'Pro', amount: 149900, currency: 'PHP', durationDays: 30, apiRequestLimit: 500 });
   assert.deepEqual(PRO_MAX_PURCHASE, { planId: 'pro_max', plan: 'Pro Max', amount: 499900, currency: 'PHP', durationDays: 30, apiRequestLimit: null });
   assert.equal(matchesPurchase({ ...PRO_MAX_PURCHASE }), true);
   assert.equal(matchesPurchase({ ...PRO_MAX_PURCHASE, amount: 149900 }), false);

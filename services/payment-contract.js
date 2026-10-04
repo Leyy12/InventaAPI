@@ -1,9 +1,10 @@
+import { PRO_DAILY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
 import { validDocumentId } from './api-key-security.js';
 import { accountBlocked, evaluateEntitlement, dateMillis, planKind } from '../functions/subscription-lifecycle.mjs';
 
 // Existing price/quota/duration; each paid term spans 30 UTC calendar days.
 export const PRO_PURCHASE = Object.freeze({ planId: 'pro', plan: 'Pro', amount: 149900,
-  currency: 'PHP', durationDays: 30, apiRequestLimit: 5000 });
+  currency: 'PHP', durationDays: 30, apiRequestLimit: PRO_DAILY_REQUEST_LIMIT });
 export const PRO_MAX_PURCHASE = Object.freeze({ planId: 'pro_max', plan: 'Pro Max', amount: 499900,
   currency: 'PHP', durationDays: 30, apiRequestLimit: null });
 export const PURCHASE_CATALOG = Object.freeze({ pro: PRO_PURCHASE, pro_max: PRO_MAX_PURCHASE });
@@ -54,7 +55,9 @@ export const matchesPurchase = order => {
   // Pre-catalog Pro orders lacked planId; only those exact historical terms
   // retain their original fulfillment contract. Pro Max always requires its ID.
   return !!purchase && (order.planId === purchase.planId || purchase.planId === 'pro' && order.planId === undefined)
-    && Object.entries(purchase).every(([key, value]) => ['planId', 'amount'].includes(key) || order[key] === value)
+    && Object.entries(purchase).every(([key, value]) => ['planId', 'amount'].includes(key) || order[key] === value
+      // Exact historical server-saved Pro quota snapshot; never grants old access.
+      || key === 'apiRequestLimit' && purchase.planId === 'pro' && order[key] === 5000)
     && (order.billingProfile === undefined && order.listAmount === undefined && order.amount === purchase.amount
       || order.billingProfile === GLOBAL_LIVE_TEST_PROFILE && order.mode === 'live'
         && order.planId === purchase.planId && order.listAmount === purchase.amount && order.amount === GLOBAL_LIVE_TEST_AMOUNT);

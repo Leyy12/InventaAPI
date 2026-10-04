@@ -1,3 +1,4 @@
+import { PRO_DAILY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
 import { matchesPurchase, providerId, requirePayment } from './payment-contract.js';
 
 export function samePaymentMethods(left, right) {
@@ -25,7 +26,7 @@ export function checkoutPayload(order, dashboardUrl) {
   return { data: { attributes: {
     line_items: [{ amount: order.amount, currency: order.currency, quantity: 1,
       name: `InventaAPI ${order.plan} Plan`, description: order.planId === 'pro_max'
-        ? '1 Month Subscription — Unlimited account API quota' : '1 Month Subscription — 5,000 API requests/day' }],
+        ? '1 Month Subscription — Unlimited account API quota' : `1 Month Subscription — ${PRO_DAILY_REQUEST_LIMIT} API requests/day` }],
     payment_method_types: ['qrph'], success_url: success.href,
     cancel_url: cancel.href,
     reference_number: order.id, metadata: { orderId: order.id, planId: order.planId ?? 'pro', plan: order.plan },

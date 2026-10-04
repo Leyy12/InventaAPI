@@ -19,7 +19,9 @@ test('Plan & Billing keeps its concise header and uses the embedded authoritativ
   assert.match(trial, /trial\.expiresAt/);
   assert.match(trial, /trial\.productsIncluded\.toLocaleString\(\)/);
   assert.match(trial, /trial\.productsAvailable\.toLocaleString\(\)/);
-  assert.match(trial, /trial\.minimumProducts/);
+  assert.doesNotMatch(trial, /Minimum required:/i);
+  assert.match(trial, /trial\.maximumProducts/);
+  assert.match(trial, /capacity reached/);
   assert.match(trial, /trial\.activeKeys/);
   assert.match(trial, /trial\.maximumActiveKeys/);
   assert.match(trial, /API calls do not consume your product allowance\./);
@@ -39,7 +41,7 @@ test('Upgrade cards use canonical plan config and preserve server purchase permi
   assert.match(billing, /Renew \$\{plan\.name\}/u);
   assert.match(billing, /Get \$\{plan\.name\}/u);
   assert.match(billing, /Standard security, abuse protection, and IP rate limits still apply\./u);
-  for (const benefit of ['5,000 requests per day', 'All Business Segments', 'Product Recommendations',
+  for (const benefit of ['${PRO_DAILY_REQUEST_LIMIT} requests per day', 'All Business Segments', 'Product Recommendations',
     'Real Sales Analytics Feed', 'Multiple API Keys', 'Unlimited account API quota', 'API Playground']) {
     assert.ok(plans.includes(benefit), `canonical plan config must contain ${benefit}`);
   }

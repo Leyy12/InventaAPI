@@ -312,7 +312,7 @@ test('paid Pro supersedes trial; trial time never extends paid renewal base', as
   const f = fixture(); await f.activate(); await f.consume();
   const period = renewalPeriod(f.db.read('users/owner'), f.clock()); assert.equal(period.start, START);
   await f.db.collection('users').doc('owner').update({ plan: 'Pro', subscription_status: 'active', subscriptionExpiresAt: period.end });
-  assert.equal((await f.consume()).usage.limit, 5000); assert.equal(f.db.read('account_trial_usage/owner').used, 0);
+  assert.equal((await f.consume()).usage.limit, 500); assert.equal(f.db.read('account_trial_usage/owner').used, 0);
   assert.equal((await f.status()).body.status, 'paid'); assert.equal((await f.activate()).statusCode, 409);
   f.time(period.end); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(f.db.read('users/owner').hasUsedFreeTrial, true);
@@ -379,8 +379,8 @@ test('usage projection shows Trial catalog counts and expiry, never a request al
   const f = fixture(); await f.activate(); await f.consume();
   const data = (await invoke(f.keys.list)).body; assert.equal(data.keys[0].quotaPeriod, 'trial_catalog');
   assert.equal(data.usage.used, null); assert.equal(data.usage.limit, null); assert.equal(quotaSummary(data.usage, f.clock()), null);
-  assert.deepEqual(data.trialCatalog, { productsIncluded: 50, minimumProducts: 50, maximumProducts: 500,
-    productsAvailable: 450, activeKeys: 1, maximumActiveKeys: 1, expiresAt: END });
+  assert.deepEqual(data.trialCatalog, { productsIncluded: 50, minimumProducts: 0, maximumProducts: 50,
+    productsAvailable: 0, activeKeys: 1, maximumActiveKeys: 1, expiresAt: END });
 });
 
 for (const segment of ['Grocery', 'Pharmacy', 'Hardware']) test('Hardware submission versus ' + segment + ' payload', async () => {
@@ -497,7 +497,7 @@ test('automatic session never resets active, expired or consumed legacy Trial', 
 });
 
 test('automatic session preserves paid Pro/Pro Max and legacy Enterprise/Unlimited exactly, including historical Trial evidence', async () => {
-  for (const [plan, limit] of [['Pro', 5000], ['Pro Max', null], ['Enterprise', null], ['Unlimited', null]]) {
+  for (const [plan, limit] of [['Pro', 500], ['Pro Max', null], ['Enterprise', null], ['Unlimited', null]]) {
     const f = fixture({ plan, apiRequestLimit: limit, subscription_status: 'active', subscriptionExpiresAt: END,
       hasUsedFreeTrial: true });
     const before = f.db.read('users/owner');
@@ -618,7 +618,7 @@ test('Settings preserves segment policy; Customer copy advertises lifetime Free 
   const settings = read('dashboard/src/app/dashboard/settings/page.tsx');
   assert.match(settings, /segmentRestricted = restrictedSegmentAccount\(appUser\)/);
   assert.match(settings, /activeCustomerSegment\(appUser\)/);
-  assert.match(read('dashboard/src/config/plans.ts'), /Up to 500 products/);
+  assert.match(read('dashboard/src/config/plans.ts'), /Up to \$\{TRIAL_MAX_PRODUCTS\} products/);
   assert.doesNotMatch(read('dashboard/src/config/plans.ts'), /50 requests|forever|Pro Trial/);
   assert.doesNotMatch(read('dashboard/src/components/reports/CustomerUsageSummary.tsx'), /Monthly account limit|Remaining this month/);
   const billing = read('dashboard/src/app/dashboard/plan-billing/page.tsx');
@@ -630,13 +630,68 @@ test('Settings preserves segment policy; Customer copy advertises lifetime Free 
 const scope = (count, offset = 0) => Array.from({ length: count }, (_, i) => `tool-${i + offset}`);
 const updateCatalog = (f, ids, version = 0, id = 'key-a') => invoke(f.keys.products,
   { id, body: { linkedProductIds: ids, expectedScopeVersion: version } });
-for (const count of [0, 49, 50, 51, 499, 500, 501]) test(`Trial generation enforces current ${count}-product catalog`, async () => {
+
+for (const initial of [0, 1, 49, 50]) test(`Trial ${initial}-product scope remains valid and can remove all or add within cap`, async () => {
+  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(initial) } });
+  await invoke(f.handlers.session);
+  assert.equal((await f.consume()).usage.productsIncluded, initial);
+  assert.equal((await updateCatalog(f, scope(initial < 50 ? initial + 1 : 51))).statusCode, initial < 50 ? 200 : 400);
+  assert.equal((await updateCatalog(f, [], initial < 50 ? 1 : 0)).statusCode, 200);
+  assert.equal((await f.status()).body.productsIncluded, 0);
+  assert.equal((await f.consume()).usage.productsIncluded, 0);
+});
+
+for (const initial of [51, 500, 505]) test(`legacy ${initial}-product catalog preserves reads/history, forbids additions and permits removals`, async () => {
+  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(initial) } });
+  await invoke(f.handlers.session);
+  const account = f.db.read('users/owner'), history = f.db.read('account_trial_usage/owner');
+  assert.equal((await f.consume()).usage.productsIncluded, initial);
+  assert.equal((await f.status()).body.productsAvailable, 0);
+  for (const ids of [[...scope(initial), 'tool'], [...scope(49), 'tool']]) {
+    assert.equal((await updateCatalog(f, ids)).body.error, 'TRIAL_PRODUCT_MAXIMUM');
+    assert.deepEqual(f.db.read('api_keys/key-a').linkedProductIds, scope(initial));
+  }
+  assert.equal((await updateCatalog(f, scope(initial - 1))).statusCode, 200);
+  assert.equal((await updateCatalog(f, scope(49), 1)).statusCode, 200);
+  assert.equal((await updateCatalog(f, [...scope(49), 'tool'], 2)).statusCode, 200);
+  assert.equal((await f.status()).body.productsIncluded, 50);
+  assert.equal(f.db.read('users/owner').trialStartedAt, account.trialStartedAt);
+  assert.equal(f.db.read('users/owner').trialExpiresAt, account.trialExpiresAt);
+  assert.deepEqual(f.db.read('account_trial_usage/owner'), history);
+});
+
+test('legacy over-cap replacement remains atomic without granting more products or another key', async () => {
+  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(51) } });
+  await invoke(f.handlers.session);
+  const replaced = await invoke(f.keys.replace);
+  assert.equal(replaced.statusCode, 200);
+  assert.deepEqual(f.db.read(`api_keys/${replaced.body.id}`).linkedProductIds, scope(51));
+  assert.equal(f.db.read('api_keys/key-a').status, 'revoked');
+  assert.equal((await f.status()).body.activeKeys, 1);
+  assert.equal((await invoke(f.keys.create, { body: { keyName: 'No bypass', linkedProductIds: [] } })).body.error, 'TRIAL_KEY_LIMIT');
+  assert.equal((await updateCatalog(f, scope(52), 0, replaced.body.id)).body.error, 'TRIAL_PRODUCT_MAXIMUM');
+});
+
+test('empty Trial key authorizes no catalog data; legacy snapshots cannot widen its scope', async () => {
+  const f = fixture({}, { 'api_keys/key-a': null }); await invoke(f.handlers.session);
+  const result = await invoke(f.keys.create, { body: { keyName: 'Empty catalog' } });
+  assert.equal(result.statusCode, 200);
+  const stored = f.db.read(`api_keys/${result.body.id}`);
+  assert.deepEqual(stored.linkedProductIds, []); assert.deepEqual(stored.linkedProducts, []);
+  assert.deepEqual(stored.linkedVariantSelections, {});
+  const { resolveCurrentCatalogProducts } = await import('../../../services/daas-catalog.js');
+  let loads = 0;
+  const resolved = await resolveCurrentCatalogProducts({ apiKeyData: stored, userData: owner,
+    loadProductById: async () => { loads++; throw Error('No IDs should be loaded'); } });
+  assert.equal(loads, 0); assert.deepEqual(resolved.products, []);
+});
+
+for (const count of [0, 1, 49, 50, 51, 499, 500, 501]) test(`Trial generation enforces current ${count}-product catalog`, async () => {
   const f = fixture({}, { 'api_keys/key-a': null }); await invoke(f.handlers.session);
   const account = f.db.read('users/owner'), counter = f.db.read('account_trial_usage/owner');
   const result = await invoke(f.keys.create, { body: { keyName: 'Product catalog', linkedProductIds: scope(count) } });
-  const valid = count >= 50 && count <= 500;
+  const valid = count <= 50;
   assert.equal(result.statusCode, valid ? 200 : 400);
-  if (count < 50) { assert.equal(result.body.error, 'TRIAL_PRODUCT_MINIMUM'); assert.match(result.body.message, /at least 50 products/); }
   const status = (await f.status()).body;
   assert.equal(status.productsIncluded, valid ? count : 0); assert.equal(status.activeKeys, valid ? 1 : 0);
   assert.equal(status.active, true); assert.equal(f.db.read('users/owner').trialStartedAt, account.trialStartedAt);
@@ -650,8 +705,9 @@ for (const count of [0, 49, 50, 51, 499, 500, 501]) test(`Trial generation enfor
 });
 test('duplicate IDs and partial variants count as unique products, never as extra products', async () => {
   const f = fixture({}, { 'api_keys/key-a': null }); await invoke(f.handlers.session);
-  const tooFew = await invoke(f.keys.create, { body: { keyName: 'Duplicates', linkedProductIds: Array(50).fill('tool-0') } });
-  assert.equal(tooFew.body.error, 'TRIAL_PRODUCT_MINIMUM');
+  const single = fixture({}, { 'api_keys/key-a': null }); await invoke(single.handlers.session);
+  const result = await invoke(single.keys.create, { body: { keyName: 'Duplicates', linkedProductIds: Array(50).fill('tool-0') } });
+  assert.equal(result.statusCode, 200); assert.equal((await single.status()).body.productsIncluded, 1);
   const partial = await invoke(f.keys.create, { body: { keyName: 'Partial', linkedProductIds: scope(49),
     linkedVariantSelections: { 'tool-49': ['a|b', 'c|d'] }, linkedProducts: [{ id: 'tool-0', name: 'forged' }] } });
   assert.equal(partial.statusCode, 200); assert.equal((await f.status()).body.productsIncluded, 50);
@@ -692,27 +748,27 @@ test('revocation preserves history and daily generation policy; a later replacem
   f.time('2026-09-24T12:00:00.000Z'); assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
   assert.equal((await f.status()).body.activeKeys, 1); assert.equal(f.db.read('users/owner').trialStartedAt, start);
 });
-test('Trial product limit is current count: 500 -> 499 -> 500 with a different product', async () => {
-  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(500) } }); await invoke(f.handlers.session);
-  assert.equal((await updateCatalog(f, scope(499))).statusCode, 200);
-  assert.equal((await f.status()).body.productsIncluded, 499);
-  assert.equal((await updateCatalog(f, [...scope(499), 'tool-500'], 1)).statusCode, 200);
-  assert.equal((await f.status()).body.productsIncluded, 500); assert.equal((await f.status()).body.active, true);
-  assert.equal((await updateCatalog(f, [...scope(499), 'tool-500', 'tool-501'], 2)).statusCode, 400);
-  assert.equal((await f.status()).body.productsIncluded, 500);
-});
-test('active catalog cannot drop 50 -> 49, while a 50-product substitution is allowed atomically', async () => {
+test('Trial product limit is current count: 50 -> 49 -> 50 with a different product', async () => {
   const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(50) } }); await invoke(f.handlers.session);
-  assert.equal((await updateCatalog(f, scope(49))).body.error, 'TRIAL_PRODUCT_MINIMUM');
-  assert.deepEqual(f.db.read('api_keys/key-a').linkedProductIds, scope(50));
-  assert.equal((await updateCatalog(f, scope(50, 1))).statusCode, 200); assert.equal((await f.status()).body.productsIncluded, 50);
+  assert.equal((await updateCatalog(f, scope(49))).statusCode, 200);
+  assert.equal((await f.status()).body.productsIncluded, 49);
+  assert.equal((await updateCatalog(f, [...scope(49), 'tool-50'], 1)).statusCode, 200);
+  assert.equal((await f.status()).body.productsIncluded, 50); assert.equal((await f.status()).body.active, true);
+  assert.equal((await updateCatalog(f, [...scope(49), 'tool-50', 'tool-51'], 2)).statusCode, 400);
+  assert.equal((await f.status()).body.productsIncluded, 50);
 });
-test('concurrent additions at 499 cannot exceed 500 or silently overwrite a newer scope', async () => {
-  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(499) } }); await invoke(f.handlers.session);
-  const results = await Promise.all([updateCatalog(f, [...scope(499), 'tool-499']), updateCatalog(f, [...scope(499), 'tool-500'])]);
+test('active catalog can drop 50 -> 49 and a 50-product substitution is allowed atomically', async () => {
+  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(50) } }); await invoke(f.handlers.session);
+  assert.equal((await updateCatalog(f, scope(49))).statusCode, 200);
+  assert.deepEqual(f.db.read('api_keys/key-a').linkedProductIds, scope(49));
+  assert.equal((await updateCatalog(f, scope(50, 1), 1)).statusCode, 200); assert.equal((await f.status()).body.productsIncluded, 50);
+});
+test('concurrent additions at 49 cannot exceed 50 or silently overwrite a newer scope', async () => {
+  const f = fixture({}, { 'api_keys/key-a': { ...key, linkedProductIds: scope(49) } }); await invoke(f.handlers.session);
+  const results = await Promise.all([updateCatalog(f, [...scope(49), 'tool-49']), updateCatalog(f, [...scope(49), 'tool-50'])]);
   assert.equal(results.filter(r => r.statusCode === 200).length, 1);
   assert.equal(results.filter(r => r.body.error === 'CATALOG_CHANGED').length, 1);
-  assert.equal((await f.status()).body.productsIncluded, 500); assert.ok(f.db.retries > 0);
+  assert.equal((await f.status()).body.productsIncluded, 50); assert.ok(f.db.retries > 0);
 });
 test('stale/omitted scope version and revoked-key scope updates fail closed', async () => {
   const f = fixture(); await invoke(f.handlers.session);
@@ -752,11 +808,11 @@ test('Trial UX consistently uses product limits, one key and actual expiry rathe
     'dashboard/src/app/docs/page.tsx', 'dashboard/src/components/auth/LoginModal.tsx', 'dashboard/src/app/privacy-policy/page.tsx'];
   for (const file of [...files, 'dashboard/src/app/dashboard/page.tsx']) assert.doesNotMatch(read(file), /500 total (?:API )?requests|500-request|50\/month|50 requests\/month|Pro Trial|Free plan · inactive|\/forever|trial total/);
   const overview = read(files[4]);
-  for (const label of ['Products Included', 'Minimum Required', 'Products Available', 'API Keys', 'Trial Expires']) assert.ok(overview.includes(label));
+  for (const label of ['Products Included', 'Products Available', 'API Keys', 'Trial Expires']) assert.ok(overview.includes(label));
   const products = read(files[0]); assert.match(products, /Save Trial Catalog/); assert.match(products, /expectedScopeVersion: trialKey.scopeVersion/);
-  assert.match(products, /method: 'PATCH'/); assert.match(products, /cartSummary.totalProducts < 50/); assert.match(products, /Catalog full/);
+  assert.match(products, /method: 'PATCH'/); assert.match(products, /TRIAL_MAX_PRODUCTS/); assert.match(products, /Catalog full/);
   assert.match(products, /trialKey && activeTrial \?/); assert.doesNotMatch(read(files[2]), /onClick=\{activate\}|\/free-trial\/activate/);
-  const plans = read(files[5]); assert.match(plans, /Minimum 50 products/); assert.match(plans, /Up to 500 products/); assert.match(plans, /One API key/);
+  const plans = read(files[5]); assert.doesNotMatch(plans, /Minimum 50 products/); assert.match(plans, /Up to \$\{TRIAL_MAX_PRODUCTS\} products/); assert.match(plans, /One API key/);
   assert.match(plans, /₱1,499/); assert.match(plans, /₱4,999/); assert.match(plans, /MOST POPULAR/);
 });
 test('consumed legacy 500-request evidence cannot regain access through direct status/key/API paths', async () => {
@@ -778,7 +834,7 @@ test('failed product update or rotation cannot partially change scope, keys or T
     if (++operations % 2 === 0) f.db.failCommit = true;
     try { return await run(callback); } finally { f.db.failCommit = false; }
   };
-  assert.equal((await updateCatalog(f, scope(51))).statusCode, 503);
+  assert.equal((await updateCatalog(f, scope(49))).statusCode, 503);
   assert.equal((await invoke(f.keys.replace)).statusCode, 503);
   assert.deepEqual(f.db.read('api_keys/key-a'), oldKey); assert.deepEqual(f.db.read('users/owner'), account);
   assert.deepEqual(f.db.read('account_trial_usage/owner'), history);
@@ -796,7 +852,7 @@ for (const operation of ['create', 'products', 'replace']) test(`slow ${operatio
     } });
   });
   const result = operation === 'create' ? await invoke(f.keys.create, { body: { keyName: 'Slow', linkedProductIds: scope(50) } })
-    : operation === 'products' ? await updateCatalog(f, scope(51)) : await invoke(f.keys.replace);
+    : operation === 'products' ? await updateCatalog(f, scope(49)) : await invoke(f.keys.replace);
   assert.equal(result.body.error, 'UPGRADE_REQUIRED');
   assert.equal(f.db.read('account_trial_usage/owner').used, 0);
   if (operation === 'create') assert.equal(f.db.read('api_keys/key-a'), null);

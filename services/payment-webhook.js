@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
-import { providerId, orderIdValid, refFor, modeKey, matchesPurchase,
+import { purchaseForIntent, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
 
 // Existing five-minute policy retained. PayMongo recommends a freshness check,
@@ -133,7 +133,7 @@ export async function fulfillPayment(db, payment, time) {
     tx.set(eventRef, { ...evidence, processedAt });
     tx.update(orderRef, { state: 'processed', paymentId: payment.paymentId, webhookEventId: payment.eventId,
       processedAt, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt });
-    tx.update(userRef, { plan: order.plan, apiRequestLimit: order.apiRequestLimit, subscription_status: 'active',
+    tx.update(userRef, { plan: order.plan, apiRequestLimit: purchaseForIntent(order.planId ?? 'pro').apiRequestLimit, subscription_status: 'active',
       subscriptionExpiresAt: expiresAt, lastSubscribedAt: processedAt,
       subscriptionStartedAt: dateMillis(account.subscriptionExpiresAt) > now.getTime()
         ? (account.subscriptionStartedAt || account.lastSubscribedAt || processedAt) : processedAt });

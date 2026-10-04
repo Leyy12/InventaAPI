@@ -2,6 +2,7 @@ import {
   ApiSecurityError, PLAN_LEVELS, accountEntitlement, assertActiveKey, credentialMatches, usageForToday, trialUsage,
   upgradeRequiredError,
 } from './api-key-security.js';
+import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
@@ -58,14 +59,14 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       if (active.length !== 1 || active[0].id !== keyId) return { denied: new ApiSecurityError(403,
         'TRIAL_KEY_LIMIT', 'Free Trial permits one active API key. Revoke additional legacy keys.') };
       const products = authorizedProductIds(key).length;
-      if (products < 50 || products > 500) return { denied: new ApiSecurityError(403,
-        'TRIAL_PRODUCT_LIMIT', 'A Free Trial API catalog must contain 50–500 products.') };
+      // Preserve legacy over-cap reads; every catalog mutation forbids additions.
+      // Zero products is also a valid Trial catalog (no product data authorized).
       // Calls do not consume products or change Trial history/expiry. Historical
       // request counters remain audit evidence, never an access allowance.
       transaction.update(keyRef, { lastUsed: now.toISOString() });
       return { key: { ...key, id: keyId }, account: effectiveAccount,
         usage: { used: null, limit: null, remaining: null, period: 'trial_catalog', scope: 'account',
-          resetsAt: entitlement.expiresAt, productsIncluded: products, minimumProducts: 50, maximumProducts: 500 } };
+          resetsAt: entitlement.expiresAt, productsIncluded: products, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS } };
     }
     // Trial admission has no request allowance. Paid daily quota
     // and its existing clean-window cutover semantics are unchanged.

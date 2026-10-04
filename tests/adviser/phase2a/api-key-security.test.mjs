@@ -204,12 +204,12 @@ test('scope validates identifiers and enforces the server account segment on cre
 test('legacy paid keys consume one allowance; creation and revocation never reset usage', async () => {
   const { db, handlers } = setup({ 'api_keys/key-b': { ...legacy, key: 'daas_second_credential', requestsUsed: 0 } });
   await activate(db);
-  assert.equal((await consume(db)).usage.remaining, 4999);
-  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 4998);
+  assert.equal((await consume(db)).usage.remaining, 499);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 498);
   const created = await invoke(handlers.create, { body: { keyName: 'Key C' } });
   assert.equal(created.statusCode, 200);
   assert.equal((await invoke(handlers.revoke)).statusCode, 200);
-  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 4997);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 497);
   const replacement = await invoke(handlers.create, { body: { keyName: 'Replacement key' } });
   assert.equal(replacement.body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
   await db.collection('account_api_usage').doc('owner').update({ used: 5000 });
@@ -219,23 +219,23 @@ test('legacy paid keys consume one allowance; creation and revocation never rese
 });
 
 test('competing keys at the last remaining unit cannot both succeed', async () => {
-  const { db } = setup({ 'account_api_usage/owner': { window: '2026-09-17', used: 4999 },
+  const { db } = setup({ 'account_api_usage/owner': { window: '2026-09-17', used: 499 },
     'api_keys/key-b': { ...legacy, key: 'daas_second_credential' } });
   const results = await Promise.allSettled([consume(db), consume(db, 'key-b', 'daas_second_credential')]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 1);
-  assert.equal(db.read('account_api_usage/owner').used, 5000);
+  assert.equal(db.read('account_api_usage/owner').used, 500);
   assert.ok(db.retries > 0, 'concurrent conflict must replay the transaction');
 });
 
 test('many simultaneous requests cannot exceed account allowance', async () => {
   const { db } = setup();
   await activate(db);
-  await db.collection('account_api_usage').doc('owner').update({ used: 4993 });
+  await db.collection('account_api_usage').doc('owner').update({ used: 493 });
   const results = await Promise.allSettled(Array.from({ length: 25 }, () => consume(db)));
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 7);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 18);
-  assert.equal(db.read('account_api_usage/owner').used, 5000);
+  assert.equal(db.read('account_api_usage/owner').used, 500);
 });
 
 test('quota ignores key snapshots, per-key counter manipulation, and subscription flags', async () => {
@@ -405,12 +405,24 @@ test('concurrent first requests share one committed hold and cannot initialize a
   assert.ok(db.retries > 0);
   assert.equal(db.read('account_api_usage/owner').used, 0);
   assert.equal(db.read('account_api_usage/owner').holdUntil, BOUNDARY);
-  await db.collection('account_api_usage').doc('owner').set({ window: '2026-09-18', used: 4999 });
+  await db.collection('account_api_usage').doc('owner').set({ window: '2026-09-18', used: 499 });
   const atBoundary = { clock: () => new Date(BOUNDARY) };
   const activated = await Promise.allSettled([consume(db, 'key-a', legacy.key, atBoundary), consume(db, 'key-b', 'daas_second', atBoundary)]);
   assert.equal(activated.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(activated.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 1);
-  assert.equal(db.read('account_api_usage/owner').used, 5000);
+  assert.equal(db.read('account_api_usage/owner').used, 500);
+});
+
+test('Pro request 500 succeeds, 501 denies without increment, next UTC day restores access', async () => {
+  const { db } = setup({ 'account_api_usage/owner': { window: '2026-09-17', used: 499 } });
+  const last = await consume(db);
+  assert.equal(last.usage.limit, 500); assert.equal(last.usage.used, 500); assert.equal(last.usage.remaining, 0);
+  await assert.rejects(consume(db), error => error.status === 429 && error.code === 'Rate Limit Exceeded');
+  assert.equal(db.read('account_api_usage/owner').used, 500);
+  assert.equal(db.read('users/owner').apiRequestLimit, 5000, 'historical snapshot stays intact, effective cap is 500');
+  const reset = await consume(db, 'key-a', legacy.key, { clock: () => new Date('2026-09-18T00:00:00.000Z') });
+  assert.equal(reset.usage.used, 1); assert.equal(reset.usage.remaining, 499);
+  assert.equal(reset.usage.resetsAt, '2026-09-19T00:00:00.000Z');
 });
 
 test('provably post-cutover server-created accounts initialize immediately and atomically', async () => {

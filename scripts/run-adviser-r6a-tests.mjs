@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
-for (const file of ['services/admin-traffic.js', 'services/api-key-security.js', 'functions/subscription-lifecycle.mjs',
+for (const file of ['services/admin-traffic.js', 'services/api-key-security.js', 'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs',
   'services/reporting.js', 'services/product-contract.js', 'admin-panel/src/lib/admin-traffic.ts',
   'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/r6a/backend.test.mjs', 'tests/adviser/r6a/frontend.test.mjs']) {
   const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');

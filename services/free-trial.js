@@ -1,3 +1,4 @@
+import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
 import { evaluateEntitlement, trialState, accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { normalizeSegment } from './product-contract.js';
 import { ApiSecurityError, validDocumentId, sendSecurityError, trialUsage } from './api-key-security.js';
@@ -52,7 +53,7 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
         // Missing/corrupt existing state is never repaired by resetting a Trial.
         const history = trialUsage(previous.data(), trial);
         // Preserve genuinely consumed legacy request-based Trials. New catalog
-        // Trials never increment this historical counter or end at 500 products.
+        // Trials never increment this historical counter or end at a product-count boundary.
         if (!Object.hasOwn(account, 'trialConsumed') && history.used === 500) tx.update(ref, { trialConsumed: true });
         return { success: true, initialized: false };
       }
@@ -83,7 +84,7 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
           const startedAt = now.toISOString(), expiresAt = end.toISOString();
           tx.update(ref, { trialVersion: 1, hasUsedFreeTrial: true, trialStartedAt: startedAt, trialExpiresAt: expiresAt, selectedSegment: segment });
           tx.set(usageRef, { startedAt, expiresAt, used: 0, updatedAt: startedAt });
-          return { success: true, startedAt, expiresAt, minimumProducts: 50, maximumProducts: 500, maximumActiveKeys: 1,
+          return { success: true, startedAt, expiresAt, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS, maximumActiveKeys: 1,
             serverTime: startedAt, reauthenticationRequired: true };
         });
       } catch (error) {
@@ -120,8 +121,8 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
           : eligible ? 'eligible' : 'ineligible',
         startedAt: trial.startedAt, expiresAt: trial.expiresAt, serverTime: now.toISOString(),
         secondsRemaining: active ? Math.max(0, (Date.parse(trial.expiresAt) - now.getTime()) / 1000) : 0,
-        productsIncluded: productCount, minimumProducts: 50, maximumProducts: 500,
-        productsAvailable: Math.max(0, 500 - productCount), activeKeys: activeKeys.length, maximumActiveKeys: 1 };
+        productsIncluded: productCount, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS,
+        productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productCount), activeKeys: activeKeys.length, maximumActiveKeys: 1 };
     })),
   };
 }

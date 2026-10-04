@@ -1,3 +1,6 @@
+import { PRO_DAILY_REQUEST_LIMIT } from './entitlement-limits.mjs';
+export { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from './entitlement-limits.mjs';
+
 // Shared by Express and the existing deployable Functions package. No SDK/I/O.
 export const PLAN_LEVELS = Object.freeze({ free: 0, starter: 0, pro: 1, professional: 1,
   'pro max': 2, enterprise: 2, unlimited: 2 });
@@ -46,8 +49,7 @@ export function dateMillis(value) {
 function unavailable(code = 'ENTITLEMENT_UNAVAILABLE', status = 503) {
   throw Object.assign(new Error('Unable to verify account entitlement.'), { code, status });
 }
-export const TRIAL_MIN_PRODUCTS = 50;
-export const TRIAL_MAX_PRODUCTS = 500;
+
 function upgradeRequired(trial, { expired = trial.expired, expiresAt = trial.expiresAt,
   startedAt = trial.startedAt, normalization = null } = {}) {
   return { plan: 'Upgrade Required', level: -1, limit: 0, status: 'upgrade_required',
@@ -97,7 +99,7 @@ export function evaluateEntitlement(account, now = new Date()) {
         normalization: { ...FREE_ENTITLEMENT } });
     }
     return { plan: kind === 'pro_max' ? 'Pro Max' : 'Pro', level,
-      limit: kind === 'pro_max' ? null : 5000,
+      limit: kind === 'pro_max' ? null : PRO_DAILY_REQUEST_LIMIT,
       status: 'active', activePro, expired, expiresAt, startedAt, normalization: null };
   }
   const limit = account.apiRequestLimit;

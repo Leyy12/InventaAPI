@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const sources = ["services/catalog-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/catalog-import.js","services/catalog-management.js",'services/product-contract.js', 'services/customer-segment.js',"services/product-submission-contract.js","services/product-submissions.js","functions/subscription-lifecycle.mjs","tests/adviser/r2a/memory-firestore.mjs","tests/adviser/r3/catalog.test.mjs","tests/adviser/r3/import.test.mjs","tests/adviser/r3/wiring.test.mjs"];
+const sources = ["services/catalog-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/catalog-import.js","services/catalog-management.js",'services/product-contract.js', 'services/customer-segment.js',"services/product-submission-contract.js","services/product-submissions.js","functions/entitlement-limits.mjs","functions/subscription-lifecycle.mjs","tests/adviser/r2a/memory-firestore.mjs","tests/adviser/r3/catalog.test.mjs","tests/adviser/r3/import.test.mjs","tests/adviser/r3/wiring.test.mjs"];
 for (const file of sources) {
   const source = readFileSync(resolve(root, file), 'utf8');
   if (/\b(?:fetch|require)\s*\(|\bprocess\.(?:env|binding|getBuiltinModule)\b|\beval\s*\(|new\s+Function\b/u.test(source)) {

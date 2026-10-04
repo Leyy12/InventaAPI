@@ -128,7 +128,7 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-slate-700/60 bg-white/[0.025] px-4 py-3 text-sm text-slate-300">
-        <span>Minimum required: <strong className="font-semibold text-white">{trial.minimumProducts}</strong></span>
+        {trial.productsIncluded >= trial.maximumProducts && <span role="status" className="text-amber-300">Catalog full — capacity reached</span>}
         <span><strong className="font-semibold text-white">{trial.productsAvailable.toLocaleString()}</strong> product slots available</span>
       </div>
       <p className="mt-3 text-xs leading-5 text-slate-400">API calls do not consume your product allowance.</p>
@@ -140,7 +140,7 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
 
   return <div className="max-w-3xl mx-auto space-y-6">
     {!embedded && <h1 className="text-3xl font-bold text-white flex items-center gap-2"><Zap className="text-amber-400" />Free Trial</h1>}
-    <p className="text-slate-400">Your one-time Free Trial starts automatically when your Customer session is verified. It lasts 7 days, includes 50–500 currently selected products and one active API key in your owned business segment. API calls do not consume this product allowance.</p>
+    <p className="text-slate-400">Your one-time Free Trial starts automatically when your Customer session is verified. It lasts 7 days, includes up to 50 currently selected products and one active API key in your owned business segment. API calls do not consume this product allowance.</p>
     {error && <p role="alert" className="text-rose-300">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry status</button></p>}
     {!trial ? <p role="status">Checking trial eligibility and usage…</p> :
       <section className="glass-card rounded-2xl border border-amber-500/30 p-8 space-y-4">
@@ -150,7 +150,7 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
           : trial.eligible ? 'Session verification is required to start your Free Trial' : 'Trial is not available for this account'}</h2>
         {trial.expiresAt && <p>Expires: {new Date(trial.expiresAt).toUTCString()}</p>}
         {trial.active && <>
-          <p>Products Included: {trial.productsIncluded} / 500 · Minimum Required: 50 · Products Available: {trial.productsAvailable}</p>
+          <p>Products Included: {trial.productsIncluded} / {trial.maximumProducts} · Products Available: {trial.productsAvailable}</p>
           <p>API Keys: {trial.activeKeys} / 1</p>
           <p>{Math.ceil(trial.secondsRemaining / 3600)} hours remaining as of {new Date(trial.serverTime).toUTCString()}.</p>
           <p className="text-sm text-slate-400">No daily or monthly reset. When the Trial ends, protected API access pauses until you upgrade to Pro or Pro Max.</p>

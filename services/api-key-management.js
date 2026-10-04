@@ -3,11 +3,12 @@ import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
   usageForToday, validDocumentId, upgradeRequiredError, assertActiveKey, trialUsage,
 } from './api-key-security.js';
+import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, trialCatalogChangeAllowed } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
 import { normalizeSegment } from './product-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 
-function scopeFromBody(body) {
+function scopeFromBody(body, allowLegacyReduction = false) {
   const full = body.linkedProductIds ?? [];
   const partial = body.linkedVariantSelections ?? {};
   const legacy = body.linkedProducts ?? [];
@@ -21,7 +22,7 @@ function scopeFromBody(body) {
   // Legacy input contributes IDs only; partial scope always takes precedence.
   const ids = [...new Set([...full, ...legacy.map(value => value.id)])].filter(id => !Object.hasOwn(partial, id));
   const scope = { linkedProductIds: ids, linkedVariantSelections: partial, linkedProducts: [] };
-  if (authorizedProductIds(scope).length > 500) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'At most 500 product IDs per key.');
+  if (!allowLegacyReduction && authorizedProductIds(scope).length > 500) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'At most 500 product IDs per key.');
   return scope;
 }
 
@@ -118,17 +119,18 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     await db.collection('audit_logs').add({ action, userId: actor.uid, keyId: id, timestamp: clock() }).catch(() => {});
   }
 
-  function trialProductCount(scope) {
-    const count = authorizedProductIds(scope).length;
-    if (count < 50) throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MINIMUM',
-      'Select at least 50 products to generate or maintain your Free Trial API key.');
-    if (count > 500) throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MAXIMUM', 'Free Trial permits at most 500 products.');
-    return count;
+  function trialProductCount(scope, previous = null) {
+    const ids = authorizedProductIds(scope);
+    if (!trialCatalogChangeAllowed(previous ? authorizedProductIds(previous) : [], ids)) {
+      throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MAXIMUM',
+        `Free Trial permits up to ${TRIAL_MAX_PRODUCTS} products. Legacy over-cap catalogs may only remove existing products.`);
+    }
+    return ids.length;
   }
 
-  async function trialKeys(tx, db, uid, entitlement, { scope = null, existingId = null } = {}) {
+  async function trialKeys(tx, db, uid, entitlement, { scope = null, existingId = null, previous = null } = {}) {
     if (!entitlement.activeTrial) return;
-    if (scope) trialProductCount(scope);
+    if (scope) trialProductCount(scope, previous);
     const keys = await tx.get(db.collection('api_keys').where('userId', '==', uid));
     const active = keys.docs.filter(doc => doc.data().status === 'active');
     if (existingId ? active.length !== 1 || active[0].id !== existingId : active.length > 0) {
@@ -158,8 +160,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       return res.json({ success: true, keys: keys.docs.filter(doc => doc.data().status === 'active')
         .map(doc => publicKeyMetadata(doc.id, doc.data(), context.entitlement, context.usage)),
       usage: { ...context.usage, limit: context.entitlement.limit, scope: 'account' },
-      ...(context.entitlement.activeTrial ? { trialCatalog: { productsIncluded, minimumProducts: 50, maximumProducts: 500,
-        productsAvailable: Math.max(0, 500 - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: 1,
+      ...(context.entitlement.activeTrial ? { trialCatalog: { productsIncluded, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS,
+        productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: 1,
         expiresAt: context.entitlement.expiresAt } } : {}) });
     }),
     view: authenticated(async (req, res, actor, db) => {
@@ -221,7 +223,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         if (entitlement.upgradeRequired) throw upgradeRequiredError();
         const oldKey = assertOwner(await tx.get(oldRef), actor.uid);
         assertActiveKey(oldKey, clock());
-        await trialKeys(tx, db, actor.uid, entitlement, { scope: oldKey, existingId: oldRef.id });
+        await trialKeys(tx, db, actor.uid, entitlement, { scope: oldKey, existingId: oldRef.id, previous: oldKey });
         if (entitlement.activeTrial) await validateScope(db, oldKey, context, tx);
         const newRef = db.collection('api_keys').doc(issued.id);
         if ((await tx.get(newRef)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key replacement.');
@@ -275,13 +277,13 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       assertOwner(await ref.get(), actor.uid);
       const context = await accountContext(db, actor.uid);
       if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
-      const scope = scopeFromBody(req.body || {});
-      await validateScope(db, scope, context);
+      const scope = scopeFromBody(req.body || {}, context.entitlement.activeTrial);
+      if (!context.entitlement.activeTrial) await validateScope(db, scope, context);
       const count = await db.runTransaction(async tx => {
         const entitlement = await currentAccount(tx, db, actor.uid, context, true);
         const existing = assertOwner(await tx.get(ref), actor.uid);
         assertActiveKey(existing, clock());
-        await trialKeys(tx, db, actor.uid, entitlement, { scope, existingId: ref.id });
+        await trialKeys(tx, db, actor.uid, entitlement, { scope, existingId: ref.id, previous: existing });
         if (entitlement.activeTrial) await validateScope(db, scope, context, tx);
         const version = Number.isSafeInteger(existing.scopeVersion) ? existing.scopeVersion : 0;
         if (entitlement.activeTrial && req.body?.expectedScopeVersion !== version) {

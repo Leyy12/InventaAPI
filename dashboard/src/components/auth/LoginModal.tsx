@@ -105,7 +105,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       tailored to it. After logging in, you will continue to PayMongo checkout to{" "}
       {pendingPlan === "pro" ? (
         <>
-          unlock <span className="text-indigo-400">Pro</span> (5,000 requests/day, all segments).
+          unlock <span className="text-indigo-400">Pro</span> (500 requests/day, all segments).
         </>
       ) : (
         <>unlock <span className="text-indigo-400">Pro Max</span> (unlimited account quota, all segments).</>
@@ -114,7 +114,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   ) : (
     <>
       Choose the business segment your account accesses. This is required to log in, and your catalog is
-      tailored to it. Your one-time Free Trial lasts 7 days with 50–500 selected products and one active API key; upgrade to{" "}
+      tailored to it. Your one-time Free Trial lasts 7 days with up to 50 selected products and one active API key; upgrade to{" "}
       <span className="text-indigo-400">Pro</span> to unlock all segments.
     </>
   );

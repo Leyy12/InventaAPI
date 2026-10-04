@@ -287,7 +287,7 @@ test('old same-day keys and multiple historical keys survive clean deployment cu
   assert.deepEqual(await counts(db), [3, 1]);
 });
 
-for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5000, 5000], ['Enterprise', null, null]]) {
+for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5000, 500], ['Enterprise', null, null]]) {
   test(`generation and shared request quota independent: ${plan}/${cap}`, async () => {
     const usage = { window: plan === 'Free' ? '2026-09' : '2026-09-22', used: 2 };
     const counter = plan === 'Free' ? 'account_free_monthly_usage/owner' : 'account_api_usage/owner';

@@ -43,11 +43,11 @@ for (const [label, now, active] of [['before', NOW, true], ['exact', new Date(EN
   test(`expiry ${label}: canonical plan, status and allowance`, () => {
     const state = evaluateEntitlement(owner, now);
     assert.equal(state.activePro, active); assert.equal(state.plan, active ? 'Pro' : 'Upgrade Required');
-    assert.equal(state.limit, active ? 5000 : 0); assert.equal(state.status, active ? 'active' : 'upgrade_required');
+    assert.equal(state.limit, active ? 500 : 0); assert.equal(state.status, active ? 'active' : 'upgrade_required');
   });
   test(`API ${label}: same credential enforces canonical allowance`, async () => {
     const db = setup();
-    if (active) assert.equal((await consume(db, now)).usage.limit, 5000);
+    if (active) assert.equal((await consume(db, now)).usage.limit, 500);
     else await assert.rejects(consume(db, now), { status: 403, code: 'UPGRADE_REQUIRED' });
     assert.equal(db.read('users/owner').plan, active ? 'Pro' : 'Free');
     assert.equal(db.read('api_keys/one').key, 'daas_one');
@@ -55,7 +55,7 @@ for (const [label, now, active] of [['before', NOW, true], ['exact', new Date(EN
   });
 }
 test('same key before/after expiry, second key cannot retain Pro or reset shared usage', async () => {
-  const db = setup(); assert.equal((await consume(db)).usage.limit, 5000);
+  const db = setup(); assert.equal((await consume(db)).usage.limit, 500);
   await assert.rejects(consume(db, new Date(END), 'two'), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(db.read('account_api_usage/owner').used, 1);
   db.seed('account_free_monthly_usage/owner', { window: '2026-09', used: 50 });
@@ -119,7 +119,7 @@ for (const [label, account, expected] of [['active', owner, '2026-10-20T10:00:01
     const db = setup(account), p = payment(db);
     await fulfillPayment(db, p.value, NOW);
     assert.equal(db.read('users/owner').subscriptionExpiresAt, expected);
-    assert.equal(db.read('users/owner').apiRequestLimit, 5000);
+    assert.equal(db.read('users/owner').apiRequestLimit, 500);
     assert.equal(db.read('users/owner').subscriptionStartedAt, label === 'active' ? owner.subscriptionStartedAt : NOW.toISOString());
     assert.equal(db.read(`payment_orders/${p.id}`).state, 'processed');
   });
@@ -292,7 +292,7 @@ test('Admin paid daily reporting is not replaced by malformed legacy Trial histo
   db.seed('account_api_usage/owner', { window: '2026-09-20', used: 31 });
   const handler = createAdminEntitlements({ getDb: () => db, verifyIdToken: async () => ({ uid: 'admin' }), clock: () => NOW });
   const result = (await invoke(handler, { body: { ids: ['owner'] } })).body.accounts.owner;
-  assert.equal(result.plan, 'Pro'); assert.equal(result.limit, 5000); assert.equal(result.used, 31);
+  assert.equal(result.plan, 'Pro'); assert.equal(result.limit, 500); assert.equal(result.used, 31);
   assert.equal(result.period, 'daily'); assert.equal(result.trialHistoryUnavailable, true);
 });
 test('status retry crossing expiry boundary returns Upgrade Required without any write', async () => {

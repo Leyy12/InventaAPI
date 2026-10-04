@@ -10,6 +10,7 @@ import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
 import { customerReportScope } from '../../../services/reporting.js';
 import { SUBSCRIPTION_PLANS, PRO_MAX_CAPABILITY_IDS, getCumulativeFeatures } from '../../../dashboard/src/config/plans.ts';
+import { PRO_DAILY_REQUEST_LIMIT, TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, trialCatalogChangeAllowed } from '../../../functions/entitlement-limits.mjs';
 
 const now = new Date('2026-09-27T12:00:00.000Z');
 const owner = { uid: 'owner', role: 'Developer', plan: 'Pro Max', apiRequestLimit: null,
@@ -17,6 +18,41 @@ const owner = { uid: 'owner', role: 'Developer', plan: 'Pro Max', apiRequestLimi
   businessSegment: 'Grocery', selectedSegment: 'Grocery' };
 const raw = (name, segment) => ({ name, segment, category: 'Products', status: 'active', price: 10 });
 const source = relative => readFileSync(fileURLToPath(new URL(`../../../${relative}`, import.meta.url)), 'utf8');
+
+test('shared effective limits and rendered pricing contract are 0–50, 500/day and unlimited', () => {
+  assert.equal(TRIAL_MIN_PRODUCTS, 0); assert.equal(TRIAL_MAX_PRODUCTS, 50); assert.equal(PRO_DAILY_REQUEST_LIMIT, 500);
+  assert.equal(SUBSCRIPTION_PLANS.free.billingCycle, '7 days');
+  assert.equal(SUBSCRIPTION_PLANS.free.requestLimit, null);
+  assert.equal(SUBSCRIPTION_PLANS.free.requestLimitDisplay, 'Up to 50 products');
+  assert.ok(SUBSCRIPTION_PLANS.free.features.includes('Up to 50 products'));
+  assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One API key'));
+  assert.doesNotMatch(JSON.stringify(SUBSCRIPTION_PLANS.free), /minimum|500 products|50–500/i);
+  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, PRO_DAILY_REQUEST_LIMIT);
+  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimitDisplay, '500 requests/day');
+  assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('500 requests per day'));
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, null);
+  assert.match(SUBSCRIPTION_PLANS.pro_max.requestLimitDisplay, /Unlimited/);
+  assert.equal(SUBSCRIPTION_PLANS.pro.priceDisplay, '₱1,499');
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.priceDisplay, '₱4,999');
+  for (const file of ['dashboard/src/app/dashboard/products/page.tsx', 'dashboard/src/app/dashboard/free-trial/page.tsx',
+    'dashboard/src/components/reports/CustomerUsageSummary.tsx', 'dashboard/src/app/docs/page.tsx',
+    'dashboard/src/app/privacy-policy/page.tsx', 'dashboard/src/components/auth/LoginModal.tsx']) {
+    assert.doesNotMatch(source(file), /Minimum [Rr]equired|minimum 50|at least 50|50–500|\/ 500\b|5,000 requests/);
+  }
+});
+
+test('shared UI/server change predicate counts unique IDs and permits only legacy subsets until saved within cap', () => {
+  const ids = count => Array.from({ length: count }, (_, i) => `p${i}`);
+  assert.equal(trialCatalogChangeAllowed([], []), true);
+  assert.equal(trialCatalogChangeAllowed([], Array(51).fill('p0')), true);
+  assert.equal(trialCatalogChangeAllowed(ids(49), ids(50)), true);
+  assert.equal(trialCatalogChangeAllowed(ids(50), ids(51)), false);
+  assert.equal(trialCatalogChangeAllowed(ids(50), ids(49)), true);
+  assert.equal(trialCatalogChangeAllowed(ids(51), ids(51)), true);
+  assert.equal(trialCatalogChangeAllowed(ids(51), ids(50)), true);
+  assert.equal(trialCatalogChangeAllowed(ids(51), [...ids(49), 'new']), false);
+  assert.equal(trialCatalogChangeAllowed(ids(50), [...ids(49), 'new']), true);
+});
 
 test('public Pro Max capabilities have a fixed one-to-one proof map; no new marketing line can silently appear', () => {
   assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], [

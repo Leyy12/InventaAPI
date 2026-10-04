@@ -195,7 +195,7 @@ function AccountKeysSession({ user, entitlementStatus }: {
         <p className="text-sm text-slate-300">Secrets are shown only once. Store them securely and never put them in public repositories or client-side code. Replacing a key immediately revokes the old credential; revoking alone creates nothing.</p>
       </div>
       <CustomerUsageSummary />
-      <p className="text-sm text-slate-400">Free Trial permits one active API key with 50–500 currently linked products for 7 days. API calls do not consume products. Manage the catalog in Products or securely replace your existing key. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
+      <p className="text-sm text-slate-400">Free Trial permits one active API key with up to 50 currently linked products for 7 days. API calls do not consume products. Manage the catalog in Products or securely replace your existing key. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
       <RequestHistory />
 
       <section className="glass-card rounded-xl border border-slate-700">

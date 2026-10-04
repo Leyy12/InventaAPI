@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const modules = new Set(['functions/subscription-lifecycle.mjs', 'services/api-key-security.js',
+const modules = new Set(['functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs', 'services/api-key-security.js',
   'services/payment-contract.js', 'services/paymongo-checkout.js', 'services/payment-checkout.js',
   'services/payment-webhook.js', 'scripts/validate-release-config.mjs',
   'tests/adviser/phase2b1/memory-firestore.mjs', 'tests/adviser/r6c/payment-mode.test.mjs',

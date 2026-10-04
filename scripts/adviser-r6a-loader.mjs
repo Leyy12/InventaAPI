@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const modules = new Set(['services/admin-traffic.js', 'services/api-key-security.js', 'functions/subscription-lifecycle.mjs',
+const modules = new Set(['services/admin-traffic.js', 'services/api-key-security.js', 'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs',
   'services/reporting.js', 'services/product-contract.js', 'admin-panel/src/lib/admin-traffic.ts',
   'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/r6a/backend.test.mjs',
   'tests/adviser/r6a/frontend.test.mjs', 'tests/adviser/r6a/wiring.test.mjs'].map(file => resolvePath(root, file)));

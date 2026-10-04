@@ -4,7 +4,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Set(['scripts/frozen-catalog-repair.mjs', 'scripts/migrate-frozen-catalog.mjs',
   'scripts/frozen-catalog-export.mjs', 'services/catalog-writer.js', 'services/catalog-audit.js',
   'services/catalog-contract.js', 'services/product-contract.js', 'services/product-submission-contract.js',
-  'functions/subscription-lifecycle.mjs', 'tests/adviser/r2a/memory-firestore.mjs',
+  'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs', 'tests/adviser/r2a/memory-firestore.mjs',
   'tests/adviser/r8c/migration.test.mjs'].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {

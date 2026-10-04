@@ -1,4 +1,5 @@
 "use client";
+import { TRIAL_MAX_PRODUCTS } from "../../../../functions/entitlement-limits.mjs";
 import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import Link from "next/link";
@@ -27,15 +28,16 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
     <Link href="/dashboard/plan-billing#upgrade" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">View paid plans</Link>
   </section>;
   if (trial) return <section aria-label="Free Trial catalog" className="space-y-3">
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-      {[["Products Included", `${trial.productsIncluded} / 500`], ["Minimum Required", "50"],
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {[["Products Included", `${trial.productsIncluded} / ${TRIAL_MAX_PRODUCTS}`],
         ["Products Available", trial.productsAvailable], ["API Keys", `${trial.activeKeys} / 1`]].map(([label, value]) =>
         <div key={label} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
           <p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold text-white">{value}</p>
         </div>)}
     </div>
+    {trial.productsIncluded >= TRIAL_MAX_PRODUCTS && <p role="status" className="text-amber-300">Catalog full — capacity reached. Remove products before adding more.</p>}
     <p className="text-sm text-slate-300">One-time 7-day Free Trial · Trial Expires: {trial.expiresAt}</p>
-    <p className="text-xs text-slate-400">API calls do not consume products. Keep 50–500 products linked to your one active key.</p>
+    <p className="text-xs text-slate-400">API calls do not consume products. Link up to 50 products to your one active key.</p>
   </section>;
   if (activeTrial) return <p role="status" className="text-slate-300">{source.status === 'error'
     ? 'Trial catalog verification unavailable. Retrying automatically.' : 'Loading Trial catalog…'}</p>;

@@ -56,8 +56,8 @@ test('expired Pro requires upgrade despite a cached high account limit, without 
   const result=evaluateEntitlement({plan:'Pro',apiRequestLimit:5000,subscription_status:'active',subscriptionExpiresAt:'2026-09-20T00:00:00Z'},now);
   assert.equal(result.plan,'Upgrade Required');assert.equal(result.limit,0);
 });
-for (const [plan,limit] of [['Free',0],['Pro',5000],['Enterprise',null]]) test('authoritative backend entitlement '+plan,()=>{
-  assert.equal(evaluateEntitlement({plan,apiRequestLimit:limit,subscription_status:'active',subscriptionExpiresAt:'2027-01-01T00:00:00.000Z'},now).limit,limit);
+for (const [plan,limit,expected] of [['Free',0,0],['Pro',5000,500],['Enterprise',null,null]]) test('authoritative backend entitlement '+plan,()=>{
+  assert.equal(evaluateEntitlement({plan,apiRequestLimit:limit,subscription_status:'active',subscriptionExpiresAt:'2027-01-01T00:00:00.000Z'},now).limit,expected);
 });
 const usage={scope:'account',window:'2026-09-21',used:17,limit:50,resetsAt:'2026-09-22T00:00:00Z'};
 test('authoritative account quota shows used/limit/remaining/reset, never telemetry-derived',()=>{
