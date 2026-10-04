@@ -325,14 +325,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
                   {mobileMenuOpen ? <path d="M18 6 6 18M6 6l12 12" /> : <path d="M4 6h16M4 12h16M4 18h16" />}
                 </svg>
               </button>
-              <button
-                type="button"
-                onClick={() => { setMobileMenuOpen(false); setShowLoginModal(true); }}
-                aria-haspopup="dialog"
-                className="inline-flex items-center rounded-full border border-indigo-400/35 bg-indigo-500/10 px-4 py-2 text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
-              >
-                Login
-              </button>
             </div>
           </div>
           <div

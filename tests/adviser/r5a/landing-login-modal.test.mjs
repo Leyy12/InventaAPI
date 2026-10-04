@@ -11,10 +11,9 @@ test('Customer root is Landing for fresh and returning unauthenticated browsers'
   assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /if \(loading \|\| destination\) return/);
 });
 
-test('Landing Login opens the modal in place and Create Account remains available', () => {
+test('Landing retains its Login modal flow and Create Account remains available', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
   assert.match(source, /setShowLoginModal\(true\)/);
-  assert.match(source, /aria-haspopup="dialog"/);
   assert.match(read('dashboard/src/components/auth/LoginModal.tsx'), /Create Account/);
   assert.doesNotMatch(source, /proceed\('\/login'\)/);
 });
@@ -26,7 +25,7 @@ test('Landing page offers the guided hero, feature, and pricing journey', () => 
   assert.match(header, /How it Works/);
   assert.match(header, /Pricing/);
   assert.match(header, /API Docs/);
-  assert.match(header, />\s*Login\s*</);
+  assert.doesNotMatch(header, />\s*Login\s*</);
   assert.doesNotMatch(header, />\s*Sign Up\s*</);
   assert.match(source, /href="#features"[\s\S]*?Get Started →/);
   assert.match(source, /href="#pricing"[\s\S]*?View Plans/);
@@ -57,7 +56,8 @@ test('Landing navigation exposes accessible mobile links and the existing Docs r
   assert.match(navigation, /aria-expanded=\{mobileMenuOpen\}/);
   assert.match(navigation, /aria-controls="landing-mobile-navigation"/);
   assert.match(navigation, /ref=\{mobileMenuButtonRef\}/);
-  assert.match(navigation, /setMobileMenuOpen\(false\); setShowLoginModal\(true\)/);
+  assert.match(navigation, /setMobileMenuOpen\(\(open\) => !open\)/);
+  assert.doesNotMatch(navigation, /setMobileMenuOpen\(false\);\s*setShowLoginModal\(true\)/);
   assert.match(navigation, /md:hidden/);
   assert.match(source, /event\.key === "Escape"[\s\S]*?setMobileMenuOpen\(false\)[\s\S]*?mobileMenuButtonRef\.current\?\.focus\(\)/);
   for (const [label, href] of [
