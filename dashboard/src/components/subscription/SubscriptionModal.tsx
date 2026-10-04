@@ -61,7 +61,7 @@ export default function SubscriptionModal({
   // ── HANDLERS ──────────────────────────────────────────────────────────────
 
   const handleSelectFree = () => {
-    // Free plan: no payment needed. User is already on Free from signup.
+    // Free Trial needs no payment. Server session establishment owns activation.
     // Close modal and redirect to dashboard.
     onClose();
     router.push('/dashboard');
@@ -267,7 +267,7 @@ export default function SubscriptionModal({
                   >
                     {selectedPlan === "pro" && (entitlement?.activePro ? "Renew with GCash →" : "Pay with GCash →")}
                     {selectedPlan === "pro_max" && (entitlement?.plan === 'Pro Max' && entitlement.activePro ? "Renew Pro Max with GCash →" : "Get Pro Max with GCash →")}
-                    {selectedPlan === "free" && "Use Free Plan"}
+                    {selectedPlan === "free" && "Continue to Free Trial"}
                   </button>
 
                   {(selectedPlan === "pro" || selectedPlan === "pro_max") && (

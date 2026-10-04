@@ -25,7 +25,7 @@ exports.downgradeExpiredSubscriptions = onSchedule({
     console.log('[SUBSCRIPTION NORMALIZATION]', { downgraded });
 });
 
-// Delivery is advisory: API entitlement/expiration and the 500-request cap remain
+// Delivery is advisory: API entitlement/expiration and the linked-product limits remain
 // authoritative even if this scheduler or the email provider is unavailable.
 exports.monitorFreeTrials = onSchedule({
     schedule: '0 */6 * * *', timeZone: 'UTC', region: 'asia-southeast1',

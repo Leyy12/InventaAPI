@@ -8,7 +8,6 @@ import type { User } from "firebase/auth";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { apiKeyRequest, ApiKeyRequestError } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
-import { useTrialOnboarding } from "@/lib/use-trial-onboarding";
 import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import RequestHistory from "@/components/api/RequestHistory";
 import CodeSnippet from "@/components/shared/CodeSnippet";
@@ -27,26 +26,20 @@ type OneTimeReplacement = { id: string; name: string; secret: string };
 
 export default function ApiKeysPage() {
   const { user, entitlement } = useAuth();
-  const trialRequired = entitlement?.plan === "Free" && entitlement.subscription_status === "inactive";
-  const trialOnboarding = useTrialOnboarding(user, trialRequired);
   return user ? (
     <AccountKeysSession
       key={user.uid}
       user={user}
       entitlementStatus={entitlement?.subscription_status ?? null}
-      trialRequired={trialRequired}
-      trialEligible={trialOnboarding?.eligible === true}
     />
   ) : null;
 }
 
 // A route reload, route exit, or account switch destroys this component and
 // its one-time secret. Neither list refreshes nor entitlement updates do.
-function AccountKeysSession({ user, entitlementStatus, trialRequired, trialEligible }: {
+function AccountKeysSession({ user, entitlementStatus }: {
   user: User;
   entitlementStatus: string | null;
-  trialRequired: boolean;
-  trialEligible: boolean;
 }) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,13 +184,6 @@ function AccountKeysSession({ user, entitlementStatus, trialRequired, trialEligi
         <p className="text-sm text-slate-400 mt-2">New API keys are created from <Link href="/dashboard/products" className="text-cyan-300 underline">Products</Link> when configuring an integration.</p>
       </div>
 
-      {trialRequired && <section role="status" className="rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-5 space-y-2">
-        <h2 className="text-lg font-semibold text-white">API Access Locked</h2>
-        <p className="text-sm text-slate-300">Start your 7-Day Pro Trial before creating a new key from Products. Existing Free keys remain manageable and can be replaced without adding another active key.</p>
-        <Link href="/dashboard/plan-billing" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">
-          {trialEligible ? "Start 7-Day Pro Trial" : "Check trial eligibility in Plan & Billing"}
-        </Link>
-      </section>}
       {upgradeRequired && <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-5 text-amber-100">
         Free Trial Ended. Existing keys remain visible and revocable, but replacement and protected API access require paid Pro or Pro Max.{" "}
         <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro or Pro Max</Link>
@@ -209,7 +195,7 @@ function AccountKeysSession({ user, entitlementStatus, trialRequired, trialEligi
         <p className="text-sm text-slate-300">Secrets are shown only once. Store them securely and never put them in public repositories or client-side code. Replacing a key immediately revokes the old credential; revoking alone creates nothing.</p>
       </div>
       <CustomerUsageSummary />
-      <p className="text-sm text-slate-400">Existing Free keys retain their 50/month account allowance. Active Trial keys share 500 total requests. Once Trial ends, protected API access requires paid Pro or Pro Max. Replacing a key does not reset or consume account quota.</p>
+      <p className="text-sm text-slate-400">Free Trial permits one active API key with 50–500 currently linked products for 7 days. API calls do not consume products. Manage the catalog in Products or securely replace your existing key. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
       <RequestHistory />
 
       <section className="glass-card rounded-xl border border-slate-700">

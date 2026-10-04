@@ -9,6 +9,8 @@ export const planKind = value => {
   if (name === 'enterprise' || name === 'unlimited') return 'legacy_unlimited';
   return null;
 };
+// Legacy storage envelope retained for signup/normalization compatibility only.
+// evaluateEntitlement never grants this monthly allowance.
 export const FREE_ENTITLEMENT = Object.freeze({ plan: 'Free', apiRequestLimit: 50, subscription_status: 'inactive' });
 export function accountBlocked(account) {
   return !account || account.disabled === true || account.deleted === true || account.deletedAt != null
@@ -44,23 +46,25 @@ export function dateMillis(value) {
 function unavailable(code = 'ENTITLEMENT_UNAVAILABLE', status = 503) {
   throw Object.assign(new Error('Unable to verify account entitlement.'), { code, status });
 }
-export const TRIAL_LIMIT = 500;
+export const TRIAL_MIN_PRODUCTS = 50;
+export const TRIAL_MAX_PRODUCTS = 500;
 function upgradeRequired(trial, { expired = trial.expired, expiresAt = trial.expiresAt,
   startedAt = trial.startedAt, normalization = null } = {}) {
   return { plan: 'Upgrade Required', level: -1, limit: 0, status: 'upgrade_required',
     upgradeRequired: true, activePro: false, activeTrial: false, expired, expiresAt, startedAt, normalization };
 }
 export function trialState(account, now = new Date()) {
-  const fields = ['hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt', 'trialExpiredAt', 'trialExhaustedAt'];
+  const fields = ['hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt', 'trialExpiredAt', 'trialExhaustedAt', 'trialConsumed'];
   if (!fields.some(field => Object.hasOwn(account || {}, field))) return { used: false, active: false, expired: false, startedAt: null, expiresAt: null };
   const start = dateMillis(account.trialStartedAt), end = dateMillis(account.trialExpiresAt);
   if (account.trialVersion !== 1 || account.hasUsedFreeTrial !== true || !Number.isFinite(now.getTime())
     || !Number.isFinite(start) || !Number.isFinite(end) || end - start !== 7 * 86400000 || start > now.getTime()) unavailable('TRIAL_UNAVAILABLE');
   const eligiblePlan = ['free', 'starter'].includes(String(account.plan).toLowerCase());
+  if (account.trialConsumed != null && typeof account.trialConsumed !== 'boolean') unavailable('TRIAL_UNAVAILABLE');
   const exhausted = Object.hasOwn(account, 'trialExhaustedAt');
   const exhaustedAt = dateMillis(account.trialExhaustedAt);
   if (exhausted && (!Number.isFinite(exhaustedAt) || exhaustedAt < start || exhaustedAt >= end || exhaustedAt > now.getTime())) unavailable('TRIAL_UNAVAILABLE');
-  return { used: true, active: eligiblePlan && !exhausted && now.getTime() < end, exhausted, expired: now.getTime() >= end,
+  return { used: true, active: eligiblePlan && account.trialConsumed !== true && !exhausted && now.getTime() < end, exhausted, expired: now.getTime() >= end,
     startedAt: new Date(start).toISOString(), expiresAt: new Date(end).toISOString() };
 }
 export function evaluateEntitlement(account, now = new Date()) {
@@ -71,9 +75,11 @@ export function evaluateEntitlement(account, now = new Date()) {
   const level = kind === 'free' ? 0 : kind === 'pro' ? 1 : 2;
   if (level === 0) {
     const trial = trialState(account, now);
-    if (trial.active) return { plan: 'Pro Trial', level: 1, limit: TRIAL_LIMIT, status: 'trial', activePro: false,
+    if (trial.active) return { plan: 'Free Trial', level: 1, limit: null, status: 'trial', activePro: false,
       activeTrial: true, expired: false, expiresAt: trial.expiresAt, startedAt: trial.startedAt, normalization: null };
-    if (trial.used) return upgradeRequired(trial);
+    // A never-started account has no protected allowance until server session
+    // establishment initializes its one-time Trial. Legacy monthly keys cannot bypass it.
+    return upgradeRequired(trial);
   }
   const end = dateMillis(account.subscriptionExpiresAt);
   const expiresAt = Number.isFinite(end) ? new Date(end).toISOString() : null;
@@ -87,19 +93,17 @@ export function evaluateEntitlement(account, now = new Date()) {
     const activePro = !expired && account.subscription_status === 'active';
     if (!activePro) {
       const trial = trialState(account, now);
-      if (trial.used) return upgradeRequired(trial, { expired, expiresAt, startedAt,
+      return upgradeRequired(trial, { expired, expiresAt, startedAt,
         normalization: { ...FREE_ENTITLEMENT } });
     }
-    return { plan: activePro ? kind === 'pro_max' ? 'Pro Max' : 'Pro' : 'Free', level: activePro ? level : 0,
-      limit: activePro ? kind === 'pro_max' ? null : 5000 : 50,
-      status: activePro ? 'active' : 'inactive', activePro, expired, expiresAt, startedAt,
-      normalization: !activePro ? { ...FREE_ENTITLEMENT } : null };
+    return { plan: kind === 'pro_max' ? 'Pro Max' : 'Pro', level,
+      limit: kind === 'pro_max' ? null : 5000,
+      status: 'active', activePro, expired, expiresAt, startedAt, normalization: null };
   }
   const limit = account.apiRequestLimit;
   if (!(Number.isSafeInteger(limit) && limit >= 0 || level === 2 && limit === null)) unavailable();
-  // Preserve explicit lower server caps, but a stale Free snapshot cannot exceed 50.
-  return { plan: level === 0 ? 'Free' : account.plan, level, limit: level === 2 ? null : Math.min(limit, 50),
-    status: level === 0 ? 'inactive' : (account.subscription_status || 'active'), activePro: false,
+  return { plan: account.plan, level, limit: null,
+    status: account.subscription_status || 'active', activePro: false,
     expired: Number.isFinite(end) && now.getTime() >= end, expiresAt, startedAt, normalization: null };
 }
 export function renewalPeriod(account, now, days = 30) {

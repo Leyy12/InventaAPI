@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { trialState } from '../functions/subscription-lifecycle.mjs';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
-  usageForToday, validDocumentId, trialUsage, freeMonthlyUsage, upgradeRequiredError, assertActiveKey,
+  usageForToday, validDocumentId, upgradeRequiredError, assertActiveKey, trialUsage,
 } from './api-key-security.js';
 import { authorizedProductIds } from './daas-catalog.js';
 import { normalizeSegment } from './product-contract.js';
@@ -55,18 +54,19 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     const accountDoc = await tx.get(userRef);
     if (!accountDoc.exists) throw new ApiSecurityError(404, 'ACCOUNT_NOT_FOUND', 'Account not found.');
     const usageDoc = await tx.get(db.collection('account_api_usage').doc(uid));
-    const monthlyDoc = await tx.get(db.collection('account_free_monthly_usage').doc(uid));
-    const account = accountDoc.data();
-    const entitlement = accountEntitlement(account, clock());
-    const trialDoc = entitlement.activeTrial ? await tx.get(db.collection('account_trial_usage').doc(uid)) : null;
-    const usage = entitlement.upgradeRequired ? { used: null, period: 'upgrade_required', resetsAt: null, state: 'upgrade_required' }
-      : entitlement.level === 0 ? freeMonthlyUsage(monthlyDoc.exists ? monthlyDoc.data() : null, accountDoc, clock(), monthlyCutoverAt)
-      : entitlement.activeTrial ? trialUsage(trialDoc?.data(), entitlement) : usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
-    if (entitlement.activeTrial) {
-      const daily = usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
-      if (daily.holdUntil) Object.assign(usage, { holdUntil: daily.holdUntil, resetsAt: daily.holdUntil });
+    let account = accountDoc.data();
+    let entitlement = accountEntitlement(account, clock());
+    let legacyConsumed = false;
+    if (entitlement.activeTrial && !Object.hasOwn(account, 'trialConsumed')) {
+      const history = await tx.get(db.collection('account_trial_usage').doc(uid));
+      legacyConsumed = trialUsage(history.data(), entitlement).used === 500;
+      if (legacyConsumed) { account = { ...account, trialConsumed: true }; entitlement = accountEntitlement(account, clock()); }
     }
+    const usage = entitlement.upgradeRequired ? { used: null, period: 'upgrade_required', resetsAt: null, state: 'upgrade_required' }
+      : entitlement.activeTrial ? { used: null, period: 'trial_catalog', resetsAt: entitlement.expiresAt }
+        : usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
     if (entitlement.normalization) tx.update(userRef, entitlement.normalization);
+    if (legacyConsumed) tx.update(userRef, { trialConsumed: true });
     return { account: { ...account, ...entitlement.normalization }, entitlement, usage };
     });
   }
@@ -76,9 +76,6 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     const now = clock();
     const entitlement = accountEntitlement(account, now);
     if (requireIssuance && entitlement.upgradeRequired) throw upgradeRequiredError();
-    if (requireIssuance && entitlement.level === 0 && !trialState(account, now).used) {
-      throw new ApiSecurityError(403, 'TRIAL_REQUIRED', 'Start your 7-Day Pro Trial before generating a new API key.');
-    }
     if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment
       || account.businessSegment !== context.account.businessSegment)) {
       throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
@@ -97,7 +94,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     return snapshot.data();
   }
 
-  async function validateScope(db, scope, context) {
+  async function validateScope(db, scope, context, tx = null) {
     const scopedAccount = { ...context.account, plan: context.entitlement.plan };
     const restricted = restrictedSegmentAccount(scopedAccount);
     const selected = activeCustomerSegment(scopedAccount);
@@ -106,7 +103,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Select a supported account segment first.');
     }
     for (const id of ids) {
-      const snapshot = await db.collection('products').doc(id).get();
+      const ref = db.collection('products').doc(id);
+      const snapshot = tx ? await tx.get(ref) : await ref.get();
       if (!snapshot.exists) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'A selected product no longer exists.');
       const product = snapshot.data();
       if (restricted && normalizeSegment(product.segment || product.businessType) !== selected) {
@@ -120,13 +118,49 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     await db.collection('audit_logs').add({ action, userId: actor.uid, keyId: id, timestamp: clock() }).catch(() => {});
   }
 
+  function trialProductCount(scope) {
+    const count = authorizedProductIds(scope).length;
+    if (count < 50) throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MINIMUM',
+      'Select at least 50 products to generate or maintain your Free Trial API key.');
+    if (count > 500) throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MAXIMUM', 'Free Trial permits at most 500 products.');
+    return count;
+  }
+
+  async function trialKeys(tx, db, uid, entitlement, { scope = null, existingId = null } = {}) {
+    if (!entitlement.activeTrial) return;
+    if (scope) trialProductCount(scope);
+    const keys = await tx.get(db.collection('api_keys').where('userId', '==', uid));
+    const active = keys.docs.filter(doc => doc.data().status === 'active');
+    if (existingId ? active.length !== 1 || active[0].id !== existingId : active.length > 0) {
+      throw new ApiSecurityError(409, 'TRIAL_KEY_LIMIT',
+        'Free Trial permits one active API key. Manage or replace your existing key instead.');
+    }
+  }
+
+  function serializeTrialMutation(tx, db, uid, entitlement) {
+    if (entitlement.activeTrial) {
+      // Every Trial key create/rotate/revoke/scope update reads and writes the
+      // same account, serializing phantom additions without a new composite index.
+      tx.update(db.collection('users').doc(uid), { trialKeyMutationAt: clock().toISOString() });
+    }
+  }
+
+  function verifyTrialBoundary(entitlement) {
+    if (entitlement.activeTrial && clock().getTime() >= Date.parse(entitlement.expiresAt)) throw upgradeRequiredError();
+  }
+
   return {
     list: authenticated(async (req, res, actor, db) => {
       const context = await accountContext(db, actor.uid);
       const keys = await db.collection('api_keys').where('userId', '==', actor.uid).get();
+      const activeKeys = keys.docs.filter(doc => doc.data().status === 'active');
+      const productsIncluded = new Set(activeKeys.flatMap(doc => authorizedProductIds(doc.data()))).size;
       return res.json({ success: true, keys: keys.docs.filter(doc => doc.data().status === 'active')
         .map(doc => publicKeyMetadata(doc.id, doc.data(), context.entitlement, context.usage)),
-      usage: { ...context.usage, limit: context.entitlement.limit, scope: 'account' } });
+      usage: { ...context.usage, limit: context.entitlement.limit, scope: 'account' },
+      ...(context.entitlement.activeTrial ? { trialCatalog: { productsIncluded, minimumProducts: 50, maximumProducts: 500,
+        productsAvailable: Math.max(0, 500 - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: 1,
+        expiresAt: context.entitlement.expiresAt } } : {}) });
     }),
     view: authenticated(async (req, res, actor, db) => {
       const snapshot = await refFor(db, req.params.id).get();
@@ -139,14 +173,13 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const name = keyName(body.keyName);
       const context = await accountContext(db, actor.uid);
       if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
-      if (context.entitlement.level === 0 && !trialState(context.account, clock()).used) {
-        throw new ApiSecurityError(403, 'TRIAL_REQUIRED', 'Start your 7-Day Pro Trial before generating a new API key.');
-      }
       const scope = scopeFromBody(body);
       await validateScope(db, scope, context);
       const issued = issueCredential();
       const key = await db.runTransaction(async tx => {
-        await currentAccount(tx, db, actor.uid, context, true);
+        const entitlement = await currentAccount(tx, db, actor.uid, context, true);
+        await trialKeys(tx, db, actor.uid, entitlement, { scope });
+        if (entitlement.activeTrial) await validateScope(db, scope, context, tx);
         // Recompute on every transaction retry, including a retry across midnight.
         // Caller dates/timezones never enter this account-level generation policy.
         const now = clock();
@@ -164,13 +197,15 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         const ref = db.collection('api_keys').doc(issued.id);
         if ((await tx.get(ref)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key creation.');
         const record = {
-          ...issued.stored, ...scope, name, userId: actor.uid, userEmail: actor.email || '',
+          ...issued.stored, ...scope, scopeVersion: 0, name, userId: actor.uid, userEmail: actor.email || '',
           status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
           plan: context.entitlement.plan, requestLimit: context.entitlement.limit,
           productAvailability: Object.fromEntries(authorizedProductIds(scope).map(id => [id, { availableSince: now }])),
         };
+        verifyTrialBoundary(entitlement);
         tx.set(ref, record);
         tx.set(marker, { userId: actor.uid, window, keyId: issued.id, createdAt: now, nextEligibleAt });
+        serializeTrialMutation(tx, db, actor.uid, entitlement);
         return record;
       });
       await audit(db, 'API Key Generated', actor, issued.id);
@@ -186,6 +221,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         if (entitlement.upgradeRequired) throw upgradeRequiredError();
         const oldKey = assertOwner(await tx.get(oldRef), actor.uid);
         assertActiveKey(oldKey, clock());
+        await trialKeys(tx, db, actor.uid, entitlement, { scope: oldKey, existingId: oldRef.id });
+        if (entitlement.activeTrial) await validateScope(db, oldKey, context, tx);
         const newRef = db.collection('api_keys').doc(issued.id);
         if ((await tx.get(newRef)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key replacement.');
         const now = clock();
@@ -203,12 +240,15 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
           linkedProducts: Array.isArray(oldKey.linkedProducts)
             ? oldKey.linkedProducts.filter(value => validDocumentId(value?.id)).map(value => ({ id: value.id })) : [],
           productAvailability: oldKey.productAvailability || {},
+          scopeVersion: Number.isSafeInteger(oldKey.scopeVersion) ? oldKey.scopeVersion : 0,
           ...(oldKey.expiresAt != null ? { expiresAt: oldKey.expiresAt } : {}),
           replacesKeyId: oldRef.id, rotationReason: 'replacement',
         };
+        verifyTrialBoundary(entitlement);
         tx.update(oldRef, { status: 'revoked', revokedAt: now,
           replacedByKeyId: issued.id, rotationReason: 'replacement' });
         tx.set(newRef, replacement);
+        serializeTrialMutation(tx, db, actor.uid, entitlement);
         return replacement;
       });
       await audit(db, 'API Key Replaced', actor, oldRef.id);
@@ -234,18 +274,28 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const ref = refFor(db, req.params.id);
       assertOwner(await ref.get(), actor.uid);
       const context = await accountContext(db, actor.uid);
+      if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
       const scope = scopeFromBody(req.body || {});
       await validateScope(db, scope, context);
       const count = await db.runTransaction(async tx => {
-        await currentAccount(tx, db, actor.uid, context);
+        const entitlement = await currentAccount(tx, db, actor.uid, context, true);
         const existing = assertOwner(await tx.get(ref), actor.uid);
+        assertActiveKey(existing, clock());
+        await trialKeys(tx, db, actor.uid, entitlement, { scope, existingId: ref.id });
+        if (entitlement.activeTrial) await validateScope(db, scope, context, tx);
+        const version = Number.isSafeInteger(existing.scopeVersion) ? existing.scopeVersion : 0;
+        if (entitlement.activeTrial && req.body?.expectedScopeVersion !== version) {
+          throw new ApiSecurityError(409, 'CATALOG_CHANGED', 'Catalog changed. Reload your current selection before saving.');
+        }
         const previousIds = new Set(authorizedProductIds(existing));
         const availability = Object.fromEntries(authorizedProductIds(scope).flatMap(id => {
           if (Object.hasOwn(existing.productAvailability || {}, id)) return [[id, existing.productAvailability[id]]];
           return previousIds.has(id) ? [] : [[id, { availableSince: clock() }]];
         }));
         // Clear legacy snapshots too: otherwise the Phase 1 fallback could reauthorize removed IDs.
-        tx.update(ref, { ...scope, productAvailability: availability });
+        verifyTrialBoundary(entitlement);
+        tx.update(ref, { ...scope, scopeVersion: version + 1, productAvailability: availability });
+        serializeTrialMutation(tx, db, actor.uid, entitlement);
         return Object.keys(availability).length;
       });
       await audit(db, 'API Key Products Updated', actor, ref.id);
@@ -254,9 +304,10 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     revoke: authenticated(async (req, res, actor, db) => {
       const ref = refFor(db, req.params.id);
       await db.runTransaction(async tx => {
-        await currentAccount(tx, db, actor.uid);
+        const entitlement = await currentAccount(tx, db, actor.uid);
         assertOwner(await tx.get(ref), actor.uid);
         tx.update(ref, { status: 'revoked', revokedAt: clock() });
+        serializeTrialMutation(tx, db, actor.uid, entitlement);
       });
       await audit(db, 'API Key Revoked', actor, ref.id);
       return res.json({ success: true, message: 'API key revoked.' });

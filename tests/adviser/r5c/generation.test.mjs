@@ -295,15 +295,17 @@ for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5
     const { db, create, clock } = setup({ 'users/owner': profile, [counter]: usage, 'api_keys/old': legacy });
     const made = await create();
     if (plan === 'Free') {
-      assert.equal(made.statusCode, 403); assert.equal(made.body.error, 'TRIAL_REQUIRED');
+      assert.equal(made.statusCode, 403); assert.equal(made.body.error, 'UPGRADE_REQUIRED');
       assert.deepEqual(await counts(db), [1, 0]);
     } else assert.equal(made.statusCode, 200);
     assert.deepEqual(db.read(counter), usage);
-    assert.equal(accountEntitlement(profile, clock()).limit, expected);
-    await consumeAccountQuota(db, { userId: 'owner', keyId: 'old', credential: legacy.key, clock });
+    assert.equal(accountEntitlement(profile, clock()).limit, plan === 'Free' ? 0 : expected);
+    if (plan === 'Free') await assert.rejects(consumeAccountQuota(db, { userId: 'owner', keyId: 'old', credential: legacy.key, clock }),
+      { status: 403, code: 'UPGRADE_REQUIRED' });
+    else await consumeAccountQuota(db, { userId: 'owner', keyId: 'old', credential: legacy.key, clock });
     if (plan !== 'Free') await consumeAccountQuota(db, { userId: 'owner', keyId: made.body.id, credential: made.body.key, clock });
-    assert.equal(db.read(counter).used, plan === 'Free' ? 3 : 4);
-    if (plan === 'Free') assert.equal((await create()).body.error, 'TRIAL_REQUIRED'); else denied(await create());
+    assert.equal(db.read(counter).used, plan === 'Free' ? 2 : 4);
+    if (plan === 'Free') assert.equal((await create()).body.error, 'UPGRADE_REQUIRED'); else denied(await create());
     assert.equal((await docs(db, 'api_telemetry')).length, 0);
   });
 }

@@ -48,14 +48,15 @@ test('date rendering rejects invalid/missing and uses browser locale for recorde
   assert.equal(historyDate(record.timestamp),new Date(record.timestamp).toLocaleString());
 });
 const now=new Date('2026-09-21T12:00:00Z');
-test('lower Free server cap is the stored daily account override, not an IP limiter',()=>{
-  for(const limit of [0,7,50,500]) assert.equal(evaluateEntitlement({plan:'Free',apiRequestLimit:limit},now).limit,Math.min(limit,50));
+test('legacy Free stored caps cannot confer effective protected access',()=>{
+  for(const limit of [0,7,50,500]) { const state=evaluateEntitlement({plan:'Free',apiRequestLimit:limit},now);
+    assert.equal(state.limit,0);assert.equal(state.upgradeRequired,true); }
 });
-test('expired Pro resolves to Free 50 despite a cached high account limit',()=>{
+test('expired Pro requires upgrade despite a cached high account limit, without a monthly Free fallback',()=>{
   const result=evaluateEntitlement({plan:'Pro',apiRequestLimit:5000,subscription_status:'active',subscriptionExpiresAt:'2026-09-20T00:00:00Z'},now);
-  assert.equal(result.plan,'Free');assert.equal(result.limit,50);
+  assert.equal(result.plan,'Upgrade Required');assert.equal(result.limit,0);
 });
-for (const [plan,limit] of [['Free',50],['Pro',5000],['Enterprise',null]]) test('unchanged backend entitlement '+plan,()=>{
+for (const [plan,limit] of [['Free',0],['Pro',5000],['Enterprise',null]]) test('authoritative backend entitlement '+plan,()=>{
   assert.equal(evaluateEntitlement({plan,apiRequestLimit:limit,subscription_status:'active',subscriptionExpiresAt:'2027-01-01T00:00:00.000Z'},now).limit,limit);
 });
 const usage={scope:'account',window:'2026-09-21',used:17,limit:50,resetsAt:'2026-09-22T00:00:00Z'};
@@ -79,13 +80,14 @@ test('Free issuance denial does not change shared request usage across existing 
   generationTime = now;
   // Crossing midnight for generation must not reset the existing monthly balance.
   const second=await invoke(handlers.create,{body:{keyName:'Second'}});
-  assert.equal(first.statusCode,403);assert.equal(first.body.error,'TRIAL_REQUIRED');
-  assert.equal(second.statusCode,403);assert.equal(second.body.error,'TRIAL_REQUIRED');
+  assert.equal(first.statusCode,403);assert.equal(first.body.error,'UPGRADE_REQUIRED');
+  assert.equal(second.statusCode,403);assert.equal(second.body.error,'UPGRADE_REQUIRED');
   assert.equal(db.read('account_free_monthly_usage/owner').used,17);
-  for(const [keyId,credential] of [['old-a','daas_old_a'],['old-b','daas_old_b']]) await consumeAccountQuota(db,{keyId,userId:'owner',credential,clock:()=>now});
-  assert.equal(db.read('account_free_monthly_usage/owner').used,19);
+  for(const [keyId,credential] of [['old-a','daas_old_a'],['old-b','daas_old_b']]) await assert.rejects(
+    consumeAccountQuota(db,{keyId,userId:'owner',credential,clock:()=>now}), {status:403,code:'UPGRADE_REQUIRED'});
+  assert.equal(db.read('account_free_monthly_usage/owner').used,17);
   const metadata=(await invoke(handlers.list)).body;
-  assert.equal(metadata.usage.scope,'account');assert.equal(metadata.usage.used,19);assert.equal(metadata.keys.length,2);
+  assert.equal(metadata.usage.scope,'account');assert.equal(metadata.usage.used,null);assert.equal(metadata.usage.state,'upgrade_required');assert.equal(metadata.keys.length,2);
 });
 for(const language of ['curl','javascript','python','php']) test('header-only placeholder example: '+language,()=>{
   const example=apiExamples('https://api.example.invalid/daas/v1/catalog?q=rice&page=2&perPage=20')[language];

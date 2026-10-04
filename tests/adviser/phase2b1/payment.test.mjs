@@ -122,7 +122,7 @@ test('checkout: unresolved Pro, unknown plans and non-customers fail closed', as
 });
 test('status: own account succeeds; forged UID and other order are denied', async () => {
   const env = await ready();
-  assert.equal((await invoke(env.status)).body.plan, 'Free');
+  assert.equal((await invoke(env.status)).body.plan, 'Upgrade Required');
   assert.equal((await invoke(env.status, { query: { userId: 'stranger' } })).statusCode, 403);
   env.db.seed(orderPath, { ...env.db.read(orderPath), userId: 'stranger' });
   assert.equal((await invoke(env.status, { query: { orderId } })).statusCode, 404);

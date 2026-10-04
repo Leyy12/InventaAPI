@@ -1,9 +1,10 @@
-export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown };
+export type TrialCatalog = { productsIncluded: number; productsAvailable: number; activeKeys: number; expiresAt: string };
+export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown; trialCatalog?: TrialCatalog };
 
 // One quota read per existing entitlement verification; bounded failure retries.
 // No subscription polling or inferred allowance. Values come only from read().
 export function createQuotaRefresh({ read, onState, schedule = setTimeout, cancel = clearTimeout }: {
-  read: (signal: AbortSignal) => Promise<{ keys: unknown[]; usage: unknown }>;
+  read: (signal: AbortSignal) => Promise<{ keys: unknown[]; usage: unknown; trialCatalog?: TrialCatalog }>;
   onState: (source: QuotaSource) => void;
   schedule?: typeof setTimeout; cancel?: typeof clearTimeout;
 }) {
@@ -30,7 +31,8 @@ export function createQuotaRefresh({ read, onState, schedule = setTimeout, cance
       if (!result || !Array.isArray(result.keys)) { fail(); return; }
       if (timer !== undefined) cancel(timer);
       timer = undefined;
-      onState({ status: 'ready', count: result.keys.length, usage: result.usage });
+      onState({ status: 'ready', count: result.keys.length, usage: result.usage,
+        ...(result.trialCatalog ? { trialCatalog: result.trialCatalog } : {}) });
     }, fail);
   }
   return {

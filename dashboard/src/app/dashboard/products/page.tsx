@@ -12,6 +12,7 @@ import { productImageSource, showProductImageFallback } from '@/lib/product-imag
 import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
+import { apiKeyRequest } from "@/lib/api-keys";
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -48,6 +49,11 @@ export default function ProductCatalogPage() {
   const upgradeRequired = entitlement?.subscription_status === 'upgrade_required'
     || (paywalledUserId === user?.uid && !paidAccess);
   const canGenerate = !!entitlement && !upgradeRequired;
+  const activeTrial = entitlement?.activeTrial === true;
+  const [trialSelection, setTrialSelection] = useState<{ uid: string; key: { id: string; scopeVersion: number } | null } | null>(null);
+  const [selectionError, setSelectionError] = useState('');
+  const trialKey = trialSelection && trialSelection.uid === user?.uid ? trialSelection.key : null;
+  const trialReady = !activeTrial || trialSelection?.uid === user?.uid;
   
   // Core State
   const [products, setProducts] = useState<Product[]>([]);
@@ -76,6 +82,21 @@ export default function ProductCatalogPage() {
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  useEffect(() => {
+    if (!activeTrial || !user) return;
+    const controller = new AbortController();
+    void apiKeyRequest(user, '', { signal: controller.signal }).then(data => {
+      if (controller.signal.aborted) return;
+      if (data.keys.length > 1) throw new Error('Free Trial permits one active key. Revoke additional legacy keys in API Keys first.');
+      const key = data.keys[0];
+      setSelectedProducts(new Set(key ? [...key.linkedProductIds, ...Object.keys(key.linkedVariantSelections)] : []));
+      setSelectedVariants(key ? Object.fromEntries(Object.entries(key.linkedVariantSelections as Record<string, string[]>).map(([id, values]) => [id, new Set(values)])) : {});
+      setTrialSelection({ uid: user.uid, key: key ? { id: key.id, scopeVersion: key.scopeVersion } : null });
+      setSelectionError('');
+    }).catch(error => { if (!controller.signal.aborted) setSelectionError(error instanceof Error ? error.message : 'Catalog verification unavailable.'); });
+    return () => controller.abort();
+  }, [activeTrial, user]);
 
   // Sync segment for Free users
   useEffect(() => {
@@ -141,10 +162,12 @@ export default function ProductCatalogPage() {
   // ==================== PRODUCT SELECTION ====================
 
   const toggleProduct = useCallback((product: Product) => {
+    if (upgradeRequired || !trialReady) return;
     const productId = product.id!;
     setSelectedProducts((prevProds) => {
       const newProds = new Set(prevProds);
       const isCurrentlySelected = newProds.has(productId);
+      if (activeTrial && ((!isCurrentlySelected && newProds.size >= 500) || (isCurrentlySelected && trialKey && newProds.size <= 50))) return prevProds;
       
       if (isCurrentlySelected) {
         newProds.delete(productId);
@@ -164,10 +187,14 @@ export default function ProductCatalogPage() {
       
       return newProds;
     });
-  }, []);
+  }, [activeTrial, trialKey, trialReady, upgradeRequired]);
 
   const toggleVariant = useCallback((e: React.MouseEvent, productId: string, variantId: string) => {
     e.stopPropagation();
+    if (upgradeRequired || !trialReady) return;
+    const variants = selectedVariants[productId];
+    if (activeTrial && ((!selectedProducts.has(productId) && selectedProducts.size >= 500)
+      || (trialKey && selectedProducts.size <= 50 && variants?.size === 1 && variants.has(variantId)))) return;
     
     setSelectedVariants((prevVars) => {
       const newMap = { ...prevVars };
@@ -189,6 +216,8 @@ export default function ProductCatalogPage() {
       // Sync selectedProducts
       setSelectedProducts((prevProds) => {
         const newProds = new Set(prevProds);
+        if (activeTrial && ((hasVariants && !newProds.has(productId) && newProds.size >= 500)
+          || (!hasVariants && newProds.has(productId) && trialKey && newProds.size <= 50))) return prevProds;
         if (hasVariants) newProds.add(productId);
         else newProds.delete(productId);
         return newProds;
@@ -196,34 +225,38 @@ export default function ProductCatalogPage() {
       
       return newMap;
     });
-  }, []);
+  }, [activeTrial, trialKey, trialReady, upgradeRequired, selectedProducts, selectedVariants]);
 
   const selectAllInView = useCallback(() => {
+    if (upgradeRequired || !trialReady) return;
+    const next = new Set(selectedProducts);
+    for (const product of filteredProducts) {
+      if (!activeTrial || next.size < 500) next.add(product.id!);
+    }
     setSelectedProducts((prevProds) => {
-      const newProds = new Set(prevProds);
-      filteredProducts.forEach(p => newProds.add(p.id!));
-      return newProds;
+      return next.size >= prevProds.size ? next : prevProds;
     });
     setSelectedVariants((prevVars) => {
       const newVars = { ...prevVars };
       filteredProducts.forEach(p => {
-        if (p.variants && p.variants.length > 0) {
+        if (next.has(p.id!) && p.variants && p.variants.length > 0) {
           newVars[p.id!] = new Set(p.variants.map(v => `${v.flavor || ''}|${v.size || ''}`));
         }
       });
       return newVars;
     });
-  }, [filteredProducts]);
+  }, [filteredProducts, selectedProducts, activeTrial, upgradeRequired, trialReady]);
 
   const clearSelection = useCallback(() => {
+    if (upgradeRequired || (activeTrial && trialKey)) return;
     setSelectedProducts(new Set());
     setSelectedVariants({});
-  }, []);
+  }, [activeTrial, trialKey, upgradeRequired]);
 
   // ==================== API KEY GENERATION ====================
 
   const handleGenerateApiKey = async () => {
-    if (!canGenerate) return;
+    if (!canGenerate || !trialReady || (activeTrial && (trialKey || cartSummary.totalProducts < 50 || cartSummary.totalProducts > 500))) return;
     if (!keyName.trim()) {
       alert("Please enter a name for your API key");
       return;
@@ -288,6 +321,7 @@ export default function ProductCatalogPage() {
 
       setGeneratedKeyName(typeof data.name === 'string' && data.name.trim() ? data.name : keyName.trim());
       setGeneratedKey(data.key);
+      if (activeTrial && user) setTrialSelection({ uid: user.uid, key: { id: data.id, scopeVersion: data.scopeVersion } });
     } catch (error) {
       console.error("Error generating API key:", error);
       const message = error instanceof TypeError && error.message === "Failed to fetch"
@@ -297,6 +331,20 @@ export default function ProductCatalogPage() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const saveTrialCatalog = async () => {
+    if (!user || !trialKey || !canGenerate || cartSummary.totalProducts < 50 || cartSummary.totalProducts > 500) return;
+    setGenerating(true); setSelectionError('');
+    try {
+      await apiKeyRequest(user, `/${trialKey.id}/products`, { method: 'PATCH', body: JSON.stringify({
+        linkedProductIds: cartSummary.productIds.filter(id => !selectedVariants[id]?.size),
+        linkedVariantSelections: Object.fromEntries(cartSummary.productIds.filter(id => selectedVariants[id]?.size)
+          .map(id => [id, Array.from(selectedVariants[id])])), expectedScopeVersion: trialKey.scopeVersion,
+      }) });
+      setTrialSelection({ uid: user.uid, key: { ...trialKey, scopeVersion: trialKey.scopeVersion + 1 } });
+    } catch (error) { setSelectionError(error instanceof Error ? error.message : 'Unable to save catalog.'); }
+    finally { setGenerating(false); }
   };
 
   const handleCopyAndClose = useCallback(async () => {
@@ -372,9 +420,11 @@ DAAS_API_KEY=${generatedKey}
           <p className="text-slate-400">Select products to include in your custom API endpoint</p>
         </div>
         <div className="flex items-center gap-3">
-          {selectedProducts.size > 0 && (
+          {trialKey && activeTrial ? <button onClick={saveTrialCatalog}
+            disabled={!canGenerate || generating || cartSummary.totalProducts < 50 || cartSummary.totalProducts > 500}
+            className="px-6 py-3 rounded-xl bg-indigo-500 text-white disabled:opacity-50">Save Trial Catalog</button> : !upgradeRequired && selectedProducts.size > 0 && (
             <button
-              disabled={!canGenerate}
+              disabled={!canGenerate || !trialReady || (activeTrial && (cartSummary.totalProducts < 50 || cartSummary.totalProducts > 500))}
               onClick={() => { 
                 setShowGenModal(true); 
                 setGeneratedKey(null); 
@@ -400,6 +450,12 @@ DAAS_API_KEY=${generatedKey}
           </button>
         </div>
       </div>
+
+      {activeTrial && <p role="status" className="text-sm text-slate-300">Free Trial · 7 days · Products Included: {cartSummary.totalProducts} / 500 · Minimum Required: 50 · API Keys: {trialKey ? 1 : 0} / 1.
+        {cartSummary.totalProducts < 50 ? ' Select at least 50 products to generate your Free Trial API key.'
+          : cartSummary.totalProducts >= 500 ? ' Catalog full — maximum reached. Remove a product before adding another.' : ' Valid Trial catalog.'}
+        {trialKey && ' An active Free Trial API must maintain at least 50 products. Add before removing when replacing at the minimum.'}</p>}
+      {selectionError && <p role="alert" className="text-red-300">{selectionError}</p>}
 
       {/* Shopping Cart Summary - Sticky */}
       {selectedProducts.size > 0 && (
@@ -715,7 +771,7 @@ DAAS_API_KEY=${generatedKey}
                   </button>
                   <button
                     onClick={handleGenerateApiKey}
-                    disabled={!keyName.trim() || generating}
+                    disabled={!keyName.trim() || generating || (activeTrial && (cartSummary.totalProducts < 50 || cartSummary.totalProducts > 500 || !!trialKey))}
                     className="flex-[2] px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {generating ? (

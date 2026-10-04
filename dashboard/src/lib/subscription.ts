@@ -23,3 +23,14 @@ export async function readSubscription(user: User): Promise<SubscriptionState> {
   if (!response.ok) throw Object.assign(new Error('Subscription verification unavailable.'), { status: response.status });
   return response.json();
 }
+
+// Called only as part of verified Customer session establishment. The server
+// owns eligibility, dates and usage; a retry cannot restart an existing Trial.
+export async function establishCustomerTrial(user: User): Promise<void> {
+  const token = await user.getIdToken();
+  const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
+  const response = await fetch(`${base}/api/v1/free-trial/session`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+  });
+  if (!response.ok) throw Object.assign(new Error('Customer Trial verification unavailable.'), { status: response.status });
+}

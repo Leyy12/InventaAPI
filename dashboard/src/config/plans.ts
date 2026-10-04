@@ -15,31 +15,33 @@ export const SUBSCRIPTION_PLANS = {
   free: {
     // Identifiers
     id: "free",
-    name: "Free",
-    displayName: "Free",
+    name: "Free Trial",
+    displayName: "Free Trial",
     
     // Pricing
     price: 0,
     priceDisplay: "₱0",
-    billingCycle: "forever",
+    billingCycle: "7 days",
     
     // Limits
-    requestLimit: 50,
-    requestLimitDisplay: "50 requests/month",
+    requestLimit: null,
+    requestLimitDisplay: "50–500 included products",
     
     // Description
     tagline: "For developers exploring the API or proof-of-concept testing",
     
     // Features (base features only)
     features: [
-      "API keys share the account allowance",
-      "50 requests per UTC calendar month",
+      "Minimum 50 products",
+      "Up to 500 products",
+      "One API key",
       "One Business Segment",
       "Product Catalog endpoint",
       "Product Recommendations",
       "API Key Management",
       "API Usage & History",
-      "Eligible once-only 7-Day Pro Trial"
+      "One-time 7-Day Free Trial",
+      "After 7 days: upgrade to Pro or Pro Max"
     ],
     
     // Exclusions (for visual comparison)
@@ -162,7 +164,7 @@ export function getCumulativeFeatures(planId: PlanId): { header: string | null; 
   
   if (planId === "pro") {
     return {
-      header: "Everything in Free, and:",
+      header: "Everything in Free Trial, and:",
       features: SUBSCRIPTION_PLANS.pro.incrementalFeatures
     };
   }

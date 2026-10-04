@@ -114,7 +114,8 @@ test('Customer and Admin surfaces expose Upgrade Required without hiding key his
   const settings = source('dashboard/src/app/dashboard/settings/page.tsx');
   const admin = source('admin-panel/src/app/consumers/page.tsx');
   assert.match(dashboard, /Free Trial Ended — Upgrade Required/);
-  assert.match(trial, /trial\.eligible && <button/);
+  assert.doesNotMatch(trial, /trial\.eligible && <button|onClick=\{activate\}/);
+  assert.match(trial, /starts automatically/);
   assert.match(trial, /trial\.upgradeRequired &&/);
   assert.match(trial, /View upgrade options/);
   assert.match(keys, /disabled=\{replacing \|\| upgradeRequired\}/);

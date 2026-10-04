@@ -263,18 +263,34 @@ for (const app of ['customer', 'admin']) {
     }
   });
 }
-function actualProfileGate(app, initialError = null, initialProfile = { role: 'Admin' }) {
-  let error = initialError, profile = initialProfile, state, denied = 0;
+function actualProfileGate(app, initialError = null, initialProfile = { role: 'Admin' }, initialTrialError = null) {
+  let error = initialError, trialError = initialTrialError, profile = initialProfile, state, denied = 0, trialCalls = 0;
   const identity = { uid: 'a', getIdToken: async () => { if (error) throw error; return 'synthetic'; } };
   const path = app === 'admin' ? 'admin-panel/src/lib/firebase/admin-auth-context.tsx' : 'dashboard/src/lib/firebase/auth-context.tsx';
   const body = bodyBetween(path, app === 'admin' ? 'readProfile: async (currentUser, forceRefresh) => {' : 'readProfile: async currentUser => {', '\n      },').replace(/ as (?:AdminUser|AppUser)/g, '');
-  const reader = new AsyncFunction('currentUser', 'getDocFromServer', 'doc', 'db', 'profileRole', 'readSubscription', 'forceRefresh', body);
+  const reader = new AsyncFunction('currentUser', 'getDocFromServer', 'doc', 'db', 'profileRole', 'readSubscription', 'forceRefresh', 'establishCustomerTrial', body);
   const gate = createAuthSession({ readProfile: (user, forceRefresh) => reader(user, async () => {
     if (error) throw error; return { exists: () => profile !== null, data: () => profile };
-  }, () => ({}), {}, profileRole, async () => { if (error) throw error; return { plan: 'Free' }; }, forceRefresh),
+  }, () => ({}), {}, profileRole, async () => { if (error) throw error; return { plan: 'Free Trial' }; }, forceRefresh,
+    async () => { trialCalls++; if (error || trialError) throw error || trialError; }),
   publish: value => { state = value; }, rejected: () => { denied++; }, schedule: () => 1, cancel: () => {} });
-  return { gate, identity, state: () => state, denied: () => denied, recover: value => { error = null; profile = value; } };
+  return { gate, identity, state: () => state, denied: () => denied, trialCalls: () => trialCalls,
+    recover: value => { error = null; trialError = null; profile = value; } };
 }
+test('automatic Trial session failure keeps protected Customer state unverified; retry establishes normally', async () => {
+  const h = actualProfileGate('customer', null, { role: 'Developer' }, { status: 503 });
+  await h.gate.accept(h.identity);
+  assert.equal(h.state().status, 'unverified'); assert.equal(h.state().profile, null);
+  assert.equal(h.state().user, h.identity); assert.equal(h.trialCalls(), 1); assert.equal(h.denied(), 0);
+  h.recover({ role: 'Developer' }); await h.gate.retry();
+  assert.equal(h.state().status, 'verified'); assert.equal(h.trialCalls(), 2); h.gate.stop();
+});
+test('non-Customer and missing/disabled profiles never call automatic Trial establishment', async () => {
+  for (const profile of [null, { role: 'Admin' }, { role: 'Developer', disabled: true }, { role: 'Developer', deleted: true }]) {
+    const h = actualProfileGate('customer', null, profile); await h.gate.accept(h.identity);
+    assert.equal(h.trialCalls(), 0); h.gate.stop();
+  }
+});
 for (const app of ['customer', 'admin']) {
   for (const error of [{ code: 'auth/network-request-failed' }, { status: 503 }]) {
     test(`actual ${app} verification source preserves SDK identity on ${JSON.stringify(error)} and retries`, async () => {

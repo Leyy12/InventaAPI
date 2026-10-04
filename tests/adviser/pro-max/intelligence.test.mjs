@@ -189,22 +189,22 @@ test('Pro Max unlimited remains measured past 5000; Pro denies request 5001; pai
   assert.equal(evaluateEntitlement(account('a', 'Pro Max'), NOW).limit, null);
 });
 
-test('sales and recommendation DaaS admissions use the unchanged Free, Trial and Pro account counters', async () => {
+test('DaaS denies legacy Free, Trial leaves historical counters unchanged and paid Pro retains daily quota', async () => {
   const db = seed();
-  db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a' });
+  db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a', linkedProductIds: Array.from({ length: 50 }, (_, i) => `p${i}`) });
   db.seed('account_free_monthly_usage/a', { window: '2026-09', used: 0 });
   db.seed('account_api_usage/a', { window: '2026-09-27', used: 0 });
   db.seed('account_trial_usage/a', { used: 0, startedAt: '2026-09-26T12:00:00.000Z',
     expiresAt: '2026-10-03T12:00:00.000Z' });
   const consume = () => consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
   db.seed('users/a', { ...account('a'), plan: 'Free', apiRequestLimit: 50 });
-  assert.equal((await consume()).usage.used, 1);
-  assert.equal(db.read('account_free_monthly_usage/a').used, 1);
+  await assert.rejects(consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
+  assert.equal(db.read('account_free_monthly_usage/a').used, 0);
   db.seed('users/a', { ...account('a'), plan: 'Free', apiRequestLimit: 50, hasUsedFreeTrial: true, trialVersion: 1,
     trialStartedAt: '2026-09-26T12:00:00.000Z', trialExpiresAt: '2026-10-03T12:00:00.000Z' });
-  assert.equal((await consume()).usage.used, 1);
-  assert.equal(db.read('account_trial_usage/a').used, 1);
-  assert.equal(db.read('account_free_monthly_usage/a').used, 1);
+  assert.equal((await consume()).usage.used, null);
+  assert.equal(db.read('account_trial_usage/a').used, 0);
+  assert.equal(db.read('account_free_monthly_usage/a').used, 0);
   db.seed('users/a', account('a'));
   assert.equal((await consume()).usage.used, 1);
   assert.equal(db.read('account_api_usage/a').used, 1);

@@ -79,7 +79,7 @@ service cloud.firestore {
                       'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
                       'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState',
                       'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt', 'trialExpiredAt',
-                      'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt'])
+                      'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt', 'trialConsumed', 'trialKeyMutationAt'])
                     && request.resource.data.businessSegment in ['Grocery', 'Pharmacy', 'Hardware']
                     && (!('selectedSegment' in request.resource.data) || request.resource.data.selectedSegment == request.resource.data.businessSegment);
 
@@ -104,7 +104,7 @@ service cloud.firestore {
                       'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
                       'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState',
                       'businessSegment', 'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt',
-                      'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt'])
+                      'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt', 'trialConsumed', 'trialKeyMutationAt'])
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['selectedSegment'])
                       || (request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']
                         && (resource.data.plan in ['Pro', 'pro', 'Professional', 'professional', 'Pro Max', 'Enterprise', 'enterprise', 'Unlimited', 'unlimited']

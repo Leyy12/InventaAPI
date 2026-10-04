@@ -16,7 +16,7 @@ export default function PlanBillingPage() {
   const paid = entitlement.activePro || ['Enterprise', 'Unlimited'].includes(entitlement.plan);
   const trial = entitlement.activeTrial === true;
   const upgradeRequired = entitlement.subscription_status === 'upgrade_required';
-  const currentPlan = paid ? entitlement.plan : trial ? '7-Day Pro Trial' : upgradeRequired ? 'Upgrade Required' : 'Free';
+  const currentPlan = paid ? entitlement.plan : trial ? 'Free Trial' : upgradeRequired ? 'Upgrade Required' : 'Unavailable';
 
   return <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-10 space-y-6">
     <header>
@@ -35,8 +35,7 @@ export default function PlanBillingPage() {
           ? 'Unlimited account API quota. Standard security, abuse protection, and IP rate limits still apply.'
           : 'Your paid account allowance is governed by your current entitlement.'}</p>
       </>}
-      {!paid && !trial && !upgradeRequired && <p className="text-slate-300">API key creation begins when you activate your one-time 7-Day Pro Trial. The trial includes 500 total API requests across your keys.</p>}
-      {upgradeRequired && <p className="text-amber-200">Your trial ended or its 500-request allowance was exhausted. Upgrade to restore protected API access.</p>}
+      {upgradeRequired && <p className="text-amber-200">Your one-time Trial has ended. Upgrade to Pro or Pro Max to restore protected API access.</p>}
     </section>
 
     {!paid && <FreeTrialPage embedded />}

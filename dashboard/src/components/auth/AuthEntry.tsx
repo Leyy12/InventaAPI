@@ -472,7 +472,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
                 <div className="flex items-baseline gap-1">
                   <span className="text-sm text-slate-400">₱</span>
                   <span className="text-5xl font-extrabold">{SUBSCRIPTION_PLANS.free.price}</span>
-                  <span className="text-slate-400 text-sm">/{SUBSCRIPTION_PLANS.free.billingCycle}</span>
+                  <span className="text-slate-400 text-sm">{SUBSCRIPTION_PLANS.free.billingCycle}</span>
                 </div>
                 <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.free.tagline}</p>
               </div>

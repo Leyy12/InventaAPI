@@ -5,7 +5,7 @@ import { onIdTokenChanged, User, signOut as firebaseSignOut } from "firebase/aut
 import { doc, getDocFromServer, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "./config";
 import { useRouter } from "next/navigation";
-import { readSubscription, type SubscriptionState } from '@/lib/subscription';
+import { readSubscription, establishCustomerTrial, type SubscriptionState } from '@/lib/subscription';
 import { createEntitlementPoller } from '@/lib/entitlement-poller';
 import { activeCustomerSegment } from '../../../../services/customer-segment.js';
 import { createAuthSession, createLogoutAction, beginCustomerLogout, cancelCustomerLogout,
@@ -61,7 +61,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const snapshot = await getDocFromServer(doc(db, 'users', currentUser.uid));
         const profile = snapshot.exists() ? { ...snapshot.data(), uid: currentUser.uid } as AppUser : null;
         // A retry must also reverify the failed subscription-status source before reopening UI.
-        if (profileRole(profile) === 'customer') await readSubscription(currentUser);
+        if (profileRole(profile) === 'customer') {
+          await establishCustomerTrial(currentUser);
+          await readSubscription(currentUser);
+        }
         return profile;
       },
       publish: state => {

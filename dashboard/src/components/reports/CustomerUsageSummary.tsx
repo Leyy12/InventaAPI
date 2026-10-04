@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { quotaSummary, quotaVerificationKey } from "@/lib/reports";
 import { createQuotaRefresh, type QuotaSource } from "@/lib/quota-refresh";
 
-function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean }) {
+function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequired: boolean; activeTrial: boolean }) {
   const [source, setSource] = useState<QuotaSource>({ status: "loading", count: null, usage: null });
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -17,6 +17,7 @@ function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean
     return () => { refresh.stop(); clearInterval(clock); };
   }, [user]);
   const quota = quotaSummary(source.usage, now);
+  const trial = source.status === 'ready' ? source.trialCatalog : null;
   const unavailable = source.status === "loading" ? "Loading…" : "Unavailable";
   if (upgradeRequired) return <section aria-label="Account API usage" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-6 space-y-3">
     <h2 className="text-lg font-semibold text-amber-200">Free Trial Ended — Upgrade Required</h2>
@@ -25,12 +26,25 @@ function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean
     {source.status === 'error' && <p role="alert">Unable to load API-key history. Retrying automatically.</p>}
     <Link href="/dashboard/plan-billing#upgrade" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">View paid plans</Link>
   </section>;
+  if (trial) return <section aria-label="Free Trial catalog" className="space-y-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {[["Products Included", `${trial.productsIncluded} / 500`], ["Minimum Required", "50"],
+        ["Products Available", trial.productsAvailable], ["API Keys", `${trial.activeKeys} / 1`]].map(([label, value]) =>
+        <div key={label} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+          <p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold text-white">{value}</p>
+        </div>)}
+    </div>
+    <p className="text-sm text-slate-300">One-time 7-day Free Trial · Trial Expires: {trial.expiresAt}</p>
+    <p className="text-xs text-slate-400">API calls do not consume products. Keep 50–500 products linked to your one active key.</p>
+  </section>;
+  if (activeTrial) return <p role="status" className="text-slate-300">{source.status === 'error'
+    ? 'Trial catalog verification unavailable. Retrying automatically.' : 'Loading Trial catalog…'}</p>;
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[["API keys (active status)", source.count ?? unavailable],
-        [quota?.period === 'trial' ? "Requests used during trial" : quota?.period === 'monthly' ? "Requests used this month (UTC)" : "Requests used today (UTC)", quota?.used ?? unavailable],
-        [quota?.period === 'trial' ? "Total trial allowance" : quota?.period === 'monthly' ? "Monthly account limit" : "Daily account limit", quota ? quota.limit === null ? "Unlimited" : quota.limit.toLocaleString() : unavailable],
-        [quota?.period === 'trial' ? "Remaining during trial" : quota?.period === 'monthly' ? "Remaining this month" : "Remaining today", quota ? quota.pending ? "On hold" : quota.remaining === null ? "Unlimited" : quota.remaining.toLocaleString() : unavailable]]
+        ["Requests used today (UTC)", quota?.used ?? unavailable],
+        ["Daily account limit", quota ? quota.limit === null ? "Unlimited" : quota.limit.toLocaleString() : unavailable],
+        ["Remaining today", quota ? quota.pending ? "On hold" : quota.remaining === null ? "Unlimited" : quota.remaining.toLocaleString() : unavailable]]
         .map(([label, value]) => <div key={label} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
           <p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold text-white">{value}</p>
         </div>)}
@@ -38,17 +52,18 @@ function Usage({ user, upgradeRequired }: { user: User; upgradeRequired: boolean
     {source.status === "error" && <p role="alert" className="text-rose-300">Unable to load account usage. Retrying automatically.</p>}
     {source.status === "ready" && !quota && <p role="status" className="text-slate-400">Current quota unavailable; awaiting a fresh account summary.</p>}
     {quota?.pending && <p role="status" className="text-amber-300">Quota activation is on hold until {quota.resetsAt}. Prior usage is unavailable.</p>}
-    {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. {quota.period === 'trial' ? 'Trial ends at' : 'Resets at'} {quota.resetsAt}. {quota.period === 'trial' && 'No daily reset.'} {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
+    {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. Resets at {quota.resetsAt}. {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
   </section>;
 }
 export default function CustomerUsageSummary() {
   const { user, entitlement } = useAuth();
   const verification = quotaVerificationKey(user?.uid ?? null, entitlement ? { ...entitlement } : null);
   return <div className="space-y-5">
-    {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} upgradeRequired={entitlement?.subscription_status === 'upgrade_required'} />
+    {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} upgradeRequired={entitlement?.subscription_status === 'upgrade_required'} activeTrial={entitlement?.activeTrial === true} />
       : <p role="status">Account usage unavailable while entitlement is being verified.</p>}
     <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-5 flex justify-between gap-4">
       <p className="text-white">{entitlement?.subscription_status === 'upgrade_required' ? 'Upgrade Required · protected API access paused'
+        : entitlement?.activeTrial ? 'Free Trial · Active'
         : entitlement ? `${entitlement.plan} plan · ${entitlement.subscription_status}` : "Plan verification unavailable"}</p>
       <Link href="/dashboard/settings" className="text-cyan-400 text-sm">Plan settings</Link>
     </div>

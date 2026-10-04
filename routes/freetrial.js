@@ -8,5 +8,6 @@ const handlers = createFreeTrialHandlers({ getDb: () => getFirestore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked),
   revokeRefreshTokens: uid => getAuth().revokeRefreshTokens(uid) });
 router.post('/activate', handlers.activate);
+router.post('/session', handlers.session);
 router.get('/status', handlers.status);
 export default router;

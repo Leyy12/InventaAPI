@@ -1,7 +1,8 @@
 import {
-  ApiSecurityError, PLAN_LEVELS, accountEntitlement, assertActiveKey, credentialMatches, usageForToday, trialUsage, freeMonthlyUsage,
+  ApiSecurityError, PLAN_LEVELS, accountEntitlement, assertActiveKey, credentialMatches, usageForToday, trialUsage,
   upgradeRequiredError,
 } from './api-key-security.js';
+import { authorizedProductIds } from './daas-catalog.js';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
   // Only deployment configuration and Firestore snapshot metadata qualify.
@@ -20,13 +21,11 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
   const keyRef = db.collection('api_keys').doc(keyId);
   const userRef = db.collection('users').doc(userId);
   const usageRef = db.collection('account_api_usage').doc(userId);
-  const monthlyRef = db.collection('account_free_monthly_usage').doc(userId);
   const result = await db.runTransaction(async transaction => {
     // All reads precede writes. Key, owner, entitlement, and usage participate in retries.
     const keyDoc = await transaction.get(keyRef);
     const userDoc = await transaction.get(userRef);
     const usageDoc = await transaction.get(usageRef);
-    const monthlyDoc = await transaction.get(monthlyRef);
     const now = clock();
     const key = keyDoc.exists ? keyDoc.data() : null;
     assertActiveKey(key, now);
@@ -36,8 +35,10 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     if (!userDoc.exists) throw new ApiSecurityError(401, 'ACCOUNT_NOT_FOUND', 'API-key account no longer exists.');
     const account = userDoc.data();
     const entitlement = accountEntitlement(account, now);
-    const trialRef = db.collection('account_trial_usage').doc(userId);
-    const trialDoc = entitlement.activeTrial ? await transaction.get(trialRef) : null;
+    const trialKeys = entitlement.activeTrial
+      ? await transaction.get(db.collection('api_keys').where('userId', '==', userId)) : null;
+    const legacyHistory = entitlement.activeTrial && !Object.hasOwn(account, 'trialConsumed')
+      ? await transaction.get(db.collection('account_trial_usage').doc(userId)) : null;
     if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
     const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
     if (entitlement.upgradeRequired) return { denied: upgradeRequiredError() };
@@ -47,41 +48,42 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     if (allowedPlans && entitlement.level < Math.min(...allowedPlans.map(plan => PLAN_LEVELS[plan] ?? Infinity))) {
       return { denied: new ApiSecurityError(403, 'PLAN_UPGRADE_REQUIRED', 'Your account plan does not include this endpoint.') };
     }
-    const monthly = entitlement.level === 0 || entitlement.activeTrial
-      ? freeMonthlyUsage(monthlyDoc.exists ? monthlyDoc.data() : null, userDoc, now, monthlyCutoverAt) : null;
-    if (monthly && !monthlyDoc.exists) transaction.set(monthlyRef, { ...monthly, updatedAt: now.toISOString() });
-    const usage = entitlement.level === 0 ? monthly : usageForToday(usageDoc.exists ? usageDoc.data() : null, now);
-    if (entitlement.level !== 0 && !usageDoc.exists && !provablyPostCutover(userDoc, cutoverAt, now)) {
-      // Historical per-key counters could be edited/deleted and lost concurrent
-      // increments. Never invent an opening balance from those records.
+    if (entitlement.activeTrial) {
+      if (clock().getTime() >= Date.parse(entitlement.expiresAt)) return { denied: upgradeRequiredError() };
+      if (legacyHistory && trialUsage(legacyHistory.data(), entitlement).used === 500) {
+        transaction.update(userRef, { trialConsumed: true });
+        return { denied: upgradeRequiredError() };
+      }
+      const active = trialKeys.docs.filter(doc => doc.data().status === 'active');
+      if (active.length !== 1 || active[0].id !== keyId) return { denied: new ApiSecurityError(403,
+        'TRIAL_KEY_LIMIT', 'Free Trial permits one active API key. Revoke additional legacy keys.') };
+      const products = authorizedProductIds(key).length;
+      if (products < 50 || products > 500) return { denied: new ApiSecurityError(403,
+        'TRIAL_PRODUCT_LIMIT', 'A Free Trial API catalog must contain 50–500 products.') };
+      // Calls do not consume products or change Trial history/expiry. Historical
+      // request counters remain audit evidence, never an access allowance.
+      transaction.update(keyRef, { lastUsed: now.toISOString() });
+      return { key: { ...key, id: keyId }, account: effectiveAccount,
+        usage: { used: null, limit: null, remaining: null, period: 'trial_catalog', scope: 'account',
+          resetsAt: entitlement.expiresAt, productsIncluded: products, minimumProducts: 50, maximumProducts: 500 } };
+    }
+    // Trial admission has no request allowance. Paid daily quota
+    // and its existing clean-window cutover semantics are unchanged.
+    const usage = usageForToday(usageDoc.exists ? usageDoc.data() : null, now);
+    if (!usageDoc.exists && !provablyPostCutover(userDoc, cutoverAt, now)) {
       transaction.set(usageRef, { ...usage, holdUntil: usage.resetsAt, updatedAt: now.toISOString() });
       return { pendingCleanWindow: usage.resetsAt };
     }
     if (usage.holdUntil) return { pendingCleanWindow: usage.holdUntil };
-    if (entitlement.activeTrial) {
-      const trial = trialUsage(trialDoc?.data(), entitlement);
-      if (trial.used >= entitlement.limit) return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded',
-        'The 500-request trial allowance is exhausted.', { quota: { ...trial, limit: 500, remaining: 0, scope: 'account' } }) };
-      const used = trial.used + 1;
-      transaction.update(trialRef, { used, updatedAt: now.toISOString() });
-      // The 500th admission remains a Trial request. The same transaction ends
-      // Trial entitlement for every subsequent request/reader, without key revocation.
-      if (used === 500) transaction.update(userRef, { trialExhaustedAt: now.toISOString() });
-      transaction.update(keyRef, { lastUsed: now.toISOString() });
-      return { key: { ...key, id: keyId }, account: effectiveAccount,
-        usage: { ...trial, used, limit: 500, remaining: 500 - used, scope: 'account' } };
-    }
     const { limit } = entitlement;
     if (limit !== null && usage.used >= limit) {
-      return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded', entitlement.level === 0
-        ? 'Monthly Free account allowance exhausted. Resets on the first day of the next UTC month.'
-        : 'Daily account allowance exhausted. Resets at midnight UTC.', {
+      return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded', 'Daily account allowance exhausted. Resets at midnight UTC.', {
         quota: { ...usage, limit, remaining: 0, scope: 'account' },
       }) };
     }
     if (usage.used === Number.MAX_SAFE_INTEGER) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Unable to record usage.');
     const used = usage.used + 1;
-    transaction.set(entitlement.level === 0 ? monthlyRef : usageRef, { ...usage, used, updatedAt: now.toISOString() });
+    transaction.set(usageRef, { ...usage, used, updatedAt: now.toISOString() });
     // Keep per-key diagnostics for existing admin screens; never use them as allowance.
     const keyUsed = key.resetAt === usage.resetsAt && Number.isSafeInteger(key.requestsUsed) && key.requestsUsed >= 0
       ? key.requestsUsed : 0;

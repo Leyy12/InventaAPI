@@ -13,7 +13,8 @@ export function warningEligible(account, usage, now) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || now.getTime() < start + WARNING_AFTER_MS || now.getTime() >= end) return false;
   try { if (!evaluateEntitlement(account, now).activeTrial) return false; } catch { return false; }
   return usage && usage.startedAt === account.trialStartedAt && usage.expiresAt === account.trialExpiresAt
-    && Number.isSafeInteger(usage.used) && usage.used >= 0 && usage.used < 500;
+    && Number.isSafeInteger(usage.used) && usage.used >= 0 && usage.used <= 500
+    && (usage.used < 500 || account.trialConsumed === false);
 }
 
 function warningPayload(account, from) {
@@ -21,8 +22,8 @@ function warningPayload(account, from) {
   return {
     from,
     to: [account.email.trim()],
-    subject: 'Your 7-Day Pro Trial is approaching its end',
-    text: `Your 7-Day Pro Trial is approaching its end on ${expiresAt} (UTC). When the Trial ends, API access will pause until you upgrade to Pro. Your account and existing API key records remain available.`,
+    subject: 'Your 7-Day Free Trial is approaching its end',
+    text: `Your 7-Day Free Trial is approaching its end on ${expiresAt} (UTC). When the Trial ends, API access will pause until you upgrade to Pro or Pro Max. Your account and existing API key records remain available.`,
   };
 }
 
@@ -65,7 +66,7 @@ export async function processTrialWarning(db, uid, { now = () => new Date(), fro
   });
   if (!claimed) return false;
   // Recheck immediately before the external operation. A renewal, deletion or
-  // final Trial request after the claim should suppress the warning where seen.
+  // Trial expiry after the claim should suppress the warning where seen.
   const latestUser = await userRef.get(), latestUsage = await usageRef.get();
   if (!warningEligible(latestUser.data(), latestUsage.data(), now())) {
     await db.runTransaction(async tx => {
@@ -88,7 +89,7 @@ export async function processTrialWarning(db, uid, { now = () => new Date(), fro
     if (current?.attemptId !== claimed.attemptId || current.status !== 'sending') return;
     const notificationRef = db.collection('notifications').doc(`trial-day4-${warningId(uid, claimed.record.startedAt)}`);
     tx.set(notificationRef, {
-      userId: uid, type: 'trial_expiring', title: 'Your 7-Day Pro Trial is ending soon',
+      userId: uid, type: 'trial_expiring', title: 'Your 7-Day Free Trial is ending soon',
       body: `Your Trial ends on ${claimed.record.expiresAt} (UTC). API access will pause until you upgrade to Pro. Your existing key records remain available.`,
       read: false, createdAt: now(), meta: { trialExpiresAt: claimed.record.expiresAt },
     });

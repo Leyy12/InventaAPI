@@ -196,10 +196,10 @@ test('profile createdAt is writable but Firestore creation metadata remains unch
 });
 
 for (const field of ['businessSegment', 'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt',
-  'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt']) {
+  'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt', 'trialConsumed', 'trialKeyMutationAt']) {
   test('Trial/ownership authority is not client-writable: ' + field, async () => {
     const values = { businessSegment: 'Grocery', hasUsedFreeTrial: true, trialVersion: 1, trialStartedAt: '2026-09-23T00:00:00.000Z',
-      trialExpiresAt: '2026-09-30T00:00:00.000Z', trialExpiredAt: '', trialUsed: 0, trialQuota: 500, effectivePlan: 'Pro Trial', trialExhaustedAt: '2026-09-24T00:00:00.000Z' };
+      trialExpiresAt: '2026-09-30T00:00:00.000Z', trialExpiredAt: '', trialUsed: 0, trialQuota: 500, effectivePlan: 'Free Trial', trialExhaustedAt: '2026-09-24T00:00:00.000Z', trialConsumed: false, trialKeyMutationAt: '2026-09-24T00:00:00.000Z' };
     assert.equal((await call('PATCH', 'users/customer-a', tokens.customer, { [field]: values[field] }, field)).status, 403);
     if (field !== 'businessSegment') {
       const uid = 'signup-' + field.toLowerCase();

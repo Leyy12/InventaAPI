@@ -114,7 +114,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   ) : (
     <>
       Choose the business segment your account accesses. This is required to log in, and your catalog is
-      tailored to it. Free plan includes 50 requests/month shared across your API keys; upgrade to{" "}
+      tailored to it. Your one-time Free Trial lasts 7 days with 50–500 selected products and one active API key; upgrade to{" "}
       <span className="text-indigo-400">Pro</span> to unlock all segments.
     </>
   );

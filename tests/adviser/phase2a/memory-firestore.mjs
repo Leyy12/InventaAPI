@@ -49,6 +49,12 @@ export function memoryFirestore(initial = {}, { creationTimes = {} } = {}) {
       const result = await callback({
         get: async ref => {
           if (writes.length) throw new Error('Transaction read after write');
+          if (!ref.path) {
+            // Query reads include a collection sentinel to model phantom changes.
+            for (const [path, entry] of records) versions.set(path, entry.version);
+            versions.set('__size__', records.size);
+            return ref.get();
+          }
           versions.set(ref.path, records.get(ref.path)?.version || 0);
           return snapshot(ref.path);
         },
@@ -57,7 +63,7 @@ export function memoryFirestore(initial = {}, { creationTimes = {} } = {}) {
       });
       // Let competing transactions commit between reading and validating versions.
       await Promise.resolve();
-      if ([...versions].some(([path, version]) => (records.get(path)?.version || 0) !== version)) {
+      if ([...versions].some(([path, version]) => (path === '__size__' ? records.size : records.get(path)?.version || 0) !== version)) {
         db.retries += 1;
         continue;
       }

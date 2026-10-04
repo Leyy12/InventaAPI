@@ -14,7 +14,7 @@ function getPlanDisplayName(plan: string | undefined): string {
   const planLower = plan.toLowerCase();
   if (planLower === "starter" || planLower === "free" || planLower === "deleted") return "Free";
   if (planLower === "pro" || planLower === "professional") return "Pro";
-  if (planLower === "pro trial") return "7-Day Pro Trial";
+  if (planLower === "free trial") return "Free Trial";
   if (planLower === "upgrade required") return "Upgrade Required";
   if (planLower === "pro max") return "Pro Max";
   if (planLower === "enterprise" || planLower === "unlimited") return "Enterprise";
@@ -108,7 +108,7 @@ export default function Sidebar() {
                       ? "bg-indigo-500/15 text-indigo-400 border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]" 
                       : "bg-slate-800/80 text-slate-400 border-slate-700"
                   )}>
-                    {planName === '7-Day Pro Trial' || planName === 'Upgrade Required' ? planName : `${planName} Plan`}
+                    {planName === 'Free Trial' || planName === 'Upgrade Required' ? planName : `${planName} Plan`}
                   </Link>
                 );
               })()}

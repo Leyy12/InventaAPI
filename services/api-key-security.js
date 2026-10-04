@@ -90,7 +90,7 @@ export function accountEntitlement(account, now = new Date()) {
 }
 
 export function upgradeRequiredError() {
-  return new ApiSecurityError(403, 'UPGRADE_REQUIRED', 'Your Free Trial has ended. Upgrade to Pro to continue using the API.');
+  return new ApiSecurityError(403, 'UPGRADE_REQUIRED', 'Your Free Trial has ended. Upgrade to Pro or Pro Max to continue using the API.');
 }
 
 export function usageForToday(stored, now = new Date()) {
@@ -115,13 +115,20 @@ export function usageForToday(stored, now = new Date()) {
 }
 
 export function publicKeyMetadata(id, key, entitlement, usage) {
+  // Legacy snapshots contribute IDs only. Metadata must expose the same current
+  // selection as catalog authorization, never embedded product/credential data.
+  const fullIds = [...new Set([...(Array.isArray(key.linkedProductIds) ? key.linkedProductIds : []),
+    ...(Array.isArray(key.linkedProducts) ? key.linkedProducts.map(value => value?.id) : [])]
+    .filter(value => typeof value === 'string').map(value => value.trim()).filter(validDocumentId))];
   // An allowlist prevents plaintext legacy credentials, hashes, and future secrets leaking.
   return {
     id, name: key.name || '', status: key.status, userId: key.userId,
     keyPrefix: key.credentialVersion === 2 ? key.keyPrefix : 'daas_legacy',
     credentialVersion: key.credentialVersion === 2 ? 2 : 1,
     createdAt: key.createdAt ?? null, lastUsed: key.lastUsed ?? null, expiresAt: key.expiresAt ?? null,
-    linkedProductIds: key.linkedProductIds || [], linkedVariantSelections: key.linkedVariantSelections || {},
+    linkedProductIds: fullIds.filter(productId => !Object.hasOwn(key.linkedVariantSelections || {}, productId)),
+    linkedVariantSelections: key.linkedVariantSelections || {},
+    scopeVersion: Number.isSafeInteger(key.scopeVersion) ? key.scopeVersion : 0,
     plan: entitlement.plan, requestLimit: entitlement.limit, requestsUsed: usage.used,
     usageScope: 'account', resetAt: usage.resetsAt,
     quotaPeriod: usage.period || 'daily',

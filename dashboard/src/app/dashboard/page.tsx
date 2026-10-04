@@ -7,11 +7,9 @@ import { useEffect, useState } from "react";
 import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import { customerReportScope } from "@/lib/reports";
 import { activeCustomerSegment } from '../../../../services/customer-segment.js';
-import { useTrialOnboarding } from '@/lib/use-trial-onboarding';
 
 export default function DashboardPage() {
-  const { user, appUser, entitlement, loading, refreshUserDoc } = useAuth();
-  const trialOnboarding = useTrialOnboarding(user, entitlement?.plan === 'Free' && entitlement?.subscription_status === 'inactive');
+  const { user, appUser, loading, refreshUserDoc } = useAuth();
 
   
   const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
@@ -111,7 +109,7 @@ export default function DashboardPage() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-emerald-300">Payment confirmed. Your current subscription is shown below.</p>
           <p className="text-xs text-emerald-400/80 mt-0.5">
-            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited account quota' : `${appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/${appUser?.plan === 'Pro Trial' ? 'trial total' : appUser?.plan === 'Free' ? 'UTC month' : 'day'}`} · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
+            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited account quota' : `${appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/day`} · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
           </p>
         </div>
         <button
@@ -174,11 +172,6 @@ export default function DashboardPage() {
       </div>
 
       <CustomerUsageSummary />
-      {trialOnboarding?.eligible === true && <section className="rounded-2xl border border-indigo-500/40 bg-indigo-950/30 p-5 sm:p-6 space-y-3" aria-label="Unlock API access">
-        <h2 className="text-xl font-semibold text-white">Unlock API access</h2>
-        <p className="text-sm text-slate-300">Start your one-time 7-Day Pro Trial to generate your first API key. The trial includes 500 total API requests.</p>
-        <Link href="/dashboard/plan-billing" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500">Start 7-Day Pro Trial</Link>
-      </section>}
       <p className="text-sm text-cyan-300">Active Business Segment: {activeCustomerSegment(appUser) || 'Unavailable'}</p>
       {needsPreference && <p role="status" className="text-slate-300">Your account has no valid segment preference. Catalog reports require a confirmed segment; contact support. Your dashboard remains available.</p>}
 

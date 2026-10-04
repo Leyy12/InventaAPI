@@ -39,6 +39,11 @@ export function memoryFirestore(initial = {}) {
       const result = await callback({
         get: async ref => {
           if (writes.length) throw new Error('read after write');
+          if (!ref.path) {
+            for (const [path, entry] of records) reads.set(path, entry.version);
+            reads.set('__size__', records.size);
+            return ref.get();
+          }
           if (ref.path.startsWith(db.failRead || '\0')) throw new Error('read unavailable');
           reads.set(ref.path, records.get(ref.path)?.version || 0);
           return snapshot(ref.path);
@@ -48,7 +53,7 @@ export function memoryFirestore(initial = {}) {
       });
       await Promise.resolve();
       if (db.beforeCommit) await db.beforeCommit();
-      if ([...reads].some(([path, version]) => (records.get(path)?.version || 0) !== version)) { db.retries++; continue; }
+      if ([...reads].some(([path, version]) => (path === '__size__' ? records.size : records.get(path)?.version || 0) !== version)) { db.retries++; continue; }
       if (db.failCommit || writes.some(([path]) => path.startsWith(db.failWrite || '\0'))) throw new Error('commit unavailable');
       if (writes.some(([path, , update]) => update && !records.has(path))) throw new Error('update missing');
       for (const [path, data, update] of writes) {
