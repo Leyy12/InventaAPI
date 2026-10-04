@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
-import { PRO_PURCHASE, PRO_MAX_PURCHASE, paymentConfiguration } from '../../../services/payment-contract.js';
+import { PRO_PURCHASE, PRO_MAX_PURCHASE, paymentConfiguration, matchesPurchase,
+  settlementForPurchase } from '../../../services/payment-contract.js';
 import { createPaymentHandlers } from '../../../services/payment-checkout.js';
 import { checkoutPayload, createPaymongoCheckout, expirePaymongoCheckout } from '../../../services/paymongo-checkout.js';
 import { createPaymentWebhook } from '../../../services/payment-webhook.js';
@@ -64,6 +65,211 @@ function signed(event = fixture(), timestamp = Math.floor(now.getTime() / 1000),
 }
 const attrs = event => event.data.attributes.data.attributes;
 const unchanged = (env, before) => { assert.deepEqual(env.db.dump(), before); assert.equal(env.db.userWrites, 0); };
+
+const liveBilling = (extra = {}) => paymentConfiguration({ mode: 'live', nodeEnv: 'production',
+  secretKey: 'sk_live_SYNTHETIC_ONLY', webhookSecret: config.webhookSecret, dashboardUrl: config.dashboardUrl,
+  globalTestBilling: 'true', globalTestAmountCentavos: '500', ...extra });
+function temporaryBillingSetup(extra = {}) {
+  const billing = liveBilling();
+  const env = setup({ handlers: { getConfig: () => billing, ...extra } });
+  return { ...env, billing, webhook: createPaymentWebhook({getDb:()=>env.db,getConfig:()=>billing,clock:()=>now}) };
+}
+function temporaryPaid(amount = 500) {
+  const event = fixture();
+  event.data.attributes.livemode = true;
+  for (const object of [attrs(event), attrs(event).payment_intent.attributes, attrs(event).payments[0].attributes]) object.livemode = true;
+  for (const object of [attrs(event).line_items[0], attrs(event).payment_intent.attributes, attrs(event).payments[0].attributes]) object.amount = amount;
+  return event;
+}
+function signedLive(event = temporaryPaid()) {
+  const input = signed(event);
+  const timestamp = Math.floor(now.getTime()/1000);
+  const digest = createHmac('sha256',config.webhookSecret).update(`${timestamp}.${input.rawBody}`).digest('hex');
+  input.headers['paymongo-signature'] = `t=${timestamp},te=,li=${digest}`;
+  return input;
+}
+
+test('temporary billing is explicit, exactly 500, Live-only and defaults off', () => {
+  assert.equal(liveBilling().globalTestBilling, true);
+  for (const flag of [undefined, 'false']) {
+    const disabled = liveBilling({ globalTestBilling: flag });
+    assert.equal(disabled.globalTestBilling, false);
+    assert.deepEqual(settlementForPurchase(PRO_PURCHASE, disabled), PRO_PURCHASE);
+  }
+  for (const extra of [{ globalTestBilling: 'TRUE' }, { globalTestBilling: true },
+    { globalTestAmountCentavos: undefined }, { globalTestAmountCentavos: '501' },
+    { globalTestAmountCentavos: 500 }, { globalTestAmountCentavos: '500.0' },
+    { mode: 'test', secretKey: 'sk_test_SYNTHETIC_ONLY' }]) {
+    assert.throws(() => liveBilling(extra), { code: 'PAYMENT_CONFIG' });
+  }
+});
+
+for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
+  test(`global Live billing ${purchase.plan}: canonical display terms unchanged; saved/provider charge 500`, async () => {
+    assert.equal(purchase.amount, purchase.planId === 'pro' ? 149900 : 499900);
+    const env = temporaryBillingSetup();
+    const result = await invoke(env.checkout, { body: { plan: purchase.planId, amount: purchase.amount } });
+    assert.equal(result.statusCode, 200); assert.equal(result.body.amount, 500);
+    const order = env.db.read(orderPath), payload = JSON.parse(order.providerRequestBody).data.attributes;
+    assert.equal(order.listAmount, purchase.amount);
+    assert.equal(order.billingProfile, 'global_live_test_v1'); assert.equal(order.amount, 500);
+    assert.equal(order.planId, purchase.planId); assert.equal(order.plan, purchase.plan);
+    assert.equal(order.apiRequestLimit, purchase.apiRequestLimit); assert.equal(order.durationDays, 30);
+    assert.equal(order.mode, 'live'); assert.equal(order.currency, 'PHP');
+    assert.equal(matchesPurchase(order), true);
+    assert.equal(payload.line_items[0].amount, 500); assert.equal(payload.line_items[0].currency, 'PHP');
+    assert.deepEqual(payload.payment_method_types, ['qrph']);
+    assert.equal(payload.metadata.planId, purchase.planId);
+    assert.equal(payload.line_items[0].name, `InventaAPI ${purchase.plan} Plan`);
+    for (const mutate of [o => {o.amount = 501;}, o => {o.listAmount = 500;}, o => {o.mode = 'test';},
+      o => {delete o.billingProfile;}, o => {delete o.planId;}, o => {o.billingProfile = 'arbitrary_discount';},
+      o => {o.apiRequestLimit = -1;}]) {
+      const invalid = structuredClone(order); mutate(invalid); assert.equal(matchesPurchase(invalid), false);
+    }
+  });
+
+  test(`global Live billing ${purchase.plan}: signed 500 settlement grants exact entitlement once`, async () => {
+    const env = temporaryBillingSetup();
+    assert.equal((await invoke(env.checkout, { body: { plan: purchase.planId } })).statusCode, 200);
+    const first = await invoke(env.webhook, signedLive());
+    assert.equal(first.statusCode, 200); assert.equal(first.body.processed, true);
+    const account = env.db.read('users/owner');
+    assert.equal(account.plan, purchase.plan); assert.equal(account.apiRequestLimit, purchase.apiRequestLimit);
+    assert.equal(account.subscriptionExpiresAt, '2026-10-20T10:00:00.000Z');
+    assert.equal(env.db.read('transactions/paymongo_live_pay_abc123').amount, 500);
+    assert.equal(env.db.read(orderPath).state, 'processed');
+    const before = env.db.dump();
+    const again = await invoke(env.webhook, signedLive());
+    assert.equal(again.statusCode, 200); assert.equal(again.body.duplicate, true);
+    assert.deepEqual(env.db.dump(), before); assert.equal(env.db.userWrites, 1);
+    assert.equal((await invoke(env.status, { query: {orderId} })).body.paymentConfirmed, true);
+  });
+
+  for (const amount of [499, 501, purchase.amount]) test(`global Live billing ${purchase.plan}: wrong saved settlement ${amount} never grants`, async () => {
+    const env = temporaryBillingSetup();
+    await invoke(env.checkout, {body: {plan: purchase.planId}});
+    const before = env.db.dump();
+    const result = await invoke(env.webhook, signedLive(temporaryPaid(amount)));
+    assert.equal(result.statusCode, 409); assert.equal(result.body.code, 'ORDER_MISMATCH');
+    unchanged(env, before);
+  });
+
+  test(`global Live billing ${purchase.plan}: pending full-price QR Ph requires verified expiration, not reuse`, async () => {
+    let expired = 0;
+    const env = setup({handlers: {getConfig: () => liveBilling({globalTestBilling:'false'}),
+      expireSession: async ({order}) => {expired++; assert.equal(order.amount,purchase.amount);
+        return {sessionId:order.sessionId,status:'expired',unpaid:true};}}});
+    await invoke(env.checkout,{body:{plan:purchase.planId}});
+    const original=env.db.read(orderPath), newId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    let created=0;
+    const next=createPaymentHandlers({getDb:()=>env.db,verifyIdToken:async()=>({uid:'owner'}),
+      getConfig:()=>liveBilling(),clock:()=>now,newOrderId:()=>newId,
+      expireSession:async({order})=>{expired++;assert.equal(order.amount,purchase.amount);
+        assert.equal(env.db.read(orderPath).state,'expiring');return {sessionId:order.sessionId,status:'expired',unpaid:true};},
+      createSession:async({order})=>{created++; assert.equal(expired,1); assert.equal(order.amount,500);
+        return {sessionId:'cs_new500',paymentIntentId:'pi_new500',checkoutUrl:'https://checkout.paymongo.com/new500'};}});
+    const results=await Promise.all(Array.from({length:20},()=>invoke(next.checkout,{body:{plan:purchase.planId}})));
+    assert.ok(results.every(r=>[200,409].includes(r.statusCode)));
+    assert.equal(created,1); assert.equal(expired,1);
+    assert.equal(env.db.read(orderPath).state,'superseded'); assert.equal(env.db.read(orderPath).amount,purchase.amount);
+    assert.equal(env.db.read(`payment_orders/${newId}`).amount,500);
+    assert.equal(env.db.read('payment_checkout_locks/owner').orderId,newId);
+    assert.equal((await invoke(next.checkout,{body:{plan:purchase.planId}})).body.sessionId,'cs_new500');
+    assert.equal(created,1);
+    const obsolete=temporaryPaid(purchase.amount);
+    const webhook=createPaymentWebhook({getDb:()=>env.db,getConfig:()=>liveBilling(),clock:()=>now});
+    const response=await invoke(webhook,signedLive(obsolete));
+    assert.equal(response.statusCode,200); assert.equal(response.body.reviewRequired,true);
+    assert.equal(env.db.userWrites,0); assert.equal(env.db.read('users/owner').plan,'Free');
+    assert.equal(env.db.read(orderPath).amount,original.amount);
+    assert.equal((await invoke(webhook,signedLive(obsolete))).body.duplicate,true);
+  });
+}
+
+for (const body of [{amount:500}, {amount:1}, {billingProfile:'global_live_test_v1'}, {listAmount:500},
+  {globalTestBilling:true}, {globalTestAmountCentavos:500}, {settlementAmount:500}, {expectedAmount:500},
+  {currency:'USD'}, {discountAmount:149400}]) test(`global Live billing: browser cannot select settlement ${JSON.stringify(body)}`,async()=>{
+  const env=temporaryBillingSetup(); const before=env.db.dump();
+  assert.equal((await invoke(env.checkout,{body})).statusCode,400);
+  assert.equal(env.calls(),0);unchanged(env,before);
+});
+
+test('global Live billing: webhook accepts saved 500 order after operator disables discount',async()=>{
+  const env=temporaryBillingSetup();await invoke(env.checkout);
+  const webhook=createPaymentWebhook({getDb:()=>env.db,getConfig:()=>liveBilling({globalTestBilling:'false'}),clock:()=>now});
+  assert.equal((await invoke(webhook,signedLive())).body.processed,true);
+  assert.equal(env.db.read('users/owner').plan,'Pro');
+});
+
+test('global Live billing: expiration ambiguity preserves full-price intent and creates no new session',async()=>{
+  const env=setup({handlers:{getConfig:()=>liveBilling({globalTestBilling:'false'})}});await invoke(env.checkout);
+  const next=createPaymentHandlers({getDb:()=>env.db,verifyIdToken:async()=>({uid:'owner'}),getConfig:()=>liveBilling(),
+    clock:()=>now,newOrderId:()=> 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    expireSession:async()=>{throw Error('provider uncertain');},createSession:async()=>{throw Error('must not create');}});
+  assert.equal((await invoke(next.checkout)).body.code,'CHECKOUT_REVIEW');
+  assert.equal(env.db.read(orderPath).state,'expiring');assert.equal(env.db.read(orderPath).amount,149900);
+  assert.equal(env.db.read('payment_checkout_locks/owner').orderId,orderId);assert.equal(env.db.userWrites,0);
+});
+
+test('global Live billing: signed discounted event still requires the current account/order/session intent',async()=>{
+  const env=temporaryBillingSetup();await invoke(env.checkout);
+  env.db.seed('payment_checkout_locks/owner',{orderId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',sessionId:'cs_newer',mode:'live'});
+  const first=await invoke(env.webhook,signedLive());
+  assert.equal(first.statusCode,200);assert.equal(first.body.reviewRequired,true);
+  assert.equal(env.db.userWrites,0);
+  assert.equal(env.db.read('transactions/paymongo_live_pay_abc123').entitlementGranted,false);
+  assert.equal((await invoke(env.webhook,signedLive())).body.duplicate,true);
+});
+
+for(const fault of ['signature','livemode','currency','account','intent']) test(`global Live billing: ${fault} mismatch cannot fulfill`,async()=>{
+  const env=temporaryBillingSetup();await invoke(env.checkout);
+  const event=temporaryPaid();
+  if(fault==='livemode')event.data.attributes.livemode=false;
+  if(fault==='currency')for(const o of [attrs(event).line_items[0],attrs(event).payment_intent.attributes,attrs(event).payments[0].attributes])o.currency='USD';
+  if(fault==='account')env.db.seed(orderPath,{...env.db.read(orderPath),userId:'stranger'});
+  if(fault==='intent')attrs(event).payments[0].attributes.payment_intent_id='pi_wrong';
+  const input=signedLive(event);
+  if(fault==='signature')input.headers['paymongo-signature']=input.headers['paymongo-signature'].replace(/li=[a-f0-9]+/,`li=${'0'.repeat(64)}`);
+  const before=env.db.dump(), result=await invoke(env.webhook,input);
+  assert.ok(result.statusCode>=400);unchanged(env,before);
+});
+
+for(const purchase of [PRO_PURCHASE,PRO_MAX_PURCHASE]) test(`global Live billing ${purchase.plan}: real v1 adapter sends exact persisted 500 QR Ph payload`,async()=>{
+  const billing=liveBilling(), order={id:orderId,...settlementForPurchase(purchase,billing),mode:'live',idempotencyKey:`checkout-live-${orderId}`};
+  order.providerRequestBody=JSON.stringify(checkoutPayload(order,billing.dashboardUrl));
+  let calls=0;
+  const session=await createPaymongoCheckout({config:billing,order,request:async(url,input)=>{
+    calls++;assert.equal(url,'https://api.paymongo.com/v1/checkout_sessions');assert.equal(input.method,'POST');
+    assert.equal(input.body,order.providerRequestBody);assert.equal(input.headers['Idempotency-Key'],order.idempotencyKey);
+    const body=JSON.parse(input.body).data.attributes;
+    assert.equal(body.line_items[0].amount,500);assert.deepEqual(body.payment_method_types,['qrph']);
+    return {ok:true,json:async()=>({data:{id:'cs_abc123',type:'checkout_session',attributes:{livemode:true,status:'active',
+      payment_intent:{id:'pi_abc123'},payment_method_types:['qrph'],checkout_url:'https://checkout.paymongo.com/abc123'}}})};
+  }});
+  assert.equal(calls,1);assert.equal(session.sessionId,'cs_abc123');
+});
+
+test('temporary billing rollback cannot reuse a pending 500 session as full-price checkout',async()=>{
+  const env=temporaryBillingSetup();await invoke(env.checkout);
+  let expires=0;
+  const next=createPaymentHandlers({getDb:()=>env.db,verifyIdToken:async()=>({uid:'owner'}),
+    getConfig:()=>liveBilling({globalTestBilling:'false'}),clock:()=>now,newOrderId:()=> 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    expireSession:async({order})=>{expires++;assert.equal(order.amount,500);return {sessionId:order.sessionId,status:'expired',unpaid:true};},
+    createSession:async({order})=>{assert.equal(order.amount,149900);assert.equal(order.billingProfile,undefined);
+      return {sessionId:'cs_fullprice',paymentIntentId:'pi_fullprice',checkoutUrl:'https://checkout.paymongo.com/fullprice'};}});
+  const result=await invoke(next.checkout);assert.equal(result.statusCode,200);assert.equal(result.body.amount,149900);
+  assert.equal(expires,1);assert.equal(env.db.read(orderPath).state,'superseded');
+});
+
+test('uncertain full-price provider creation cannot replay an immutable request at the new 500 price',async()=>{
+  const env=setup({providerFailure:true,handlers:{getConfig:()=>liveBilling({globalTestBilling:'false'})}});
+  assert.equal((await invoke(env.checkout)).statusCode,503);
+  const before=env.db.dump();let calls=0;
+  const next=createPaymentHandlers({getDb:()=>env.db,verifyIdToken:async()=>({uid:'owner'}),getConfig:()=>liveBilling(),
+    clock:()=>new Date(now.getTime()+60001),newOrderId:()=> 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    createSession:async()=>{calls++;throw Error('must not replay');}});
+  assert.equal((await invoke(next.checkout)).body.code,'CHECKOUT_REVIEW');assert.equal(calls,0);unchanged(env,before);
+});
 
 for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
   test(`QR Ph checkout: ${purchase.plan} keeps canonical price, PHP, term and quota`, async () => {

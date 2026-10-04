@@ -24,6 +24,25 @@ const complete = {
   NEXT_PUBLIC_SUPERADMIN_UID: 'example-admin-uid',
 };
 
+test('temporary global Live billing validates explicitly and warns about real discounted charges', () => {
+  const result = validateReleaseConfig({...complete,PAYMONGO_GLOBAL_TEST_BILLING:'true',
+    PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS:'500'}, {scope:'backend',nodeVersion:'v22.20.0'});
+  assert.equal(result.ok,true);
+  assert.ok(result.warnings.some(issue=>issue.code==='TEMPORARY_LIVE_BILLING'));
+});
+
+for (const overrides of [{PAYMONGO_GLOBAL_TEST_BILLING:'true'},
+  {PAYMONGO_GLOBAL_TEST_BILLING:'TRUE',PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS:'500'},
+  {PAYMONGO_GLOBAL_TEST_BILLING:'true',PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS:'1'},
+  {PAYMONGO_GLOBAL_TEST_BILLING:'true',PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS:'500',
+    PAYMONGO_MODE:'test',PAYMONGO_SECRET_KEY:'sk_test_syntheticOnly'}]) {
+  test(`release validator rejects unsafe temporary billing ${JSON.stringify(overrides)}`,()=>{
+    const result=validateReleaseConfig({...complete,...overrides},{scope:'backend',nodeVersion:'v22.20.0'});
+    assert.equal(result.ok,false);
+    assert.ok(result.errors.some(issue=>issue.name==='PAYMONGO_GLOBAL_TEST_BILLING'));
+  });
+}
+
 test('complete production configuration passes without contacting external services', () => {
   const result = validateReleaseConfig(complete, {
     nodeVersion: 'v22.20.0', now: new Date('2026-09-20T00:00:00.000Z'),

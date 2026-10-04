@@ -11,6 +11,8 @@ const handlers = createPaymentHandlers({
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
   getConfig: () => paymentConfiguration({ mode: process.env.PAYMONGO_MODE, secretKey: process.env.PAYMONGO_SECRET_KEY,
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET, nodeEnv: process.env.NODE_ENV,
+    globalTestBilling: process.env.PAYMONGO_GLOBAL_TEST_BILLING,
+    globalTestAmountCentavos: process.env.PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS,
     dashboardUrl: process.env.DASHBOARD_URL || 'http://localhost:3000' }),
   createSession: args => createPaymongoCheckout({ ...args, request: globalThis.fetch }),
   expireSession: args => expirePaymongoCheckout({ ...args, request: globalThis.fetch }),

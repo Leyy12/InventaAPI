@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { globalTestBillingConfiguration } from '../services/payment-contract.js';
 
 const NODE_MAJOR = 22;
 const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin', 'functions']);
@@ -113,6 +114,17 @@ export function validateReleaseConfig(env, {
     required('PAYMONGO_MODE', {
       valid: value => ['test', 'live'].includes(value), expectation: 'test or live',
     });
+    try {
+      if (globalTestBillingConfiguration({ mode: env.PAYMONGO_MODE,
+        globalTestBilling: env.PAYMONGO_GLOBAL_TEST_BILLING,
+        globalTestAmountCentavos: env.PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS })) {
+        add(warnings, 'TEMPORARY_LIVE_BILLING', 'PAYMONGO_GLOBAL_TEST_BILLING',
+          'ALL new Live Pro/Pro Max checkouts charge 500 centavos; canonical prices and entitlements remain unchanged');
+      }
+    } catch {
+      add(errors, 'MALFORMED_PUBLIC', 'PAYMONGO_GLOBAL_TEST_BILLING',
+        'must be absent/false, or exactly true with PAYMONGO_MODE=live and PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS=500');
+    }
     required('PAYMONGO_SECRET_KEY', {
       secret: true,
       valid: value => ['test', 'live'].includes(env.PAYMONGO_MODE)

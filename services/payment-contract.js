@@ -9,6 +9,27 @@ export const PRO_MAX_PURCHASE = Object.freeze({ planId: 'pro_max', plan: 'Pro Ma
 export const PURCHASE_CATALOG = Object.freeze({ pro: PRO_PURCHASE, pro_max: PRO_MAX_PURCHASE });
 export const purchaseForIntent = planId => typeof planId === 'string' && Object.hasOwn(PURCHASE_CATALOG, planId)
   ? PURCHASE_CATALOG[planId] : null;
+export const GLOBAL_LIVE_TEST_AMOUNT = 500;
+export const GLOBAL_LIVE_TEST_PROFILE = 'global_live_test_v1';
+
+// Operator-only, opt-in Live billing. Never accepts an arbitrary discount.
+export function globalTestBillingConfiguration({ mode, globalTestBilling, globalTestAmountCentavos }) {
+  requirePayment(globalTestBilling === undefined || ['true', 'false'].includes(globalTestBilling),
+    'PAYMENT_CONFIG', 'Invalid temporary billing configuration.', 503);
+  requirePayment(globalTestAmountCentavos === undefined || globalTestAmountCentavos === '500',
+    'PAYMENT_CONFIG', 'Temporary billing amount must be exactly 500 centavos.', 503);
+  const enabled = globalTestBilling === 'true';
+  requirePayment(!enabled || mode === 'live' && globalTestAmountCentavos === '500',
+    'PAYMENT_CONFIG', 'Temporary billing requires Live mode and an explicit 500-centavo amount.', 503);
+  return enabled;
+}
+
+export function settlementForPurchase(purchase, config) {
+  if (config.globalTestBilling !== true) return { ...purchase };
+  requirePayment(config.mode === 'live', 'PAYMENT_CONFIG', 'Temporary billing requires Live mode.', 503);
+  return { ...purchase, listAmount: purchase.amount, amount: GLOBAL_LIVE_TEST_AMOUNT,
+    billingProfile: GLOBAL_LIVE_TEST_PROFILE };
+}
 export const PAYMENT_COLLECTIONS = Object.freeze({ orders: 'payment_orders', locks: 'payment_checkout_locks',
   sessions: 'payment_sessions', events: 'payment_events', payments: 'transactions' });
 
@@ -33,10 +54,14 @@ export const matchesPurchase = order => {
   // Pre-catalog Pro orders lacked planId; only those exact historical terms
   // retain their original fulfillment contract. Pro Max always requires its ID.
   return !!purchase && (order.planId === purchase.planId || purchase.planId === 'pro' && order.planId === undefined)
-    && Object.entries(purchase).every(([key, value]) => key === 'planId' || order[key] === value);
+    && Object.entries(purchase).every(([key, value]) => ['planId', 'amount'].includes(key) || order[key] === value)
+    && (order.billingProfile === undefined && order.listAmount === undefined && order.amount === purchase.amount
+      || order.billingProfile === GLOBAL_LIVE_TEST_PROFILE && order.mode === 'live'
+        && order.planId === purchase.planId && order.listAmount === purchase.amount && order.amount === GLOBAL_LIVE_TEST_AMOUNT);
 };
 
-export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, dashboardUrl }) {
+export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, dashboardUrl,
+  globalTestBilling, globalTestAmountCentavos }) {
   const keyMode = /^sk_(test|live)_\S+$/u.exec(secretKey || '')?.[1];
   requirePayment(['test', 'live'].includes(mode) && keyMode === mode
     && typeof webhookSecret === 'string' && webhookSecret.trim().length > 0
@@ -52,7 +77,8 @@ export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, 
       ? url.protocol === 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
       : ['http:', 'https:'].includes(url.protocol)), 'PAYMENT_CONFIG', 'Invalid payment redirect configuration.', 503);
   }
-  return { mode, secretKey, webhookSecret, dashboardUrl };
+  const temporaryBilling = globalTestBillingConfiguration({ mode, globalTestBilling, globalTestAmountCentavos });
+  return { mode, secretKey, webhookSecret, dashboardUrl, globalTestBilling: temporaryBilling };
 }
 
 export function authenticatedPayment({ getDb, verifyIdToken }, operation) {

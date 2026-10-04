@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { checkoutPayload, samePaymentMethods, savedPaymentMethods } from './paymongo-checkout.js';
 import { evaluateEntitlement, planKind } from '../functions/subscription-lifecycle.mjs';
-import { purchaseForIntent, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
+import { purchaseForIntent, settlementForPurchase, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
 
 // Provider retention is 24h. Stop at 23h to leave a clock/network safety margin.
@@ -25,19 +25,21 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
     const body = req.body || {};
     const purchase = purchaseForIntent(body.plan === undefined ? 'pro' : body.plan);
     requirePayment(purchase, 'UNSUPPORTED_PLAN', 'Unsupported purchase plan.', 400);
-    requirePayment(!['planId', 'purchaseId', 'planName', 'discount', 'discountAmount'].some(field => Object.hasOwn(body, field)),
+    requirePayment(!['planId', 'purchaseId', 'planName', 'discount', 'discountAmount', 'billingProfile', 'listAmount',
+      'globalTestBilling', 'globalTestAmountCentavos', 'expectedAmount', 'settlementAmount'].some(field => Object.hasOwn(body, field)),
       'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     for (const field of ['amount', 'currency', 'durationDays', 'apiRequestLimit']) {
       requirePayment(body[field] === undefined || body[field] === purchase[field], 'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     }
     const config = getConfig();
+    const settlement = settlementForPurchase(purchase, config);
     const id = newOrderId();
     const attemptId = randomUUID();
     requirePayment(orderIdValid(id), 'ORDER_ID', 'Checkout unavailable.', 503);
     const lockRef = refFor(db, 'locks', uid);
-    const desiredMethods = checkoutPayload({ id, ...purchase }, config.dashboardUrl).data.attributes.payment_method_types;
+    const desiredMethods = checkoutPayload({ id, ...settlement, mode: config.mode }, config.dashboardUrl).data.attributes.payment_method_types;
     const makeOrder = (orderId, now) => {
-      const order = { id: orderId, userId: uid, ...purchase, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
+      const order = { id: orderId, userId: uid, ...settlement, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
         idempotencyKey: `checkout-${config.mode}-${orderId}`, providerKeyFingerprint: keyFingerprint(config.secretKey),
         attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
       order.providerRequestBody = JSON.stringify(checkoutPayload(order, config.dashboardUrl));
@@ -68,7 +70,8 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
           const methods = savedPaymentMethods(previous);
           requirePayment(Array.isArray(methods) && methods.length > 0 && new Set(methods).size === methods.length
             && methods.every(method => ['gcash', 'qrph'].includes(method)), 'CHECKOUT_REVIEW');
-          if (samePaymentMethods(methods, desiredMethods) && previous.providerStatus !== 'expired'
+          if (previous.amount === settlement.amount && previous.billingProfile === settlement.billingProfile
+            && previous.listAmount === settlement.listAmount && samePaymentMethods(methods, desiredMethods) && previous.providerStatus !== 'expired'
             && binding.providerStatus !== 'expired' && binding.state !== 'expired') return { order: previous, existing: true };
           requirePayment(!previous.paymentId && typeof expireSession === 'function', 'CHECKOUT_REVIEW');
           requirePayment(!(await tx.get(refFor(db, 'orders', id))).exists, 'ORDER_COLLISION');
@@ -91,7 +94,8 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
           return { order: retiring, replace: true };
         }
         if (['creating', 'retryable'].includes(previous.state)) {
-          requirePayment(samePaymentMethods(savedPaymentMethods(previous), desiredMethods), 'CHECKOUT_REVIEW');
+          requirePayment(previous.amount === settlement.amount && previous.billingProfile === settlement.billingProfile
+            && previous.listAmount === settlement.listAmount && samePaymentMethods(savedPaymentMethods(previous), desiredMethods), 'CHECKOUT_REVIEW');
           requireReplayable(previous, config, now);
           requirePayment(Number.isFinite(Date.parse(previous.retryAfter)) && now.getTime() >= Date.parse(previous.retryAfter),
             'CHECKOUT_IN_PROGRESS', 'Checkout is processing. Retry shortly without starting another payment.');
