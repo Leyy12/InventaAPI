@@ -24,6 +24,23 @@ order-derived idempotency key. New-provider recovery reuses only that new durabl
 request/key. Expiration retries first re-read provider state; lease tokens prevent
 late workers from binding competing replacements.
 
+An `expiring` order resumes its already saved replacement ID on a later eligible
+request. An explicit expired/unpaid GET needs no additional expire POST. An
+active/unpaid session gets at most one expire POST per leased invocation, then
+up to three confirmation GETs with 250/500 ms backoffs under one 12-second
+overall budget (each HTTP call capped at four seconds). Still-active state or
+404/5xx/network/malformed/settled/ambiguous evidence leaves the order `expiring`
+and returns `CHECKOUT_REVIEW`; none is proof of expiry. The next eligible request
+reads provider state again. Sanitized reason codes distinguish these gates
+without logging provider payloads or credentials. No manual database edit is
+needed to resume a verified expired/unpaid intent.
+
+PayMongo's observed expired GCash session retains its bound Payment Intent with
+status `cancelled` and an empty payments array. That status is accepted only
+alongside explicit Checkout Session `expired`; an active session with a cancelled
+intent, any settled/in-flight payment, unknown status or conflicting binding
+still fails closed. All original session/intent/mode/amount/currency checks remain.
+
 ## First-time settlement fence
 
 All existing raw-body signature, mode, amount/currency, payment/intent/session,

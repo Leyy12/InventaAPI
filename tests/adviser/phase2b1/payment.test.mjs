@@ -494,7 +494,7 @@ test('checkout recovery: exact conservative retention boundary refuses another p
 async function replacementFixture(options = {}) {
   let instant = now.getTime(), initial = true, newCreates = 0, expirePosts = 0, reads = 0;
   let providerState = options.alreadyExpired ? 'expired' : 'active';
-  const trace = [];
+  const trace = [], delays = [];
   let env;
   const request = async (url, input) => {
     const old = env.db.read(orderPath);
@@ -504,12 +504,15 @@ async function replacementFixture(options = {}) {
       assert.equal(url, 'https://api.paymongo.com/v1/checkout_sessions/cs_abc123/expire');
       expirePosts++;
       if (options.expirationFailure) return { ok: false };
-      if (!options.stillActive) providerState = 'expired';
+      if (!options.stillActive && !options.confirmAfterReads) providerState = 'expired';
       if (options.duringExpiration) await options.duringExpiration(env);
       return { ok: true };
     }
     reads++;
+    if (options.confirmAfterReads && expirePosts && reads >= options.confirmAfterReads) providerState = 'expired';
     if (options.readFailure) throw Error('simulated provider outage');
+    if (options.readHttp) return { ok: false, status: options.readHttp };
+    if (options.malformedResponse) return { ok: true, json: async () => ({ data: null }) };
     const attributes = {
       status: providerState, livemode: false, payment_method_types: ['gcash'],
       line_items: [{ amount: old.amount, currency: old.currency, quantity: 1 }], payments: [],
@@ -518,10 +521,12 @@ async function replacementFixture(options = {}) {
     };
     if (options.paid || options.paidAfterExpire && expirePosts) attributes.payment_intent.attributes.status = 'succeeded';
     if (options.ambiguous) attributes.payment_intent.attributes.status = 'processing';
+    if (options.intentStatus) attributes.payment_intent.attributes.status = options.intentStatus;
     if (options.wrongMode) attributes.livemode = true;
     if (options.missingPayments) delete attributes.payments;
     if (options.wrongAmount) attributes.payment_intent.attributes.amount = 1;
     if (options.wrongCurrency) attributes.payment_intent.attributes.currency = 'USD';
+    if (options.paidPayment) attributes.payments = [{ type: 'payment', id: 'pay_paid', attributes: { status: 'paid' } }];
     return { ok: true, json: async () => ({ data: { id: options.wrongSession ? 'cs_other' : 'cs_abc123', type: 'checkout_session', attributes } }) };
   };
   env = setup({ handlers: {
@@ -536,7 +541,7 @@ async function replacementFixture(options = {}) {
       if (options.failCreateOnce && newCreates === 1) throw Error('simulated lost provider response');
       return { sessionId: 'cs_fresh123', paymentIntentId: 'pi_fresh123', checkoutUrl: 'https://checkout.paymongo.com/fresh123' };
     },
-    expireSession: args => expirePaymongoCheckout({ ...args, request })
+    expireSession: args => expirePaymongoCheckout({ ...args, request, sleep: async ms => { delays.push(ms); } })
   } });
   const plan = options.plan || 'pro';
   assert.equal((await invoke(env.checkout, { body: { plan } })).statusCode, 200);
@@ -545,8 +550,8 @@ async function replacementFixture(options = {}) {
   const payload = JSON.parse(old.providerRequestBody);
   payload.data.attributes.payment_method_types = options.methods || ['gcash'];
   env.db.seed(orderPath, { ...old, providerRequestBody: JSON.stringify(payload) });
-  return { ...env, plan, advance: ms => { instant += ms; },
-    counts: () => ({ newCreates, expirePosts, reads }), trace };
+  return { ...env, plan, advance: ms => { instant += ms; }, setProviderState: state => { providerState = state; },
+    counts: () => ({ newCreates, expirePosts, reads }), trace, delays };
 }
 
 test('replacement: matching current QR Ph intent reuses unchanged session without expiration or creation', async () => {
@@ -736,4 +741,88 @@ test('replacement: delayed former expiration lease cannot create a competing new
   assert.equal(env.counts().newCreates, 1);
   assert.equal(env.db.read('payment_checkout_locks/owner').orderId, second.body.orderId);
   assert.equal(env.db.read(`payment_orders/${second.body.orderId}`).state, 'pending');
+});
+
+function markExpiring(env) {
+  const replacementOrderId = randomUUID();
+  env.db.seed(orderPath, { ...env.db.read(orderPath), state: 'expiring', replacementOrderId,
+    attemptId: 'former-expiration-lease', retryAfter: new Date(now.getTime() - 1).toISOString() });
+  return replacementOrderId;
+}
+
+test('recovery: pre-existing expiring order plus expired/unpaid provider resumes the saved replacement intent', async () => {
+  const env = await replacementFixture({ alreadyExpired: true });
+  const id = markExpiring(env), original = env.db.read(orderPath);
+  const result = await invoke(env.checkout);
+  assert.equal(result.statusCode, 200); assert.equal(result.body.orderId, id);
+  assert.equal(result.body.sessionId, 'cs_fresh123');
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 0, reads: 1 });
+  assert.equal(env.db.read(orderPath).state, 'superseded');
+  assert.equal(env.db.read(orderPath).providerRequestBody, original.providerRequestBody);
+  assert.equal(env.db.read('payment_sessions/test_cs_abc123').state, 'superseded');
+  assert.equal(env.db.read('payment_checkout_locks/owner').sessionId, 'cs_fresh123');
+});
+
+test('recovery: delayed explicit expired visibility is confirmed by only three reads after one expire POST', async () => {
+  const env = await replacementFixture({ confirmAfterReads: 4 }); markExpiring(env);
+  assert.equal((await invoke(env.checkout)).statusCode, 200);
+  assert.deepEqual(env.trace, ['GET', 'POST', 'GET', 'GET', 'GET']);
+  assert.deepEqual(env.delays, [250, 500]);
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 4 });
+});
+
+test('recovery: active provider stays bounded, later concurrent retries observe expired and create only once', async () => {
+  const env = await replacementFixture({ stillActive: true }); const id = markExpiring(env);
+  const first = await invoke(env.checkout);
+  assert.equal(first.statusCode, 503); assert.equal(first.body.code, 'CHECKOUT_REVIEW');
+  assert.deepEqual(env.counts(), { newCreates: 0, expirePosts: 1, reads: 4 });
+  assert.deepEqual(env.delays, [250, 500]); assert.equal(env.db.read(orderPath).state, 'expiring');
+  assert.equal(env.reports.at(-1).reason, 'CHECKOUT_STILL_ACTIVE');
+  env.setProviderState('expired'); env.advance(5001);
+  const results = await Promise.all(Array.from({ length: 20 }, () => invoke(env.checkout)));
+  assert.ok(results.some(result => result.statusCode === 200 && result.body.orderId === id));
+  assert.ok(results.every(result => [200,409].includes(result.statusCode)));
+  assert.equal(env.counts().newCreates, 1); assert.equal(env.counts().expirePosts, 1);
+  assert.equal(env.db.read('payment_checkout_locks/owner').orderId, id);
+  assert.equal(env.db.read(orderPath).state, 'superseded'); assert.equal(env.db.userWrites, 0);
+});
+
+for (const fault of [{ readHttp: 404 }, { readHttp: 503 }, { readFailure: true }, { malformedResponse: true },
+  { alreadyExpired: true, paid: true }, { alreadyExpired: true, paidPayment: true }, { alreadyExpired: true, ambiguous: true },
+  { intentStatus: 'cancelled' }, { alreadyExpired: true, intentStatus: 'unknown' },
+  { alreadyExpired: true, intentStatus: 'cancelled', paidPayment: true }]) {
+  test(`recovery: unreliable or settled expiring session fails closed ${JSON.stringify(fault)}`, async () => {
+    const env = await replacementFixture(fault); const id = markExpiring(env);
+    const result = await invoke(env.checkout);
+    assert.equal(result.statusCode, 503); assert.equal(result.body.code, 'CHECKOUT_REVIEW');
+    assert.equal(env.db.read(orderPath).state, 'expiring'); assert.equal(env.db.read(orderPath).replacementOrderId, id);
+    assert.equal(env.db.read('payment_checkout_locks/owner').orderId, orderId);
+    assert.deepEqual(env.counts(), { newCreates: 0, expirePosts: 0, reads: 1 }); assert.equal(env.db.userWrites, 0);
+  });
+}
+
+test('recovery: expired session with exact bound cancelled intent and empty payments certifies old GCash expiry', async () => {
+  const env = await replacementFixture({ alreadyExpired: true, intentStatus: 'cancelled' }); const id = markExpiring(env);
+  const result = await invoke(env.checkout);
+  assert.equal(result.statusCode, 200); assert.equal(result.body.orderId, id);
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 0, reads: 1 });
+  assert.equal(env.db.read(orderPath).state, 'superseded'); assert.equal(env.db.userWrites, 0);
+});
+
+test('recovery: cancelled intent after explicit expiration becomes visible within the bounded window', async () => {
+  const env = await replacementFixture();
+  // Separate explicit-expired recovery above is the observed provider contract;
+  // this test checks the adapter directly for the active -> expired transition.
+  const old = env.db.read(orderPath); let calls = 0;
+  const readResource = state => ({ data: { id: old.sessionId, type: 'checkout_session', attributes: {
+    status: state, livemode: false, payment_method_types: ['gcash'], payments: [],
+    line_items: [{ amount: old.amount, currency: old.currency, quantity: 1 }],
+    payment_intent: { id: old.paymentIntentId, type: 'payment_intent', attributes: {
+      amount: old.amount, currency: old.currency, livemode: false,
+      status: state === 'expired' ? 'cancelled' : 'awaiting_payment_method' } }
+  } } });
+  const result = await expirePaymongoCheckout({ order: old, config, request: async (_url,input) => {
+    calls++; return { ok: true, json: async () => readResource(calls === 1 ? 'active' : 'expired') };
+  } });
+  assert.deepEqual(result, { sessionId: old.sessionId, status: 'expired', unpaid: true }); assert.equal(calls,3);
 });

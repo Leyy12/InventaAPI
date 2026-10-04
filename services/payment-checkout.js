@@ -149,7 +149,10 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
             tx.update(ref, { retryAfter: new Date(clock().getTime() + BACKOFF_MS).toISOString() });
           }
         });
-        report({ code: 'CHECKOUT_REPLACEMENT_REVIEW', orderId: old.id, sessionId: old.sessionId });
+        const safeReasons = ['CHECKOUT_PROVIDER_READ', 'CHECKOUT_PROVIDER_STATE', 'CHECKOUT_PAYMENT_RECONCILIATION',
+          'CHECKOUT_EXPIRATION_UNCONFIRMED', 'CHECKOUT_STILL_ACTIVE', 'CHECKOUT_REVIEW'];
+        report({ code: 'CHECKOUT_REPLACEMENT_REVIEW', orderId: old.id, sessionId: old.sessionId,
+          reason: safeReasons.includes(error.code) ? error.code : 'CHECKOUT_PROVIDER_OR_COMMIT_UNAVAILABLE' });
         requirePayment(false, 'CHECKOUT_REVIEW', 'Existing checkout must be safely closed or reconciled before replacement.', 503);
       }
     }

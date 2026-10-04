@@ -60,15 +60,20 @@ export async function createPaymongoCheckout({ request, config, order }) {
 }
 
 // Fixed v1 boundary. Successful HTTP expiration alone is never replacement proof.
-export async function expirePaymongoCheckout({ request, config, order }) {
+export async function expirePaymongoCheckout({ request, config, order,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
   requirePayment(providerId(order.sessionId, 'cs') && providerId(order.paymentIntentId, 'pi')
     && order.mode === config.mode && matchesPurchase(order), 'CHECKOUT_REVIEW');
   const url = `https://api.paymongo.com/v1/checkout_sessions/${order.sessionId}`;
   const headers = { Authorization: `Basic ${Buffer.from(`${config.secretKey}:`).toString('base64')}`,
     Accept: 'application/json' };
+  // Whole confirmation finishes within the checkout lease. At most one expire
+  // POST and three post-expire reads; outages never count as expired evidence.
+  const budget = AbortSignal.timeout(12000);
+  const signal = () => { budget.throwIfAborted(); return AbortSignal.any([budget, AbortSignal.timeout(4000)]); };
   const read = async () => {
-    const response = await request(url, { method: 'GET', redirect: 'error', headers, signal: AbortSignal.timeout(15000) });
-    requirePayment(response.ok, 'CHECKOUT_REVIEW', 'Existing checkout needs payment reconciliation.', 503);
+    const response = await request(url, { method: 'GET', redirect: 'error', headers, signal: signal() });
+    requirePayment(response.ok, 'CHECKOUT_PROVIDER_READ', 'Existing checkout could not be retrieved.', 503);
     const session = (await response.json())?.data;
     const attrs = session?.attributes;
     const intent = attrs?.payment_intent;
@@ -81,20 +86,25 @@ export async function expirePaymongoCheckout({ request, config, order }) {
       && Array.isArray(attrs.line_items) && attrs.line_items.length === 1
       && attrs.line_items[0].amount === order.amount && attrs.line_items[0].currency === order.currency
       && attrs.line_items[0].quantity === 1 && Array.isArray(attrs.payments),
-    'CHECKOUT_REVIEW', 'Existing checkout state could not be verified.', 503);
+    'CHECKOUT_PROVIDER_STATE', 'Existing checkout state could not be verified.', 503);
     // Settled or in-flight payment must be reconciled, never blindly replaced.
-    requirePayment(intent.attributes.status === 'awaiting_payment_method'
+    requirePayment((intent.attributes.status === 'awaiting_payment_method'
+      || attrs.status === 'expired' && intent.attributes.status === 'cancelled')
       && attrs.payments.every(payment => payment?.attributes?.status === 'failed'),
-    'CHECKOUT_REVIEW', 'Existing checkout needs payment reconciliation.', 409);
+    'CHECKOUT_PAYMENT_RECONCILIATION', 'Existing checkout needs payment reconciliation.', 409);
     return attrs;
   };
   let attrs = await read();
   if (attrs.status === 'active') {
     const response = await request(`${url}/expire`, { method: 'POST', redirect: 'error', headers,
-      signal: AbortSignal.timeout(15000) });
-    requirePayment(response.ok, 'CHECKOUT_REVIEW', 'Checkout expiration could not be confirmed. Retry safely.', 503);
-    attrs = await read();
+      signal: signal() });
+    requirePayment(response.ok, 'CHECKOUT_EXPIRATION_UNCONFIRMED', 'Checkout expiration could not be confirmed. Retry safely.', 503);
+    for (const delay of [0, 250, 500]) {
+      if (delay) { await sleep(delay); budget.throwIfAborted(); }
+      attrs = await read();
+      if (attrs.status === 'expired') break;
+    }
   }
-  requirePayment(attrs.status === 'expired', 'CHECKOUT_REVIEW', 'Checkout remains payable; replacement blocked.', 503);
+  requirePayment(attrs.status === 'expired', 'CHECKOUT_STILL_ACTIVE', 'Checkout remains payable; replacement blocked.', 503);
   return { sessionId: order.sessionId, status: 'expired', unpaid: true };
 }
