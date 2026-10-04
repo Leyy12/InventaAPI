@@ -716,18 +716,21 @@ async function replacementFixture(options = {}) {
     }
     reads++;
     if (options.confirmAfterReads && expirePosts && reads >= options.confirmAfterReads) providerState = 'expired';
-    if (options.readFailure) throw Error('simulated provider outage');
+    if (options.readFailure || options.finalReadFailure && expirePosts && reads >= 3) throw Error('simulated provider outage');
     if (options.readHttp) return { ok: false, status: options.readHttp };
     if (options.malformedResponse) return { ok: true, json: async () => ({ data: null }) };
     const attributes = {
-      status: providerState, livemode: false, payment_method_types: ['gcash'],
+      status: providerState, livemode: !!options.liveBilling, payment_method_types: options.methods || ['gcash'],
       line_items: [{ amount: old.amount, currency: old.currency, quantity: 1 }], payments: [],
       payment_intent: { id: 'pi_abc123', type: 'payment_intent', attributes: {
-        amount: old.amount, currency: old.currency, livemode: false, status: 'awaiting_payment_method' } }
+        amount: old.amount, currency: old.currency, livemode: !!options.liveBilling, status: 'awaiting_payment_method', payments: [] } }
     };
     if (options.paid || options.paidAfterExpire && expirePosts) attributes.payment_intent.attributes.status = 'succeeded';
     if (options.ambiguous) attributes.payment_intent.attributes.status = 'processing';
     if (options.intentStatus) attributes.payment_intent.attributes.status = options.intentStatus;
+    if (options.missingIntentPayments) delete attributes.payment_intent.attributes.payments;
+    if (options.intentPaymentStatus) attributes.payment_intent.attributes.payments = [{attributes:{status:options.intentPaymentStatus}}];
+    if (options.afterExpiryConfirmation && expirePosts && reads >= 3) options.afterExpiryConfirmation(attributes);
     if (options.wrongMode) attributes.livemode = true;
     if (options.missingPayments) delete attributes.payments;
     if (options.wrongAmount) attributes.payment_intent.attributes.amount = 1;
@@ -736,6 +739,7 @@ async function replacementFixture(options = {}) {
     return { ok: true, json: async () => ({ data: { id: options.wrongSession ? 'cs_other' : 'cs_abc123', type: 'checkout_session', attributes } }) };
   };
   env = setup({ handlers: {
+    getConfig: () => options.liveBilling ? liveBilling({globalTestBilling:initial?'false':'true'}) : config,
     clock: () => new Date(instant), newOrderId: () => initial ? orderId : randomUUID(),
     createSession: async ({ order }) => {
       if (initial) return { sessionId: 'cs_abc123', paymentIntentId: 'pi_abc123', checkoutUrl: 'https://checkout.paymongo.com/abc123' };
@@ -774,7 +778,7 @@ for (const plan of ['pro', 'pro_max']) test(`replacement: ${plan} expires GCash,
   assert.equal(result.statusCode, 200); assert.equal(result.body.sessionId, 'cs_fresh123');
   assert.notEqual(result.body.orderId, orderId); assert.equal(result.body.currency, 'PHP');
   assert.equal(result.body.amount, plan === 'pro' ? 149900 : 499900);
-  assert.deepEqual(env.trace, ['GET', 'POST', 'GET']);
+  assert.deepEqual(env.trace, ['GET', 'POST', 'GET', 'GET']);
   const old = env.db.read(orderPath), current = env.db.read(`payment_orders/${result.body.orderId}`);
   assert.equal(old.state, 'superseded'); assert.equal(old.providerStatus, 'expired');
   assert.equal(old.sessionId, original.sessionId); assert.equal(old.providerRequestBody, original.providerRequestBody);
@@ -784,7 +788,7 @@ for (const plan of ['pro', 'pro_max']) test(`replacement: ${plan} expires GCash,
   assert.deepEqual(env.db.read('payment_checkout_locks/owner'), { orderId: current.id, sessionId: 'cs_fresh123', mode: 'test' });
   const second = await invoke(env.checkout, { body: { plan } });
   assert.equal(second.body.sessionId, 'cs_fresh123'); assert.equal(second.body.orderId, current.id);
-  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 2 }); assert.equal(env.db.userWrites, 0);
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 3 }); assert.equal(env.db.userWrites, 0);
 });
 
 for (const fault of ['expirationFailure', 'readFailure', 'stillActive', 'paid', 'paidAfterExpire', 'ambiguous', 'wrongMode', 'missingPayments', 'wrongAmount', 'wrongCurrency', 'wrongSession']) {
@@ -930,7 +934,7 @@ test('replacement: commit failure after provider expiry preserves retirement and
   env.db.failCommit = false; env.advance(60001);
   const retry = await invoke(env.checkout);
   assert.equal(retry.statusCode, 200); assert.equal(retry.body.orderId, replacementId);
-  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 3 });
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 4 });
 });
 
 test('replacement: delayed former expiration lease cannot create a competing new order', async () => {
@@ -969,12 +973,12 @@ test('recovery: pre-existing expiring order plus expired/unpaid provider resumes
   assert.equal(env.db.read('payment_checkout_locks/owner').sessionId, 'cs_fresh123');
 });
 
-test('recovery: delayed explicit expired visibility is confirmed by only three reads after one expire POST', async () => {
+test('recovery: delayed expiry has three visibility reads and one final unpaid recheck after one expire POST', async () => {
   const env = await replacementFixture({ confirmAfterReads: 4 }); markExpiring(env);
   assert.equal((await invoke(env.checkout)).statusCode, 200);
-  assert.deepEqual(env.trace, ['GET', 'POST', 'GET', 'GET', 'GET']);
+  assert.deepEqual(env.trace, ['GET', 'POST', 'GET', 'GET', 'GET', 'GET']);
   assert.deepEqual(env.delays, [250, 500]);
-  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 4 });
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 5 });
 });
 
 test('recovery: active provider stays bounded, later concurrent retries observe expired and create only once', async () => {
@@ -1025,10 +1029,86 @@ test('recovery: cancelled intent after explicit expiration becomes visible withi
     line_items: [{ amount: old.amount, currency: old.currency, quantity: 1 }],
     payment_intent: { id: old.paymentIntentId, type: 'payment_intent', attributes: {
       amount: old.amount, currency: old.currency, livemode: false,
-      status: state === 'expired' ? 'cancelled' : 'awaiting_payment_method' } }
+      status: state === 'expired' ? 'cancelled' : 'awaiting_payment_method', payments: [] } }
   } } });
   const result = await expirePaymongoCheckout({ order: old, config, request: async (_url,input) => {
     calls++; return { ok: true, json: async () => readResource(calls === 1 ? 'active' : 'expired') };
   } });
-  assert.deepEqual(result, { sessionId: old.sessionId, status: 'expired', unpaid: true }); assert.equal(calls,3);
+  assert.deepEqual(result, { sessionId: old.sessionId, status: 'expired', unpaid: true }); assert.equal(calls,4);
+});
+
+for (const plan of ['pro', 'pro_max']) for (const status of ['awaiting_payment_method', 'awaiting_next_action']) {
+  test(`QR Ph unpaid ${plan}/${status}: full-price intent expires and is rechecked before one 500 replacement`, async () => {
+    const env = await replacementFixture({plan, methods:['qrph'], liveBilling:true, intentStatus:status});
+    const before = env.db.read(orderPath), result = await invoke(env.checkout,{body:{plan}});
+    assert.equal(result.statusCode,200); assert.equal(result.body.amount,500);
+    assert.deepEqual(env.trace,['GET','POST','GET','GET']);
+    const old=env.db.read(orderPath), current=env.db.read(`payment_orders/${result.body.orderId}`);
+    assert.equal(old.state,'superseded'); assert.equal(old.providerStatus,'expired');
+    assert.equal(old.providerRequestBody,before.providerRequestBody); assert.equal(old.amount,before.amount);
+    assert.equal(current.listAmount,plan==='pro'?149900:499900); assert.equal(current.amount,500);
+    assert.equal(current.billingProfile,'global_live_test_v1'); assert.equal(current.planId,plan);
+    assert.equal(current.currency,'PHP'); assert.equal(current.mode,'live');
+    assert.deepEqual(JSON.parse(current.providerRequestBody).data.attributes.payment_method_types,['qrph']);
+    assert.deepEqual(env.counts(),{newCreates:1,expirePosts:1,reads:3}); assert.equal(env.db.userWrites,0);
+    const again=await invoke(env.checkout,{body:{plan}});
+    assert.equal(again.body.orderId,current.id); assert.equal(again.body.sessionId,'cs_fresh123');
+    assert.deepEqual(env.counts(),{newCreates:1,expirePosts:1,reads:3});
+    const event=temporaryPaid(); event.data.attributes.data.id='cs_fresh123';
+    attrs(event).payment_intent.id='pi_fresh123'; attrs(event).payments[0].attributes.payment_intent_id='pi_fresh123';
+    const webhook=createPaymentWebhook({getDb:()=>env.db,getConfig:()=>liveBilling(),clock:()=>now});
+    assert.equal((await invoke(webhook,signedLive(event))).body.processed,true);
+    assert.equal(env.db.read('users/owner').plan,plan==='pro'?'Pro':'Pro Max');
+    assert.equal((await invoke(webhook,signedLive(event))).body.duplicate,true); assert.equal(env.db.userWrites,1);
+  });
+}
+
+for (const fault of [{intentStatus:'processing'}, {intentStatus:'succeeded'}, {intentStatus:'unknown'},
+  {intentStatus:'awaiting_next_action',paidPayment:true}, {intentPaymentStatus:'paid'},
+  {intentPaymentStatus:'processing'}, {intentPaymentStatus:'unknown'}, {missingIntentPayments:true}, {missingPayments:true}]) {
+  test(`QR Ph unpaid: unsafe initial provider evidence never attempts expiration ${JSON.stringify(fault)}`, async () => {
+    const env=await replacementFixture({methods:['qrph'],liveBilling:true,...fault});
+    assert.equal((await invoke(env.checkout)).body.code,'CHECKOUT_REVIEW');
+    assert.deepEqual(env.counts(),{newCreates:0,expirePosts:0,reads:1});
+    assert.equal(env.db.read(orderPath).state,'expiring'); assert.equal(env.db.userWrites,0);
+  });
+}
+
+test('QR Ph awaiting_next_action cannot replace until explicit expiry becomes visible',async()=>{
+  const env=await replacementFixture({methods:['qrph'],liveBilling:true,intentStatus:'awaiting_next_action',stillActive:true});
+  assert.equal((await invoke(env.checkout)).body.code,'CHECKOUT_REVIEW');
+  assert.deepEqual(env.counts(),{newCreates:0,expirePosts:1,reads:4});
+  assert.equal(env.reports.at(-1).reason,'CHECKOUT_STILL_ACTIVE'); assert.equal(env.db.userWrites,0);
+});
+
+for (const fault of ['paidSession','processingSession','succeededIntent','processingIntent','paidIntent','unknownIntent','activeAgain','readFailure']) {
+  test(`QR Ph expiry: final recheck ${fault} blocks replacement even after an expired observation`,async()=>{
+    const env=await replacementFixture({methods:['qrph'],liveBilling:true,intentStatus:'awaiting_next_action',
+      finalReadFailure:fault==='readFailure',afterExpiryConfirmation:attributes=>{
+        if(fault==='paidSession'||fault==='processingSession')attributes.payments=[{attributes:{status:fault==='paidSession'?'paid':'processing'}}];
+        if(fault==='paidIntent')attributes.payment_intent.attributes.payments=[{attributes:{status:'paid'}}];
+        if(fault==='succeededIntent')attributes.payment_intent.attributes.status='succeeded';
+        if(fault==='processingIntent')attributes.payment_intent.attributes.status='processing';
+        if(fault==='unknownIntent')attributes.payment_intent.attributes.status='unknown';
+        if(fault==='activeAgain')attributes.status='active';
+      }});
+    assert.equal((await invoke(env.checkout)).body.code,'CHECKOUT_REVIEW');
+    assert.deepEqual(env.counts(),{newCreates:0,expirePosts:1,reads:3});
+    assert.equal(env.db.read(orderPath).state,'expiring'); assert.equal(env.db.read('payment_checkout_locks/owner').orderId,orderId);
+    assert.equal(env.db.userWrites,0);
+  });
+}
+
+test('QR Ph awaiting_next_action exception is not extended to old GCash or mixed methods',async()=>{
+  for(const methods of [['gcash'],['qrph','gcash']]){
+    const env=await replacementFixture({methods,liveBilling:true,intentStatus:'awaiting_next_action'});
+    assert.equal((await invoke(env.checkout)).body.code,'CHECKOUT_REVIEW'); assert.equal(env.counts().expirePosts,0);
+  }
+});
+
+test('QR Ph awaiting_next_action concurrent replacement expires once and creates one 500 session',async()=>{
+  const env=await replacementFixture({methods:['qrph'],liveBilling:true,intentStatus:'awaiting_next_action'});
+  const results=await Promise.all(Array.from({length:20},()=>invoke(env.checkout)));
+  assert.ok(results.some(r=>r.statusCode===200)); assert.ok(results.every(r=>[200,409].includes(r.statusCode)));
+  assert.deepEqual(env.counts(),{newCreates:1,expirePosts:1,reads:3}); assert.equal(env.db.userWrites,0);
 });

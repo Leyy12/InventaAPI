@@ -26,6 +26,17 @@ provider-expiration, atomic supersession and current-intent fence apply.
 Ambiguous/in-flight/paid sessions fail closed for reconciliation. Uncertain
 creating/retryable requests cannot be replayed at a different price.
 
+For an exact bound QR Ph session, `awaiting_next_action` with empty/failed-only
+session and Payment Intent payment arrays permits an expiration attempt: it
+is waiting for customer action, not proof of settlement. Replacement still
+requires explicit provider `expired` state followed by a final payment recheck.
+Processing/succeeded intents, any successful/processing/unknown payment,
+missing payment evidence, failed retrieval and conflicting bindings fail closed.
+There is at most one expire POST, three expiry-visibility reads and one final
+payment recheck within the existing 12-second budget. The durable transaction
+and current-intent webhook fence remain unchanged; payment racing retirement
+is retained for reconciliation, never silently granted or discarded.
+
 To end temporary billing, set only the API activation flag to false, stage
 and validate an API artifact, then promote it without rebuilding. Existing
 500-centavo orders retain their saved settlement contract; pending discounted

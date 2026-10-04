@@ -68,7 +68,8 @@ export async function expirePaymongoCheckout({ request, config, order,
   const headers = { Authorization: `Basic ${Buffer.from(`${config.secretKey}:`).toString('base64')}`,
     Accept: 'application/json' };
   // Whole confirmation finishes within the checkout lease. At most one expire
-  // POST and three post-expire reads; outages never count as expired evidence.
+  // POST, three visibility reads and one final payment recheck; outages never
+  // count as expired evidence.
   const budget = AbortSignal.timeout(12000);
   const signal = () => { budget.throwIfAborted(); return AbortSignal.any([budget, AbortSignal.timeout(4000)]); };
   const read = async () => {
@@ -85,12 +86,17 @@ export async function expirePaymongoCheckout({ request, config, order,
       && samePaymentMethods(attrs.payment_method_types, savedPaymentMethods(order))
       && Array.isArray(attrs.line_items) && attrs.line_items.length === 1
       && attrs.line_items[0].amount === order.amount && attrs.line_items[0].currency === order.currency
-      && attrs.line_items[0].quantity === 1 && Array.isArray(attrs.payments),
+      && attrs.line_items[0].quantity === 1 && Array.isArray(attrs.payments)
+      && Array.isArray(intent.attributes.payments),
     'CHECKOUT_PROVIDER_STATE', 'Existing checkout state could not be verified.', 503);
-    // Settled or in-flight payment must be reconciled, never blindly replaced.
+    // An exact QR Ph awaiting_next_action is an uncompleted customer action,
+    // not settlement. It allows expiration, never replacement by itself.
+    // Settled, processing and unknown evidence always requires reconciliation.
     requirePayment((intent.attributes.status === 'awaiting_payment_method'
+      || intent.attributes.status === 'awaiting_next_action' && samePaymentMethods(attrs.payment_method_types, ['qrph'])
       || attrs.status === 'expired' && intent.attributes.status === 'cancelled')
-      && attrs.payments.every(payment => payment?.attributes?.status === 'failed'),
+      && attrs.payments.every(payment => payment?.attributes?.status === 'failed')
+      && intent.attributes.payments.every(payment => payment?.attributes?.status === 'failed'),
     'CHECKOUT_PAYMENT_RECONCILIATION', 'Existing checkout needs payment reconciliation.', 409);
     return attrs;
   };
@@ -104,6 +110,10 @@ export async function expirePaymongoCheckout({ request, config, order,
       attrs = await read();
       if (attrs.status === 'expired') break;
     }
+    requirePayment(attrs.status === 'expired', 'CHECKOUT_STILL_ACTIVE', 'Checkout remains payable; replacement blocked.', 503);
+    // Recheck payment evidence after the explicit expiry observation. A payment
+    // racing the expire operation must not be discarded by a new intent.
+    attrs = await read();
   }
   requirePayment(attrs.status === 'expired', 'CHECKOUT_STILL_ACTIVE', 'Checkout remains payable; replacement blocked.', 503);
   return { sessionId: order.sessionId, status: 'expired', unpaid: true };
