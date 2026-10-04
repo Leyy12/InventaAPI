@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { PRO_PURCHASE, PRO_MAX_PURCHASE, paymentConfiguration } from '../../../services/payment-contract.js';
 import { createPaymentHandlers } from '../../../services/payment-checkout.js';
-import { checkoutPayload, createPaymongoCheckout } from '../../../services/paymongo-checkout.js';
+import { checkoutPayload, createPaymongoCheckout, expirePaymongoCheckout } from '../../../services/paymongo-checkout.js';
 import { createPaymentWebhook } from '../../../services/payment-webhook.js';
 import { memoryFirestore, invoke } from './memory-firestore.mjs';
 
@@ -92,6 +92,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
     }
     env.db.seed(orderPath, { ...env.db.read(orderPath), mode });
     env.db.seed(`payment_sessions/${mode}_cs_abc123`, { ...env.db.read('payment_sessions/test_cs_abc123'), mode });
+    env.db.seed('payment_checkout_locks/owner', { orderId, sessionId: 'cs_abc123', mode });
     const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode }), clock: () => now });
     const input = signed(event);
     if (mode === 'live') input.headers['paymongo-signature'] = input.headers['paymongo-signature'].replace(',li=', '').replace(',te=', ',te=,li=');
@@ -196,7 +197,7 @@ test('provider client: fixed v1 URL, Basic secret username, fixed terms and serv
   const request = async (url, options) => {
     captured = { url, ...options };
     return { ok: true, json: async () => ({ data: { id: 'cs_abc123', type: 'checkout_session', attributes: {
-      livemode: false, status: 'active', payment_intent: { id: 'pi_abc123' }, checkout_url: 'https://checkout.paymongo.com/abc123' } } }) };
+      livemode: false, status: 'active', payment_method_types: ['qrph'], payment_intent: { id: 'pi_abc123' }, checkout_url: 'https://checkout.paymongo.com/abc123' } } }) };
   };
   await createPaymongoCheckout({ request, config, order: providerOrder() });
   assert.equal(captured.url, 'https://api.paymongo.com/v1/checkout_sessions');
@@ -214,7 +215,7 @@ for (const override of [{ livemode: true }, { status: 'expired' }, { payment_int
   test(`provider client: malformed or wrong-mode response ${JSON.stringify(override)}`, async () => {
     await assert.rejects(createPaymongoCheckout({ config, order: providerOrder(), request: async () => ({ ok: true,
       json: async () => ({ data: { id: 'cs_abc123', type: 'checkout_session', attributes: {
-        livemode: false, status: 'active', payment_intent: { id: 'pi_abc123' }, checkout_url: 'https://checkout.paymongo.com/abc', ...override } } }) }) }));
+        livemode: false, status: 'active', payment_method_types: ['qrph'], payment_intent: { id: 'pi_abc123' }, checkout_url: 'https://checkout.paymongo.com/abc', ...override } } }) }) }));
   });
 }
 for (const [secretKey, mode, accepted] of [['sk_test_synthetic', 'test', true], ['sk_live_synthetic', 'live', true],
@@ -251,7 +252,7 @@ for (const timestamp of [1, Math.floor(now.getTime() / 1000) + 301, 'NaN', '-123
 for (const [name, mutate] of Object.entries({
   failed: e => { attrs(e).payments[0].attributes.status = 'failed'; },
   pending: e => { attrs(e).payments[0].attributes.status = 'pending'; },
-  expired: e => { attrs(e).status = 'expired'; }, cancelled: e => { attrs(e).status = 'cancelled'; },
+  cancelled: e => { attrs(e).status = 'cancelled'; },
   unknownState: e => { attrs(e).status = 'paid'; }, noPayment: e => { attrs(e).payments = []; },
   multiplePaid: e => { attrs(e).payments.push(structuredClone(attrs(e).payments[0])); },
   wrongAmount: e => { attrs(e).payments[0].attributes.amount = 1; },
@@ -276,7 +277,7 @@ for (const [name, mutate] of Object.entries({
   assert.ok((await invoke(env.webhook, signed(event))).statusCode >= 400); unchanged(env, before);
 });
 for (const override of [{ sessionId: 'cs_other' }, { paymentIntentId: 'pi_other' }, { state: 'cancelled' }, { state: 'expired' },
-  { state: 'review_required' }, { plan: 'Enterprise' }, { amount: 1 }, { currency: 'USD' }, { userId: 'stranger' }, { durationDays: 365 }]) {
+  { plan: 'Enterprise' }, { amount: 1 }, { currency: 'USD' }, { userId: 'stranger' }, { durationDays: 365 }]) {
   test(`order: invalid binding/policy ${JSON.stringify(override)}`, async () => {
     const env = await ready(); env.db.seed(orderPath, { ...env.db.read(orderPath), ...override }); const before = env.db.dump();
     assert.ok((await invoke(env.webhook, signed())).statusCode >= 400); unchanged(env, before);
@@ -350,6 +351,7 @@ test('signature: valid live fixture requires live header and all matching resour
   for (const object of [attrs(event), attrs(event).payment_intent.attributes, attrs(event).payments[0].attributes]) object.livemode = true;
   env.db.seed(orderPath, { ...env.db.read(orderPath), mode: 'live' });
   env.db.seed('payment_sessions/live_cs_abc123', { ...env.db.read('payment_sessions/test_cs_abc123'), mode: 'live' });
+  env.db.seed('payment_checkout_locks/owner', { orderId, sessionId: 'cs_abc123', mode: 'live' });
   const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode: 'live' }), clock: () => now });
   const input = signed(event); input.headers['paymongo-signature'] = input.headers['paymongo-signature'].replace(',li=', '').replace(',te=', ',te=,li=');
   assert.equal((await invoke(handler, input)).statusCode, 200); assert.equal(env.db.userWrites, 1);
@@ -392,7 +394,7 @@ function recoveryHarness() {
     if (!cache.has(key)) {
       creations++;
       cache.set(key, { body: options.body, data: { id: `cs_recover${creations}`, type: 'checkout_session', attributes: {
-        status: 'active', livemode: false, payment_intent: { id: `pi_recover${creations}` },
+        status: 'active', livemode: false, payment_method_types: ['qrph'], payment_intent: { id: `pi_recover${creations}` },
         checkout_url: `https://checkout.paymongo.com/recover${creations}` } } });
     }
     assert.equal(cache.get(key).body, options.body, 'provider rejects changed replay parameters');
@@ -486,4 +488,252 @@ test('checkout recovery: delayed former lease cannot overwrite a newly bound ses
 test('checkout recovery: exact conservative retention boundary refuses another provider POST', async () => {
   const env = recoveryHarness(); await invoke(env.checkout); env.advance(23 * 60 * 60 * 1000);
   assert.equal((await invoke(env.checkout)).statusCode, 409); assert.equal(env.requests.length, 1);
+});
+
+// Expiration/replacement fixture stays inside the isolated, network-free manifest.
+async function replacementFixture(options = {}) {
+  let instant = now.getTime(), initial = true, newCreates = 0, expirePosts = 0, reads = 0;
+  let providerState = options.alreadyExpired ? 'expired' : 'active';
+  const trace = [];
+  let env;
+  const request = async (url, input) => {
+    const old = env.db.read(orderPath);
+    trace.push(input.method);
+    assert.ok(url.startsWith('https://api.paymongo.com/v1/checkout_sessions/cs_abc123'));
+    if (input.method === 'POST') {
+      assert.equal(url, 'https://api.paymongo.com/v1/checkout_sessions/cs_abc123/expire');
+      expirePosts++;
+      if (options.expirationFailure) return { ok: false };
+      if (!options.stillActive) providerState = 'expired';
+      if (options.duringExpiration) await options.duringExpiration(env);
+      return { ok: true };
+    }
+    reads++;
+    if (options.readFailure) throw Error('simulated provider outage');
+    const attributes = {
+      status: providerState, livemode: false, payment_method_types: ['gcash'],
+      line_items: [{ amount: old.amount, currency: old.currency, quantity: 1 }], payments: [],
+      payment_intent: { id: 'pi_abc123', type: 'payment_intent', attributes: {
+        amount: old.amount, currency: old.currency, livemode: false, status: 'awaiting_payment_method' } }
+    };
+    if (options.paid || options.paidAfterExpire && expirePosts) attributes.payment_intent.attributes.status = 'succeeded';
+    if (options.ambiguous) attributes.payment_intent.attributes.status = 'processing';
+    if (options.wrongMode) attributes.livemode = true;
+    if (options.missingPayments) delete attributes.payments;
+    if (options.wrongAmount) attributes.payment_intent.attributes.amount = 1;
+    if (options.wrongCurrency) attributes.payment_intent.attributes.currency = 'USD';
+    return { ok: true, json: async () => ({ data: { id: options.wrongSession ? 'cs_other' : 'cs_abc123', type: 'checkout_session', attributes } }) };
+  };
+  env = setup({ handlers: {
+    clock: () => new Date(instant), newOrderId: () => initial ? orderId : randomUUID(),
+    createSession: async ({ order }) => {
+      if (initial) return { sessionId: 'cs_abc123', paymentIntentId: 'pi_abc123', checkoutUrl: 'https://checkout.paymongo.com/abc123' };
+      newCreates++;
+      assert.equal(providerState, 'expired');
+      assert.equal(env.db.read(orderPath).state, 'superseded');
+      assert.equal(env.db.read('payment_checkout_locks/owner').orderId, order.id);
+      assert.deepEqual(JSON.parse(order.providerRequestBody).data.attributes.payment_method_types, ['qrph']);
+      if (options.failCreateOnce && newCreates === 1) throw Error('simulated lost provider response');
+      return { sessionId: 'cs_fresh123', paymentIntentId: 'pi_fresh123', checkoutUrl: 'https://checkout.paymongo.com/fresh123' };
+    },
+    expireSession: args => expirePaymongoCheckout({ ...args, request })
+  } });
+  const plan = options.plan || 'pro';
+  assert.equal((await invoke(env.checkout, { body: { plan } })).statusCode, 200);
+  initial = false;
+  const old = env.db.read(orderPath);
+  const payload = JSON.parse(old.providerRequestBody);
+  payload.data.attributes.payment_method_types = options.methods || ['gcash'];
+  env.db.seed(orderPath, { ...old, providerRequestBody: JSON.stringify(payload) });
+  return { ...env, plan, advance: ms => { instant += ms; },
+    counts: () => ({ newCreates, expirePosts, reads }), trace };
+}
+
+test('replacement: matching current QR Ph intent reuses unchanged session without expiration or creation', async () => {
+  const env = await replacementFixture({ methods: ['qrph'] }), before = env.db.dump();
+  const response = await invoke(env.checkout);
+  assert.equal(response.statusCode, 200); assert.equal(response.body.sessionId, 'cs_abc123');
+  assert.deepEqual(env.counts(), { newCreates: 0, expirePosts: 0, reads: 0 });
+  assert.deepEqual(env.db.dump(), before);
+});
+
+for (const plan of ['pro', 'pro_max']) test(`replacement: ${plan} expires GCash, preserves history, binds one fresh canonical QR Ph intent`, async () => {
+  const env = await replacementFixture({ plan }), original = env.db.read(orderPath);
+  const result = await invoke(env.checkout, { body: { plan } });
+  assert.equal(result.statusCode, 200); assert.equal(result.body.sessionId, 'cs_fresh123');
+  assert.notEqual(result.body.orderId, orderId); assert.equal(result.body.currency, 'PHP');
+  assert.equal(result.body.amount, plan === 'pro' ? 149900 : 499900);
+  assert.deepEqual(env.trace, ['GET', 'POST', 'GET']);
+  const old = env.db.read(orderPath), current = env.db.read(`payment_orders/${result.body.orderId}`);
+  assert.equal(old.state, 'superseded'); assert.equal(old.providerStatus, 'expired');
+  assert.equal(old.sessionId, original.sessionId); assert.equal(old.providerRequestBody, original.providerRequestBody);
+  assert.equal(old.supersededBy, current.id); assert.equal(current.durationDays, 30);
+  assert.equal(current.apiRequestLimit, plan === 'pro' ? 5000 : null);
+  assert.equal(env.db.read('payment_sessions/test_cs_abc123').state, 'superseded');
+  assert.deepEqual(env.db.read('payment_checkout_locks/owner'), { orderId: current.id, sessionId: 'cs_fresh123', mode: 'test' });
+  const second = await invoke(env.checkout, { body: { plan } });
+  assert.equal(second.body.sessionId, 'cs_fresh123'); assert.equal(second.body.orderId, current.id);
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 2 }); assert.equal(env.db.userWrites, 0);
+});
+
+for (const fault of ['expirationFailure', 'readFailure', 'stillActive', 'paid', 'paidAfterExpire', 'ambiguous', 'wrongMode', 'missingPayments', 'wrongAmount', 'wrongCurrency', 'wrongSession']) {
+  test(`replacement: ${fault} prevents a new payable checkout and entitlement`, async () => {
+    const env = await replacementFixture({ [fault]: true });
+    const response = await invoke(env.checkout);
+    assert.equal(response.statusCode, 503); assert.equal(response.body.code, 'CHECKOUT_REVIEW');
+    assert.equal(env.counts().newCreates, 0); assert.equal(env.db.read(orderPath).state, 'expiring');
+    assert.equal(env.db.read('payment_checkout_locks/owner').orderId, orderId); assert.equal(env.db.userWrites, 0);
+    if (['paid', 'ambiguous', 'wrongMode', 'missingPayments', 'wrongAmount', 'wrongCurrency', 'wrongSession'].includes(fault)) assert.equal(env.counts().expirePosts, 0);
+  });
+}
+
+test('replacement: already expired/unpaid is verified without a second expiration POST', async () => {
+  const env = await replacementFixture({ alreadyExpired: true });
+  assert.equal((await invoke(env.checkout)).statusCode, 200);
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 0, reads: 1 });
+});
+
+test('replacement: concurrent Get Pro calls produce only one current replacement', async () => {
+  const env = await replacementFixture();
+  const results = await Promise.all(Array.from({ length: 20 }, () => invoke(env.checkout)));
+  assert.ok(results.some(result => result.statusCode === 200));
+  assert.ok(results.every(result => [200, 409].includes(result.statusCode)));
+  assert.equal(env.counts().newCreates, 1); assert.equal(env.counts().expirePosts, 1);
+  assert.equal(Object.values(env.db.dump()).filter(record => record.state === 'pending').length, 1);
+});
+
+test('replacement: expiration response loss retries from durable old intent without creating first', async () => {
+  let failed = false;
+  const env = await replacementFixture({ duringExpiration: async () => { if (!failed) { failed = true; throw Error('lost response'); } } });
+  assert.equal((await invoke(env.checkout)).statusCode, 503); assert.equal(env.counts().newCreates, 0);
+  const nextId = env.db.read(orderPath).replacementOrderId;
+  env.advance(5001);
+  const retry = await invoke(env.checkout);
+  assert.equal(retry.statusCode, 200); assert.equal(retry.body.orderId, nextId);
+  assert.equal(env.counts().expirePosts, 1); assert.equal(env.counts().newCreates, 1);
+});
+
+test('replacement: new provider failure retains exact new request/idempotency and never revives old session', async () => {
+  const env = await replacementFixture({ failCreateOnce: true });
+  assert.equal((await invoke(env.checkout)).statusCode, 503);
+  const id = env.db.read('payment_checkout_locks/owner').orderId;
+  const snapshot = env.db.read(`payment_orders/${id}`);
+  assert.equal(snapshot.state, 'retryable'); env.advance(5001);
+  assert.equal((await invoke(env.checkout)).body.sessionId, 'cs_fresh123');
+  const current = env.db.read(`payment_orders/${id}`);
+  assert.equal(current.idempotencyKey, snapshot.idempotencyKey); assert.equal(current.providerRequestBody, snapshot.providerRequestBody);
+  assert.equal(env.counts().expirePosts, 1); assert.equal(env.db.read(orderPath).state, 'superseded');
+});
+
+for (const patch of [{ mode: 'live' }, { ...PRO_MAX_PURCHASE }, { amount: 1 }, { currency: 'USD' }, { durationDays: 31 }, { apiRequestLimit: 1 }]) {
+  test(`replacement: incompatible mode/plan/canonical terms fail closed ${JSON.stringify(patch)}`, async () => {
+    const env = await replacementFixture(); env.db.seed(orderPath, { ...env.db.read(orderPath), ...patch });
+    const before = env.db.dump(); assert.equal((await invoke(env.checkout)).statusCode, 409);
+    assert.deepEqual(env.db.dump(), before); assert.equal(env.counts().expirePosts, 0); assert.equal(env.counts().newCreates, 0);
+  });
+}
+
+test('fence: superseded signed GCash settlement is retained/acknowledged without extending current paid entitlement', async () => {
+  const env = await replacementFixture(); assert.equal((await invoke(env.checkout)).statusCode, 200);
+  const event = fixture(); attrs(event).payments[0].attributes.source.type = 'gcash';
+  env.db.seed('users/owner', { ...customer, plan: 'Pro Max', apiRequestLimit: null, subscription_status: 'active',
+    subscriptionExpiresAt: '2026-12-01T00:00:00.000Z' });
+  const account = env.db.read('users/owner');
+  const result = await invoke(env.webhook, signed(event));
+  assert.equal(result.statusCode, 200); assert.equal(result.body.reviewRequired, true); assert.equal(result.body.processed, false);
+  assert.equal(env.db.read(paymentPath).status, 'paid'); assert.equal(env.db.read(paymentPath).entitlementGranted, false);
+  assert.equal(env.db.read(paymentPath).reviewReason, 'checkout_not_current');
+  assert.deepEqual(env.db.read('users/owner'), account); assert.equal(env.db.userWrites, 0);
+  const second = await invoke(env.webhook, signed(event));
+  assert.equal(second.body.duplicate, true); assert.equal(second.body.reviewRequired, true);
+  assert.equal(env.db.read('payment_sessions/test_cs_abc123').supersededBy, env.db.read('payment_checkout_locks/owner').orderId);
+});
+
+test('fence: current fresh QR Ph session still fulfills Pro atomically once', async () => {
+  const env = await replacementFixture(); const response = await invoke(env.checkout);
+  const event = fixture(); event.data.attributes.data.id = 'cs_fresh123';
+  attrs(event).payment_intent.id = 'pi_fresh123'; attrs(event).payments[0].attributes.payment_intent_id = 'pi_fresh123';
+  assert.equal((await invoke(env.webhook, signed(event))).body.processed, true);
+  assert.equal(env.db.read('users/owner').plan, 'Pro'); assert.equal(env.db.read('users/owner').apiRequestLimit, 5000);
+  assert.equal(env.db.read(`payment_orders/${response.body.orderId}`).state, 'processed');
+  assert.equal((await invoke(env.webhook, signed(event))).body.duplicate, true); assert.equal(env.db.userWrites, 1);
+});
+
+test('fence: processed redelivery remains idempotent after another checkout becomes current', async () => {
+  const env = await ready(); assert.equal((await invoke(env.webhook, signed())).body.processed, true);
+  const account = env.db.read('users/owner');
+  env.db.seed('payment_checkout_locks/owner', { orderId: randomUUID(), sessionId: 'cs_another' });
+  assert.equal((await invoke(env.webhook, signed())).body.duplicate, true);
+  assert.deepEqual(env.db.read('users/owner'), account); assert.equal(env.db.userWrites, 1);
+});
+
+for (const fault of ['lockChanged', 'lockMissing', 'lockWrongSession', 'lockWrongMode', 'bindingSuperseded', 'bindingExpired', 'orderExpired', 'providerExpired', 'reviewRequired']) {
+  test(`fence: ${fault} preserves verified settlement evidence without granting`, async () => {
+    const env = await ready(), event = fixture();
+    if (fault === 'lockChanged') env.db.seed('payment_checkout_locks/owner', { orderId: randomUUID() });
+    if (fault === 'lockMissing') env.db.remove('payment_checkout_locks/owner');
+    if (fault === 'lockWrongSession') env.db.seed('payment_checkout_locks/owner', { orderId, sessionId: 'cs_other' });
+    if (fault === 'lockWrongMode') env.db.seed('payment_checkout_locks/owner', { orderId, sessionId: 'cs_abc123', mode: 'live' });
+    if (fault === 'bindingSuperseded') env.db.seed('payment_sessions/test_cs_abc123', { ...env.db.read('payment_sessions/test_cs_abc123'), state: 'superseded' });
+    if (fault === 'bindingExpired') env.db.seed('payment_sessions/test_cs_abc123', { ...env.db.read('payment_sessions/test_cs_abc123'), providerStatus: 'expired' });
+    if (fault === 'orderExpired') env.db.seed(orderPath, { ...env.db.read(orderPath), providerStatus: 'expired' });
+    if (fault === 'providerExpired') attrs(event).status = 'expired';
+    if (fault === 'reviewRequired') env.db.seed(orderPath, { ...env.db.read(orderPath), state: 'review_required' });
+    const account = env.db.read('users/owner'); const result = await invoke(env.webhook, signed(event));
+    assert.equal(result.statusCode, 200); assert.equal(result.body.reviewRequired, true);
+    assert.equal(env.db.read(paymentPath).entitlementGranted, false);
+    assert.deepEqual(env.db.read('users/owner'), account); assert.equal(env.db.userWrites, 0);
+    assert.equal((await invoke(env.webhook, signed(event))).body.duplicate, true);
+  });
+}
+
+test('fence: settlement racing provider expiration prevents any fresh checkout and retains reconciliation evidence', async () => {
+  const env = await replacementFixture({ duringExpiration: async active => {
+    const event = fixture(); attrs(event).payments[0].attributes.source.type = 'gcash';
+    assert.equal((await invoke(active.webhook, signed(event))).body.reviewRequired, true);
+  } });
+  assert.equal((await invoke(env.checkout)).statusCode, 503);
+  assert.equal(env.counts().newCreates, 0); assert.equal(env.db.read(orderPath).state, 'review_required');
+  assert.equal(env.db.read(paymentPath).entitlementGranted, false); assert.equal(env.db.userWrites, 0);
+});
+
+test('fence: unreadable checkout lock cannot grant or partially record a settlement', async () => {
+  const env = await ready(); env.db.failRead = 'payment_checkout_locks/'; const before = env.db.dump();
+  assert.equal((await invoke(env.webhook, signed())).statusCode, 503); assert.deepEqual(env.db.dump(), before);
+});
+
+test('provider creation: a response storing GCash cannot pass a QR Ph request contract', async () => {
+  await assert.rejects(createPaymongoCheckout({ config, order: providerOrder(), request: async () => ({ ok: true,
+    json: async () => ({ data: { id: 'cs_abc123', type: 'checkout_session', attributes: { livemode: false,
+      status: 'active', payment_method_types: ['gcash'], payment_intent: { id: 'pi_abc123' }, checkout_url: 'https://checkout.paymongo.com/abc123' } } }) }) }),
+  error => error.code === 'PROVIDER_UNCERTAIN');
+});
+
+test('replacement: commit failure after provider expiry preserves retirement and safely resumes', async () => {
+  const env = await replacementFixture({ duringExpiration: async active => { active.db.failCommit = true; } });
+  assert.equal((await invoke(env.checkout)).statusCode, 503);
+  assert.equal(env.counts().newCreates, 0);
+  const replacementId = env.db.read(orderPath).replacementOrderId;
+  assert.equal(env.db.read(orderPath).state, 'expiring');
+  assert.equal(env.db.read('payment_checkout_locks/owner').orderId, orderId);
+  env.db.failCommit = false; env.advance(60001);
+  const retry = await invoke(env.checkout);
+  assert.equal(retry.statusCode, 200); assert.equal(retry.body.orderId, replacementId);
+  assert.deepEqual(env.counts(), { newCreates: 1, expirePosts: 1, reads: 3 });
+});
+
+test('replacement: delayed former expiration lease cannot create a competing new order', async () => {
+  let release, started;
+  const entered = new Promise(resolve => { started = resolve; });
+  const env = await replacementFixture({ duringExpiration: async () => {
+    started(); await new Promise(resolve => { release = resolve; });
+  } });
+  const first = invoke(env.checkout); await entered;
+  env.advance(60001);
+  const second = await invoke(env.checkout);
+  assert.equal(second.statusCode, 200);
+  release(); assert.equal((await first).statusCode, 503);
+  assert.equal(env.counts().newCreates, 1);
+  assert.equal(env.db.read('payment_checkout_locks/owner').orderId, second.body.orderId);
+  assert.equal(env.db.read(`payment_orders/${second.body.orderId}`).state, 'pending');
 });

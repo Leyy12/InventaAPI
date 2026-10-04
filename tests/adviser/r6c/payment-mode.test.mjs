@@ -98,7 +98,7 @@ async function setup(mode, nodeEnv) {
       assert.equal(payload.success_url, `${dashboardUrl}/dashboard?payment=success&order=${orderId}`);
       assert.equal(payload.cancel_url, `${dashboardUrl}/?payment=cancelled`);
       return { ok: true, json: async () => ({ data: { id: 'cs_r6c', type: 'checkout_session', attributes: {
-        status: 'active', livemode: mode === 'live', payment_intent: { id: 'pi_r6c' }, checkout_url: 'https://checkout.paymongo.com/r6c' } } }) };
+        status: 'active', livemode: mode === 'live', payment_method_types: ['qrph'], payment_intent: { id: 'pi_r6c' }, checkout_url: 'https://checkout.paymongo.com/r6c' } } }) };
     } }),
   });
   assert.equal((await invoke(handlers.checkout)).statusCode, 200);

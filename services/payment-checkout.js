@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { checkoutPayload } from './paymongo-checkout.js';
+import { checkoutPayload, samePaymentMethods, savedPaymentMethods } from './paymongo-checkout.js';
 import { evaluateEntitlement, planKind } from '../functions/subscription-lifecycle.mjs';
 import { purchaseForIntent, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
@@ -18,7 +18,7 @@ function requireReplayable(order, config, now) {
   'CHECKOUT_REVIEW', 'Checkout recovery requires support review. Do not pay again.');
 }
 
-export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createSession,
+export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createSession, expireSession,
   clock = () => new Date(), newOrderId = randomUUID, report = () => {} }) {
   const authenticate = operation => authenticatedPayment({ getDb, verifyIdToken }, operation);
   const checkout = authenticate(async (req, res, uid, db) => {
@@ -35,7 +35,15 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
     const attemptId = randomUUID();
     requirePayment(orderIdValid(id), 'ORDER_ID', 'Checkout unavailable.', 503);
     const lockRef = refFor(db, 'locks', uid);
-    const attempt = await db.runTransaction(async tx => {
+    const desiredMethods = checkoutPayload({ id, ...purchase }, config.dashboardUrl).data.attributes.payment_method_types;
+    const makeOrder = (orderId, now) => {
+      const order = { id: orderId, userId: uid, ...purchase, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
+        idempotencyKey: `checkout-${config.mode}-${orderId}`, providerKeyFingerprint: keyFingerprint(config.secretKey),
+        attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
+      order.providerRequestBody = JSON.stringify(checkoutPayload(order, config.dashboardUrl));
+      return order;
+    };
+    let attempt = await db.runTransaction(async tx => {
       const now = clock();
       const account = (await tx.get(db.collection('users').doc(uid))).data();
       requireCustomer(account, uid);
@@ -46,16 +54,44 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
         const previous = (await tx.get(refFor(db, 'orders', lock.orderId))).data();
         // Completed orders are immutable history. Validate their owner, mode and
         // canonical terms, but require current mode/plan equality only for recovery.
-        requirePayment(previous?.userId === uid && ['test', 'live'].includes(previous.mode) && matchesPurchase(previous)
+        requirePayment(previous?.id === lock.orderId && previous.userId === uid && ['test', 'live'].includes(previous.mode) && matchesPurchase(previous)
           && (previous.state === 'processed' || previous.mode === config.mode
             && (previous.planId ?? 'pro') === purchase.planId),
           'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
         if (previous.state === 'pending') {
           const binding = (await tx.get(refFor(db, 'sessions', modeKey(previous.mode, previous.sessionId)))).data();
-          requirePayment(binding?.orderId === previous.id && binding.userId === uid, 'BINDING_CONFLICT');
-          return { order: previous, existing: true };
+          requirePayment(binding?.orderId === previous.id && binding.userId === uid
+            && binding.sessionId === previous.sessionId && binding.mode === previous.mode
+            && binding.state !== 'superseded' && !binding.supersededBy
+            && (lock.sessionId === undefined || lock.sessionId === previous.sessionId)
+            && (lock.mode === undefined || lock.mode === previous.mode), 'BINDING_CONFLICT');
+          const methods = savedPaymentMethods(previous);
+          requirePayment(Array.isArray(methods) && methods.length > 0 && new Set(methods).size === methods.length
+            && methods.every(method => ['gcash', 'qrph'].includes(method)), 'CHECKOUT_REVIEW');
+          if (samePaymentMethods(methods, desiredMethods) && previous.providerStatus !== 'expired'
+            && binding.providerStatus !== 'expired' && binding.state !== 'expired') return { order: previous, existing: true };
+          requirePayment(!previous.paymentId && typeof expireSession === 'function', 'CHECKOUT_REVIEW');
+          requirePayment(!(await tx.get(refFor(db, 'orders', id))).exists, 'ORDER_COLLISION');
+          const retiring = { ...previous, state: 'expiring', replacementOrderId: id,
+            attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
+          tx.set(refFor(db, 'orders', previous.id), retiring);
+          return { order: retiring, replace: true };
+        }
+        if (previous.state === 'expiring') {
+          requirePayment(orderIdValid(previous.replacementOrderId) && typeof expireSession === 'function', 'CHECKOUT_REVIEW');
+          const binding = (await tx.get(refFor(db, 'sessions', modeKey(previous.mode, previous.sessionId)))).data();
+          requirePayment(!previous.paymentId && binding?.orderId === previous.id && binding.userId === uid
+            && binding.sessionId === previous.sessionId && binding.mode === previous.mode && !binding.supersededBy
+            && (lock.sessionId === undefined || lock.sessionId === previous.sessionId)
+            && (lock.mode === undefined || lock.mode === previous.mode), 'CHECKOUT_REVIEW');
+          requirePayment(Number.isFinite(Date.parse(previous.retryAfter)) && now.getTime() >= Date.parse(previous.retryAfter),
+            'CHECKOUT_IN_PROGRESS', 'Checkout replacement is processing. Retry shortly.');
+          const retiring = { ...previous, attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
+          tx.set(refFor(db, 'orders', previous.id), retiring);
+          return { order: retiring, replace: true };
         }
         if (['creating', 'retryable'].includes(previous.state)) {
+          requirePayment(samePaymentMethods(savedPaymentMethods(previous), desiredMethods), 'CHECKOUT_REVIEW');
           requireReplayable(previous, config, now);
           requirePayment(Number.isFinite(Date.parse(previous.retryAfter)) && now.getTime() >= Date.parse(previous.retryAfter),
             'CHECKOUT_IN_PROGRESS', 'Checkout is processing. Retry shortly without starting another payment.');
@@ -67,14 +103,56 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       }
       const orderRef = refFor(db, 'orders', id);
       requirePayment(!(await tx.get(orderRef)).exists, 'ORDER_COLLISION', 'Checkout unavailable.', 503);
-      const order = { id, userId: uid, ...purchase, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
-        idempotencyKey: `checkout-${config.mode}-${id}`, providerKeyFingerprint: keyFingerprint(config.secretKey),
-        attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
-      order.providerRequestBody = JSON.stringify(checkoutPayload(order, config.dashboardUrl));
+      const order = makeOrder(id, now);
       tx.set(orderRef, order);
       tx.set(lockRef, { orderId: id });
       return { order, existing: false };
     });
+    if (attempt.replace) {
+      const old = attempt.order;
+      try {
+        const proof = await expireSession({ config, order: old });
+        requirePayment(proof?.sessionId === old.sessionId && proof.status === 'expired' && proof.unpaid === true, 'CHECKOUT_REVIEW');
+        attempt = await db.runTransaction(async tx => {
+          const now = clock();
+          const oldRef = refFor(db, 'orders', old.id);
+          const oldBindingRef = refFor(db, 'sessions', modeKey(old.mode, old.sessionId));
+          const nextRef = refFor(db, 'orders', old.replacementOrderId);
+          const account = (await tx.get(db.collection('users').doc(uid))).data();
+          const saved = (await tx.get(oldRef)).data();
+          const binding = (await tx.get(oldBindingRef)).data();
+          const lock = (await tx.get(lockRef)).data();
+          const next = await tx.get(nextRef);
+          requireCustomer(account, uid); requirePurchasable(account, now, purchase);
+          requirePayment(saved?.state === 'expiring' && saved.attemptId === attemptId && !saved.paymentId
+            && saved.id === old.id && saved.userId === uid && saved.mode === config.mode && matchesPurchase(saved)
+            && (saved.planId ?? 'pro') === purchase.planId
+            && saved.sessionId === old.sessionId && saved.replacementOrderId === old.replacementOrderId
+            && lock?.orderId === old.id && (lock.sessionId === undefined || lock.sessionId === old.sessionId)
+            && (lock.mode === undefined || lock.mode === old.mode)
+            && binding?.orderId === old.id && binding.userId === uid && binding.sessionId === old.sessionId
+            && binding.mode === old.mode && !next.exists, 'CHECKOUT_REVIEW');
+          const order = makeOrder(old.replacementOrderId, now);
+          tx.update(oldRef, { state: 'superseded', providerStatus: 'expired', supersededBy: order.id, supersededAt: now.toISOString() });
+          tx.update(oldBindingRef, { state: 'superseded', providerStatus: 'expired', supersededBy: order.id });
+          tx.set(nextRef, order);
+          tx.set(lockRef, { orderId: order.id });
+          return { order, existing: false };
+        });
+      } catch (error) {
+        // Retain the durable retirement intent. Next attempt must re-read provider
+        // state; never assume a timeout means expiration or no payment occurred.
+        await db.runTransaction(async tx => {
+          const ref = refFor(db, 'orders', old.id);
+          const saved = (await tx.get(ref)).data();
+          if (saved?.state === 'expiring' && saved.attemptId === attemptId) {
+            tx.update(ref, { retryAfter: new Date(clock().getTime() + BACKOFF_MS).toISOString() });
+          }
+        });
+        report({ code: 'CHECKOUT_REPLACEMENT_REVIEW', orderId: old.id, sessionId: old.sessionId });
+        requirePayment(false, 'CHECKOUT_REVIEW', 'Existing checkout must be safely closed or reconciled before replacement.', 503);
+      }
+    }
     let order = attempt.order;
     const activeOrderId = order.id;
     if (!attempt.existing) {
@@ -94,6 +172,7 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
           order = { ...saved, ...session, state: 'pending' };
           tx.set(orderRef, order);
           tx.set(sessionRef, { orderId: activeOrderId, userId: uid, mode: config.mode, sessionId: session.sessionId });
+          tx.update(lockRef, { sessionId: session.sessionId, mode: config.mode });
         });
       } catch (error) {
         // Same logical order, exact body/key and API-key scope on recovery.

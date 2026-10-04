@@ -32,7 +32,7 @@ export function paymentFromEvent(event, mode) {
   const session = eventAttrs.data;
   const attrs = session?.attributes;
   requirePayment(session?.type === 'checkout_session' && providerId(session.id, 'cs'), 'INVALID_SESSION');
-  requirePayment(attrs?.status === 'active' && attrs.livemode === (mode === 'live'), 'INVALID_SESSION_STATE');
+  requirePayment(['active', 'expired'].includes(attrs?.status) && attrs.livemode === (mode === 'live'), 'INVALID_SESSION_STATE');
   requirePayment(Array.isArray(attrs.payments), 'MISSING_PAYMENTS');
   const paid = attrs.payments.filter(payment => payment?.attributes?.status === 'paid');
   requirePayment(paid.length === 1, 'AMBIGUOUS_PAYMENT');
@@ -55,7 +55,8 @@ export function paymentFromEvent(event, mode) {
     && [intent.attributes, attrs.line_items[0]].every(source => source.amount === paymentAttrs.amount
       && source.currency === paymentAttrs.currency), 'PURCHASE_MISMATCH');
   return { eventId: root.id, sessionId: session.id, paymentId: payment.id, paymentIntentId: intent.id,
-    mode, amount: paymentAttrs.amount, currency: paymentAttrs.currency, paymentMethod: paymentAttrs.source.type };
+    mode, amount: paymentAttrs.amount, currency: paymentAttrs.currency, paymentMethod: paymentAttrs.source.type,
+    providerSessionStatus: attrs.status };
 }
 
 export async function fulfillPayment(db, payment, time) {
@@ -70,7 +71,7 @@ export async function fulfillPayment(db, payment, time) {
       && order.sessionId === payment.sessionId && order.paymentIntentId === payment.paymentIntentId
       && order.mode === payment.mode && matchesPurchase(order)
       && payment.amount === order.amount && payment.currency === order.currency, 'ORDER_MISMATCH');
-    requirePayment(['pending', 'processed', 'review_required'].includes(order.state), 'INVALID_ORDER_STATE');
+    requirePayment(['pending', 'processed', 'review_required', 'expiring', 'superseded'].includes(order.state), 'INVALID_ORDER_STATE');
     const eventRef = refFor(db, 'events', modeKey(payment.mode, payment.eventId));
     const paymentRef = refFor(db, 'payments', `paymongo_${modeKey(payment.mode, payment.paymentId)}`);
     const eventRecord = (await tx.get(eventRef)).data();
@@ -87,8 +88,26 @@ export async function fulfillPayment(db, payment, time) {
       if (!eventRecord) tx.set(eventRef, { ...evidence, processedAt: order.processedAt });
       return { duplicate: true, ...(paymentRecord.entitlementGranted === false ? { reviewRequired: true } : {}) };
     }
+    // Processed/reconciliation redelivery above does not depend on today's lock.
+    // First-time settlement must still be this account's current checkout intent.
+    const lock = (await tx.get(refFor(db, 'locks', order.userId))).data();
+    const current = order.state === 'pending' && order.providerStatus !== 'expired' && !binding.supersededBy
+      && !['superseded', 'expired'].includes(binding.state) && binding.providerStatus !== 'expired'
+      && lock?.orderId === order.id && (lock.sessionId === undefined || lock.sessionId === payment.sessionId)
+      && (lock.mode === undefined || lock.mode === payment.mode) && payment.providerSessionStatus !== 'expired';
+    if (!current) {
+      const processedAt = now.toISOString();
+      // Preserve genuine verified settlement evidence once; no automatic grant,
+      // no endless provider redeliveries, and no mutation of the current intent.
+      tx.set(paymentRef, { ...evidence, status: 'paid', amount: order.amount, currency: order.currency,
+        paymentMethod: payment.paymentMethod ?? 'gcash', paymentIntentId: payment.paymentIntentId,
+        entitlementGranted: false, reviewReason: 'checkout_not_current', createdAt: processedAt });
+      tx.set(eventRef, { ...evidence, processedAt, reviewRequired: true });
+      tx.update(orderRef, { state: 'review_required', paymentId: payment.paymentId, processedAt,
+        reviewReason: 'checkout_not_current', entitlementGranted: false });
+      return { duplicate: false, reviewRequired: true };
+    }
     // Read failures never fall back to processing; no metadata/email ownership.
-    requirePayment(order.state === 'pending', 'INVALID_ORDER_STATE');
     const userRef = db.collection('users').doc(order.userId);
     const account = (await tx.get(userRef)).data();
     // A verified charge racing deletion is retained once for operator resolution.
@@ -137,7 +156,7 @@ export function createPaymentWebhook({ getDb, getConfig, clock = () => new Date(
       if (!payment) return res.json({ received: true, processed: false, ignored: true,
         ...(['payment.failed', 'checkout_session.payment.failed'].includes(event.data.attributes.type) ? { reason: 'failed' } : {}) });
       const result = await fulfillPayment(getDb(), payment, clock);
-      if (result.reviewRequired) report({ code: 'PAYMENT_ACCOUNT_DISABLED', orderPaymentId: payment.paymentId, eventId: payment.eventId });
+      if (result.reviewRequired) report({ code: 'PAYMENT_RECONCILIATION_REQUIRED', orderPaymentId: payment.paymentId, eventId: payment.eventId });
       // Acknowledge fulfillment only after its durable atomic commit.
       return res.json({ received: true, processed: !result.duplicate && !result.reviewRequired, ...result,
         ...(result.duplicate ? { reason: 'duplicate' } : {}) });

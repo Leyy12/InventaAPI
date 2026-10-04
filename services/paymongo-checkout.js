@@ -1,5 +1,17 @@
 import { matchesPurchase, providerId, requirePayment } from './payment-contract.js';
 
+export function samePaymentMethods(left, right) {
+  return Array.isArray(left) && left.length > 0 && Array.isArray(right)
+    && left.every(method => typeof method === 'string')
+    && new Set(left).size === left.length && new Set(right).size === right.length
+    && left.length === right.length && left.every(method => right.includes(method));
+}
+
+export function savedPaymentMethods(order) {
+  try { return JSON.parse(order.providerRequestBody)?.data?.attributes?.payment_method_types; }
+  catch { return null; }
+}
+
 export function checkoutPayload(order, dashboardUrl) {
   requirePayment(matchesPurchase(order), 'PURCHASE_MISMATCH', 'Saved purchase terms are invalid.');
   const base = new URL(dashboardUrl);
@@ -38,9 +50,51 @@ export async function createPaymongoCheckout({ request, config, order }) {
   const attrs = session?.attributes;
   requirePayment(session?.type === 'checkout_session' && providerId(session.id, 'cs')
     && attrs?.livemode === (order.mode === 'live') && attrs.status === 'active'
-    && providerId(attrs.payment_intent?.id, 'pi'), 'PROVIDER_UNCERTAIN', 'Checkout could not be verified.', 502);
+    && providerId(attrs.payment_intent?.id, 'pi')
+    && samePaymentMethods(attrs.payment_method_types, savedPaymentMethods(order)),
+  'PROVIDER_UNCERTAIN', 'Checkout could not be verified.', 502);
   const url = new URL(attrs.checkout_url);
   requirePayment(url.protocol === 'https:' && url.hostname === 'checkout.paymongo.com'
     && !url.username && !url.password && !url.port, 'PROVIDER_UNCERTAIN', 'Checkout URL could not be verified.', 502);
   return { sessionId: session.id, paymentIntentId: attrs.payment_intent.id, checkoutUrl: url.href };
+}
+
+// Fixed v1 boundary. Successful HTTP expiration alone is never replacement proof.
+export async function expirePaymongoCheckout({ request, config, order }) {
+  requirePayment(providerId(order.sessionId, 'cs') && providerId(order.paymentIntentId, 'pi')
+    && order.mode === config.mode && matchesPurchase(order), 'CHECKOUT_REVIEW');
+  const url = `https://api.paymongo.com/v1/checkout_sessions/${order.sessionId}`;
+  const headers = { Authorization: `Basic ${Buffer.from(`${config.secretKey}:`).toString('base64')}`,
+    Accept: 'application/json' };
+  const read = async () => {
+    const response = await request(url, { method: 'GET', redirect: 'error', headers, signal: AbortSignal.timeout(15000) });
+    requirePayment(response.ok, 'CHECKOUT_REVIEW', 'Existing checkout needs payment reconciliation.', 503);
+    const session = (await response.json())?.data;
+    const attrs = session?.attributes;
+    const intent = attrs?.payment_intent;
+    requirePayment(session?.type === 'checkout_session' && session.id === order.sessionId
+      && attrs?.livemode === (order.mode === 'live') && ['active', 'expired'].includes(attrs.status)
+      && intent?.id === order.paymentIntentId && intent.type === 'payment_intent'
+      && intent.attributes?.livemode === (order.mode === 'live')
+      && intent.attributes.amount === order.amount && intent.attributes.currency === order.currency
+      && samePaymentMethods(attrs.payment_method_types, savedPaymentMethods(order))
+      && Array.isArray(attrs.line_items) && attrs.line_items.length === 1
+      && attrs.line_items[0].amount === order.amount && attrs.line_items[0].currency === order.currency
+      && attrs.line_items[0].quantity === 1 && Array.isArray(attrs.payments),
+    'CHECKOUT_REVIEW', 'Existing checkout state could not be verified.', 503);
+    // Settled or in-flight payment must be reconciled, never blindly replaced.
+    requirePayment(intent.attributes.status === 'awaiting_payment_method'
+      && attrs.payments.every(payment => payment?.attributes?.status === 'failed'),
+    'CHECKOUT_REVIEW', 'Existing checkout needs payment reconciliation.', 409);
+    return attrs;
+  };
+  let attrs = await read();
+  if (attrs.status === 'active') {
+    const response = await request(`${url}/expire`, { method: 'POST', redirect: 'error', headers,
+      signal: AbortSignal.timeout(15000) });
+    requirePayment(response.ok, 'CHECKOUT_REVIEW', 'Checkout expiration could not be confirmed. Retry safely.', 503);
+    attrs = await read();
+  }
+  requirePayment(attrs.status === 'expired', 'CHECKOUT_REVIEW', 'Checkout remains payable; replacement blocked.', 503);
+  return { sessionId: order.sessionId, status: 'expired', unpaid: true };
 }

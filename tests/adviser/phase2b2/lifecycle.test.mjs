@@ -36,6 +36,7 @@ function payment(db, label = 'a') {
     paymentIntentId: `pi_${label}`, amount: PRO_PURCHASE.amount, currency: PRO_PURCHASE.currency };
   db.seed(`payment_orders/${id}`, { id, userId: 'owner', state: 'pending', ...PRO_PURCHASE, ...value });
   db.seed(`payment_sessions/test_cs_${label}`, { orderId: id, userId: 'owner', mode: 'test', sessionId: value.sessionId });
+  db.seed('payment_checkout_locks/owner', { orderId: id, sessionId: value.sessionId, mode: 'test' });
   return { value, id };
 }
 for (const [label, now, active] of [['before', NOW, true], ['exact', new Date(END), false], ['after', new Date(Date.parse(END) + 1), false]]) {
@@ -126,11 +127,14 @@ for (const [label, account, expected] of [['active', owner, '2026-10-20T10:00:01
 test('active Customer may create a new server-bound renewal checkout', async () => {
   assert.equal((await invoke(handlers(setup()).checkout)).statusCode, 200);
 });
-test('two genuine concurrent payments preserve both terms; same-payment replays add nothing', async () => {
+test('two settled payments with one current intent grant only its term; obsolete settlement is retained for review', async () => {
   const db = setup(), a = payment(db), b = payment(db, 'b');
   await Promise.all([fulfillPayment(db, a.value, NOW), fulfillPayment(db, b.value, NOW)]);
-  assert.equal(db.read('users/owner').subscriptionExpiresAt, '2026-11-19T10:00:01.000Z');
-  assert.ok(db.retries > 0); const snapshot = db.dump();
+  assert.equal(db.read('users/owner').subscriptionExpiresAt, '2026-10-20T10:00:01.000Z');
+  assert.equal(db.read('transactions/paymongo_test_pay_a').entitlementGranted, false);
+  assert.equal(db.read('transactions/paymongo_test_pay_a').reviewReason, 'checkout_not_current');
+  assert.equal(db.read('transactions/paymongo_test_pay_b').entitlementGranted, true);
+  assert.equal(db.userWrites, 1); const snapshot = db.dump();
   await Promise.all([fulfillPayment(db, a.value, NOW), fulfillPayment(db, b.value, NOW)]);
   assert.deepEqual(db.dump(), snapshot);
 });
@@ -223,7 +227,8 @@ test('status is read-only, authenticates owner and reports dates/status/effectiv
   assert.deepEqual(db.dump(), before);
 });
 test('status racing renewal cannot revert entitlement; previous receipts still confirm', async () => {
-  const db = setup(), a = payment(db), b = payment(db, 'b'); await fulfillPayment(db, a.value, NOW);
+  const db = setup(), a = payment(db); await fulfillPayment(db, a.value, NOW);
+  const b = payment(db, 'b');
   await Promise.all([invoke(handlers(db, () => new Date(END)).status), fulfillPayment(db, b.value, NOW)]);
   const result = await invoke(handlers(db).status, { query: { orderId: a.id } });
   assert.equal(result.body.paymentConfirmed, true); assert.equal(db.read('users/owner').plan, 'Pro');
