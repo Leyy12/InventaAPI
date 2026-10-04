@@ -18,7 +18,7 @@ test('Landing retains its Login modal flow and Create Account remains available'
   assert.doesNotMatch(source, /proceed\('\/login'\)/);
 });
 
-test('Landing page offers the guided hero, feature, and pricing journey', () => {
+test('Landing page keeps centered sections and navbar navigation without redundant CTAs', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
   const header = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
   assert.match(header, /Features/);
@@ -27,11 +27,14 @@ test('Landing page offers the guided hero, feature, and pricing journey', () => 
   assert.match(header, /API Docs/);
   assert.doesNotMatch(header, />\s*Login\s*</);
   assert.doesNotMatch(header, />\s*Sign Up\s*</);
-  assert.match(source, /href="#features"[\s\S]*?Get Started →/);
-  assert.match(source, /href="#pricing"[\s\S]*?View Plans/);
-  assert.match(source, /href="#how-it-works"[\s\S]*?See How It Works →/);
-  assert.match(source, /href="#pricing"[\s\S]*?View Plans →/);
-  assert.match(source, /flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-5/);
+  assert.match(header, /href="#features"[^>]*>Features</);
+  assert.match(header, /href="#how-it-works"[^>]*>How it Works</);
+  assert.match(header, /href="#pricing"[^>]*>Pricing</);
+  assert.match(header, /href="\/docs"[^>]*>API Docs</);
+  assert.doesNotMatch(source, /Get Started →|See How It Works →|View Plans(?: →)?/);
+  assert.match(source, /max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center/);
+  assert.match(source, /grid md:grid-cols-3 gap-8/);
+  assert.doesNotMatch(source, /mt-12 text-center/);
   assert.match(source, /focus-visible:ring-2/);
   assert.match(source, /min-h-screen[^"]*overflow-x-hidden/);
   for (const id of ['features', 'how-it-works', 'pricing']) {

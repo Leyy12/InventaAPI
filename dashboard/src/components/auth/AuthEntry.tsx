@@ -360,20 +360,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
             Stop building your product catalog from scratch. Consume our standardized, highly-available REST API to power your Point of Sale, Inventory, or E-Commerce applications instantly.
           </p>
 
-          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-5">
-            <a
-              href="#features"
-              className="inline-flex min-h-12 items-center justify-center rounded-full bg-indigo-600 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/15 transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
-            >
-              Get Started →
-            </a>
-            <a
-              href="#pricing"
-              className="inline-flex min-h-11 items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
-            >
-              View Plans
-            </a>
-          </div>
         </div>
       </section>
 
@@ -404,14 +390,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
             ))}
           </div>
 
-          <div className="mt-12 text-center">
-            <a
-              href="#how-it-works"
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/5 px-5 py-2.5 text-sm font-medium text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
-            >
-              See How It Works →
-            </a>
-          </div>
         </div>
       </section>
 
@@ -445,14 +423,6 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
             </div>
           </div>
 
-          <div className="mt-12 text-center">
-            <a
-              href="#pricing"
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/5 px-5 py-2.5 text-sm font-medium text-indigo-100 transition-colors hover:border-indigo-300/60 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617]"
-            >
-              View Plans →
-            </a>
-          </div>
         </div>
       </section>
 
