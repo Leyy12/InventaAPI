@@ -122,7 +122,8 @@ test('reconciled navigation retains Plan & Billing and exposes recommendations o
   assert.match(source('dashboard/src/components/layout/Navbar.tsx'), /dashboardRoutes/u);
   const billing = source('dashboard/src/app/dashboard/plan-billing/page.tsx');
   assert.match(billing, /entitlement\.canPurchaseProMax/u);
-  assert.match(billing, /setPurchasePlan\('pro_max'\)/u);
+  assert.match(billing, /planId="pro_max" currentPlan=\{entitlement\.plan\} canPurchase=\{entitlement\.canPurchaseProMax\} onChoose=\{purchase\}/u);
+  assert.match(billing, /const purchase = \(plan: PaidPlanId\) => \{ setPurchasePlan\(plan\); setPurchaseOpen\(true\); \}/u);
   assert.match(billing, /selectedPlan=\{purchasePlan\}/u);
   assert.match(billing, /<FreeTrialPage embedded \/>/u);
   assert.match(source('dashboard/src/app/dashboard/settings/page.tsx'), /href="\/dashboard\/plan-billing"/u);

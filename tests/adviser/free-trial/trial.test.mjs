@@ -621,7 +621,10 @@ test('Settings preserves segment policy; Customer copy advertises lifetime Free 
   assert.match(read('dashboard/src/config/plans.ts'), /Up to 500 products/);
   assert.doesNotMatch(read('dashboard/src/config/plans.ts'), /50 requests|forever|Pro Trial/);
   assert.doesNotMatch(read('dashboard/src/components/reports/CustomerUsageSummary.tsx'), /Monthly account limit|Remaining this month/);
-  assert.match(read('dashboard/src/app/dashboard/plan-billing/page.tsx'), /Get Pro/);
+  const billing = read('dashboard/src/app/dashboard/plan-billing/page.tsx');
+  assert.match(billing, /planId="pro" currentPlan=\{entitlement\.plan\} canPurchase=\{entitlement\.canPurchasePro\} onChoose=\{purchase\}/);
+  assert.match(billing, /Renew \$\{plan\.name\}/);
+  assert.match(billing, /Get \$\{plan\.name\}/);
 });
 
 const scope = (count, offset = 0) => Array.from({ length: count }, (_, i) => `tool-${i + offset}`);

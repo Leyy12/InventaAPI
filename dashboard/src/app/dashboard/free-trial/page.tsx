@@ -9,7 +9,8 @@ import { useAuth } from '@/lib/firebase/auth-context';
 type Trial = { eligible: boolean; active: boolean; exhausted: boolean; expired: boolean;
   hasUsedFreeTrial: boolean; upgradeRequired: boolean; endReason: 'expired' | 'exhausted' | null;
   status: string; startedAt: string | null; expiresAt: string | null;
-  serverTime: string; secondsRemaining: number; productsIncluded: number; productsAvailable: number; activeKeys: number };
+  serverTime: string; secondsRemaining: number; productsIncluded: number; minimumProducts: number;
+  maximumProducts: number; productsAvailable: number; activeKeys: number; maximumActiveKeys: number };
 
 export default function FreeTrialPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
@@ -17,11 +18,20 @@ export default function FreeTrialPage({ embedded = false }: { embedded?: boolean
 }
 
 function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
-  const [result, setResult] = useState<{ uid: string; trial: Trial } | null>(null);
+  const [result, setResult] = useState<{ uid: string; trial: Trial; receivedAt: number } | null>(null);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const [clockNow, setClockNow] = useState(0);
   const generation = useRef(0);
-  const trial = result?.uid === user?.uid ? result?.trial : null;
+  const snapshot = result?.uid === user?.uid ? result : null;
+  const trial = snapshot?.trial ?? null;
+  const activeTrial = trial?.active === true;
+
+  useEffect(() => {
+    if (!activeTrial) return;
+    const clock = setInterval(() => setClockNow(performance.now()), 1000);
+    return () => clearInterval(clock);
+  }, [activeTrial]);
 
   useEffect(() => {
     const lifecycle = generation;
@@ -42,7 +52,9 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
         if (generation.current !== request || controller.signal.aborted) return;
         const remaining = data.secondsRemaining * 1000 - (performance.now() - requestedAt);
         if (data.active && remaining <= 0) { timer = setTimeout(poll, 100); return; }
-        setResult({ uid: user!.uid, trial: data }); setError('');
+        const receivedAt = performance.now();
+        setClockNow(receivedAt);
+        setResult({ uid: user!.uid, trial: { ...data, secondsRemaining: Math.max(0, remaining / 1000) }, receivedAt }); setError('');
         // Refresh from server, including at the expiry boundary. Browser time is never authority.
         timer = setTimeout(poll, data.active ? Math.min(30000, Math.max(100, remaining)) : 30000);
       } catch {
@@ -53,6 +65,78 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
     void poll();
     return () => { lifecycle.current++; controller.abort(); clearTimeout(timer); };
   }, [user, refresh]);
+
+  if (embedded) {
+    if (error) return <section aria-label="Free Trial status" className="rounded-2xl border border-rose-400/25 bg-[#0d1526] p-5 sm:p-7">
+      <p role="alert" className="text-sm text-rose-200">Unable to verify Trial status. Please retry.</p>
+      <button type="button" onClick={() => setRefresh(value => value + 1)} className="mt-4 rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-white/5">Retry status</button>
+    </section>;
+    if (!trial) return <section aria-label="Free Trial status" className="rounded-2xl border border-slate-700/80 bg-[#0d1526] p-5 sm:p-7">
+      <p role="status" className="text-sm text-slate-300">Verifying your Free Trial details…</p>
+    </section>;
+    if (!trial.active) return <section aria-label="Free Trial status" className="rounded-2xl border border-amber-500/25 bg-[#0d1526] p-5 sm:p-7">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-400">Free Trial</p>
+          <h2 className="mt-2 text-xl font-bold text-white">{trial.upgradeRequired ? 'Trial ended' : trial.eligible ? 'Trial status pending' : 'Trial unavailable'}</h2></div>
+        {trial.upgradeRequired && <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">UPGRADE REQUIRED</span>}
+      </div>
+      {trial.upgradeRequired && <p className="mt-4 text-sm leading-6 text-slate-300">{trial.endReason === 'exhausted' ? 'The Trial allowance has been used.' : 'The seven-day Trial period has ended.'} Protected API access remains paused until you choose an eligible paid plan.</p>}
+      {trial.expiresAt && <p className="mt-4 text-sm text-slate-400">Trial ended <time dateTime={trial.expiresAt}>{new Date(trial.expiresAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</time>.</p>}
+      <Link href="/dashboard/api-keys" className="mt-5 inline-flex min-h-10 items-center rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-4 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-400/15">Manage API Keys →</Link>
+    </section>;
+
+    const remainingSeconds = Math.max(0, trial.secondsRemaining - ((clockNow - snapshot!.receivedAt) / 1000));
+    const totalSeconds = trial.startedAt && trial.expiresAt
+      ? (Date.parse(trial.expiresAt) - Date.parse(trial.startedAt)) / 1000 : NaN;
+    const remainingPercent = Number.isFinite(totalSeconds) && totalSeconds > 0
+      ? Math.min(100, Math.max(0, Math.round(remainingSeconds / totalSeconds * 100))) : 0;
+    const totalHours = Math.ceil(remainingSeconds / 3600);
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    const remainingLabel = days > 0 ? hours > 0 ? `${days}d ${hours}h` : `${days}d`
+      : totalHours > 0 ? `${totalHours}h` : 'Less than 1h';
+    const expiryLabel = trial.expiresAt
+      ? new Date(trial.expiresAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Unavailable';
+    const metrics = [
+      { label: 'PRODUCTS', value: `${trial.productsIncluded.toLocaleString()} / ${trial.maximumProducts.toLocaleString()}`, detail: 'Linked to your active key' },
+      { label: 'API KEYS', value: `${trial.activeKeys} / ${trial.maximumActiveKeys}`, detail: 'Active keys' },
+      { label: 'TIME REMAINING', value: remainingLabel, detail: 'Based on verified Trial dates' },
+    ];
+    return <section aria-label="Current plan: Free Trial" className="rounded-2xl border border-indigo-400/25 bg-[#0d1526] p-5 shadow-lg shadow-indigo-950/20 sm:p-7">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="text-sm font-semibold uppercase tracking-[0.14em] text-indigo-200">Free Trial</p>
+          <h2 className="mt-2 text-2xl font-bold text-white">7-Day Free Trial</h2>
+          <p className="mt-2 text-sm text-slate-300">Trial ends <time dateTime={trial.expiresAt ?? undefined}>{expiryLabel}</time></p>
+        </div>
+        <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-200">ACTIVE</span>
+      </div>
+
+      {Number.isFinite(totalSeconds) && totalSeconds > 0 && <div className="mt-6">
+        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-400"><span>Time remaining</span><span>{remainingPercent}%</span></div>
+        <div role="progressbar" aria-label="Trial time remaining" aria-valuemin={0} aria-valuemax={100} aria-valuenow={remainingPercent} aria-valuetext={`${remainingLabel} remaining`}
+          className="h-2.5 overflow-hidden rounded-full bg-slate-700/80">
+          <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400 transition-[width] duration-500" style={{ width: `${remainingPercent}%` }} />
+        </div>
+      </div>}
+
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {metrics.map(metric => <div key={metric.label} className="rounded-xl border border-slate-700/80 bg-slate-950/35 p-4">
+          <p className="text-[11px] font-semibold tracking-[0.14em] text-slate-400">{metric.label}</p>
+          <p className="mt-2 text-xl font-bold text-white">{metric.value}</p>
+          <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
+        </div>)}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-slate-700/60 bg-white/[0.025] px-4 py-3 text-sm text-slate-300">
+        <span>Minimum required: <strong className="font-semibold text-white">{trial.minimumProducts}</strong></span>
+        <span><strong className="font-semibold text-white">{trial.productsAvailable.toLocaleString()}</strong> product slots available</span>
+      </div>
+      <p className="mt-3 text-xs leading-5 text-slate-400">API calls do not consume your product allowance.</p>
+      <Link href="/dashboard/api-keys" className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-4 py-2 text-sm font-semibold text-indigo-200 transition-colors hover:bg-indigo-400/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+        Manage API Keys →
+      </Link>
+    </section>;
+  }
 
   return <div className="max-w-3xl mx-auto space-y-6">
     {!embedded && <h1 className="text-3xl font-bold text-white flex items-center gap-2"><Zap className="text-amber-400" />Free Trial</h1>}
