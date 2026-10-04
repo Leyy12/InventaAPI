@@ -94,7 +94,7 @@ async function setup(mode, nodeEnv) {
       assert.equal(Buffer.from(options.headers.Authorization.slice(6), 'base64').toString(), `${config.secretKey}:`);
       const payload = JSON.parse(options.body).data.attributes;
       assert.deepEqual(payload.line_items.map(({ amount, currency, quantity }) => ({ amount, currency, quantity })), [{ amount: 149900, currency: 'PHP', quantity: 1 }]);
-      assert.deepEqual(payload.payment_method_types, ['gcash']);
+  assert.deepEqual(payload.payment_method_types, ['qrph']);
       assert.equal(payload.success_url, `${dashboardUrl}/dashboard?payment=success&order=${orderId}`);
       assert.equal(payload.cancel_url, `${dashboardUrl}/?payment=cancelled`);
       return { ok: true, json: async () => ({ data: { id: 'cs_r6c', type: 'checkout_session', attributes: {

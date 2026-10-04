@@ -14,7 +14,7 @@ export function checkoutPayload(order, dashboardUrl) {
     line_items: [{ amount: order.amount, currency: order.currency, quantity: 1,
       name: `InventaAPI ${order.plan} Plan`, description: order.planId === 'pro_max'
         ? '1 Month Subscription — Unlimited account API quota' : '1 Month Subscription — 5,000 API requests/day' }],
-    payment_method_types: ['gcash'], success_url: success.href,
+    payment_method_types: ['qrph'], success_url: success.href,
     cancel_url: cancel.href,
     reference_number: order.id, metadata: { orderId: order.id, planId: order.planId ?? 'pro', plan: order.plan },
     statement_descriptor: order.planId === 'pro_max' ? 'InventaAPI Pro Max' : 'InventaAPI Pro Plan',

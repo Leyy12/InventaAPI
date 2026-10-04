@@ -19,7 +19,7 @@ test('Pro is 5000/day, renewal is offered, redirects still require backend proof
   assert.doesNotMatch(page, /Unlimited requests & segments/);
   assert.match(page, /result\.paymentConfirmed === true/);
   const modal = source('dashboard/src/components/subscription/SubscriptionModal.tsx');
-  assert.match(modal, /Renew with GCash/); assert.doesNotMatch(modal, /new Date\(expiresAt\)/);
+  assert.match(modal, /Renew securely/); assert.doesNotMatch(modal, /new Date\(expiresAt\)/);
 });
 test('Admin plan/usage comes from authenticated backend, not per-key snapshots', () => {
   for (const view of ['consumers', 'security']) {

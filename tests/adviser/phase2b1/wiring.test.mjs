@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
+test('new checkouts request QR Ph only and Customer copy is provider-neutral', () => {
+  const provider = source('services/paymongo-checkout.js');
+  assert.match(provider, /payment_method_types: \['qrph'\]/u);
+  assert.doesNotMatch(provider, /payment_method_types: \['gcash'\]/u);
+  const modal = source('dashboard/src/components/subscription/SubscriptionModal.tsx');
+  assert.match(modal, /Redirecting to secure payment/u);
+  assert.match(modal, /secure PayMongo payment page/u);
+  // Retain the legacy route name without treating it as a payment-method choice.
+  assert.doesNotMatch(modal.replaceAll('/create-gcash', ''), /gcash/iu);
+});
 test('route wiring uses revocation-aware Admin Auth and isolated checkout/webhook services', () => {
   const checkout = source('routes/checkout.js');
   assert.match(checkout, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);

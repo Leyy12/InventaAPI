@@ -28,7 +28,7 @@ export default function SubscriptionModal({
   const router = useRouter();
 
   // Step 1: Plan selection
-  // Step 2: Redirecting to GCash (loading state)
+  // Step 2: Redirecting to secure payment (loading state)
   // Step 3: Error state
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [errorMessage, setErrorMessage] = useState("");
@@ -107,7 +107,7 @@ export default function SubscriptionModal({
         return;
       }
 
-      // Redirect to PayMongo hosted GCash payment page
+      // Redirect to PayMongo hosted payment page
       // After payment, user is redirected to /dashboard?payment=success
       window.location.href = data.checkoutUrl;
 
@@ -265,14 +265,14 @@ export default function SubscriptionModal({
                       }
                     `}
                   >
-                    {selectedPlan === "pro" && (entitlement?.activePro ? "Renew with GCash →" : "Pay with GCash →")}
-                    {selectedPlan === "pro_max" && (entitlement?.plan === 'Pro Max' && entitlement.activePro ? "Renew Pro Max with GCash →" : "Get Pro Max with GCash →")}
+                    {selectedPlan === "pro" && (entitlement?.activePro ? "Renew securely →" : "Pay securely →")}
+                    {selectedPlan === "pro_max" && (entitlement?.plan === 'Pro Max' && entitlement.activePro ? "Renew Pro Max securely →" : "Get Pro Max securely →")}
                     {selectedPlan === "free" && "Continue to Free Trial"}
                   </button>
 
                   {(selectedPlan === "pro" || selectedPlan === "pro_max") && (
                     <p className="text-xs text-slate-500 text-center mt-3">
-                      🔒 Secure checkout via PayMongo · GCash · DPA 2012 Compliant
+                      🔒 Secure checkout via PayMongo · DPA 2012 Compliant
                     </p>
                   )}
                 </>
@@ -281,22 +281,22 @@ export default function SubscriptionModal({
           </div>
         )}
 
-        {/* ── STEP 2: Redirecting to GCash ── */}
+        {/* ── STEP 2: Redirecting to secure payment ── */}
         {step === 2 && (
           <div className="p-10 text-center">
             {/* Animated logo area */}
             <div className="relative mx-auto mb-6 w-20 h-20">
               <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 opacity-20 animate-ping" />
               <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-xl shadow-blue-500/30">
-                <span className="text-3xl font-black text-white">G</span>
+                <span className="text-3xl font-black text-white">P</span>
               </div>
             </div>
 
             <h2 className="text-xl font-bold text-white mb-2">
-              Redirecting to GCash...
+              Redirecting to secure payment...
             </h2>
             <p className="text-sm text-slate-400 mb-6 max-w-xs mx-auto">
-              We're taking you to the secure GCash payment page. Please don't close this tab.
+              We&apos;re taking you to the secure PayMongo payment page. Please don&apos;t close this tab.
             </p>
 
             <div className="flex items-center justify-center gap-2 text-xs text-slate-500">

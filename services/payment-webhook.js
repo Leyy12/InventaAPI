@@ -42,7 +42,9 @@ export function paymentFromEvent(event, mode) {
   requirePayment(payment.type === 'payment' && providerId(payment.id, 'pay') && providerId(intent?.id, 'pi')
     && intent.type === 'payment_intent' && paymentAttrs.payment_intent_id === intent.id, 'INVALID_PAYMENT_ID');
   requirePayment(paymentAttrs.livemode === (mode === 'live') && intent.attributes?.livemode === (mode === 'live'), 'MODE_MISMATCH');
-  requirePayment(intent.attributes.status === 'succeeded' && paymentAttrs.source?.type === 'gcash'
+  // QR Ph uses the same verified fulfillment path. Retain settlement of
+  // historical GCash sessions; new sessions request QR Ph only.
+  requirePayment(intent.attributes.status === 'succeeded' && ['qrph', 'gcash'].includes(paymentAttrs.source?.type)
     && paymentAttrs.disputed !== true && (paymentAttrs.refunds === undefined
       || (Array.isArray(paymentAttrs.refunds) && paymentAttrs.refunds.length === 0)), 'INVALID_PAYMENT_STATE');
   for (const source of [paymentAttrs, intent.attributes]) {
@@ -53,7 +55,7 @@ export function paymentFromEvent(event, mode) {
     && [intent.attributes, attrs.line_items[0]].every(source => source.amount === paymentAttrs.amount
       && source.currency === paymentAttrs.currency), 'PURCHASE_MISMATCH');
   return { eventId: root.id, sessionId: session.id, paymentId: payment.id, paymentIntentId: intent.id,
-    mode, amount: paymentAttrs.amount, currency: paymentAttrs.currency };
+    mode, amount: paymentAttrs.amount, currency: paymentAttrs.currency, paymentMethod: paymentAttrs.source.type };
 }
 
 export async function fulfillPayment(db, payment, time) {
@@ -105,7 +107,7 @@ export async function fulfillPayment(db, payment, time) {
     const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
     tx.set(paymentRef, { ...evidence, userEmail: typeof account.email === 'string' ? account.email : '',
       amount: order.amount, currency: order.currency,
-      paymentMethod: 'gcash', paymongoReferenceId: payment.paymentId,
+      paymentMethod: payment.paymentMethod ?? 'gcash', paymongoReferenceId: payment.paymentId,
       paymongoPaymentIntentId: payment.paymentIntentId, paymongoCheckoutSessionId: payment.sessionId,
       plan: order.plan, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt,
       status: 'paid', entitlementGranted: true, createdAt: processedAt, webhookEventId: payment.eventId });

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { PRO_PURCHASE, paymentConfiguration } from '../../../services/payment-contract.js';
+import { PRO_PURCHASE, PRO_MAX_PURCHASE, paymentConfiguration } from '../../../services/payment-contract.js';
 import { createPaymentHandlers } from '../../../services/payment-checkout.js';
 import { checkoutPayload, createPaymongoCheckout } from '../../../services/paymongo-checkout.js';
 import { createPaymentWebhook } from '../../../services/payment-webhook.js';
@@ -53,7 +53,7 @@ function fixture() {
       line_items: [{ amount: 149900, currency: 'PHP', quantity: 1 }],
       payment_intent: { id: 'pi_abc123', type: 'payment_intent', attributes: { amount: 149900, currency: 'PHP', livemode: false, status: 'succeeded' } },
       payments: [{ id: 'pay_abc123', type: 'payment', attributes: { amount: 149900, currency: 'PHP', livemode: false,
-        payment_intent_id: 'pi_abc123', status: 'paid', source: { type: 'gcash' }, refunds: [], disputed: false } }],
+        payment_intent_id: 'pi_abc123', status: 'paid', source: { type: 'qrph' }, refunds: [], disputed: false } }],
     } },
   } } };
 }
@@ -64,6 +64,56 @@ function signed(event = fixture(), timestamp = Math.floor(now.getTime() / 1000),
 }
 const attrs = event => event.data.attributes.data.attributes;
 const unchanged = (env, before) => { assert.deepEqual(env.db.dump(), before); assert.equal(env.db.userWrites, 0); };
+
+for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
+  test(`QR Ph checkout: ${purchase.plan} keeps canonical price, PHP, term and quota`, async () => {
+    const env = setup();
+    assert.equal((await invoke(env.checkout, { body: { plan: purchase.planId } })).statusCode, 200);
+    const order = env.db.read(orderPath);
+    const payload = JSON.parse(order.providerRequestBody).data.attributes;
+    assert.deepEqual(payload.payment_method_types, ['qrph']);
+    assert.equal(payload.line_items[0].amount, purchase.planId === 'pro' ? 149900 : 499900);
+    assert.equal(payload.line_items[0].currency, 'PHP');
+    assert.equal(order.durationDays, 30);
+    assert.equal(order.apiRequestLimit, purchase.planId === 'pro' ? 5000 : null);
+    assert.equal(order.userId, 'owner');
+  });
+
+  for (const mode of ['test', 'live']) test(`QR Ph fulfillment: ${purchase.plan}/${mode} grants atomically once`, async () => {
+    const env = setup();
+    assert.equal((await invoke(env.checkout, { body: { plan: purchase.planId } })).statusCode, 200);
+    const event = fixture();
+    event.data.attributes.livemode = mode === 'live';
+    for (const object of [attrs(event), attrs(event).payment_intent.attributes, attrs(event).payments[0].attributes]) {
+      object.livemode = mode === 'live';
+    }
+    for (const object of [attrs(event).line_items[0], attrs(event).payment_intent.attributes, attrs(event).payments[0].attributes]) {
+      object.amount = purchase.amount;
+    }
+    env.db.seed(orderPath, { ...env.db.read(orderPath), mode });
+    env.db.seed(`payment_sessions/${mode}_cs_abc123`, { ...env.db.read('payment_sessions/test_cs_abc123'), mode });
+    const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode }), clock: () => now });
+    const input = signed(event);
+    if (mode === 'live') input.headers['paymongo-signature'] = input.headers['paymongo-signature'].replace(',li=', '').replace(',te=', ',te=,li=');
+    assert.equal((await invoke(handler, input)).body.processed, true);
+    assert.equal((await invoke(handler, input)).body.duplicate, true);
+    assert.equal(env.db.userWrites, 1);
+    const account = env.db.read('users/owner');
+    assert.equal(account.plan, purchase.plan);
+    assert.equal(account.apiRequestLimit, purchase.apiRequestLimit);
+    assert.equal(account.subscriptionExpiresAt, '2026-10-20T10:00:00.000Z');
+    assert.equal(env.db.read(`transactions/paymongo_${mode}_pay_abc123`).paymentMethod, 'qrph');
+  });
+}
+
+test('historical GCash session still settles once through the same bound webhook pipeline', async () => {
+  const env = await ready(); const event = fixture();
+  attrs(event).payments[0].attributes.source.type = 'gcash';
+  assert.equal((await invoke(env.webhook, signed(event))).body.processed, true);
+  assert.equal((await invoke(env.webhook, signed(event))).body.duplicate, true);
+  assert.equal(env.db.read(paymentPath).paymentMethod, 'gcash');
+  assert.equal(env.db.userWrites, 1);
+});
 
 for (const [label, input] of Object.entries({ missing: { token: null }, malformed: { headers: { authorization: 'Bearer a b' } }, invalid: { token: 'bad' } })) {
   for (const operation of ['checkout', 'status']) test(`${operation}: ${label} authentication rejected before database access`, async () => {
