@@ -1,22 +1,10 @@
 import express from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
+import { createCustomerCatalogHandler } from '../services/customer-catalog.js';
 
 const router = express.Router();
 
-router.get('/', async (req, res) => {
-  try {
-    const db = getFirestore();
-    const snapshot = await db.collection('products').get();
-    const products = [];
-    snapshot.forEach(doc => {
-      products.push({ id: doc.id, ...doc.data() });
-    });
-    res.json({ products });
-  } catch (error) {
-    console.error('Error fetching products:', error);
-    res.status(500).json({ error: 'Failed to fetch products' });
-  }
-});
+router.get('/', createCustomerCatalogHandler({ getDb: getFirestore }));
 
 router.get('/:id', async (req, res) => {
   try {

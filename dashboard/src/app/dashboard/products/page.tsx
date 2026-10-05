@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
+import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -47,6 +48,11 @@ function isFreePlan(plan: string | undefined): boolean {
 // ==================== MAIN COMPONENT ====================
 
 export default function ProductCatalogPage() {
+  const { user } = useAuth();
+  return <CustomerCatalogSession key={user?.uid ?? 'unauthenticated'} />;
+}
+
+function CustomerCatalogSession() {
   const router = useRouter();
   const { user, appUser, entitlement } = useAuth();
   const [paywalledUserId, setPaywalledUserId] = useState<string | null>(null);
@@ -62,12 +68,17 @@ export default function ProductCatalogPage() {
   const trialReady = !activeTrial || trialSelection?.uid === user?.uid;
   
   // Core State
+  // Retain paid selections across category switches; the grid uses only the
+  // current verified response, never this accumulated selection lookup.
   const [products, setProducts] = useState<Product[]>([]);
+  const [catalogSource, setCatalogSource] = useState<CatalogSource | null>(null);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
-  const [loading, setLoading] = useState(true);
   const [paidSegment, setActiveSegment] = useState<string>("All");
   const activeSegment = isFreePlan(appUser?.plan) ? activeCustomerSegment(appUser) || '' : paidSegment;
+  const currentCatalog = catalogSource?.segment === activeSegment ? catalogSource : null;
+  const loading = !currentCatalog || currentCatalog.status === 'loading';
+  const productAvailable = currentCatalog?.status === 'ready' ? currentCatalog.total : null;
   const [searchQuery, setSearchQuery] = useState("");
   
   // API Key Generation State
@@ -96,8 +107,33 @@ export default function ProductCatalogPage() {
   // ==================== EFFECTS ====================
 
   useEffect(() => {
-    fetchProducts();
-  }, []);
+    if (!user || !activeSegment) return;
+    const refresh = createCatalogRefresh({ segment: activeSegment,
+      read: signal => loadSegmentCatalog(async (offset, pageSignal) => {
+        const query = new URLSearchParams({ businessSegment: activeSegment, limit: '200', offset: String(offset) });
+        const response = await fetch(`${API_URL}/api/v1/products?${query}`, { signal: pageSignal, cache: 'no-store' });
+        if (!response.ok) throw new Error('Catalog unavailable.');
+        return await response.json() as CatalogPage;
+      }, activeSegment, signal),
+      onState: source => {
+        setCatalogSource(source);
+        if (source.status === 'ready') setProducts(previous => {
+          const retained = activeSegment === 'All' ? [] : previous.filter(product => product.segment !== activeSegment);
+          return [...new Map([...retained, ...source.products].map(product => [product.id, product])).values()];
+        });
+      },
+    });
+    void Promise.resolve().then(refresh.refresh);
+    const onFocus = () => refresh.refresh();
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh.refresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      refresh.stop();
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [activeSegment, user]);
 
   useEffect(() => {
     if (!activeTrial || !user) return;
@@ -110,51 +146,18 @@ export default function ProductCatalogPage() {
     return () => controller.abort();
   }, [activeTrial, user, receiveTrialCatalog]);
 
-  // Sync segment for Free users
-  useEffect(() => {
-    if (isFreePlan(appUser?.plan) && appUser?.selectedSegment) {
-      setActiveSegment(appUser.selectedSegment);
-    }
-  }, [appUser]);
-
-  // ==================== DATA FETCHING ====================
-
-  const fetchProducts = async () => {
-    try {
-      setLoading(true);
-      const { getAllProducts } = await import('@/lib/firebase/products-service');
-      const productsData = await getAllProducts();
-      setProducts(productsData as unknown as Product[]);
-      setLoading(false);
-    } catch (error) {
-      console.error("[Products] Error fetching:", error);
-      setLoading(false);
-    }
-  };
-
   // ==================== COMPUTED VALUES ====================
 
   const getFilteredProducts = useCallback(() => {
-    let filtered = scopeCustomerProducts(products, appUser);
-    
-    // Strict segment filter for Free users
-    if (!isFreePlan(appUser?.plan) && activeSegment !== "All") {
-      filtered = filtered.filter(p => p.segment === activeSegment);
-    }
-    
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(p =>
-        p.name?.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.sku?.toLowerCase().includes(q)
-      );
-    }
-    
-    return filtered;
-  }, [products, activeSegment, searchQuery, appUser]);
+    const visibleIds = new Set(currentCatalog?.status === 'ready' ? currentCatalog.products.map(product => product.id) : []);
+    return searchCatalog(scopeCustomerProducts(products, appUser).filter(product => visibleIds.has(product.id)), searchQuery);
+  }, [products, currentCatalog, searchQuery, appUser]);
 
   const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
+  const selectableIds = catalogSelectableIds(filteredProducts, selectedProducts, activeTrial ? {
+    included: trialState.included, remaining: trialState.remaining,
+    allowed: !!trialKey && trialReady && !upgradeRequired && !generating,
+  } : null);
 
   const cartSummary = useMemo((): CartSummary => {
     const selectedItems = selectedLinkedProducts(products, appUser, selectedProducts);
@@ -251,22 +254,21 @@ export default function ProductCatalogPage() {
   const selectAllInView = useCallback(() => {
     if (upgradeRequired || !trialReady || generating || (activeTrial && !trialKey)) return;
     const next = new Set(selectedProducts);
-    for (const product of filteredProducts) {
-      if (!activeTrial || (!trialState.included.has(product.id!) && next.size < trialState.remaining)) next.add(product.id!);
-    }
+    for (const id of selectableIds) next.add(id);
     setSelectedProducts((prevProds) => {
       return next.size >= prevProds.size ? next : prevProds;
     });
     setSelectedVariants((prevVars) => {
       const newVars = { ...prevVars };
+      const additions = new Set(selectableIds);
       filteredProducts.forEach(p => {
-        if (next.has(p.id!) && p.variants && p.variants.length > 0) {
+        if (additions.has(p.id!) && p.variants && p.variants.length > 0) {
           newVars[p.id!] = new Set(p.variants.map(v => `${v.flavor || ''}|${v.size || ''}`));
         }
       });
       return newVars;
     });
-  }, [filteredProducts, selectedProducts, activeTrial, upgradeRequired, trialReady, trialKey, generating, trialState]);
+  }, [filteredProducts, selectedProducts, activeTrial, upgradeRequired, trialReady, trialKey, generating, selectableIds]);
 
   const clearSelection = useCallback(() => {
     if (upgradeRequired || !trialReady || generating) return;
@@ -493,6 +495,9 @@ DAAS_API_KEY=${generatedKey}
         : <p role="status" className="text-sm text-slate-300">Verifying persisted Trial catalog…</p>)}
       {activeTrial && trialReady && !trialKey && <p className="text-sm text-slate-300">Create your API key before adding products.</p>}
       {selectionError && <p role="alert" className="text-red-300">{selectionError}</p>}
+      <p role="status" className="text-sm text-slate-300">Product Available: {productAvailable ?? '—'}
+        {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}</p>
+      {currentCatalog?.status === 'error' && <p role="alert" className="text-red-300">Catalog unavailable. Retrying automatically; refocus this page to retry now.</p>}
 
       {/* Shopping Cart Summary - Sticky */}
       {selectedProducts.size > 0 && (
@@ -578,7 +583,7 @@ DAAS_API_KEY=${generatedKey}
             activeSegment === "Hardware" ? "bg-orange-500/15 text-orange-400 border-orange-500/30" :
             "bg-blue-500/15 text-blue-400 border-blue-500/30"
           }`}>
-            {filteredProducts.length} {activeSegment}
+            {productAvailable ?? '—'} {activeSegment}
           </span>
         )}
 
@@ -593,7 +598,7 @@ DAAS_API_KEY=${generatedKey}
             aria-label="Filter products by category"
           >
             {isFreePlan(appUser?.plan) ? (
-              <option value={appUser?.selectedSegment}>{appUser?.selectedSegment}</option>
+              <option value={activeSegment}>{activeSegment}</option>
             ) : (
               <>
                 <option value="All">All Categories</option>
@@ -614,11 +619,11 @@ DAAS_API_KEY=${generatedKey}
         {filteredProducts.length > 0 && (
           <button
             onClick={selectAllInView}
-            disabled={activeTrial && (!trialState.canSelect || generating)}
+            disabled={selectableIds.length === 0 || upgradeRequired || !trialReady || generating}
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-sm font-medium text-slate-300 transition-all whitespace-nowrap"
-            aria-label={`Select all ${filteredProducts.length} filtered products`}
+            aria-label={`Select ${selectableIds.length} new products in view`}
           >
-            Select All ({filteredProducts.length})
+            Select All ({selectableIds.length})
           </button>
         )}
       </div>
