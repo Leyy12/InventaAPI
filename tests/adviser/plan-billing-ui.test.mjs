@@ -28,7 +28,6 @@ test('Plan & Billing keeps its concise header and uses the embedded authoritativ
   assert.match(trial, /trial\.activeKeys\} of 1/);
   assert.match(trial, /API requests do not reduce your product allowance/);
   assert.match(overview, /Remaining Slots/);
-  assert.match(overview, /Unused product slots do not increase the API-key limit/);
   assert.doesNotMatch(overview, /trial\.productsAvailable|Trial Expires: \{trial\.expiresAt\}/);
   assert.match(trial, /href="\/dashboard\/api-keys"[^>]*>[\s\S]*?Manage API Keys/);
   assert.doesNotMatch(trial, /50\s*\/\s*500|450 slots available/);
@@ -89,10 +88,25 @@ test('Trial expiry is human-readable from the same stored instant, not a raw ISO
   const formatted = formatTrialExpiry(instant, 'en-US', 'Asia/Manila');
   assert.equal(formatted, 'October 11, 2026 at 7:36 PM');
   assert.notEqual(formatted, instant);
-  assert.match(overview, /dateTime=\{trial\.expiresAt \?\? undefined\}/);
+  assert.match(overview, /dateTime=\{trial\.expiresAt\}/);
   assert.match(overview, /formatTrialExpiry\(trial\.expiresAt\)/);
   assert.match(trial, /dateTime=\{trial\.expiresAt\}/);
   assert.doesNotMatch(overview, /Trial Expires: \{trial\.expiresAt\}/);
+});
+
+test('Overview Trial summary is compact while Plan & Billing retains detailed entitlement copy', () => {
+  assert.match(overview, /trialCapacityMessage\(trial\.productsIncluded\)/);
+  assert.equal(trialCapacityMessage(50), 'Free Trial product limit reached — 50 of 50 products.');
+  assert.match(overview, /Trial expires <time dateTime=\{trial\.expiresAt\}>\{formatTrialExpiry\(trial\.expiresAt\)\}<\/time>/);
+  for (const redundant of ['One-time 7-day Free Trial', 'Your Free Trial includes up to', 'API requests do not reduce your product allowance', 'Unused product slots do not increase the API-key limit']) {
+    assert.doesNotMatch(overview, new RegExp(redundant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(overview, /Free Trial · Active/);
+  assert.match(trial, /one-time 7-day Free Trial includes up to/);
+  assert.match(trial, /API requests do not reduce your product allowance/);
+  assert.match(trial, /unused product slots do not increase the API-key limit/);
+  assert.equal(trialCapacityMessage(10), null);
+  assert.equal(trialRemainingSlots(10), 40);
 });
 
 test('paid-plan display remains canonical and excludes temporary five-peso billing', () => {

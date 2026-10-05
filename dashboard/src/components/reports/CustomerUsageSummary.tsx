@@ -38,11 +38,7 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
         </div>)}
     </div>
     {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
-    <div className="space-y-1 text-sm text-slate-300"><p className="font-medium text-white">One-time 7-day Free Trial</p>
-      <p className="text-xs text-slate-400">Trial expires</p>
-      <time dateTime={trial.expiresAt ?? undefined}>{formatTrialExpiry(trial.expiresAt)}</time></div>
-    <p className="text-xs text-slate-400">Your Free Trial includes up to {TRIAL_MAX_PRODUCTS} products and 1 active API key.</p>
-    <p className="text-xs text-slate-400">API requests do not reduce your product allowance. Unused product slots do not increase the API-key limit.</p>
+    {trial.expiresAt && <p className="text-sm leading-6 text-slate-300">Trial expires <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time></p>}
   </section>;
   if (activeTrial) return <p role="status" className="text-slate-300">{source.status === 'error'
     ? 'Trial catalog verification unavailable. Retrying automatically.' : 'Loading Trial catalog…'}</p>;
