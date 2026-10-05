@@ -121,9 +121,14 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
 
   function trialProductCount(scope, previous = null) {
     const ids = authorizedProductIds(scope);
+    const requested = new Set(ids);
+    if (previous && authorizedProductIds(previous).some(id => !requested.has(id))) {
+      throw new ApiSecurityError(400, 'TRIAL_PRODUCT_REMOVAL_NOT_ALLOWED',
+        'Products already included in a Free Trial cannot be removed.');
+    }
     if (!trialCatalogChangeAllowed(previous ? authorizedProductIds(previous) : [], ids)) {
       throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MAXIMUM',
-        `Free Trial permits up to ${TRIAL_MAX_PRODUCTS} products. Legacy over-cap catalogs may only remove existing products.`);
+        `Free Trial permits up to ${TRIAL_MAX_PRODUCTS} products. Existing over-cap catalogs cannot add products.`);
     }
     return ids.length;
   }
@@ -283,12 +288,12 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         const entitlement = await currentAccount(tx, db, actor.uid, context, true);
         const existing = assertOwner(await tx.get(ref), actor.uid);
         assertActiveKey(existing, clock());
-        await trialKeys(tx, db, actor.uid, entitlement, { scope, existingId: ref.id, previous: existing });
-        if (entitlement.activeTrial) await validateScope(db, scope, context, tx);
         const version = Number.isSafeInteger(existing.scopeVersion) ? existing.scopeVersion : 0;
         if (entitlement.activeTrial && req.body?.expectedScopeVersion !== version) {
           throw new ApiSecurityError(409, 'CATALOG_CHANGED', 'Catalog changed. Reload your current selection before saving.');
         }
+        await trialKeys(tx, db, actor.uid, entitlement, { scope, existingId: ref.id, previous: existing });
+        if (entitlement.activeTrial) await validateScope(db, scope, context, tx);
         const previousIds = new Set(authorizedProductIds(existing));
         const availability = Object.fromEntries(authorizedProductIds(scope).flatMap(id => {
           if (Object.hasOwn(existing.productAvailability || {}, id)) return [[id, existing.productAvailability[id]]];

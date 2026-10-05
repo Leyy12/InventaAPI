@@ -8,15 +8,17 @@ import { apiKeyRequest } from "@/lib/api-keys";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { quotaSummary, quotaVerificationKey } from "@/lib/reports";
 import { createQuotaRefresh, type QuotaSource } from "@/lib/quota-refresh";
+import { subscribeAccountUsage } from "@/lib/account-usage-events";
 
 function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequired: boolean; activeTrial: boolean }) {
   const [source, setSource] = useState<QuotaSource>({ status: "loading", count: null, usage: null });
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const refresh = createQuotaRefresh({ read: signal => apiKeyRequest(user, "", { signal }), onState: setSource });
+    const unsubscribe = subscribeAccountUsage(user.uid, () => refresh.refresh());
     refresh.start();
     const clock = setInterval(() => setNow(new Date()), 1000);
-    return () => { refresh.stop(); clearInterval(clock); };
+    return () => { unsubscribe(); refresh.stop(); clearInterval(clock); };
   }, [user]);
   const quota = quotaSummary(source.usage, now);
   const trial = source.status === 'ready' ? source.trialCatalog : null;

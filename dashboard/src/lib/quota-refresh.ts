@@ -37,6 +37,13 @@ export function createQuotaRefresh({ read, onState, schedule = setTimeout, cance
   }
   return {
     start() { if (!started && !stopped) { started = true; run(); } },
+    refresh() {
+      if (!started || stopped) return;
+      generation++;
+      abort?.abort();
+      if (timer !== undefined) cancel(timer);
+      run();
+    },
     stop() { stopped = true; generation++; abort?.abort(); if (timer !== undefined) cancel(timer); },
   };
 }

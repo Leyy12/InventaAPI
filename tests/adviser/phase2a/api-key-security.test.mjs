@@ -190,10 +190,12 @@ test('product-scope replacement removes stale legacy authorization without repla
 test('scope validates identifiers and enforces the server account segment on creation and update', async () => {
   for (const operation of ['create', 'products']) {
     const { handlers } = setup({ 'products/hammer': { ...product, segment: 'Hardware' }, ...trialProducts,
-      'api_keys/key-a': { ...legacy, status: operation === 'create' ? 'revoked' : 'active', linkedProductIds: trialIds },
+      'api_keys/key-a': { ...legacy, status: operation === 'create' ? 'revoked' : 'active', linkedProductIds: trialIds.slice(1) },
       'users/owner': trialAccount, 'account_trial_usage/owner': trialCounter });
-    const base = { keyName: 'Scoped key' };
-    assert.equal((await invoke(handlers[operation], { body: { ...base, linkedProductIds: ['hammer'] } })).statusCode, 403);
+    const base = { keyName: 'Scoped key', expectedScopeVersion: 0 };
+    // Retain the existing Trial scope so this exercises segment validation,
+    // not the independent add-only/removal or capacity guard.
+    assert.equal((await invoke(handlers[operation], { body: { ...base, linkedProductIds: [...trialIds.slice(1), 'hammer'] } })).statusCode, 403);
     assert.equal((await invoke(handlers[operation], { body: { ...base, linkedProducts: [{ id: 'products/rice' }] } })).statusCode, 400);
     assert.equal((await invoke(handlers[operation], { body: { ...base, linkedVariantSelections: { rice: [] } } })).statusCode, 400);
     assert.equal((await invoke(handlers[operation], { body: { ...base, linkedProductIds: trialIds.slice(1),
