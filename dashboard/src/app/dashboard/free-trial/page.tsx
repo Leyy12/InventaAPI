@@ -5,6 +5,8 @@ import type { User } from 'firebase/auth';
 import Link from 'next/link';
 import { Zap } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
+import { TRIAL_MAX_PRODUCTS } from '../../../../../functions/entitlement-limits.mjs';
 
 type Trial = { eligible: boolean; active: boolean; exhausted: boolean; expired: boolean;
   hasUsedFreeTrial: boolean; upgradeRequired: boolean; endReason: 'expired' | 'exhausted' | null;
@@ -81,7 +83,7 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
         {trial.upgradeRequired && <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">UPGRADE REQUIRED</span>}
       </div>
       {trial.upgradeRequired && <p className="mt-4 text-sm leading-6 text-slate-300">{trial.endReason === 'exhausted' ? 'The Trial allowance has been used.' : 'The seven-day Trial period has ended.'} Protected API access remains paused until you choose an eligible paid plan.</p>}
-      {trial.expiresAt && <p className="mt-4 text-sm text-slate-400">Trial ended <time dateTime={trial.expiresAt}>{new Date(trial.expiresAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</time>.</p>}
+      {trial.expiresAt && <p className="mt-4 text-sm text-slate-400">Trial ended <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time>.</p>}
       <Link href="/dashboard/api-keys" className="mt-5 inline-flex min-h-10 items-center rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-4 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-400/15">Manage API Keys →</Link>
     </section>;
 
@@ -95,11 +97,11 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
     const hours = totalHours % 24;
     const remainingLabel = days > 0 ? hours > 0 ? `${days}d ${hours}h` : `${days}d`
       : totalHours > 0 ? `${totalHours}h` : 'Less than 1h';
-    const expiryLabel = trial.expiresAt
-      ? new Date(trial.expiresAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Unavailable';
+    const expiryLabel = formatTrialExpiry(trial.expiresAt);
     const metrics = [
-      { label: 'PRODUCTS', value: `${trial.productsIncluded.toLocaleString()} / ${trial.maximumProducts.toLocaleString()}`, detail: 'Linked to your active key' },
-      { label: 'API KEYS', value: `${trial.activeKeys} / ${trial.maximumActiveKeys}`, detail: 'Active keys' },
+      { label: 'PRODUCTS', value: `${trial.productsIncluded.toLocaleString()} of ${TRIAL_MAX_PRODUCTS}`, detail: 'Account-level allowance' },
+      { label: 'REMAINING SLOTS', value: trialRemainingSlots(trial.productsIncluded).toLocaleString(), detail: 'Available in your account' },
+      { label: 'ACTIVE API KEYS', value: `${trial.activeKeys} of 1`, detail: 'Free Trial limit' },
       { label: 'TIME REMAINING', value: remainingLabel, detail: 'Based on verified Trial dates' },
     ];
     return <section aria-label="Current plan: Free Trial" className="rounded-2xl border border-indigo-400/25 bg-[#0d1526] p-5 shadow-lg shadow-indigo-950/20 sm:p-7">
@@ -119,7 +121,7 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
         </div>
       </div>}
 
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(metric => <div key={metric.label} className="rounded-xl border border-slate-700/80 bg-slate-950/35 p-4">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-slate-400">{metric.label}</p>
           <p className="mt-2 text-xl font-bold text-white">{metric.value}</p>
@@ -127,11 +129,8 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
         </div>)}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-slate-700/60 bg-white/[0.025] px-4 py-3 text-sm text-slate-300">
-        {trial.productsIncluded >= trial.maximumProducts && <span role="status" className="text-amber-300">Catalog full — capacity reached</span>}
-        <span><strong className="font-semibold text-white">{trial.productsAvailable.toLocaleString()}</strong> product slots available</span>
-      </div>
-      <p className="mt-3 text-xs leading-5 text-slate-400">API calls do not consume your product allowance.</p>
+      {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="mt-4 text-sm text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
+      <p className="mt-3 text-xs leading-5 text-slate-400">Your one-time 7-day Free Trial includes up to {TRIAL_MAX_PRODUCTS} account-level products and 1 active API key. API requests do not reduce your product allowance, and unused product slots do not increase the API-key limit.</p>
       <Link href="/dashboard/api-keys" className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-4 py-2 text-sm font-semibold text-indigo-200 transition-colors hover:bg-indigo-400/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
         Manage API Keys →
       </Link>
@@ -148,11 +147,12 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
           : trial.active ? 'Your Free Trial is Active!'
           : trial.upgradeRequired ? 'Free Trial Ended — Upgrade Required'
           : trial.eligible ? 'Session verification is required to start your Free Trial' : 'Trial is not available for this account'}</h2>
-        {trial.expiresAt && <p>Expires: {new Date(trial.expiresAt).toUTCString()}</p>}
+        {trial.expiresAt && <p>Trial expires: <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time></p>}
         {trial.active && <>
-          <p>Products Included: {trial.productsIncluded} / {trial.maximumProducts} · Products Available: {trial.productsAvailable}</p>
-          <p>API Keys: {trial.activeKeys} / 1</p>
-          <p>{Math.ceil(trial.secondsRemaining / 3600)} hours remaining as of {new Date(trial.serverTime).toUTCString()}.</p>
+          <p>Products: {trial.productsIncluded.toLocaleString()} of {TRIAL_MAX_PRODUCTS} · Remaining slots: {trialRemainingSlots(trial.productsIncluded).toLocaleString()}</p>
+          <p>Active API keys: {trial.activeKeys} of 1</p>
+          <p>{Math.ceil(trial.secondsRemaining / 3600)} hours remaining.</p>
+          {trialCapacityMessage(trial.productsIncluded) && <p role="status">{trialCapacityMessage(trial.productsIncluded)}</p>}
           <p className="text-sm text-slate-400">No daily or monthly reset. When the Trial ends, protected API access pauses until you upgrade to Pro or Pro Max.</p>
         </>}
         {trial.upgradeRequired && <>

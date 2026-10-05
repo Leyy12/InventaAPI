@@ -562,8 +562,8 @@ test('Customer session/pricing/UI contain automatic Free Trial contract and no m
   assert.match(read('routes/freetrial.js'), /router.post\('\/session', handlers.session\)/);
   assert.match(read('dashboard/src/lib/subscription.ts'), /method: 'POST'/);
   const overview = read('dashboard/src/components/reports/CustomerUsageSummary.tsx');
-  assert.match(overview, /Free Trial · Active/); assert.match(overview, /Products Included/);
-  assert.match(overview, /Trial Expires:/);
+  assert.match(overview, /Free Trial · Active/); assert.match(overview, /Remaining Slots/);
+  assert.match(overview, /Trial expires/);
   for (const file of ['dashboard/src/app/dashboard/page.tsx', 'dashboard/src/app/dashboard/free-trial/page.tsx',
     'dashboard/src/app/dashboard/plan-billing/page.tsx', 'dashboard/src/config/plans.ts']) {
     assert.doesNotMatch(read(file), /Pro Trial|50 requests|forever|onClick=\{activate\}/);
@@ -808,9 +808,10 @@ test('Trial UX consistently uses product limits, one key and actual expiry rathe
     'dashboard/src/app/docs/page.tsx', 'dashboard/src/components/auth/LoginModal.tsx', 'dashboard/src/app/privacy-policy/page.tsx'];
   for (const file of [...files, 'dashboard/src/app/dashboard/page.tsx']) assert.doesNotMatch(read(file), /500 total (?:API )?requests|500-request|50\/month|50 requests\/month|Pro Trial|Free plan · inactive|\/forever|trial total/);
   const overview = read(files[4]);
-  for (const label of ['Products Included', 'Products Available', 'API Keys', 'Trial Expires']) assert.ok(overview.includes(label));
+  for (const label of ['Products', 'Remaining Slots', 'Active API Keys', 'Trial expires']) assert.ok(overview.includes(label));
   const products = read(files[0]); assert.match(products, /Save Trial Catalog/); assert.match(products, /expectedScopeVersion: trialKey.scopeVersion/);
-  assert.match(products, /method: 'PATCH'/); assert.match(products, /TRIAL_MAX_PRODUCTS/); assert.match(products, /Catalog full/);
+  assert.match(products, /method: 'PATCH'/); assert.match(products, /TRIAL_MAX_PRODUCTS/); assert.match(products, /trialCapacityMessage/);
+  assert.doesNotMatch(products, /Remove a product before adding another|Legacy over-cap catalog preserved/);
   assert.match(products, /trialKey && activeTrial \?/); assert.doesNotMatch(read(files[2]), /onClick=\{activate\}|\/free-trial\/activate/);
   const plans = read(files[5]); assert.doesNotMatch(plans, /Minimum 50 products/); assert.match(plans, /Up to \$\{TRIAL_MAX_PRODUCTS\} products/); assert.match(plans, /One API key/);
   assert.match(plans, /₱1,499/); assert.match(plans, /₱4,999/); assert.match(plans, /MOST POPULAR/);

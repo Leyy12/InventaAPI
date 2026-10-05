@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '../../dashboard/src/lib/trial-display.mjs';
 
 const read = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const billing = read('dashboard/src/app/dashboard/plan-billing/page.tsx');
 const trial = read('dashboard/src/app/dashboard/free-trial/page.tsx');
 const plans = read('dashboard/src/config/plans.ts');
+const overview = read('dashboard/src/components/reports/CustomerUsageSummary.tsx');
 
 test('Plan & Billing keeps its concise header and uses the embedded authoritative Trial status', () => {
   assert.match(billing, /Plan &amp; Billing/);
@@ -17,14 +19,17 @@ test('Plan & Billing keeps its concise header and uses the embedded authoritativ
   assert.match(trial, /trial\.secondsRemaining/);
   assert.match(trial, /trial\.startedAt/);
   assert.match(trial, /trial\.expiresAt/);
-  assert.match(trial, /trial\.productsIncluded\.toLocaleString\(\)/);
-  assert.match(trial, /trial\.productsAvailable\.toLocaleString\(\)/);
+  assert.match(trial, /trial\.productsIncluded\.toLocaleString\(\)} of \$\{TRIAL_MAX_PRODUCTS\}/);
+  assert.match(trial, /trialRemainingSlots\(trial\.productsIncluded\)/);
   assert.doesNotMatch(trial, /Minimum required:/i);
-  assert.match(trial, /trial\.maximumProducts/);
-  assert.match(trial, /capacity reached/);
+  assert.doesNotMatch(trial, /trial\.maximumProducts|trial\.productsAvailable/);
+  assert.match(trial, /trialCapacityMessage\(trial\.productsIncluded\)/);
   assert.match(trial, /trial\.activeKeys/);
-  assert.match(trial, /trial\.maximumActiveKeys/);
-  assert.match(trial, /API calls do not consume your product allowance\./);
+  assert.match(trial, /trial\.activeKeys\} of 1/);
+  assert.match(trial, /API requests do not reduce your product allowance/);
+  assert.match(overview, /Remaining Slots/);
+  assert.match(overview, /Unused product slots do not increase the API-key limit/);
+  assert.doesNotMatch(overview, /trial\.productsAvailable|Trial Expires: \{trial\.expiresAt\}/);
   assert.match(trial, /href="\/dashboard\/api-keys"[^>]*>[\s\S]*?Manage API Keys/);
   assert.doesNotMatch(trial, /50\s*\/\s*500|450 slots available/);
 });
@@ -61,7 +66,39 @@ test('Current Free Trial, Upgrade Required, Pro and Pro Max states remain distin
 
 test('Plan cards stack on narrow screens and align side by side at desktop widths', () => {
   assert.match(billing, /grid grid-cols-1 gap-4 lg:grid-cols-2/);
-  assert.match(trial, /grid grid-cols-1 gap-3 sm:grid-cols-3/);
+  assert.match(trial, /grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4/);
   assert.match(billing, /min-h-11 w-full/);
   assert.match(billing, /focus-visible:ring-2/);
+});
+
+test('Trial product usage displays account-level capacity without negative slots or a second-key implication', () => {
+  const cases = [[0, 50], [1, 49], [10, 40], [49, 1], [50, 0], [51, 0], [75, 0]];
+  for (const [count, remaining] of cases) assert.equal(trialRemainingSlots(count), remaining, `${count} products`);
+  for (const count of [0, 1, 10, 49]) assert.equal(trialCapacityMessage(count), null);
+  assert.equal(trialCapacityMessage(50), 'Free Trial product limit reached — 50 of 50 products.');
+  assert.equal(trialCapacityMessage(51), 'Your Free Trial product limit is 50 products.');
+  assert.match(overview, /Active API Keys/);
+  assert.match(trial, /ACTIVE API KEYS', value: `\$\{trial\.activeKeys\} of 1`/);
+  for (const source of [overview, trial, read('dashboard/src/app/dashboard/products/page.tsx')]) {
+    assert.doesNotMatch(source, /Remove products before adding more|Remove a product before adding another|Legacy over-cap catalog preserved/);
+  }
+});
+
+test('Trial expiry is human-readable from the same stored instant, not a raw ISO timestamp', () => {
+  const instant = '2026-10-11T11:36:17.490Z';
+  const formatted = formatTrialExpiry(instant, 'en-US', 'Asia/Manila');
+  assert.equal(formatted, 'October 11, 2026 at 7:36 PM');
+  assert.notEqual(formatted, instant);
+  assert.match(overview, /dateTime=\{trial\.expiresAt \?\? undefined\}/);
+  assert.match(overview, /formatTrialExpiry\(trial\.expiresAt\)/);
+  assert.match(trial, /dateTime=\{trial\.expiresAt\}/);
+  assert.doesNotMatch(overview, /Trial Expires: \{trial\.expiresAt\}/);
+});
+
+test('paid-plan display remains canonical and excludes temporary five-peso billing', () => {
+  assert.match(plans, /priceDisplay: "₱1,499"/);
+  assert.match(plans, /priceDisplay: "₱4,999"/);
+  assert.match(plans, /\$\{PRO_DAILY_REQUEST_LIMIT\} requests per day/);
+  assert.match(plans, /Unlimited account API quota/);
+  assert.doesNotMatch(`${billing}\n${plans}`, /₱5\b|500 pesos|five-peso/i);
 });

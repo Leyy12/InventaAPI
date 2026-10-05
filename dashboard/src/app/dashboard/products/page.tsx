@@ -1,5 +1,6 @@
 "use client";
 import { TRIAL_MAX_PRODUCTS, trialCatalogChangeAllowed } from "../../../../../functions/entitlement-limits.mjs";
+import { trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
 import { GENERATION_POLICY, generationErrorMessage } from '@/lib/api-key-generation';
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -452,9 +453,7 @@ DAAS_API_KEY=${generatedKey}
         </div>
       </div>
 
-      {activeTrial && <p role="status" className="text-sm text-slate-300">Free Trial · 7 days · Products Included: {cartSummary.totalProducts} / {TRIAL_MAX_PRODUCTS} · API Keys: {trialKey ? 1 : 0} / 1.
-        {cartSummary.totalProducts >= TRIAL_MAX_PRODUCTS ? ' Catalog full — maximum reached. Remove a product before adding another.' : ' Valid Trial catalog.'}
-        {trialKey && trialKey.productIds.length > TRIAL_MAX_PRODUCTS && ' Legacy over-cap catalog preserved. Save removals before adding new products.'}</p>}
+      {activeTrial && <p role="status" className="text-sm text-slate-300">Free Trial · 7 days · Products: {cartSummary.totalProducts} of {TRIAL_MAX_PRODUCTS} · Remaining slots: {trialRemainingSlots(cartSummary.totalProducts)} · Active API keys: {trialKey ? 1 : 0} of 1. {trialCapacityMessage(cartSummary.totalProducts) ?? 'Products are managed under one account allowance and one active API key.'}</p>}
       {selectionError && <p role="alert" className="text-red-300">{selectionError}</p>}
 
       {/* Shopping Cart Summary - Sticky */}
