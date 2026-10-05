@@ -80,7 +80,7 @@ test('segment switch: canceled slow Hardware response cannot replace Grocery pro
   current.stop(); assert.equal(clock.timers.size, 0);
 });
 
-test('focus/manual refresh invalidates prior request and unmount prevents late publication', async () => {
+test('explicit refresh invalidates prior request and unmount prevents late publication', async () => {
   const requests = [], states = [], clock = scheduler();
   const refresh = createCatalogRefresh({ segment: 'Hardware', read: signal => new Promise(resolve => requests.push({ signal, resolve })), onState: state => states.push(state), ...clock });
   refresh.refresh(); await flush(); refresh.refresh(); await flush();
@@ -92,13 +92,13 @@ test('focus/manual refresh invalidates prior request and unmount prevents late p
   const stopped = states.length; requests[2].resolve(await load('Hardware')); await flush(); assert.equal(states.length, stopped);
 });
 
-test('automatic 60-second refresh observes approval with atomic grid/count updates', async () => {
+test('explicit refresh observes changed catalog with atomic grid/count updates and no periodic timer', async () => {
   let total = 120, source;
   const clock = scheduler();
   const refresh = createCatalogRefresh({ segment: 'Hardware', read: async () => ({ total, products: documents('Hardware', total, 'h').map(doc => ({ ...doc.data(), id: doc.id })) }), onState: value => { source = value; }, ...clock });
   refresh.refresh(); await flush(); assert.equal(source.total, 120);
-  total = 121; const timer = [...clock.timers.values()].find(value => value.delay === 60000);
-  timer.callback(); await flush(); assert.equal(source.total, 121); assert.equal(source.products.length, 121);
+  assert.equal(clock.timers.size, 0);
+  total = 121; refresh.refresh(); await flush(); assert.equal(source.total, 121); assert.equal(source.products.length, 121);
   refresh.stop();
 });
 
@@ -118,7 +118,7 @@ test('incompatible HTTP 200 schema becomes unavailable without inventing an empt
   refresh.refresh(); await flush();
   assert.equal(source.status, 'error'); assert.deepEqual(source.products, []); assert.equal(source.total, 0);
   assert.equal(catalogPresentationState(source, 0, ''), 'error');
-  assert.equal([...clock.timers.values()].some(timer => timer.delay === 60000), true);
+  assert.equal(clock.timers.size, 0, 'failure must not start an infinite retry loop');
   refresh.stop();
 });
 
@@ -143,7 +143,7 @@ test('verified segment-empty, zero-search, and product states stay distinct', as
 test('catalog UI copy keeps errors, empty segments, and search-empty states separate', () => {
   const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/products/page.tsx', import.meta.url), 'utf8');
   const empty = readFileSync(new URL('../../../dashboard/src/components/product-request/ProductNotFound.tsx', import.meta.url), 'utf8');
-  assert.match(page, /catalogView === 'error'[\s\S]*?Catalog unavailable[\s\S]*?Retrying automatically\./);
+  assert.match(page, /catalogView === 'error'[\s\S]*?Catalog unavailable[\s\S]*?catalogRefresh.current\?\.refresh\(\)[\s\S]*?Retry catalog/);
   assert.match(page, /catalogView === 'empty-segment' \|\| catalogView === 'empty-search'/);
   assert.match(page, /<ProductCatalogEmptyState[\s\S]*?onClearSearch=\{\(\) => setSearchQuery\(""\)\}/);
   assert.doesNotMatch(`${page}\n${empty}`, /404\s*[·.-]\s*Not Found|Product Not Found/);
@@ -151,7 +151,7 @@ test('catalog UI copy keeps errors, empty segments, and search-empty states sepa
   assert.match(empty, /No matching products/); assert.match(empty, /No products in .* match/);
   assert.match(empty, /Clear Search/); assert.doesNotMatch(empty, /matching\s+["']\s*["']/);
   assert.match(page, /currentCatalog\?\.status === 'ready' \? currentCatalog\.total : null/);
-  assert.match(page, /window\.addEventListener\('focus'/); assert.match(page, /refresh\.stop\(\)/);
+  assert.doesNotMatch(page, /addEventListener\(['"](?:focus|visibilitychange)/); assert.match(page, /refresh\.stop\(\)/);
 });
 
 for (const label of ['global-total', 'wrong-segment', 'duplicate', 'old-backend', 'incomplete', 'changed-count']) test(`mixed/invalid backend ${label} fails closed rather than inventing availability`, async () => {
@@ -198,8 +198,8 @@ test('Customer wiring uses same response for grid/count, safe segment identity, 
   assert.match(source, /filteredProducts.length\} results/);
   assert.match(source, /Select All \(\{selectableIds.length\}\)/);
   assert.match(source, /if \(additions.has\(p.id!\)/); // Does not reset already-selected partial variants.
-  assert.match(source, /window.addEventListener\('focus'/);
-  assert.match(source, /document.addEventListener\('visibilitychange'/);
+  assert.doesNotMatch(source, /addEventListener\(['"](?:focus|visibilitychange)/);
+  assert.match(source, /catalogRefresh.current\?\.refresh\(\)/);
   assert.match(source, /refresh.stop\(\)/);
   assert.match(source, /Products: \{trialCatalog.productsIncluded\}/);
   assert.match(source, /trialRemainingSlots\(trialCatalog.productsIncluded\)/);

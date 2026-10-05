@@ -13,13 +13,15 @@ import { subscribeAccountUsage } from "@/lib/account-usage-events";
 function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequired: boolean; activeTrial: boolean }) {
   const [source, setSource] = useState<QuotaSource>({ status: "loading", count: null, usage: null });
   const [now, setNow] = useState(() => new Date());
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     const refresh = createQuotaRefresh({ read: signal => apiKeyRequest(user, "", { signal }), onState: setSource });
     const unsubscribe = subscribeAccountUsage(user.uid, () => refresh.refresh());
     refresh.start();
     const clock = setInterval(() => setNow(new Date()), 1000);
     return () => { unsubscribe(); refresh.stop(); clearInterval(clock); };
-  }, [user]);
+  }, [user, retry]);
+  const retryControl = source.status === 'error' && <button type="button" className="text-indigo-300" onClick={() => setRetry(value => value + 1)}>Retry usage</button>;
   const quota = quotaSummary(source.usage, now);
   const trial = source.status === 'ready' ? source.trialCatalog : null;
   const unavailable = source.status === "loading" ? "Loading…" : "Unavailable";
@@ -27,7 +29,7 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
     <h2 className="text-lg font-semibold text-amber-200">Free Trial Ended — Upgrade Required</h2>
     <p className="text-slate-200">Protected API access is paused until you upgrade to Pro or Pro Max. Your account and existing API keys remain available.</p>
     <p className="text-sm text-slate-300">Active API keys: {source.count ?? unavailable}</p>
-    {source.status === 'error' && <p role="alert">Unable to load API-key history. Retrying automatically.</p>}
+    {source.status === 'error' && <p role="alert">Unable to load API-key history. {retryControl}</p>}
     <Link href="/dashboard/plan-billing#upgrade" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white">View paid plans</Link>
   </section>;
   if (trial) return <section aria-label="Free Trial catalog" className="space-y-3">
@@ -42,8 +44,8 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
     {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
     {trial.expiresAt && <p className="text-sm leading-6 text-slate-300">Trial expires <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time></p>}
   </section>;
-  if (activeTrial) return <p role="status" className="text-slate-300">{source.status === 'error'
-    ? 'Trial catalog verification unavailable. Retrying automatically.' : 'Loading Trial catalog…'}</p>;
+  if (activeTrial) return <p role={source.status === 'error' ? 'alert' : 'status'} className="text-slate-300">{source.status === 'error'
+    ? 'Trial catalog verification unavailable.' : 'Loading Trial catalog…'} {retryControl}</p>;
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[["API keys (active status)", source.count ?? unavailable],
@@ -54,7 +56,7 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
           <p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold text-white">{value}</p>
         </div>)}
     </div>
-    {source.status === "error" && <p role="alert" className="text-rose-300">Unable to load account usage. Retrying automatically.</p>}
+    {source.status === "error" && <p role="alert" className="text-rose-300">Unable to load account usage. {retryControl}</p>}
     {source.status === "ready" && !quota && <p role="status" className="text-slate-400">Current quota unavailable; awaiting a fresh account summary.</p>}
     {quota?.pending && <p role="status" className="text-amber-300">Quota activation is on hold until {quota.resetsAt}. Prior usage is unavailable.</p>}
     {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. Resets at {quota.resetsAt}. {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
@@ -62,7 +64,8 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
 }
 export default function CustomerUsageSummary() {
   const { user, entitlement } = useAuth();
-  const verification = quotaVerificationKey(user?.uid ?? null, entitlement ? { ...entitlement } : null);
+  // A verification timestamp alone is not an account-usage invalidation.
+  const verification = quotaVerificationKey(user?.uid ?? null, entitlement ? { ...entitlement, serverTime: undefined } : null);
   return <div className="space-y-5">
     {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} upgradeRequired={entitlement?.subscription_status === 'upgrade_required'} activeTrial={entitlement?.activeTrial === true} />
       : <p role="status">Account usage unavailable while entitlement is being verified.</p>}

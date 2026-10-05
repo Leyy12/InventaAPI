@@ -54,15 +54,8 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
       completed: () => { gate.invalidate(); router.replace('/login'); } });
     const unsubscribe = onIdTokenChanged(auth, currentUser => { void gate.accept(currentUser); },
       error => { gate.failure(auth.currentUser, error); });
-    const visible = () => {
-      const currentUser = auth.currentUser;
-      if (document.visibilityState === 'visible' && currentUser) {
-        void gate.accept(currentUser, true);
-      }
-    };
-    document.addEventListener('visibilitychange', visible);
     return () => {
-      unsubscribe(); gate.stop(); document.removeEventListener('visibilitychange', visible);
+      unsubscribe(); gate.stop();
       if (sessionGate.current === gate) { sessionGate.current = null; logoutAction.current = null; }
     };
   }, [router]);

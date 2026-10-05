@@ -180,11 +180,16 @@ export function createAuthSession<U extends { uid: string }, P extends AuthProfi
     accept(user: U | null, forceRefresh = false): Promise<void> {
       if (stopped) return Promise.resolve();
       if (pending && identity === user) return pending;
+      // Silent token renewal still rechecks the authoritative profile, but a
+      // previously verified same-session workspace need not unmount while it
+      // runs. Failure/uncertainty below remains fail-closed; account switches,
+      // explicit recovery and initial restoration still show the auth gate.
+      const background = identity === user && currentStatus === 'verified' && !forceRefresh;
       finish(); observed = true; identity = user;
       if (!user) { blockedUid = null; emit('unauthenticated'); return Promise.resolve(); }
       if (blockedUid === user.uid) { emit('denied'); return Promise.resolve(); }
       const request = generation;
-      emit('initializing');
+      if (!background) emit('initializing');
       pending = new Promise(resolve => { settle = resolve; });
       const work = pending;
       timer = schedule(uncertain, timeoutMs);

@@ -6,7 +6,7 @@ import { invalidateAccountUsage } from '@/lib/account-usage-events';
 import type { TrialCatalog } from '@/lib/quota-refresh';
 import { GENERATION_POLICY, generationErrorMessage } from '@/lib/api-key-generation';
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Database, ShoppingCart, Check, Copy, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -72,6 +72,7 @@ function CustomerCatalogSession() {
   // current verified response, never this accumulated selection lookup.
   const [products, setProducts] = useState<Product[]>([]);
   const [catalogSource, setCatalogSource] = useState<CatalogSource | null>(null);
+  const catalogRefresh = useRef<ReturnType<typeof createCatalogRefresh> | null>(null);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
   const [paidSegment, setActiveSegment] = useState<string>("All");
@@ -122,15 +123,11 @@ function CustomerCatalogSession() {
         });
       },
     });
+    catalogRefresh.current = refresh;
     void Promise.resolve().then(refresh.refresh);
-    const onFocus = () => refresh.refresh();
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh.refresh(); };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisible);
     return () => {
       refresh.stop();
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisible);
+      if (catalogRefresh.current === refresh) catalogRefresh.current = null;
     };
   }, [activeSegment, user]);
 
@@ -645,7 +642,7 @@ DAAS_API_KEY=${generatedKey}
           </div>
           <h2 className="text-xl font-semibold text-white mb-2">Catalog unavailable</h2>
           <p className="text-sm text-slate-400">We couldn&apos;t load the verified product catalog right now.</p>
-          <p className="text-xs text-slate-500 mt-2">Retrying automatically.</p>
+          <button type="button" onClick={() => catalogRefresh.current?.refresh()} className="text-sm text-indigo-300 mt-2">Retry catalog</button>
         </div>
       ) : catalogView === 'empty-segment' || catalogView === 'empty-search' ? (
         <ProductCatalogEmptyState

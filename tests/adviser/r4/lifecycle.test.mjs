@@ -23,6 +23,7 @@ function clock() {
 function quotaHarness() {
   const c = clock(), reads = []; let key = null, controller, source = null;
   return { c, reads, get source() { return source; }, get summary() { return quotaSummary(source?.usage, NOW); },
+    retry() { controller?.refresh(); },
     verify(uid, entitlement) {
       const next = quotaVerificationKey(uid, entitlement);
       if (next === key) return;
@@ -47,17 +48,19 @@ test('hanging entitlement verification hides old Pro quota indefinitely, without
   const h = quotaHarness(); h.verify('a', pro); await flush(); h.reads[0].resolve(response(5000)); await flush();
   h.verify('a', null); await h.c.advance(120000); assert.equal(h.summary, null); assert.equal(h.source, null); assert.equal(h.reads.length, 1);
 });
-test('hanging quota request times out; old response is discarded and only one bounded retry exists', async () => {
+test('hanging quota request times out; old response is discarded and retry is explicit', async () => {
   const h = quotaHarness(); h.verify('a', pro); await flush(); await h.c.advance(10000);
   assert.equal(h.source.status, 'error'); assert.equal(h.summary, null); assert.equal(h.reads[0].signal.aborted, true);
   h.reads[0].resolve(response(5000)); await flush(); assert.equal(h.source.status, 'error');
-  await h.c.advance(29999); assert.equal(h.reads.length, 1); await h.c.advance(1); assert.equal(h.reads.length, 2);
+  await h.c.advance(300000); assert.equal(h.reads.length, 1); assert.equal(h.c.timers.size, 0);
+  h.retry(); await flush(); assert.equal(h.reads.length, 2);
   h.reads[1].resolve(response(50)); await flush(); assert.equal(h.summary.limit, 50); assert.equal(h.c.timers.size, 0);
 });
 test('quota error is unavailable, not zero; retry clears error intentionally', async () => {
   const h = quotaHarness(); h.verify('a', free); await flush(); h.reads[0].reject(Error('offline')); await flush();
   assert.deepEqual(h.source, { status: 'error', count: null, usage: null }); assert.equal(h.summary, null);
-  await h.c.advance(30000); assert.equal(h.source.status, 'loading'); h.reads[1].resolve(response(50, 0)); await flush(); assert.equal(h.summary.used, 0);
+  await h.c.advance(30000); assert.equal(h.source.status, 'error'); h.retry(); await flush();
+  assert.equal(h.source.status, 'loading'); h.reads[1].resolve(response(50, 0)); await flush(); assert.equal(h.summary.used, 0);
 });
 test('same UID fresh verification revision triggers one new quota read', async () => {
   const h = quotaHarness(); h.verify('a', free); await flush(); h.verify('a', { ...free, serverTime: '2026-09-20T10:00:30Z' }); await flush();
@@ -83,7 +86,9 @@ test('actual entitlement poller drives one quota request per completed verificat
     read: () => new Promise(resolve => verifications.push(resolve)), onState: state => h.verify('a', state) });
   poller.start(); await c.advance(0); verifications[0](pro); await flush(); h.reads[0].resolve(response(5000)); await flush();
   await c.advance(30000); assert.equal(h.summary.limit, 5000); assert.equal(h.reads.length, 1);
+  const latest = poller.refresh();
   verifications[1]({ ...pro, serverTime: '2026-09-20T10:00:30Z' }); await flush(); assert.equal(h.reads.length, 2);
+  await latest;
   poller.stop(); h.verify(null, null); assert.equal(c.timers.size, 0); assert.equal(h.c.timers.size, 0);
 });
 for (const selected of ['Grocery', 'Pharmacy', 'Hardware', 'All']) test('same Pro account retains '+selected+' and listener through verification', () => {

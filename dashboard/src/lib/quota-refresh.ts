@@ -1,7 +1,7 @@
 export type TrialCatalog = { productsIncluded: number; productsAvailable: number; activeKeys: number; expiresAt: string };
 export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown; trialCatalog?: TrialCatalog };
 
-// One quota read per existing entitlement verification; bounded failure retries.
+// One quota read on entry, explicit retry or a relevant account-usage event.
 // No subscription polling or inferred allowance. Values come only from read().
 export function createQuotaRefresh({ read, onState, schedule = setTimeout, cancel = clearTimeout }: {
   read: (signal: AbortSignal) => Promise<{ keys: unknown[]; usage: unknown; trialCatalog?: TrialCatalog }>;
@@ -23,7 +23,7 @@ export function createQuotaRefresh({ read, onState, schedule = setTimeout, cance
       if (timer !== undefined) cancel(timer);
       controller.abort();
       onState({ status: 'error', count: null, usage: null });
-      timer = schedule(run, 30000);
+      timer = undefined;
     };
     timer = schedule(fail, 10000);
     void Promise.resolve().then(() => { if (!stopped && request === generation) return read(controller.signal); }).then(result => {

@@ -28,11 +28,11 @@ function harness() {
   };
 }
 
-test('polling A: normal response leaves exactly one future refresh', async () => {
+test('verification A: normal active response leaves one expiry check, not periodic polling', async () => {
   const h = harness(); h.poller.start(); await h.advance(0);
-  assert.equal(h.timers.size, 1); h.pending[0].resolve(pro); await flush();
+  assert.equal(h.timers.size, 0); h.pending[0].resolve(pro); await flush();
   assert.equal(h.state, pro); assert.equal(h.timers.size, 1);
-  await h.advance(30000); assert.equal(h.pending.length, 2); assert.equal(h.timers.size, 1);
+  await h.advance(30000); assert.equal(h.pending.length, 1); assert.equal(h.timers.size, 1);
 });
 for (const label of ['manual', 'payment-triggered']) test(`polling B/C: ${label} overlap discards stale poll without losing scheduling`, async () => {
   const h = harness(); h.poller.start(); await h.advance(0);
@@ -40,20 +40,20 @@ for (const label of ['manual', 'payment-triggered']) test(`polling B/C: ${label}
   // Exact former failure: manual/payment result wins, old poll resolves last.
   h.pending[0].resolve(free); await flush();
   assert.equal(h.state, pro); assert.equal(h.timers.size, 1);
-  await h.advance(30000); assert.equal(h.pending.length, 3);
+  await h.advance(30000); assert.equal(h.pending.length, 2);
 });
 test('polling D: two rapid manual refreshes retain only the newest state', async () => {
   const h = harness(); h.poller.start();
   const first = h.poller.refresh(), second = h.poller.refresh();
   h.pending[1].resolve(free); assert.equal(await second, free);
   h.pending[0].resolve(pro); assert.equal(await first, null);
-  assert.equal(h.state, free); assert.equal(h.timers.size, 1);
+  assert.equal(h.state, free); assert.equal(h.timers.size, 0);
 });
-test('polling E: generation change before poll resolves still has a timer while newest request is pending', async () => {
+test('verification E: pending latest request rejects stale data without starting periodic retries', async () => {
   const h = harness(); h.poller.start(); await h.advance(0);
   const latest = h.poller.refresh(); h.pending[0].resolve(pro); await flush();
-  assert.equal(h.state, null); assert.equal(h.timers.size, 1);
-  h.pending[1].resolve(free); await latest; assert.equal(h.state, free); assert.equal(h.timers.size, 1);
+  assert.equal(h.state, null); assert.equal(h.timers.size, 0);
+  h.pending[1].resolve(free); await latest; assert.equal(h.state, free); assert.equal(h.timers.size, 0);
 });
 for (const reason of ['sign out', 'unmount']) test(`polling F/G: ${reason} cancels timer and suppresses in-flight writes`, async () => {
   const h = harness(); h.poller.start(); await h.advance(0); h.poller.stop();
@@ -65,28 +65,30 @@ test('polling H: re-login/restart creates exactly one chain and rejects prior-se
   const h = harness(); h.poller.start(); await h.advance(0); h.poller.stop();
   h.poller.start(); h.poller.start(); assert.equal(h.timers.size, 1); await h.advance(0);
   h.pending[1].resolve(free); await flush(); h.pending[0].resolve(pro); await flush();
-  assert.equal(h.state, free); assert.equal(h.timers.size, 1);
-  await h.advance(30000); assert.equal(h.pending.length, 3); assert.equal(h.timers.size, 1);
+  assert.equal(h.state, free); assert.equal(h.timers.size, 0);
+  await h.advance(30000); assert.equal(h.pending.length, 2); assert.equal(h.timers.size, 0);
 });
 test('polling I: server expiry boundary eventually displays authoritative Free without reload', async () => {
   const h = harness(); h.poller.start(); await h.advance(0); await h.advance(250);
   h.pending[0].resolve({ ...pro, secondsRemaining: 1 }); await flush();
   await h.advance(749); assert.equal(h.pending.length, 1);
   await h.advance(1); assert.equal(h.pending.length, 2); assert.equal(h.state, null);
-  h.pending[1].resolve(free); await flush(); assert.equal(h.state, free); assert.equal(h.timers.size, 1);
+  h.pending[1].resolve(free); await flush(); assert.equal(h.state, free); assert.equal(h.timers.size, 0);
 });
-test('polling: rejected verification remains unverified with one retry timer', async () => {
+test('verification: rejected read stays unverified until explicit retry', async () => {
   const h = harness(); h.poller.start(); await h.advance(0); h.pending[0].reject(Error('offline')); await flush();
-  assert.equal(h.state, null); assert.equal(h.timers.size, 1); await h.advance(30000); assert.equal(h.pending.length, 2);
+  assert.equal(h.state, null); assert.equal(h.timers.size, 0); await h.advance(300000); assert.equal(h.pending.length, 1);
+  const retry = h.poller.refresh(); h.pending[1].resolve(free); await retry;
+  assert.equal(h.state, free);
 });
 test('polling: stale rejection cannot clear newer successful entitlement', async () => {
   const h = harness(); h.poller.start(); await h.advance(0); const latest = h.poller.refresh();
   h.pending[1].resolve(free); await latest; h.pending[0].reject(Error('stale failure')); await flush();
-  assert.equal(h.state, free); assert.equal(h.timers.size, 1);
+  assert.equal(h.state, free); assert.equal(h.timers.size, 0);
 });
-test('polling: unresolved I/O cannot remove the future retry', async () => {
+test('verification: unresolved I/O does not start overlapping automatic requests', async () => {
   const h = harness(); h.poller.start(); await h.advance(0); await h.advance(30000);
-  assert.equal(h.pending.length, 2); assert.equal(h.timers.size, 1); h.poller.stop();
+  assert.equal(h.pending.length, 1); assert.equal(h.timers.size, 0); h.poller.stop();
 });
 test('routine refresh retains verified Free and UPGRADE_REQUIRED without a null flash', async () => {
   for (const state of [free, { ...free, plan: 'Upgrade Required', subscription_status: 'upgrade_required' }]) {
@@ -96,7 +98,9 @@ test('routine refresh retains verified Free and UPGRADE_REQUIRED without a null 
     await h.advance(30000);
     assert.equal(h.state, state);
     assert.equal(h.writes.length, writes);
+    const latest = h.poller.refresh();
     h.pending[1].resolve({ ...state }); await flush();
+    await latest;
     assert.equal(h.writes.slice(1).includes(null), false);
     h.poller.stop();
   }
@@ -106,15 +110,17 @@ test('active Trial and Pro stay visible during refresh, then clear at the server
     const h = harness(); h.poller.start(); await h.advance(0); h.pending[0].resolve(state); await flush();
     await h.advance(30000); assert.equal(h.state, state);
     await h.advance(1000); assert.equal(h.state, null);
-    assert.equal(h.pending.length, 3);
+    assert.equal(h.pending.length, 2);
     h.poller.stop();
   }
 });
 test('failed latest re-verification clears a previously verified entitlement', async () => {
   const h = harness(); h.poller.start(); await h.advance(0); h.pending[0].resolve(free); await flush();
   await h.advance(30000); assert.equal(h.state, free);
+  const latest = h.poller.refresh();
   h.pending[1].reject(Error('verification unavailable')); await flush();
-  assert.equal(h.state, null); assert.equal(h.timers.size, 1);
+  await latest;
+  assert.equal(h.state, null); assert.equal(h.timers.size, 0);
   h.poller.stop();
 });
 test('a stale previous-session result cannot publish after stop and restart', async () => {

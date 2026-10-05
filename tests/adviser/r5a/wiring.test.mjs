@@ -183,7 +183,7 @@ test('review: transient verification failure permits same-identity authoritative
   assert.equal(h.state().user?.uid, 'a', 'blockedUid must not permanently latch a transient failure until a null SDK event');
   assert.equal(h.state().status, 'verified');
 });
-test('review: Admin visibility token-refresh network failure is not revocation', async () => {
+test('review: Admin SDK token-refresh network failure is not revocation; visibility is not an auth trigger', async () => {
   let logouts = 0;
   const identity = { uid: 'admin', getIdToken: async () => { throw Object.assign(Error('offline'), { code: 'auth/network-request-failed' }); } };
   let state, attempts = 0;
@@ -192,9 +192,8 @@ test('review: Admin visibility token-refresh network failure is not revocation',
     readProfile: async (currentUser, forceRefresh) => { attempts++; return new AsyncFunction('currentUser', 'getDocFromServer', 'doc', 'db', 'profileRole', 'forceRefresh',
       readBody.replace(' as AdminUser', ''))(currentUser, async () => { throw Error('profile must not be read after failed refresh'); }, () => {}, {}, profileRole, forceRefresh); },
     publish: value => { state = value; }, rejected: () => { logouts++; }, schedule: () => 1, cancel: () => {} });
-  const body = bodyBetween('admin-panel/src/lib/firebase/admin-auth-context.tsx', 'const visible = () => {', '\n    };');
-  new Function('auth', 'document', 'sessionGate', 'gate', 'logout', body)(
-    { currentUser: identity }, { visibilityState: 'visible' }, { current: gate }, gate, async () => { logouts++; });
+  assert.doesNotMatch(read('admin-panel/src/lib/firebase/admin-auth-context.tsx'), /visibilitychange|visibilityState/);
+  await gate.accept(identity);
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(logouts, 0, 'A transient refresh error must not destroy a valid Admin session');
   assert.equal(attempts, 1); assert.equal(state.status, 'unverified'); assert.equal(state.user, identity);

@@ -12,8 +12,8 @@ interface PollerOptions<T> {
   now?: () => number;
 }
 
-// One timer owner for scheduled, visibility, manual and payment refreshes.
-// Generations reject stale data; they never own scheduling continuity.
+// Event-driven verification: entry, explicit recovery/payment and the exact
+// server-derived expiry boundary. No periodic or browser-focus polling.
 export function createEntitlementPoller<T extends TimedEntitlement>({
   read, onState, schedule = setTimeout, cancel = clearTimeout, now = () => performance.now(),
 }: PollerOptions<T>) {
@@ -34,10 +34,18 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
     timer = undefined;
   }
 
-  function scheduleNext(delay: number) {
-    if (!running) return;
+  function scheduleExpiry() {
     clearTimer();
-    timer = schedule(() => { timer = undefined; void refresh(); }, delay);
+    if (!running || activeUntil === null) return;
+    // Long paid terms can exceed the browser timer range. Intermediate clock
+    // checkpoints only re-arm the timer; they never perform network reads.
+    timer = schedule(() => {
+      timer = undefined;
+      if (!running || activeUntil === null) return;
+      if (now() < activeUntil) { scheduleExpiry(); return; }
+      clearState();
+      void refresh();
+    }, Math.min(2147483647, Math.max(0, activeUntil - now())));
   }
 
   async function refresh(): Promise<T | null> {
@@ -47,9 +55,8 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
     // A verified active state is usable only until its server-derived deadline.
     // Routine reads must not blank a still-valid entitlement in the meantime.
     if (activeUntil !== null && requestedAt >= activeUntil) clearState();
-    // Install the next attempt BEFORE awaiting I/O. Even a superseded, failed,
-    // or never-resolving request cannot strand the polling chain.
-    scheduleNext(activeUntil === null ? 30000 : Math.min(30000, Math.max(0, activeUntil - requestedAt)));
+    // An explicit pending read cannot extend the previous verified deadline.
+    scheduleExpiry();
     try {
       const state = await read();
       if (!running || request !== generation) return null;
@@ -58,7 +65,7 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
         // Invalid or already-expired active claims cannot reopen protected UI.
         if (!Number.isFinite(remaining) || remaining <= 0) {
           clearState();
-          scheduleNext(30000);
+          clearTimer();
           return null;
         }
         activeUntil = now() + remaining;
@@ -67,12 +74,12 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
       }
       current = state;
       onState(state);
-      scheduleNext(activeUntil === null ? 30000 : Math.min(30000, Math.max(0, activeUntil - now())));
+      scheduleExpiry();
       return state;
     } catch {
       // A failed latest verification is not permission to retain an old plan.
       // Superseded failures cannot clear a newer successful response.
-      if (running && request === generation) clearState();
+      if (running && request === generation) { clearState(); clearTimer(); }
       return null;
     }
   }
@@ -84,7 +91,7 @@ export function createEntitlementPoller<T extends TimedEntitlement>({
       current = null;
       activeUntil = null;
       onState(null);
-      scheduleNext(0);
+      timer = schedule(() => { timer = undefined; void refresh(); }, 0);
     },
     stop() {
       running = false;

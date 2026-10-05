@@ -5,6 +5,7 @@ import type { User } from 'firebase/auth';
 import Link from 'next/link';
 import { Zap } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { subscribeAccountUsage } from '@/lib/account-usage-events';
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
 import { TRIAL_MAX_PRODUCTS } from '../../../../../functions/entitlement-limits.mjs';
 
@@ -35,12 +36,14 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
     return () => clearInterval(clock);
   }, [activeTrial]);
 
+  useEffect(() => subscribeAccountUsage(user.uid, () => setRefresh(value => value + 1)), [user.uid]);
+
   useEffect(() => {
     const lifecycle = generation;
     const request = ++lifecycle.current;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function readStatus() {
       setResult(null);
       const requestedAt = performance.now();
       try {
@@ -53,18 +56,19 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
         if (!response.ok) throw new Error(data.message || 'Trial status unavailable.');
         if (generation.current !== request || controller.signal.aborted) return;
         const remaining = data.secondsRemaining * 1000 - (performance.now() - requestedAt);
-        if (data.active && remaining <= 0) { timer = setTimeout(poll, 100); return; }
+        if (data.active && (!Number.isFinite(remaining) || remaining <= 0)) throw new Error('Trial verification expired.');
         const receivedAt = performance.now();
         setClockNow(receivedAt);
         setResult({ uid: user!.uid, trial: { ...data, secondsRemaining: Math.max(0, remaining / 1000) }, receivedAt }); setError('');
-        // Refresh from server, including at the expiry boundary. Browser time is never authority.
-        timer = setTimeout(poll, data.active ? Math.min(30000, Math.max(100, remaining)) : 30000);
+        // One server-derived expiry check, not generic background polling.
+        // Status can also be refreshed explicitly or after a catalog/key mutation.
+        if (data.active) timer = setTimeout(() => { void readStatus(); }, remaining);
       } catch {
         if (generation.current !== request || controller.signal.aborted) return;
         setResult(null); setError('Unable to verify trial status. Please retry.');
       }
     }
-    void poll();
+    void readStatus();
     return () => { lifecycle.current++; controller.abort(); clearTimeout(timer); };
   }, [user, refresh]);
 

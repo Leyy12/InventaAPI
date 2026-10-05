@@ -18,7 +18,7 @@ export function catalogPresentationState(source: CatalogSource | null, filteredC
 }
 
 // Assemble every page of this segment, not the full database. Reject mixed
-// pages/counts (e.g. an approval during pagination); the refresh retries safely.
+// pages/counts (e.g. an approval during pagination); an explicit retry is safe.
 export async function loadSegmentCatalog(read: (offset: number, signal: AbortSignal) => Promise<CatalogPage>,
   segment: string, signal: AbortSignal): Promise<CatalogResult> {
   if (segment !== 'All' && normalizeSegment(segment) !== segment) throw new Error('Invalid business segment.');
@@ -83,14 +83,14 @@ export function createCatalogRefresh({ segment, read, onState, schedule = setTim
       generation++; active.abort();
       if (timer !== undefined) cancel(timer);
       onState({ segment, status: 'error', products: [], total: 0 });
-      timer = schedule(refresh, 60000);
+      timer = undefined;
     };
     timer = schedule(fail, 15000);
     void Promise.resolve().then(() => { if (!stopped && generation === request) return read(active.signal); }).then(result => {
       if (stopped || generation !== request || !result) return;
       if (timer !== undefined) cancel(timer);
       onState({ ...result, segment, status: 'ready' });
-      timer = schedule(refresh, 60000);
+      timer = undefined;
     }, fail);
   }
   return { refresh, stop() { stopped = true; generation++; controller?.abort(); if (timer !== undefined) cancel(timer); } };

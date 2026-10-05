@@ -73,7 +73,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           profileRefreshRequest.current++;
           entitlementSession.current?.poller.stop(); entitlementSession.current = null;
           setEntitlement(null);
-        } else if (state.user && profileRole(state.profile) === 'customer' && loginLogged !== state.user.uid) {
+        } else if (state.user && profileRole(state.profile) === 'customer') {
+          // Token renewal may change entitlement. Reverify this one source
+          // without blanking/remounting the still-valid same-user workspace.
+          if (entitlementSession.current?.uid === state.user.uid) void entitlementSession.current.poller.refresh();
+          if (loginLogged === state.user.uid) return;
           loginLogged = state.user.uid;
           void addDoc(collection(db, 'audit_logs'), { action: 'Customer Login', userId: state.user.uid,
             userEmail: state.user.email || 'unknown@email.com', timestamp: serverTimestamp(),
@@ -131,12 +135,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const session = { uid: user.uid, poller };
     entitlementSession.current = session;
     poller.start();
-    const visible = () => { if (document.visibilityState === 'visible') void poller.refresh(); };
-    document.addEventListener('visibilitychange', visible);
     return () => {
       poller.stop();
       if (entitlementSession.current === session) entitlementSession.current = null;
-      document.removeEventListener('visibilitychange', visible);
     };
     // Profile edits with an unchanged role do not restart the existing scheduler.
   }, [user, loading, customerSession]);
