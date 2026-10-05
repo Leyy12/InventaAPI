@@ -17,44 +17,38 @@ test('API Keys is management-only; Products retains generation entry point', () 
   assert.match(products, /Generate API Key/);
 });
 
-test('historical keys stay masked; replacement and revocation are distinct actions', () => {
+test('active Customer key cards retain masked metadata and Revoke without a replacement action', () => {
   assert.match(keys, /apiKey\.keyPrefix\}••••••••/);
   assert.match(keys, /Secret shown only once/);
-  assert.match(keys, /Replace API Key/);
+  assert.doesNotMatch(keys, /Replace API Key|replaceKey|RotateCw/u);
+  assert.match(keys, /\{apiKey\.plan\}/);
+  assert.match(keys, /formatDate\(apiKey\.lastUsed\)/);
+  assert.match(keys, /Show.*Integration Code Examples/u);
+  assert.match(keys, /Created \{formatDate\(apiKey\.createdAt\)\}/u);
+  assert.match(keys, /<div className="flex flex-col sm:flex-row gap-2">/u);
   assert.match(keys, /Revoke/);
   assert.match(keys, /method: "DELETE"/);
-  assert.match(keys, /method: "POST"/);
-  assert.match(keys, /!currentSecret && <button/);
-  assert.match(keys, /currentSecret \? <button onClick=\{\(\) => void copySecret\(\)\}/);
   assert.doesNotMatch(keys, /navigator\.clipboard\.writeText\(apiKey\.keyPrefix/);
 });
 
-test('destructive confirmation is separate from opening and protects duplicate clicks', () => {
-  assert.match(keys, /Replace this API key\?/);
-  assert.match(keys, /current API key will stop working immediately/);
-  assert.match(keys, /Any integration using it must be updated/);
-  assert.match(keys, /new API key will be displayed only once/);
-  assert.match(keys, /setSelectedKey\(apiKey\)/);
-  assert.match(keys, /onClick=\{\(\) => void replaceKey\(\)\}/);
-  assert.match(keys, /if \(!selectedKey \|\| replacingRef\.current/);
-  assert.match(keys, /disabled=\{replacing \|\| upgradeRequired\}/);
-  assert.match(keys, /role="alertdialog" aria-modal="true"/);
-  assert.match(keys, /event\.key === "Escape"/);
-  assert.match(keys, /event\.key !== "Tab"/);
-  assert.match(keys, /cancelRef\.current\?\.focus\(\)/);
+test('replacement action, confirmation, one-time modal, and focus targets are absent for every plan', () => {
+  for (const plan of ['Free Trial', 'Pro', 'Pro Max']) {
+    assert.match(keys, /\{apiKey\.plan\}/, `${plan} key card still shows its plan`);
+    assert.doesNotMatch(keys, /Replace API Key|replaceKey|Replace this API key|API Key Replaced|OneTimeReplacement|replacement\.secret|alertdialog/u,
+      `${plan} page must not expose replacement UI`);
+  }
+  assert.doesNotMatch(keys, /cancelRef|confirmRef|copyRef|dismissRef|returnFocusRef/u);
+  assert.match(keys, /onClick=\{\(\) => void revokeKey\(apiKey\.id, apiKey\.name\)\}/u);
 });
 
-test('replacement secret is once-only, copied exactly, and destroyed on dismissal/account switch', () => {
-  assert.match(keys, /key=\{user\.uid\}/);
-  assert.match(keys, /useState<OneTimeReplacement \| null>\(null\)/);
-  assert.match(keys, /navigator\.clipboard\.writeText\(replacement\.secret\)/);
-  assert.match(keys, /setCopyFeedback\("Copied"\)/);
-  assert.match(keys, /role="status" aria-live="polite"/);
-  assert.match(keys, /setReplacement\(null\)/);
+test('Revoke confirmation and endpoint remain unchanged while Products retains key creation', () => {
+  assert.match(keys, /window\.confirm\(/);
+  assert.match(keys, /apiKeyRequest\(user, `\/\$\{encodeURIComponent\(id\)\}`, \{ method: "DELETE" \}\)/);
+  assert.match(keys, /Select OK to revoke without creating a replacement/);
+  assert.match(keys, /method: "DELETE"/);
   assert.doesNotMatch(keys, /localStorage|sessionStorage|indexedDB|document\.cookie|navigator\.sendBeacon/);
-  assert.doesNotMatch(keys, /console\.(?:log|error|warn)\([^)]*(?:secret|replacement)/);
-  assert.match(products, /<Copy className="w-5 h-5"/);
-  assert.match(products, /\{copied \? "Copied" : "Copy API Key"\}/);
+  assert.match(products, /api\/v1\/api-keys\/generate/);
+  assert.match(products, /Generate API Key/);
 });
 
 test('server replacement is transactional, owner-bound, hash-only, and does not write generation/quota state', () => {

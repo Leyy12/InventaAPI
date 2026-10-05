@@ -35,106 +35,25 @@ test('revocation stays available with warning about only usable key and no refun
   assert.match(keys, /\$\{REVOCATION_WARNING\}/); assert.match(keys, /method: "DELETE"/);
 });
 
-// Execute the actual replacement event handler with synthetic UI and request
-// dependencies. No browser, SDK initialization, or real HTTP call is involved.
-async function replace(response, options = {}) {
-  const handler = keys.slice(keys.indexOf('  const replaceKey = async () => {'), keys.indexOf('  const copySecret = async () => {'));
-  const state = { secrets: [], pending: [], paywall: [], selected: [], errors: [], refreshes: 0, calls: 0, paths: [] };
-  const selectedKey = options.selectedKey === undefined ? { id: 'old-id', name: 'Integration' } : options.selectedKey;
-  const replacingRef = { current: false };
-  const run = new Function('selectedKey', 'replacingRef', 'upgradeRequired', 'entitlementStatus',
-    'setReplacing', 'setReplaceError', 'apiKeyRequest', 'user', 'setSelectedKey',
-    'setReplacement', 'setCopyFeedback', 'fetchApiKeys', 'ApiKeyRequestError', 'setServerUpgradeRequired',
-    `${handler}; return replaceKey();`);
-  await run(selectedKey, replacingRef, options.upgradeRequired || false,
-    options.entitlementStatus === undefined ? 'inactive' : options.entitlementStatus,
-    value => state.pending.push(value), value => state.errors.push(value),
-    async (_user, path, request) => {
-      state.calls++; state.paths.push([path, request.method]);
-      if (response.error) {
-        const failure = new Error(response.message || response.error);
-        failure.code = response.error;
-        throw failure;
-      }
-      return response;
-    },
-    { uid: 'owner' }, value => state.selected.push(value), value => state.secrets.push(value),
-    () => {}, () => { state.refreshes++; }, Error,
-    value => state.paywall.push(value));
-  return state;
-}
-test('actual replacement handler reveals one-time secret and refreshes masked metadata', async () => {
-  const state = await replace({ success: true, id: 'new-id', name: 'Integration', key: 'synthetic-one-time-secret' });
-  assert.deepEqual(state.secrets, [{ id: 'new-id', name: 'Integration', secret: 'synthetic-one-time-secret' }]);
-  assert.deepEqual(state.paths, [['/old-id/replace', 'POST']]);
-  assert.equal(state.refreshes, 1);
-  assert.deepEqual(state.pending, [true, false]);
-  assert.deepEqual(state.selected, [null]);
-  assert.match(keys, /Save this key now\. For security, InventaAPI will not display it again/);
-  assert.match(products, /you won't see it again/);
-});
-test('replacement secret survives a list refresh but not account switch or route reload', async () => {
-  const session = keys.slice(keys.indexOf('function AccountKeysSession('));
-  assert.match(keys, /key=\{user\.uid\}/);
-  assert.match(session, /\[replacement, setReplacement\] = useState<OneTimeReplacement \| null>\(null\)/);
-  assert.doesNotMatch(session, /key=\{(?:props\.)?entitlementStatus\}/);
-  const result = await replace({ success: true, id: 'new-id', key: 'synthetic-one-time-secret' });
-  assert.equal(result.refreshes, 1);
-  assert.equal(result.secrets[0].secret, 'synthetic-one-time-secret');
-  assert.match(keys, /replacement\.secret/);
-});
-test('actual success dismissal clears the only secret-bearing replacement state', () => {
-  const source = keys.slice(keys.indexOf('  const dismissReplacement = () => {'), keys.indexOf('  const revokeKey = async'));
-  const state = { replacement: { secret: 'synthetic-one-time-secret' }, feedback: 'Copied', focused: false };
-  const dismiss = new Function('copyTimerRef', 'clearTimeout', 'setReplacement', 'setCopyFeedback', 'headingRef',
-    `${source}; return dismissReplacement;`)({ current: null }, () => {},
-      value => { state.replacement = value; }, value => { state.feedback = value; },
-      { current: { focus: () => { state.focused = true; } } });
-  dismiss();
-  assert.deepEqual(state, { replacement: null, feedback: '', focused: true });
-});
-test('full reload/navigation has no recovery channel for the one-time secret', () => {
-  const session = keys.slice(keys.indexOf('function AccountKeysSession('));
-  assert.match(session, /useState<OneTimeReplacement \| null>\(null\)/);
-  assert.match(keys, /key=\{user\.uid\}/);
-  assert.doesNotMatch(keys, /localStorage|sessionStorage|document\.cookie|indexedDB|navigator\.sendBeacon/);
-  assert.doesNotMatch(keys, /console\.(?:log|error)\([^)]*(?:replacement|secret)/);
-});
-test('replacement is not an ordinary daily generation and never contacts the generation endpoint', async () => {
-  const state = await replace({ success: true, id: 'new-id', key: 'synthetic-one-time-secret' });
-  assert.deepEqual(state.paths, [['/old-id/replace', 'POST']]);
-  assert.doesNotMatch(keys, /api_key_generation_days|nextEligibleAt|\/generate/u);
-});
-test('post-Trial replacement denial presents Upgrade to Pro and no secret', async () => {
-  const state = await replace({ error: 'UPGRADE_REQUIRED', message: 'Upgrade to Pro to continue using the API.' });
-  assert.deepEqual(state.secrets, []); assert.equal(state.refreshes, 0);
-  assert.deepEqual(state.paywall, [true]); assert.deepEqual(state.selected, []);
-  assert.match(state.errors.at(-1), /Upgrade to Pro/);
-});
-test('replacement cannot run without a selected owned key or verified entitlement', async () => {
-  for (const options of [{ selectedKey: null }, { entitlementStatus: null }, { upgradeRequired: true }]) {
-    const state = await replace({ success: true, id: 'new-id', key: 'synthetic-one-time-secret' }, options);
-    assert.equal(state.calls, 0); assert.deepEqual(state.secrets, []);
+test('Customer API Keys exposes no replace action or replacement dialog for any plan', () => {
+  assert.doesNotMatch(keys, /Replace API Key|replaceKey|OneTimeReplacement|replacement\.secret|replace-title|replacement-title|RotateCw/u);
+  for (const plan of ['Free Trial', 'Pro', 'Pro Max']) {
+    assert.match(keys, /\{apiKey\.plan\}/u, `${plan} key card keeps plan metadata`);
   }
 });
-test('clipboard copies exact replacement secret; failure retains visible secret', async () => {
-  const source = keys.slice(keys.indexOf('  const copySecret = async () => {'), keys.indexOf('  const dismissReplacement = () => {'));
-  const values = []; const feedback = [];
-  const copy = new Function('replacement', 'navigator', 'setCopyFeedback', 'copyTimerRef', 'clearTimeout', 'setTimeout',
-    `${source}; return copySecret;`)({ secret: 'synthetic-one-time-secret' },
-      { clipboard: { writeText: async value => values.push(value) } },
-      value => feedback.push(value), { current: null }, () => {}, () => 1);
-  await copy();
-  assert.deepEqual(values, ['synthetic-one-time-secret']);
-  assert.deepEqual(feedback, ['Copied']);
-  const failed = new Function('replacement', 'navigator', 'setCopyFeedback', 'copyTimerRef', 'clearTimeout', 'setTimeout',
-    `${source}; return copySecret;`)({ secret: 'synthetic-one-time-secret' },
-      { clipboard: { writeText: async () => { throw new Error('denied'); } } },
-      value => feedback.push(value), { current: null }, () => {}, () => 1);
-  await failed();
-  assert.match(feedback.at(-1), /Copy failed/);
-  assert.match(keys, /\{replacement\.secret\}/);
-  assert.match(products, /Copy failed\. Save the displayed API key manually before leaving/);
+test('Customer Revoke remains available and uses the existing DELETE flow', () => {
+  assert.match(keys, /const revokeKey = async \(id: string, name: string\) => \{/u);
+  assert.match(keys, /window\.confirm\(/u);
+  assert.match(keys, /apiKeyRequest\(user, `\/\$\{encodeURIComponent\(id\)\}`, \{ method: "DELETE" \}\)/u);
+  assert.match(keys, /window\.alert\("Failed to revoke API key\. Please try again\."\)/u);
+  assert.match(keys, /onClick=\{\(\) => void revokeKey\(apiKey\.id, apiKey\.name\)\}/u);
+});
+test('key list and generation remain account-scoped and separate from key replacement', () => {
+  assert.match(keys, /key=\{user\.uid\}/u);
+  assert.match(keys, /const data = await apiKeyRequest\(user\)/u);
+  assert.match(keys, /apiKey\.keyPrefix\}••••••••/u);
+  assert.match(products, /api\/v1\/api-keys\/generate/u);
+  assert.doesNotMatch(keys, /api\/v1\/api-keys\/generate|Generate Your First Key|generateNewKey/u);
 });
 test('60/minute IP limiter and backend-mediated generation route remain', () => {
   assert.match(read('server.js'), /max: 60/);

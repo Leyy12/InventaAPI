@@ -118,7 +118,8 @@ test('Customer and Admin surfaces expose Upgrade Required without hiding key his
   assert.match(trial, /starts automatically/);
   assert.match(trial, /trial\.upgradeRequired &&/);
   assert.match(trial, /View upgrade options/);
-  assert.match(keys, /disabled=\{replacing \|\| upgradeRequired\}/);
+  assert.match(keys, /entitlementStatus === "upgrade_required"/);
+  assert.match(keys, /upgradeRequired &&/);
   assert.doesNotMatch(keys, /Generate Your First Key|onClick=\{openGenerateModal\}/);
   assert.match(keys, /Active API Keys/);
   assert.match(keys, /Upgrade to Pro/);
@@ -189,13 +190,12 @@ test('Admin linked-product displays resolve Firestore names and Security Center 
   assert.match(security, /k\.userEmail \|\| user\.email/u);
   assert.match(security, /user\.businessName \|\| user\.fullName/u);
 });
-test('replacement success separates one-time secret from persisted metadata and clears on dismissal', () => {
+test('Customer API Keys no longer exposes replacement, without changing the backend replacement endpoint', () => {
   const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/api-keys/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /setReplacement\(\{ id: data\.id, name: data\.name \|\| selectedKey\.name, secret: data\.key \}\)/u);
-  assert.match(page, /New API Key — shown once/u);
-  assert.match(page, /navigator\.clipboard\.writeText\(replacement\.secret\)/u);
-  assert.match(page, /setReplacement\(null\)/u);
-  assert.doesNotMatch(page, /localStorage\.setItem|sessionStorage\.setItem/u);
+  const backend = readFileSync(new URL('../../../routes/apikeys.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /Replace API Key|replaceKey|OneTimeReplacement|replacement\.secret/u);
+  assert.match(page, /method: "DELETE"/u);
+  assert.match(backend, /router\.post\('\/:id\/replace', handlers\.replace\)/u);
 });
 test('scheduled Function is UTC, paged, index-light and not entitlement authority', () => {
   const source = readFileSync(new URL('../../../functions/index.js', import.meta.url), 'utf8');
