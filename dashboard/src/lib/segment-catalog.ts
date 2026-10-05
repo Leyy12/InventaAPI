@@ -5,6 +5,17 @@ export type CatalogResult = { products: Product[]; total: number };
 export type CatalogSource = CatalogResult & { segment: string; status: 'loading' | 'ready' | 'error' };
 export type CatalogPage = { products: Product[]; availability: { segment: string | null; total: number };
   pagination: { total: number; offset: number; limit: number; returned: number } };
+export type CatalogPresentation = 'loading' | 'error' | 'empty-segment' | 'empty-search' | 'products';
+
+// Keep transport/schema failures distinct from verified empty results.
+export function catalogPresentationState(source: CatalogSource | null, filteredCount: number,
+  searchQuery: string): CatalogPresentation {
+  if (!source || source.status === 'loading') return 'loading';
+  if (source.status === 'error') return 'error';
+  if (source.total === 0) return 'empty-segment';
+  if (searchQuery.trim() && filteredCount === 0) return 'empty-search';
+  return 'products';
+}
 
 // Assemble every page of this segment, not the full database. Reject mixed
 // pages/counts (e.g. an approval during pagination); the refresh retries safely.

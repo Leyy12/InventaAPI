@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Database, ShoppingCart, Check, Copy, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ProductNotFound } from "@/components/product-request";
+import ProductCatalogEmptyState from "@/components/product-request/ProductNotFound";
 import { activeCustomerSegment, scopeCustomerProducts } from '../../../../../services/customer-segment.js';
 import AddProductModal from "@/components/products/AddProductModal";
 import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
@@ -18,7 +18,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
-import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
+import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -77,7 +77,6 @@ function CustomerCatalogSession() {
   const [paidSegment, setActiveSegment] = useState<string>("All");
   const activeSegment = isFreePlan(appUser?.plan) ? activeCustomerSegment(appUser) || '' : paidSegment;
   const currentCatalog = catalogSource?.segment === activeSegment ? catalogSource : null;
-  const loading = !currentCatalog || currentCatalog.status === 'loading';
   const productAvailable = currentCatalog?.status === 'ready' ? currentCatalog.total : null;
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -154,6 +153,7 @@ function CustomerCatalogSession() {
   }, [products, currentCatalog, searchQuery, appUser]);
 
   const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
+  const catalogView = catalogPresentationState(currentCatalog, filteredProducts.length, searchQuery);
   const selectableIds = catalogSelectableIds(filteredProducts, selectedProducts, activeTrial ? {
     included: trialState.included, remaining: trialState.remaining,
     allowed: !!trialKey && trialReady && !upgradeRequired && !generating,
@@ -497,7 +497,6 @@ DAAS_API_KEY=${generatedKey}
       {selectionError && <p role="alert" className="text-red-300">{selectionError}</p>}
       <p role="status" className="text-sm text-slate-300">Product Available: {productAvailable ?? '—'}
         {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}</p>
-      {currentCatalog?.status === 'error' && <p role="alert" className="text-red-300">Catalog unavailable. Retrying automatically; refocus this page to retry now.</p>}
 
       {/* Shopping Cart Summary - Sticky */}
       {selectedProducts.size > 0 && (
@@ -629,7 +628,7 @@ DAAS_API_KEY=${generatedKey}
       </div>
 
       {/* Product Grid */}
-      {loading ? (
+      {catalogView === 'loading' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2048px]:grid-cols-6 gap-4">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="glass-card rounded-xl p-6 animate-pulse">
@@ -639,14 +638,22 @@ DAAS_API_KEY=${generatedKey}
             </div>
           ))}
         </div>
-      ) : filteredProducts.length === 0 ? (
-        <>
-          {/* Product Not Found Component */}
-          <ProductNotFound
-            searchQuery={searchQuery}
-            onClearSearch={() => setSearchQuery("")}
-          />
-        </>
+      ) : catalogView === 'error' ? (
+        <div role="alert" className="flex flex-col items-center justify-center py-16 px-4 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-5">
+            <Package className="w-8 h-8 text-amber-300" aria-hidden="true" />
+          </div>
+          <h2 className="text-xl font-semibold text-white mb-2">Catalog unavailable</h2>
+          <p className="text-sm text-slate-400">We couldn&apos;t load the verified product catalog right now.</p>
+          <p className="text-xs text-slate-500 mt-2">Retrying automatically.</p>
+        </div>
+      ) : catalogView === 'empty-segment' || catalogView === 'empty-search' ? (
+        <ProductCatalogEmptyState
+          kind={catalogView === 'empty-search' ? 'search' : 'segment'}
+          segment={activeSegment}
+          searchQuery={searchQuery}
+          onClearSearch={() => setSearchQuery("")}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2048px]:grid-cols-6 gap-4">
           {filteredProducts.map((product) => {

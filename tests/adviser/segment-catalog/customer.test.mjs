@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { catalogQuery, catalogResult, createCustomerCatalogHandler } from '../../../services/customer-catalog.js';
-import { loadSegmentCatalog, searchCatalog, catalogSelectableIds, createCatalogRefresh } from '../../../dashboard/src/lib/segment-catalog.ts';
+import { loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, createCatalogRefresh } from '../../../dashboard/src/lib/segment-catalog.ts';
 import { trialSelectionState } from '../../../dashboard/src/lib/trial-catalog-selection.ts';
 import { selectedLinkedProducts } from '../../../dashboard/src/lib/linked-product-selection.ts';
 import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
@@ -110,6 +110,50 @@ test('timeout fails visibly with no stale/global fallback and late success ignor
   resolve(await load('Grocery')); await flush(); assert.equal(source.status, 'error'); refresh.stop();
 });
 
+test('incompatible HTTP 200 schema becomes unavailable without inventing an empty result or total', async () => {
+  let source; const clock = scheduler();
+  const refresh = createCatalogRefresh({ segment: 'Grocery', read: signal => loadSegmentCatalog(async () => {
+    signal.throwIfAborted(); return { products: docs.filter(doc => doc.data().segment === 'Grocery') };
+  }, 'Grocery', signal), onState: value => { source = value; }, ...clock });
+  refresh.refresh(); await flush();
+  assert.equal(source.status, 'error'); assert.deepEqual(source.products, []); assert.equal(source.total, 0);
+  assert.equal(catalogPresentationState(source, 0, ''), 'error');
+  assert.equal([...clock.timers.values()].some(timer => timer.delay === 60000), true);
+  refresh.stop();
+});
+
+test('HTTP failure is unavailable state rather than successful empty catalog', async () => {
+  let source; const clock = scheduler();
+  const refresh = createCatalogRefresh({ segment: 'Grocery', read: async () => { throw new Error('Catalog unavailable.'); },
+    onState: value => { source = value; }, ...clock });
+  refresh.refresh(); await flush();
+  assert.equal(source.status, 'error'); assert.equal(catalogPresentationState(source, 0, ''), 'error');
+  refresh.stop();
+});
+
+test('verified segment-empty, zero-search, and product states stay distinct', async () => {
+  const empty = { segment: 'Pharmacy', status: 'ready', products: [], total: 0 };
+  assert.equal(catalogPresentationState(empty, 0, ''), 'empty-segment');
+  const grocery = await load('Grocery');
+  assert.equal(catalogPresentationState({ segment: 'Grocery', status: 'ready', ...grocery }, 0, 'unmatched'), 'empty-search');
+  assert.equal(catalogPresentationState({ segment: 'Grocery', status: 'ready', ...grocery }, 82, ''), 'products');
+  assert.equal(catalogPresentationState(null, 0, ''), 'loading');
+});
+
+test('catalog UI copy keeps errors, empty segments, and search-empty states separate', () => {
+  const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/products/page.tsx', import.meta.url), 'utf8');
+  const empty = readFileSync(new URL('../../../dashboard/src/components/product-request/ProductNotFound.tsx', import.meta.url), 'utf8');
+  assert.match(page, /catalogView === 'error'[\s\S]*?Catalog unavailable[\s\S]*?Retrying automatically\./);
+  assert.match(page, /catalogView === 'empty-segment' \|\| catalogView === 'empty-search'/);
+  assert.match(page, /<ProductCatalogEmptyState[\s\S]*?onClearSearch=\{\(\) => setSearchQuery\(""\)\}/);
+  assert.doesNotMatch(`${page}\n${empty}`, /404\s*[·.-]\s*Not Found|Product Not Found/);
+  assert.match(empty, /No products available/); assert.match(empty, /There are currently no available products in/);
+  assert.match(empty, /No matching products/); assert.match(empty, /No products in .* match/);
+  assert.match(empty, /Clear Search/); assert.doesNotMatch(empty, /matching\s+["']\s*["']/);
+  assert.match(page, /currentCatalog\?\.status === 'ready' \? currentCatalog\.total : null/);
+  assert.match(page, /window\.addEventListener\('focus'/); assert.match(page, /refresh\.stop\(\)/);
+});
+
 for (const label of ['global-total', 'wrong-segment', 'duplicate', 'old-backend', 'incomplete', 'changed-count']) test(`mixed/invalid backend ${label} fails closed rather than inventing availability`, async () => {
   await assert.rejects(loadSegmentCatalog(async offset => {
     const result = page('Grocery', offset);
@@ -148,6 +192,7 @@ test('Customer wiring uses same response for grid/count, safe segment identity, 
   assert.match(source, /businessSegment: activeSegment, limit: '200'/);
   assert.match(source, /catalogSource\?\.segment === activeSegment/);
   assert.match(source, /currentCatalog\.total/);
+  assert.match(source, /catalogPresentationState\(currentCatalog, filteredProducts\.length, searchQuery\)/);
   assert.match(source, /currentCatalog.products.map/);
   assert.match(source, /Product Available: \{productAvailable/);
   assert.match(source, /filteredProducts.length\} results/);

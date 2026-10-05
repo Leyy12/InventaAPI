@@ -2,24 +2,19 @@
 
 import { X, PackageSearch, ArrowUpRight, ShieldCheck } from "lucide-react";
 
-interface ProductNotFoundProps {
+interface ProductCatalogEmptyStateProps {
+  kind: 'segment' | 'search';
+  segment: string;
   searchQuery: string;
   onClearSearch?: () => void;
 }
 
-export default function ProductNotFound({ searchQuery, onClearSearch }: ProductNotFoundProps) {
+export default function ProductCatalogEmptyState({ kind, segment, searchQuery, onClearSearch }: ProductCatalogEmptyStateProps) {
+  const isSearch = kind === 'search';
+
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4">
       <div className="w-full max-w-lg animate-in fade-in zoom-in-95 duration-300">
-
-        {/* 404 Badge */}
-        <div className="flex justify-center mb-5">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">404</span>
-            <span className="text-xs text-slate-600">•</span>
-            <span className="text-xs font-medium text-slate-400">Not Found</span>
-          </div>
-        </div>
 
         {/* Icon */}
         <div className="flex justify-center mb-5">
@@ -30,15 +25,22 @@ export default function ProductNotFound({ searchQuery, onClearSearch }: ProductN
 
         {/* Title & Description */}
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-white mb-2">Product Not Found</h2>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            We could not find any products matching{" "}
-            <span className="text-indigo-400 font-semibold">"{searchQuery}"</span> in our catalog.
-          </p>
+          <h2 className="text-2xl font-bold text-white mb-2">
+            {isSearch ? 'No matching products' : 'No products available'}
+          </h2>
+          {isSearch ? (
+            <p className="text-sm text-slate-400 leading-relaxed">
+              No products in {segment} match <span className="text-indigo-400 font-semibold">&quot;{searchQuery.trim()}&quot;</span>.
+            </p>
+          ) : (
+            <p className="text-sm text-slate-400 leading-relaxed">
+              There are currently no available products in {segment}.
+            </p>
+          )}
         </div>
 
         {/* Clear Search */}
-        {onClearSearch && (
+        {isSearch && onClearSearch ? (
           <div className="flex justify-center mb-8">
             <button
               onClick={onClearSearch}
@@ -48,7 +50,7 @@ export default function ProductNotFound({ searchQuery, onClearSearch }: ProductN
               Clear Search
             </button>
           </div>
-        )}
+        ) : null}
 
         {/* Divider */}
         <div className="flex items-center gap-3 mb-6">
