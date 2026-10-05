@@ -9,7 +9,7 @@ import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
-import { consumePostLogoutLogin, navigationDecision, profileRole } from '../../../../services/auth-navigation';
+import { consumePostLogoutLoginEntry, navigationDecision, profileRole } from '../../../../services/auth-navigation';
 
 const purchaseBlocked = (plan: PlanId, entitlement: ReturnType<typeof useAuth>['entitlement']) => {
   if (!entitlement) return true;
@@ -56,7 +56,13 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    if (!loginOnly && !loading && !user && consumePostLogoutLogin()) setShowLoginModal(true);
+    if (!loginOnly && !loading && !user) {
+      const entry = consumePostLogoutLoginEntry();
+      if (entry) {
+        setPendingPlan(entry === 'free' ? 'free' : null);
+        setShowLoginModal(true);
+      }
+    }
   }, [loginOnly, loading, user]);
 
   const destination = navigationDecision({ path: loginOnly ? '/login' : '/', initializing: loading,

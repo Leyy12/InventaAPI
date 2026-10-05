@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkles, Building2, X } from "lucide-react";
 import type { PlanId } from "@/config/plans";
-import { profileRole, adminLoginDestination } from '../../../../services/auth-navigation';
+import { profileRole, adminLoginDestination, rememberCustomerLoginEntry } from '../../../../services/auth-navigation';
 import { PRODUCT_SEGMENTS, normalizeSegment } from '../../../../services/product-contract.js';
 import { loginSegmentAllowed } from '../../../../services/customer-segment.js';
 import { readSubscription } from '@/lib/subscription';
@@ -217,6 +217,9 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
           return;
         }
       }
+
+      if (auth.currentUser !== user) throw new Error('Session ended during login.');
+      rememberCustomerLoginEntry(pendingPlan === 'free' ? 'free' : 'generic');
 
       // The modal closes as part of the successful route transition; retaining
       // the selector state until then avoids a flash of an unvalidated session.

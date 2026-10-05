@@ -129,7 +129,7 @@ test('Post-logout intent is session-scoped, consumed once, and leaves root URL c
   const source = read('services/auth-navigation.ts');
   assert.match(source, /POST_LOGOUT_LOGIN_KEY/);
   assert.match(source, /sessionStorage\.removeItem\(POST_LOGOUT_LOGIN_KEY\)/);
-  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /consumePostLogoutLogin\(\)/);
+  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /consumePostLogoutLoginEntry\(\)/);
 });
 
 test('Legacy landing marker cannot decide authentication or root routing', () => {

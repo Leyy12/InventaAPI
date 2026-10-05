@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createAuthSession, createLogoutAction, completeLanding, landingSeen, navigationDecision, profileRole, authScreen,
   beginCustomerLogout, cancelCustomerLogout, customerLogoutDestination, markPostLogoutLogin, consumePostLogoutLogin,
+  consumePostLogoutLoginEntry, rememberCustomerLoginEntry, CUSTOMER_LOGIN_ENTRY_KEY,
   POST_LOGOUT_LOGIN_KEY, customerPublicPath } from '../../../services/auth-navigation.ts';
 const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
 test('root always renders Landing and does not consult browser visit state', () => {
@@ -333,7 +334,7 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
   } };
   cancelCustomerLogout();
   const identity = { uid: 'race-customer' }, auth = { currentUser: identity };
-  let path = '/dashboard', state, modal = false, busy = false, error, finishSignOut;
+  let path = '/dashboard', state, modal = false, pendingPlan = null, busy = false, error, finishSignOut;
   const requests = [];
   const router = { replace(target) { requests.push(target); } };
   const provider = 'dashboard/src/lib/firebase/auth-context.tsx';
@@ -356,9 +357,10 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
   };
   const root = (loginOnly = false) => {
     modal = loginOnly;
-    new Function('loginOnly', 'loading', 'user', 'consumePostLogoutLogin', 'setShowLoginModal',
+    new Function('loginOnly', 'loading', 'user', 'consumePostLogoutLoginEntry', 'setShowLoginModal', 'setPendingPlan',
       'if (!loginOnly' + bodyBetween(entry, '  useEffect(() => {\n    if (!loginOnly', '\n  }, [loginOnly, loading, user]'))(
-      loginOnly, state?.loading ?? false, state?.user ?? null, consumePostLogoutLogin, value => { modal = value; });
+      loginOnly, state?.loading ?? false, state?.user ?? null, consumePostLogoutLoginEntry,
+      value => { modal = value; }, value => { pendingPlan = value; });
   };
   const clearSession = () => gate.invalidate();
   const logoutAction = { current: null }, sessionGate = { current: gate };
@@ -376,7 +378,10 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
     beginCustomerLogout, cancelCustomerLogout, markPostLogoutLogin, clearSession, router };
   new Function(...Object.keys(bindings), 'logoutAction.current = createLogoutAction({' + body)(...Object.values(bindings));
   return {
-    async login() { auth.currentUser = identity; await gate.accept(identity); path = '/dashboard'; },
+    async login(entry = 'generic') {
+      auth.currentUser = identity; await gate.accept(identity);
+      rememberCustomerLoginEntry(entry); path = '/dashboard';
+    },
     run: () => logoutAction.current(), captureGuard, root,
     complete: () => finishSignOut(),
     settle() { if (requests.length) path = requests.at(-1); },
@@ -384,11 +389,11 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
       const close = bodyBetween(entry, '        onClose={() => {\n          setShowLoginModal(false);', '\n        }}');
       modal = false;
       new Function('setPendingPlan', 'setModalError', 'setLoginStarted', 'pathname', 'searchParams', 'router', close)(
-        () => {}, () => {}, () => {}, path, new URLSearchParams(), router);
+        value => { pendingPlan = value; }, () => {}, () => {}, path, new URLSearchParams(), router);
     },
     direct(target) { path = target; },
-    state: () => ({ path, modal, busy, error, user: state?.user, profile: state?.profile }), requests, values,
-    dispose() { gate.stop(); cancelCustomerLogout(); globalThis.window = previousWindow; },
+    state: () => ({ path, modal, pendingPlan, busy, error, user: state?.user, profile: state?.profile }), requests, values,
+    dispose() { gate.stop(); rememberCustomerLoginEntry('generic'); cancelCustomerLogout(); globalThis.window = previousWindow; },
   };
 }
 
@@ -455,4 +460,152 @@ test('race: provider rejection cannot introduce a second /login redirect during 
     assert.equal(consumePostLogoutLogin(), true); assert.equal(consumePostLogoutLogin(), false);
     h.requests.length = 0; rejected(); assert.deepEqual(h.requests, ['/login']);
   } finally { h.dispose(); }
+});
+
+for (const storageDenied of [false, true]) {
+  test(`free entry: verified Free session returns to Free modal once (storage denied=${storageDenied})`, async () => {
+    const h = logoutRaceHarness({ storageDenied });
+    try {
+      await h.login('free');
+      const pending = h.run(); await Promise.resolve(); await Promise.resolve();
+      assert.equal(consumePostLogoutLoginEntry(), null, 'unfinished signout cannot open a modal');
+      h.complete(); assert.deepEqual(await pending, { ok: true });
+      h.settle(); h.root();
+      assert.equal(h.state().path, '/'); assert.equal(h.state().modal, true);
+      assert.equal(h.state().pendingPlan, 'free');
+      assert.equal(h.values.has(POST_LOGOUT_LOGIN_KEY), false);
+      assert.equal(h.values.has(CUSTOMER_LOGIN_ENTRY_KEY), false);
+      assert.equal(consumePostLogoutLoginEntry(), null);
+      h.dismiss(); h.root(); assert.equal(h.state().modal, false);
+      await h.login();
+      const generic = h.run(); await Promise.resolve(); await Promise.resolve();
+      h.complete(); await generic; h.settle(); h.root();
+      assert.equal(h.state().modal, true); assert.equal(h.state().pendingPlan, null,
+        'ordinary Login must overwrite a prior Free session, not inherit it');
+    } finally { h.dispose(); }
+  });
+}
+
+test('free entry: failed logout retains Customer state and produces no Free post-logout modal', async () => {
+  const h = logoutRaceHarness({ fail: true });
+  try {
+    await h.login('free'); assert.deepEqual(await h.run(), { ok: false });
+    assert.ok(h.state().user); assert.equal(h.state().path, '/dashboard');
+    assert.deepEqual(h.requests, []); assert.equal(consumePostLogoutLoginEntry(), null);
+    assert.equal(h.values.get(CUSTOMER_LOGIN_ENTRY_KEY), 'free', 'failed signout retains the session intent');
+    assert.equal(h.values.has(POST_LOGOUT_LOGIN_KEY), false);
+  } finally { h.dispose(); }
+});
+
+// Execute the actual successful-login verification block with synthetic SDK/
+// Firestore/subscription adapters. No password, token or external I/O is used.
+async function exerciseLoginEntry({ pendingPlan = null, failure = null } = {}) {
+  const previousWindow = globalThis.window, values = new Map();
+  globalThis.window = { sessionStorage: {
+    getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  } };
+  rememberCustomerLoginEntry('generic'); markPostLogoutLogin(); consumePostLogoutLoginEntry();
+  const user = { uid: 'synthetic-customer' }, auth = { currentUser: null };
+  const profile = { role: 'Developer', businessSegment: 'Grocery', selectedSegment: 'Grocery' };
+  const effective = { plan: 'Free' };
+  const events = [];
+  const body = bodyBetween('dashboard/src/components/auth/LoginModal.tsx',
+    '      // 1. Sign in with Firebase', '      // The modal closes as part');
+  const bindings = {
+    signInWithEmailAndPassword: async () => {
+      if (failure === 'firebase') throw Error('synthetic login failure');
+      auth.currentUser = user; return { user };
+    }, auth, email: 'synthetic', password: 'synthetic',
+    getDocFromServer: async () => {
+      if (failure === 'profile') throw Error('synthetic profile failure');
+      return { data: () => failure === 'missing' ? undefined : profile };
+    }, doc: () => ({}), db: {}, profileRole,
+    signOut: async () => { auth.currentUser = null; },
+    readSubscription: async () => {
+      if (failure === 'subscription') throw Error('synthetic verification failure');
+      return effective;
+    }, requestedSegment: 'Grocery',
+    normalizeSegment: value => value,
+    loginSegmentAllowed: () => failure !== 'segment',
+    updateDoc: async () => {
+      if (failure === 'write') throw Error('synthetic write failure');
+      if (failure === 'switch') auth.currentUser = { uid: 'another-customer' };
+    }, refreshUserDoc: async () => profile,
+    rememberCustomerLoginEntry: entry => { events.push(entry); rememberCustomerLoginEntry(entry); },
+    pendingPlan, setError() {}, setLoading() {}, setSegmentBlocked() {}, setShowSegment() {},
+    console: { log() {}, error() {} },
+  };
+  if (failure === 'write' || failure === 'switch') profile.selectedSegment = 'Hardware';
+  try {
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    await new AsyncFunction(...Object.keys(bindings), body)(...Object.values(bindings));
+  } catch { /* Expected synthetic failure paths must leave entry uncommitted. */ }
+  const stored = values.get(CUSTOMER_LOGIN_ENTRY_KEY);
+  rememberCustomerLoginEntry('generic'); markPostLogoutLogin(); consumePostLogoutLoginEntry();
+  globalThis.window = previousWindow;
+  return { events, stored };
+}
+
+for (const [pendingPlan, expected] of [['free', 'free'], [null, 'generic'], ['pro', 'generic'], ['pro_max', 'generic']]) {
+  test(`free entry: actual successful Customer login records ${expected} for ${pendingPlan}`, async () => {
+    const result = await exerciseLoginEntry({ pendingPlan });
+    assert.deepEqual(result.events, [expected]); assert.equal(result.stored, expected);
+  });
+}
+for (const failure of ['firebase', 'profile', 'missing', 'subscription', 'segment', 'write', 'switch']) {
+  test(`free entry: actual ${failure} failure cannot commit Free login context`, async () => {
+    const result = await exerciseLoginEntry({ pendingPlan: 'free', failure });
+    assert.deepEqual(result.events, []); assert.equal(result.stored, undefined);
+  });
+}
+
+test('free entry: opening/closing a Free CTA never commits an authenticated-session entry', () => {
+  const entry = read('dashboard/src/components/auth/AuthEntry.tsx');
+  assert.match(entry, /openSubscription\("free"\)/);
+  assert.doesNotMatch(entry, /rememberCustomerLoginEntry/);
+  const modal = read('dashboard/src/components/auth/LoginModal.tsx');
+  assert.equal((modal.match(/rememberCustomerLoginEntry\(/g) ?? []).length, 1);
+  assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('loginSegmentAllowed('));
+  assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('await refreshUserDoc();'));
+  assert.match(modal, /Login to continue to InventaAPI Free/);
+  assert.match(modal, /Log in to access your Free plan dashboard\./);
+  assert.match(modal, /Welcome to InventaAPI/);
+});
+
+test('free entry: denied writes/removals cannot make a stale Free intent sticky in this document', () => {
+  const previousWindow = globalThis.window, values = new Map();
+  let denied = false;
+  globalThis.window = { sessionStorage: {
+    getItem: key => values.get(key) ?? null,
+    setItem(key, value) { if (denied) throw Error('denied'); values.set(key, value); },
+    removeItem(key) { if (denied) throw Error('denied'); values.delete(key); },
+  } };
+  try {
+    rememberCustomerLoginEntry('free'); markPostLogoutLogin();
+    denied = true;
+    assert.equal(consumePostLogoutLoginEntry(), 'free');
+    assert.equal(consumePostLogoutLoginEntry(), null);
+    rememberCustomerLoginEntry('generic'); markPostLogoutLogin();
+    assert.equal(consumePostLogoutLoginEntry(), 'generic');
+    assert.equal(consumePostLogoutLoginEntry(), null);
+  } finally {
+    denied = false; rememberCustomerLoginEntry('generic'); markPostLogoutLogin();
+    consumePostLogoutLoginEntry(); globalThis.window = previousWindow;
+  }
+});
+
+test('free entry: only allowlisted presentation strings are persisted, without auth authority', () => {
+  const previousWindow = globalThis.window, values = new Map();
+  globalThis.window = { sessionStorage: { getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) } };
+  try {
+    rememberCustomerLoginEntry('javascript:untrusted');
+    assert.deepEqual([...values], [[CUSTOMER_LOGIN_ENTRY_KEY, 'generic']]);
+    markPostLogoutLogin(); assert.equal(consumePostLogoutLoginEntry(), 'generic');
+    assert.equal(navigationDecision({ path: '/dashboard', initializing: false, role: null }), '/login');
+  } finally {
+    rememberCustomerLoginEntry('generic'); markPostLogoutLogin(); consumePostLogoutLoginEntry();
+    globalThis.window = previousWindow;
+  }
 });

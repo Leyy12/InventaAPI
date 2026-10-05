@@ -13,6 +13,26 @@ export function browserStorage(): StorageLike | null {
   try { return window.localStorage; } catch { return null; }
 }
 export const POST_LOGOUT_LOGIN_KEY = 'inventa.post-logout-login.v1';
+export type CustomerLoginEntry = 'generic' | 'free';
+export const CUSTOMER_LOGIN_ENTRY_KEY = 'inventa.customer-login-entry.v1';
+// Presentation only, never account/entitlement authority. Commit this intent
+// only after Customer authentication, verification and segment validation.
+let customerLoginEntry: CustomerLoginEntry | null = null;
+let postLogoutEntry: CustomerLoginEntry = 'generic';
+let postLogoutStorageConsumed = false;
+export function rememberCustomerLoginEntry(entry: CustomerLoginEntry): void {
+  customerLoginEntry = entry === 'free' ? 'free' : 'generic';
+  cancelCustomerLogout(); // A new successful login supersedes a prior logout.
+  try { window.sessionStorage.setItem(CUSTOMER_LOGIN_ENTRY_KEY, customerLoginEntry); } catch { /* Optional UX. */ }
+}
+function currentCustomerLoginEntry(): CustomerLoginEntry {
+  if (customerLoginEntry !== null) return customerLoginEntry;
+  try {
+    const stored = window.sessionStorage.getItem(CUSTOMER_LOGIN_ENTRY_KEY);
+    if (stored === 'free' || stored === 'generic') return stored;
+  } catch { /* Document-local fallback. */ }
+  return 'generic';
+}
 // In-flight intent is document-local: a reload cannot turn an unfinished logout
 // into a successful one. Memory also keeps navigation working if storage is denied.
 let customerLogoutIntent: 'pending' | 'completed' | null = null;
@@ -23,6 +43,7 @@ export function beginCustomerLogout(): void {
 export function cancelCustomerLogout(pendingOnly = false): void {
   if (pendingOnly && customerLogoutIntent !== 'pending') return;
   customerLogoutIntent = null;
+  postLogoutStorageConsumed = true;
   try { window.sessionStorage.removeItem(POST_LOGOUT_LOGIN_KEY); } catch { /* Optional UX storage. */ }
 }
 export function customerLogoutDestination(destination: string | null): string | null {
@@ -31,17 +52,28 @@ export function customerLogoutDestination(destination: string | null): string | 
   return destination;
 }
 export function markPostLogoutLogin(): boolean {
+  postLogoutEntry = currentCustomerLoginEntry();
   customerLogoutIntent = 'completed';
-  try { window.sessionStorage.setItem(POST_LOGOUT_LOGIN_KEY, '1'); return true; } catch { return false; }
+  postLogoutStorageConsumed = false;
+  customerLoginEntry = 'generic';
+  try { window.sessionStorage.removeItem(CUSTOMER_LOGIN_ENTRY_KEY); } catch { /* Optional UX. */ }
+  try { window.sessionStorage.setItem(POST_LOGOUT_LOGIN_KEY, postLogoutEntry); return true; } catch { return false; }
 }
-export function consumePostLogoutLogin(): boolean {
-  if (customerLogoutIntent === 'pending') return false;
-  let completed = customerLogoutIntent === 'completed';
+export function consumePostLogoutLoginEntry(): CustomerLoginEntry | null {
+  if (customerLogoutIntent === 'pending') return null;
+  let entry = customerLogoutIntent === 'completed' ? postLogoutEntry : null;
   try {
-    completed ||= window.sessionStorage.getItem(POST_LOGOUT_LOGIN_KEY) === '1';
+    const stored = window.sessionStorage.getItem(POST_LOGOUT_LOGIN_KEY);
+    // Keep the previous generic marker compatible across an application update.
+    if (!postLogoutStorageConsumed && entry === null && (stored === 'free' || stored === 'generic' || stored === '1')) {
+      entry = stored === 'free' ? 'free' : 'generic';
+    }
   } catch { /* Document-local fallback. */ }
   cancelCustomerLogout();
-  return completed;
+  return entry;
+}
+export function consumePostLogoutLogin(): boolean {
+  return consumePostLogoutLoginEntry() !== null;
 }
 export type AuthProfile = { role?: unknown; plan?: unknown; disabled?: unknown; deleted?: unknown;
   deletedAt?: unknown; deletionRequested?: unknown; status?: unknown; accountState?: unknown };
