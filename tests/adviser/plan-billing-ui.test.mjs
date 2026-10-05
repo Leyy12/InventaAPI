@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { hooks, clock, flush, load, nodes } from './workspace-refresh/harness.mjs';
+import * as limits from '../../functions/entitlement-limits.mjs';
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '../../dashboard/src/lib/trial-display.mjs';
 
 const read = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -115,4 +117,153 @@ test('paid-plan display remains canonical and excludes temporary five-peso billi
   assert.match(plans, /\$\{PRO_DAILY_REQUEST_LIMIT\} requests per day/);
   assert.match(plans, /Unlimited account API quota/);
   assert.doesNotMatch(`${billing}\n${plans}`, /₱5\b|500 pesos|five-peso/i);
+});
+
+// Execute the actual TSX render branches with synthetic status data and no SDK
+// or external I/O. Effects use the existing isolated hook runner; child plan
+// cards are expanded so assertions inspect visible links/content, not strings
+// merely present in the source (which also contains the standalone route).
+const icons = { Zap: 'svg', ShieldCheck: 'svg', Building2: 'svg', ArrowRight: 'svg', Check: 'svg', CreditCard: 'svg' };
+const fixture = {
+  eligible: false, active: true, exhausted: false, expired: false,
+  hasUsedFreeTrial: true, upgradeRequired: false, endReason: null,
+  status: 'active', startedAt: '2026-10-01T00:00:00.000Z', expiresAt: '2026-10-08T00:00:00.000Z',
+  serverTime: '2026-10-04T00:00:00.000Z', secondsRemaining: 345600,
+  productsIncluded: 10, activeKeys: 1,
+};
+const planConfig = load('dashboard/src/config/plans.ts', 'exports.SUBSCRIPTION_PLANS', hooks(), {
+  '../../../functions/entitlement-limits.mjs': limits, 'lucide-react': icons,
+});
+function expand(tree) {
+  if (Array.isArray(tree)) return tree.map(expand);
+  if (!tree || typeof tree !== 'object') return tree;
+  if (typeof tree.type === 'function') return expand(tree.type(tree.props));
+  return { ...tree, props: { ...tree.props, children: expand(tree.props?.children) } };
+}
+function visibleText(tree) {
+  if (Array.isArray(tree)) return tree.map(visibleText).join(' ');
+  if (tree === null || tree === undefined || typeof tree === 'boolean') return '';
+  if (typeof tree !== 'object') return String(tree);
+  return visibleText(tree.props?.children);
+}
+function keyActions(tree) {
+  return nodes(tree, node => node.type === 'a' && /Manage API Keys/.test(visibleText(node)));
+}
+async function renderTrial({ embedded = true, state = fixture, fail = false, pending = false } = {}) {
+  const h = hooks(), c = clock();
+  const Component = load('dashboard/src/app/dashboard/free-trial/page.tsx', 'TrialPanel', h, {
+    'next/link': 'a', 'lucide-react': icons, '@/lib/firebase/auth-context': {},
+    '@/lib/account-usage-events': { subscribeAccountUsage: () => () => {} },
+    '@/lib/trial-display.mjs': { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots },
+    '../../../../../functions/entitlement-limits.mjs': limits,
+  }, {
+    performance: { now: c.now }, setTimeout: c.schedule, clearTimeout: c.cancel,
+    setInterval: () => 1, clearInterval: () => {},
+    fetch: async url => {
+      assert.equal(url, 'https://synthetic.invalid/api/v1/free-trial/status');
+      if (pending) return new Promise(() => {});
+      if (fail) throw new Error('Synthetic unavailable status');
+      return { ok: true, json: async () => state };
+    },
+  });
+  h.mount(Component, { user: { uid: 'synthetic-billing', getIdToken: async () => 'synthetic-not-a-credential' }, embedded });
+  await flush();
+  const tree = expand(h.output);
+  h.stop();
+  return tree;
+}
+function renderBilling(trialTree, overrides = {}) {
+  const h = hooks();
+  const Component = load('dashboard/src/app/dashboard/plan-billing/page.tsx', 'PlanBillingPage', h, {
+    'next/link': 'a', 'lucide-react': icons,
+    '@/lib/firebase/auth-context': { useAuth: () => ({ loading: false, entitlement: {
+      activePro: false, activeTrial: true, plan: 'Free', subscription_status: 'trial',
+      canPurchasePro: true, canPurchaseProMax: true, ...overrides,
+    } }) },
+    '@/config/plans': { SUBSCRIPTION_PLANS: planConfig },
+    '@/components/subscription/SubscriptionModal': () => null,
+    '../free-trial/page': ({ embedded }) => { assert.equal(embedded, true); return trialTree; },
+  });
+  const tree = expand(h.mount(Component));
+  h.stop();
+  return tree;
+}
+const embeddedCases = [
+  ['active', {}],
+  ['expired', { state: { ...fixture, active: false, expired: true, upgradeRequired: true, endReason: 'expired' } }],
+  ['exhausted', { state: { ...fixture, active: false, exhausted: true, upgradeRequired: true, endReason: 'exhausted' } }],
+  ['pending', { state: { ...fixture, active: false, eligible: true, upgradeRequired: false } }],
+  ['unavailable', { state: { ...fixture, active: false, eligible: false, upgradeRequired: false } }],
+  ['loading', { pending: true }],
+  ['verification error', { fail: true }],
+];
+for (const [label, options] of embeddedCases) {
+  test(`rendered embedded ${label} Trial has no key CTA; Plan & Billing keeps exactly one accessible dedicated action`, async () => {
+    const trialTree = await renderTrial(options);
+    assert.equal(keyActions(trialTree).length, 0);
+    assert.doesNotMatch(visibleText(trialTree), /Manage API Keys/);
+    const tree = renderBilling(trialTree);
+    const actions = keyActions(tree);
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0].props.href, '/dashboard/api-keys');
+    assert.match(actions[0].props.className, /focus-visible:ring-2/);
+    const section = nodes(tree, node => node.type === 'section' && node.props['aria-label'] === 'Manage API keys');
+    assert.equal(section.length, 1);
+    assert.match(visibleText(section[0]), /API key management.*View and manage your existing keys/);
+    const children = tree.props.children.filter(Boolean);
+    assert.ok(children.indexOf(section[0]) > 0);
+    assert.ok(children.indexOf(section[0]) < children.findIndex(node => node.props?.id === 'upgrade'));
+  });
+}
+for (const [label, state] of [['active', fixture], ['ended', { ...fixture, active: false, upgradeRequired: true }],
+  ['paid', { ...fixture, active: false, status: 'paid' }]]) {
+  test(`rendered standalone ${label} Trial retains its API-key navigation`, async () => {
+    const tree = await renderTrial({ embedded: false, state });
+    assert.equal(keyActions(tree).length, 1);
+    assert.equal(keyActions(tree)[0].props.href, '/dashboard/api-keys');
+  });
+}
+for (const status of ['upgrade_required', 'unavailable']) {
+  test(`rendered non-active ${status} billing retains exactly one dedicated key action`, () => {
+    const tree = renderBilling(null, { activeTrial: false, subscription_status: status });
+    assert.equal(keyActions(tree).length, 1);
+    assert.equal(keyActions(tree)[0].props.href, '/dashboard/api-keys');
+    assert.equal(nodes(tree, node => node.props['aria-label'] === 'Manage API keys').length, 1);
+    assert.equal(nodes(tree, node => node.type === 'article').length, 2);
+    assert.match(visibleText(tree), status === 'upgrade_required' ? /UPGRADE REQUIRED/ : /Unavailable/);
+  });
+}
+for (const plan of ['Pro', 'Pro Max']) {
+  test(`rendered ${plan} billing retains one key action and canonical paid cards/permissions`, () => {
+    const tree = renderBilling(null, { activePro: true, activeTrial: false, plan,
+      subscription_status: 'active', canPurchasePro: false, canPurchaseProMax: true });
+    assert.equal(keyActions(tree).length, 1);
+    const cards = nodes(tree, node => node.type === 'article');
+    assert.equal(cards.length, 2);
+    assert.match(visibleText(cards[0]), /₱1,499/);
+    assert.match(visibleText(cards[1]), /₱4,999/);
+    assert.equal(nodes(cards[0], node => node.type === 'button').length, 0);
+    assert.equal(nodes(cards[1], node => node.type === 'button').length, 1);
+    assert.match(visibleText(tree), /Current plan/);
+  });
+}
+test('rendered active embedded Trial preserves metrics, expiry, progress and explanatory copy without a CTA container', async () => {
+  const tree = await renderTrial();
+  const text = visibleText(tree);
+  for (const copy of ['7-Day Free Trial', 'ACTIVE', 'PRODUCTS', '10 of 50', 'REMAINING SLOTS', '40',
+    'ACTIVE API KEYS', '1 of 1', 'TIME REMAINING', '4d', 'API requests do not reduce your product allowance']) {
+    assert.ok(text.includes(copy), copy);
+  }
+  const progress = nodes(tree, node => node.props.role === 'progressbar');
+  assert.equal(progress.length, 1);
+  assert.equal(progress[0].props['aria-label'], 'Trial time remaining');
+  assert.equal(progress[0].props['aria-valuenow'], 57);
+  assert.equal(nodes(tree, node => node.type === 'time')[0].props.dateTime, fixture.expiresAt);
+  assert.equal(nodes(tree, node => node.props.className?.includes('mt-5 inline-flex')).length, 0);
+});
+test('rendered embedded full-capacity Trial keeps its warning and zero remaining slots', async () => {
+  const tree = await renderTrial({ state: { ...fixture, productsIncluded: 50 } });
+  assert.match(visibleText(tree), /Free Trial product limit reached — 50 of 50 products/);
+  assert.match(visibleText(tree), /REMAINING SLOTS 0/);
+  assert.equal(keyActions(tree).length, 0);
 });

@@ -88,7 +88,6 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
       </div>
       {trial.upgradeRequired && <p className="mt-4 text-sm leading-6 text-slate-300">{trial.endReason === 'exhausted' ? 'The Trial allowance has been used.' : 'The seven-day Trial period has ended.'} Protected API access remains paused until you choose an eligible paid plan.</p>}
       {trial.expiresAt && <p className="mt-4 text-sm text-slate-400">Trial ended <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time>.</p>}
-      <Link href="/dashboard/api-keys" className="mt-5 inline-flex min-h-10 items-center rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-4 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-400/15">Manage API Keys →</Link>
     </section>;
 
     const remainingSeconds = Math.max(0, trial.secondsRemaining - ((clockNow - snapshot!.receivedAt) / 1000));
@@ -135,9 +134,6 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
 
       {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="mt-4 text-sm text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
       <p className="mt-3 text-xs leading-5 text-slate-400">Your one-time 7-day Free Trial includes up to {TRIAL_MAX_PRODUCTS} account-level products and 1 active API key. API requests do not reduce your product allowance, and unused product slots do not increase the API-key limit.</p>
-      <Link href="/dashboard/api-keys" className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-4 py-2 text-sm font-semibold text-indigo-200 transition-colors hover:bg-indigo-400/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
-        Manage API Keys →
-      </Link>
     </section>;
   }
 
