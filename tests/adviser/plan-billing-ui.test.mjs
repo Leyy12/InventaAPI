@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { hooks, clock, flush, load, nodes } from './workspace-refresh/harness.mjs';
@@ -266,4 +267,41 @@ test('rendered embedded full-capacity Trial keeps its warning and zero remaining
   assert.match(visibleText(tree), /Free Trial product limit reached — 50 of 50 products/);
   assert.match(visibleText(tree), /REMAINING SLOTS 0/);
   assert.equal(keyActions(tree).length, 0);
+});
+
+test('rendered billing uses the same uncapped horizontal workspace as Products and API Keys', () => {
+  for (const overrides of [{}, { activeTrial: false, subscription_status: 'upgrade_required' },
+    { activeTrial: false, activePro: true, plan: 'Pro' },
+    { activeTrial: false, activePro: true, plan: 'Pro Max' }]) {
+    const tree = renderBilling(null, overrides);
+    const classes = new Set(tree.props.className.split(/\s+/));
+    for (const expected of ['w-full', 'px-6', 'lg:px-8', 'space-y-7', 'pb-10']) {
+      assert.ok(classes.has(expected), `outer wrapper must keep ${expected}`);
+    }
+    assert.ok(!classes.has('mx-auto'));
+    assert.ok(![...classes].some(value => /(?:^|:)max-w-/.test(value)));
+    const grids = nodes(tree, node => node.props.className?.split(/\s+/).includes('lg:grid-cols-2'));
+    assert.equal(grids.length, 1);
+    assert.ok(grids[0].props.className.split(/\s+/).includes('grid-cols-1'));
+    assert.equal(keyActions(tree).length, 1);
+    const cards = nodes(tree, node => node.type === 'article');
+    assert.equal(cards.length, 2);
+    assert.match(visibleText(cards[0]), /₱1,499/);
+    assert.match(visibleText(cards[1]), /₱4,999/);
+  }
+  for (const route of ['products', 'api-keys']) {
+    const page = read(`dashboard/src/app/dashboard/${route}/page.tsx`);
+    assert.match(page, /className="w-full px-6 lg:px-8\s/);
+  }
+});
+
+test('width-only change preserves the reviewed billing copy, handlers and internal spacing', () => {
+  // Fingerprint of d0cd41c's page with only its outer layout classes omitted.
+  // Line endings and outer class ordering do not affect this scope assertion.
+  const source = billing.replaceAll('\r\n', '\n');
+  const outer = /return <div className="[^"]+">\n    <header>/;
+  assert.match(source, outer);
+  const unchanged = source.replace(outer, 'return <div className="__OUTER_LAYOUT__">\n    <header>');
+  assert.equal(createHash('sha256').update(unchanged).digest('hex'),
+    'f17562b284ac5ecb5abbc2f269f9a6f1d4f663bc1e27dfe926fa56bf62e06c86');
 });
