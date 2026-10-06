@@ -60,12 +60,93 @@ test('remaining slots bound pending selection; 50 and legacy over-cap disable ad
   assert.equal(trialCapacityMessage(50), 'Free Trial product limit reached — 50 of 50 products.');
 });
 
-test('unverified catalog or no active key cannot select/add or invent measured usage', () => {
-  for (const measured of [null, { ...catalog(0), activeKeys: 0 }, { ...catalog(0), activeKeys: 2 }]) {
+test('unverified or inconsistent catalog cannot select/add or invent measured usage', () => {
+  for (const measured of [null, catalog(0), { ...catalog(0), activeKeys: 2 }]) {
     const state = trialSelectionState(measured, null, new Set());
     assert.equal(state.canSelect, false); assert.equal(state.canSubmit, false);
   }
   assert.equal(toggleTrialPending(new Set(), 'new', new Set(), 50, false).size, 0);
+});
+
+test('verified zero-key Trial selects locally before generation, including zero-product generation', () => {
+  const measured = { ...catalog(0), activeKeys: 0 };
+  let pending = new Set();
+  const state = trialSelectionState(measured, null, pending);
+  assert.equal(state.mode, 'first-key'); assert.equal(state.canSelect, true);
+  assert.equal(state.canSubmit, false); assert.equal(state.canGenerateFirstKey, true);
+  pending = toggleTrialPending(pending, 'new', state.included, state.remaining, state.canToggle);
+  assert.equal(pending.has('new'), true);
+  pending = toggleTrialPending(pending, 'new', state.included, state.remaining, state.canToggle);
+  assert.equal(pending.size, 0); assert.equal(measured.productsIncluded, 0);
+});
+
+test('all inconsistent key/count evidence fails closed, never creates a first-key allowance', () => {
+  for (const [measured, saved] of [
+    [catalog(0), null], [{ ...catalog(0), activeKeys: 0 }, key(0)],
+    [{ ...catalog(0), activeKeys: 2 }, key(0)],
+    [{ ...catalog(1), activeKeys: 0 }, null], [catalog(2), key(1)],
+    [{ ...catalog(0), productsIncluded: -1, activeKeys: 0 }, null],
+    [{ ...catalog(0), productsIncluded: NaN, activeKeys: 0 }, null],
+  ]) {
+    const state = trialSelectionState(measured, saved, new Set());
+    assert.equal(state.mode, 'blocked'); assert.equal(state.canSelect, false);
+    assert.equal(state.canGenerateFirstKey, false); assert.equal(state.canSubmit, false);
+    assert.equal(toggleTrialPending(new Set(), 'new', state.included, state.remaining, state.canToggle).size, 0);
+  }
+});
+
+test('first-key 49/50/51 boundaries and existing 40+10 count unique products, not variants', () => {
+  const measured = { ...catalog(0), activeKeys: 0 };
+  let pending = new Set(ids(49));
+  let state = trialSelectionState(measured, null, pending);
+  assert.equal(state.canSelect, true);
+  pending = toggleTrialPending(pending, 'product-49', state.included, state.remaining, state.canToggle);
+  state = trialSelectionState(measured, null, pending);
+  assert.equal(pending.size, 50); assert.equal(state.canSelect, false);
+  assert.equal(state.canGenerateFirstKey, true);
+  assert.equal(toggleTrialPending(pending, 'product-50', state.included, state.remaining, state.canToggle).size, 50);
+  assert.equal(trialSelectionState(measured, null, new Set(ids(51))).canGenerateFirstKey, false);
+  const saved = key(40); state = trialSelectionState(catalog(40), saved, new Set());
+  pending = new Set();
+  for (const id of ids(11).map(id => 'new-' + id)) pending = toggleTrialPending(pending, id, state.included, state.remaining, state.canToggle);
+  assert.equal(pending.size, 10); assert.equal(state.mode, 'existing-key');
+});
+
+for (const segment of ['Hardware', 'Grocery', 'Pharmacy']) test(`${segment}: backend first Trial key persists selected full/partial scope and one active key`, async () => {
+  const db = memoryFirestore({
+    'users/owner': { role: 'Developer', plan: 'Free', businessSegment: segment },
+    'products/full': { name: 'Synthetic full', segment },
+    'products/partial': { name: 'Synthetic partial', segment, variants: [{ flavor: 'a', size: 'each' }, { flavor: 'b', size: 'each' }] },
+  });
+  const options = { getDb: () => db, verifyIdToken: async () => ({ uid: 'owner' }), clock: () => new Date('2026-10-05T00:00:00Z') };
+  assert.equal((await invoke(createFreeTrialHandlers(options).session)).statusCode, 200);
+  assert.equal(db.read('users/owner').businessSegment, segment);
+  const handlers = createApiKeyHandlers(options);
+  const before = (await invoke(handlers.list)).body;
+  assert.equal(trialSelectionState(before.trialCatalog, null, new Set()).mode, 'first-key');
+  const result = await invoke(handlers.create, { body: { keyName: 'Synthetic first key', linkedProductIds: ['full'],
+    linkedVariantSelections: { partial: ['a|each'] }, linkedProducts: [{ id: 'full' }, { id: 'partial' }] } });
+  assert.equal(result.statusCode, 200);
+  const stored = db.read('api_keys/' + result.body.id);
+  assert.deepEqual(stored.linkedProductIds, ['full']); assert.deepEqual(stored.linkedVariantSelections, { partial: ['a|each'] });
+  const after = (await invoke(handlers.list)).body;
+  assert.equal(after.keys.length, 1); assert.equal(after.trialCatalog.activeKeys, 1);
+  assert.equal(after.trialCatalog.productsIncluded, 2);
+  const saved = { ...after.keys[0], productIds: ['full', 'partial'] };
+  const state = trialSelectionState(after.trialCatalog, saved, new Set(['full', 'partial']));
+  assert.equal(state.mode, 'existing-key'); assert.equal(state.pending.size, 0);
+  assert.equal(state.included.size, 2);
+});
+
+test('Hardware first-key backend rejects Grocery scope without creating any key', async () => {
+  const db = memoryFirestore({ 'users/owner': { role: 'Developer', plan: 'Free', businessSegment: 'Hardware' },
+    'products/food': { segment: 'Grocery' } });
+  const options = { getDb: () => db, verifyIdToken: async () => ({ uid: 'owner' }), clock: () => new Date('2026-10-05T00:00:00Z') };
+  await invoke(createFreeTrialHandlers(options).session);
+  const handlers = createApiKeyHandlers(options);
+  const result = await invoke(handlers.create, { body: { keyName: 'Wrong segment', linkedProductIds: ['food'] } });
+  assert.equal(result.statusCode, 403); assert.equal(result.body.error, 'PLAN_SEGMENT_RESTRICTION');
+  assert.equal((await invoke(handlers.list)).body.keys.length, 0);
 });
 
 test('addition payload preserves unavailable persisted IDs and exact partial variants, deduplicates additions', () => {
@@ -119,7 +200,8 @@ test('Customer wiring uses server trialCatalog for Products/Overview, locks card
   assert.match(products, /Add Selected Products/);
   assert.doesNotMatch(products, /Save Trial Catalog|saveTrialCatalog|trialCatalogChangeAllowed/);
   assert.match(products, /Clear New Selections/);
-  assert.match(products, /Create your API key before adding products/);
+  assert.match(products, /Select products to link to your first API key, then generate the key/);
+  assert.doesNotMatch(products, /Create your API key before adding products/);
   assert.match(products, /receiveTrialCatalog\(await apiKeyRequest\(user\), user.uid\)/);
   assert.match(products, /invalidateAccountUsage\(user.uid\)/);
   assert.match(overview, /subscribeAccountUsage\(user.uid, \(\) => refresh.refresh\(\)\)/);

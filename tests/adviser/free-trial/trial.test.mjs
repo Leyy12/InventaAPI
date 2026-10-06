@@ -813,7 +813,7 @@ test('Trial UX consistently uses product limits, one key and actual expiry rathe
   assert.match(read('dashboard/src/lib/trial-catalog-selection.ts'), /expectedScopeVersion: key.scopeVersion/);
   assert.match(products, /method: 'PATCH'/); assert.match(products, /TRIAL_MAX_PRODUCTS/); assert.match(products, /trialCapacityMessage/);
   assert.doesNotMatch(products, /Remove a product before adding another|Legacy over-cap catalog preserved/);
-  assert.match(products, /trialKey && activeTrial \?/); assert.doesNotMatch(read(files[2]), /onClick=\{activate\}|\/free-trial\/activate/);
+  assert.match(products, /trialState.mode === 'existing-key' && activeTrial \?/); assert.doesNotMatch(read(files[2]), /onClick=\{activate\}|\/free-trial\/activate/);
   const plans = read(files[5]); assert.doesNotMatch(plans, /Minimum 50 products/); assert.match(plans, /Up to \$\{TRIAL_MAX_PRODUCTS\} products/); assert.match(plans, /One API key/);
   assert.match(plans, /₱1,499/); assert.match(plans, /₱4,999/); assert.match(plans, /MOST POPULAR/);
 });

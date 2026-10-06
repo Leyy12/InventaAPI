@@ -14,14 +14,22 @@ export function trialSelectionState(catalog: TrialCatalog | null, key: TrialCata
   const included = new Set(key?.productIds ?? []);
   const pending = new Set([...selected].filter(id => !included.has(id)));
   const remaining = catalog ? trialRemainingSlots(catalog.productsIncluded) : 0;
-  const canSelect = !!catalog && catalog.activeKeys === 1 && !!key
-    && remaining > 0 && pending.size < remaining;
-  return { included, pending, remaining, canSelect,
-    canSubmit: !!catalog && catalog.activeKeys === 1 && !!key && pending.size > 0 && pending.size <= remaining };
+  // A missing key is selectable only when the server also confirms zero keys
+  // and zero persisted products. A partial/mismatched response fails closed.
+  let mode: 'first-key' | 'existing-key' | 'blocked' = 'blocked';
+  if (catalog && Number.isInteger(catalog.productsIncluded) && catalog.productsIncluded >= 0) {
+    if (catalog.activeKeys === 0 && key === null && catalog.productsIncluded === 0) mode = 'first-key';
+    else if (catalog.activeKeys === 1 && key !== null && included.size === catalog.productsIncluded) mode = 'existing-key';
+  }
+  const canToggle = mode !== 'blocked';
+  const canSelect = canToggle && remaining > 0 && pending.size < remaining;
+  return { mode, included, pending, remaining, canToggle, canSelect,
+    canGenerateFirstKey: mode === 'first-key' && pending.size <= remaining,
+    canSubmit: mode === 'existing-key' && pending.size > 0 && pending.size <= remaining };
 }
 
-export function toggleTrialPending(pending: Set<string>, id: string, included: Set<string>, remaining: number, activeKey: boolean) {
-  if (included.has(id) || !activeKey) return pending;
+export function toggleTrialPending(pending: Set<string>, id: string, included: Set<string>, remaining: number, selectionAllowed: boolean) {
+  if (included.has(id) || !selectionAllowed) return pending;
   const next = new Set(pending);
   if (next.has(id)) next.delete(id);
   else if (next.size < remaining) next.add(id);
