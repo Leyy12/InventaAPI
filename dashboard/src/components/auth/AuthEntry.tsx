@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-react";
 import LoginModal from "@/components/auth/LoginModal";
 import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
@@ -18,10 +18,9 @@ const purchaseBlocked = (plan: PlanId, entitlement: ReturnType<typeof useAuth>['
   return false;
 };
 
-export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }) {
+export default function AuthEntry() {
   const { user, appUser, loading, authStatus, entitlement } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [loginStarted, setLoginStarted] = useState(false);
@@ -31,7 +30,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   const initialPlan: PlanId | null = planIntent === 'free' || planIntent === 'pro' || planIntent === 'pro_max'
     ? planIntent : searchParams.get('choosePlan') === 'true' || searchParams.get('payment') === 'cancelled' ? 'pro' : null;
   const explicitLogin = searchParams.get('login') === 'true' || searchParams.get('logout') === 'true';
-  const [showLoginModal, setShowLoginModal] = useState(loginOnly || explicitLogin);
+  const [showLoginModal, setShowLoginModal] = useState(explicitLogin);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("pro");
   const [pendingPlan, setPendingPlan] = useState<PlanId | null>(initialPlan);
@@ -56,16 +55,16 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    if (!loginOnly && !loading && !user) {
+    if (!loading && !user) {
       const entry = consumePostLogoutLoginEntry();
       if (entry) {
-        setPendingPlan(entry === 'free' ? 'free' : null);
+        setPendingPlan('free');
         setShowLoginModal(true);
       }
     }
-  }, [loginOnly, loading, user]);
+  }, [loading, user]);
 
-  const destination = navigationDecision({ path: loginOnly ? '/login' : '/', initializing: loading,
+  const destination = navigationDecision({ path: '/', initializing: loading,
     role: user ? profileRole(appUser) : null,
     entryFlow: loginStarted || !!pendingPlan || showSubscriptionModal || showAlreadyProModal });
   useEffect(() => {
@@ -135,10 +134,10 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
         params.delete(key)
       );
       const qs = params.toString();
-      const base = loginOnly ? '/login' : '/';
+      const base = '/';
       router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
     }
-  }, [searchParams, router, loginOnly, initialPlan]);
+  }, [searchParams, router, initialPlan]);
 
   // Single decision point for plan clicks, run only AFTER Firebase auth has settled.
   // During the initial onAuthStateChanged, `user` is still null even for logged-in
@@ -190,56 +189,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
   }, [loading, user, appUser, entitlement, pendingPlan, showLoginModal]);
 
   const openSubscription = (plan: PlanId) => {
-    if (!loginOnly) { setPendingPlan(plan); setShowLoginModal(true); return; }
-    setSelectedPlan(plan);
-
-    // Firebase auth still resolving — record the intent only; the effect above
-    // routes it to the right modal the moment `loading` flips to false.
-    if (loading) {
-      setPendingPlan(plan);
-      return;
-    }
-
-    // Auth is settled: resolve synchronously here — do NOT set pendingPlan before
-    // the auth decision, because that schedules the useEffect (lines 107-152) as a
-    // second actor on the same click. If Firebase local-persistence had a cached
-    // token that makes `user` briefly non-null, the effect's user-path would race
-    // and open SubscriptionModal even for a genuinely logged-out visitor.
-    // Strategy:
-    //   • Logged-in  → clear pendingPlan, open the right modal immediately, return.
-    //   • Logged-out → set pendingPlan (so post-login effect picks it up), open
-    //                  LoginModal, return.
-    setShowLoginModal(false);
-    setShowSubscriptionModal(false);
-
-    // ── LOGGED-IN PATH ───────────────────────────────────────────────────────
-    if (user && plan !== "free") {
-      // Logged-in: no pendingPlan needed — we decide synchronously and return.
-      // Clear any stale pendingPlan from a previous deferred click.
-      setPendingPlan(null);
-
-      // Auth restoration can settle before authoritative subscription status.
-      // Defer the purchase choice until that separate verification completes.
-      if (!entitlement) {
-        setPendingPlan(plan);
-        return;
-      }
-
-      if (purchaseBlocked(plan, entitlement)) {
-        setShowAlreadyProModal(true);
-        return;
-      }
-
-      // Free user (or expired Pro) logged in — open the checkout/subscription modal.
-      setSelectedPlan(plan);
-      setShowSubscriptionModal(true);
-      return;
-    }
-
-    // ── LOGGED-OUT PATH (or Free plan CTA) ──────────────────────────────────
-    // Set pendingPlan NOW (after the auth check) so the post-login useEffect
-    // knows which plan to open SubscriptionModal for once the user logs in.
-    // This is the ONLY place pendingPlan should be set in the auth-settled path.
+    // Same landing CTA behavior as before; the standalone-only branch is gone.
     setPendingPlan(plan);
     setShowLoginModal(true);
   };
@@ -295,7 +245,7 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
       )}
 
       {/* Navigation */}
-      {!loginOnly && <>
+      <>
       <nav className="fixed w-full z-50 top-0 border-b border-white/5 bg-[#020617]/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -571,21 +521,15 @@ export default function AuthEntry({ loginOnly = false }: { loginOnly?: boolean }
           <p className="text-sm text-slate-500">© 2026 InventaAPI Research Team. All rights reserved.</p>
         </div>
       </footer>
-      </>}
-      {loginOnly && !showLoginModal && !showSubscriptionModal && !showAlreadyProModal && (
-        <div className="min-h-screen flex items-center justify-center">
-          <button onClick={() => setShowLoginModal(true)}>Continue to Login</button>
-        </div>
-      )}
+      </>
 
       {/* Login is required only when a visitor chooses a pricing plan. */}
       <LoginModal
         isOpen={showLoginModal}
-        standalone={loginOnly && !!pendingPlan}
         onStart={() => { setLoginStarted(true); }}
         onClose={() => {
           setShowLoginModal(false); setPendingPlan(null); setModalError(""); setLoginStarted(false);
-          if (pathname === '/login' || searchParams.get('login') === 'true' || searchParams.get('logout') === 'true') router.replace('/', { scroll: false });
+          if (searchParams.get('login') === 'true' || searchParams.get('logout') === 'true') router.replace('/', { scroll: false });
         }}
         pendingPlan={pendingPlan}
         onOpenSubscription={(plan) => { setSelectedPlan(plan); setShowSubscriptionModal(true); }}

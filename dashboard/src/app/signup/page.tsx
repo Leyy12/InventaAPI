@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { customerLoginEntryDestination } from '../../../../services/auth-navigation';
 
 const BUSINESS_SEGMENTS = [
   "Grocery",
@@ -86,12 +87,13 @@ function SignupPageInner() {
       // Sign out immediately — Firebase auto-logs in after createUser,
       // but we want the user to explicitly log in themselves.
       await signOut(auth);
-      // Forward the existing pending plan intent to the explicit Login route.
-      // ?registered=true auto-opens the LoginModal; ?choosePlan=true then
-      // opens the SubscriptionModal after the user logs in.
-      const redirectUrl = (pendingPlan === 'pro' || pendingPlan === 'pro_max')
-        ? `/login?registered=true&choosePlan=true&pendingPlan=${pendingPlan}`
-        : `/login?registered=true`;
+      // Return to the single landing login after authoritative profile creation
+      // and explicit sign-out. Only a valid paid CTA keeps its upgrade intent.
+      const intent = new URLSearchParams({ registered: 'true' });
+      if (pendingPlan === 'pro' || pendingPlan === 'pro_max') {
+        intent.set('choosePlan', 'true'); intent.set('pendingPlan', pendingPlan);
+      }
+      const redirectUrl = customerLoginEntryDestination(intent);
       router.push(redirectUrl);
     } catch (err: any) {
       console.error("Signup error:", err);
@@ -307,7 +309,7 @@ function SignupPageInner() {
         </form>
 
         <p className="text-center text-sm text-slate-500 mt-8">
-          Already have an account? <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
+          Already have an account? <Link href={customerLoginEntryDestination()} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
         </p>
       </div>
     </div>

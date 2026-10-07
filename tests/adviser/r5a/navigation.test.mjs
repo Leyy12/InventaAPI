@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LANDING_SEEN_KEY, landingSeen, completeLanding, browserStorage, profileRole, navigationDecision,
-  customerPublicPath, adminLoginDestination, loginEntryQuery, invalidSessionError } from '../../../services/auth-navigation.ts';
+  customerPublicPath, adminLoginDestination, loginEntryQuery, invalidSessionError, customerLoginEntryDestination } from '../../../services/auth-navigation.ts';
 const decide = values => navigationDecision({ initializing: false, role: null, path: '/', ...values });
 const memory = () => {
   const values = new Map();
@@ -33,15 +33,15 @@ test('unavailable storage cannot break Login or authorize a protected page', () 
   const denied = { getItem() { throw Error('denied'); }, setItem() { throw Error('denied'); } };
   assert.doesNotThrow(() => completeLanding(denied)); assert.equal(landingSeen(denied), false);
   assert.equal(landingSeen(null), false); assert.equal(browserStorage(), null);
-  assert.equal(decide({ path: '/dashboard', seen: landingSeen(denied) }), '/login');
+  assert.equal(decide({ path: '/dashboard', seen: landingSeen(denied) }), customerLoginEntryDestination());
 });
 for (const value of ['true', 'admin', '{"role":"admin"}', '0', '']) test(`malformed flag ${value} grants nothing`, () => {
   const storage = memory(); storage.setItem(LANDING_SEEN_KEY, value);
   assert.equal(landingSeen(storage), false);
-  assert.equal(decide({ path: '/dashboard', seen: true }), '/login');
+  assert.equal(decide({ path: '/dashboard', seen: true }), customerLoginEntryDestination());
 });
-for (const path of ['/', '/login']) for (const seen of [false, true]) test(`authenticated Customer ${path} seen=${seen} goes home`, () => {
-  assert.equal(decide({ path, role: 'customer', seen }), '/dashboard');
+for (const path of ['/', '/login']) for (const seen of [false, true]) test(`authenticated Customer ${path} seen=${seen}: root goes home; compatibility page owns migration`, () => {
+  assert.equal(decide({ path, role: 'customer', seen }), path === '/' ? '/dashboard' : null);
 });
 for (const path of ['/', '/login', '/dashboard', '/dashboard/products', '/dashboard/analytics']) {
   test(`initializing ${path} does not redirect`, () => {
@@ -50,18 +50,18 @@ for (const path of ['/', '/login', '/dashboard', '/dashboard/products', '/dashbo
 }
 for (const path of ['/dashboard', '/dashboard/products', '/dashboard/analytics', '/docs']) {
   test(`unauthenticated ${path} goes directly to Login regardless of flag`, () => {
-    for (const seen of [false, true]) assert.equal(decide({ path, seen }), '/login');
+    for (const seen of [false, true]) assert.equal(decide({ path, seen }), customerLoginEntryDestination());
   });
 }
 test('Firebase session disappears on protected page: Login, then stays there', () => {
   assert.equal(decide({ path: '/dashboard', role: 'customer' }), null);
-  assert.equal(decide({ path: '/dashboard', role: null }), '/login');
+  assert.equal(decide({ path: '/dashboard', role: null }), customerLoginEntryDestination());
   assert.equal(decide({ path: '/login', role: null, seen: true }), null);
 });
 test('root remains a stable public Landing while protected routes still go Login', () => {
   assert.equal(decide({ path: '/', seen: true }), null);
   assert.equal(decide({ path: '/login', seen: true }), null);
-  assert.equal(decide({ path: '/dashboard', seen: true }), '/login');
+  assert.equal(decide({ path: '/dashboard', seen: true }), customerLoginEntryDestination());
   assert.equal(decide({ path: '/dashboard', role: 'customer' }), null);
 });
 test('subscription polling is not an input to auth navigation', () => {
@@ -70,8 +70,8 @@ test('subscription polling is not an input to auth navigation', () => {
   }
 });
 test('explicit entry flow may finish login/onboarding/plan handoff but never bypasses protected guard', () => {
-  assert.equal(decide({ path: '/login', role: 'customer', entryFlow: true }), '/dashboard');
-  assert.equal(decide({ path: '/dashboard', entryFlow: true, seen: true }), '/login');
+  assert.equal(decide({ path: '/login', role: 'customer', entryFlow: true }), null);
+  assert.equal(decide({ path: '/dashboard', entryFlow: true, seen: true }), customerLoginEntryDestination());
 });
 for (const path of ['/', '/products', '/settings']) test(`Customer cannot enter Admin ${path}`, () => {
   assert.equal(decide({ app: 'admin', path, role: 'customer', seen: true }), '/login');
@@ -91,7 +91,7 @@ for (const profile of [null, {}, { role: 'owner' }, { role: 'Developer', disable
   { role: 'Developer', plan: 'Deleted' }, { role: 'Developer', accountState: 'disabled' }, { role: 'Admin', accountState: 'unknown' }]) {
   test(`blocked/missing role cannot enter dashboard: ${JSON.stringify(profile)}`, () => {
     assert.equal(profileRole(profile), null);
-    assert.equal(decide({ path: '/dashboard', role: profileRole(profile), seen: true }), '/login');
+    assert.equal(decide({ path: '/dashboard', role: profileRole(profile), seen: true }), customerLoginEntryDestination());
   });
 }
 for (const role of ['Developer', 'developer', 'Consumer', 'Business']) test(`existing Customer role ${role} retained`, () => {

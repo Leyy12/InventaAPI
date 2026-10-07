@@ -1,7 +1,13 @@
-import { Suspense } from 'react';
-import AuthEntry from '@/components/auth/AuthEntry';
-import SessionLoadingScreen from '@/components/auth/SessionLoadingScreen';
+import { redirect } from 'next/navigation';
+import { customerLoginEntryDestination } from '../../../../services/auth-navigation';
 
-export default function LoginPage() {
-  return <Suspense fallback={<SessionLoadingScreen variant="public" />}><AuthEntry loginOnly /></Suspense>;
+// Compatibility only: never render a second Customer authentication screen.
+export default async function LoginPage({ searchParams }: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams)) {
+    if (typeof value === 'string') params.set(key, value);
+  }
+  redirect(customerLoginEntryDestination(params));
 }

@@ -78,26 +78,19 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
 
   if (!isOpen) return null;
 
-  // Plan-aware messaging:
-  // - Pro/Enterprise: checkout handoff (PayMongo flow).
-  // - Free: dedicated Free-plan login.
-  // - No pendingPlan (plain login, no plan context): generic fallback.
+  // Explicit paid CTA intent keeps its checkout presentation. Every ordinary
+  // Customer login uses Free copy only; this does not change account entitlement.
   const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "pro_max";
-  const isFreeFlow = pendingPlan === "free";
 
   const modalTitle = isUpgradeIntent
     ? pendingPlan === "pro"
       ? "Login to continue to your Pro upgrade"
       : "Login to continue to Pro Max"
-    : isFreeFlow
-      ? "Login to continue to InventaAPI Free"
-      : "Welcome to InventaAPI";
+    : "Login to continue to InventaAPI Free";
 
   const modalSubtitle = isUpgradeIntent
     ? "Log in to continue to the secure PayMongo checkout."
-    : isFreeFlow
-      ? "Log in to access your Free plan dashboard."
-      : "Log in to manage your DaaS platform";
+    : "Log in to access your Free plan dashboard.";
 
   const segmentHint = isUpgradeIntent ? (
     <>
@@ -219,7 +212,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       }
 
       if (auth.currentUser !== user) throw new Error('Session ended during login.');
-      rememberCustomerLoginEntry(pendingPlan === 'free' ? 'free' : 'generic');
+      rememberCustomerLoginEntry('free');
 
       // The modal closes as part of the successful route transition; retaining
       // the selector state until then avoids a flash of an unvalidated session.
@@ -559,7 +552,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
           <p className="text-sm text-slate-400">
             Don't have an account?{" "}
             <a
-              href={`/signup${pendingPlan && pendingPlan !== "free" ? `?pendingPlan=${pendingPlan}` : ""}`}
+              href={`/signup${isUpgradeIntent ? `?pendingPlan=${pendingPlan}` : ""}`}
               className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
             >
               Create Account

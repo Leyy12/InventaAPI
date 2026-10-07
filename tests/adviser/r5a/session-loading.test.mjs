@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createAuthSession, authScreen, navigationDecision, profileRole } from '../../../services/auth-navigation.ts';
+import { createAuthSession, authScreen, navigationDecision, profileRole, customerLoginEntryDestination } from '../../../services/auth-navigation.ts';
 import { customerProtectedReady } from '../../../dashboard/src/lib/customer-readiness.ts';
 
 const read = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
@@ -17,7 +17,8 @@ test('public root and Login restoration use the neutral branded state, never raw
   assert.match(entry, /if \(loading \|\| destination\) return <SessionLoadingScreen/);
   assert.match(entry, /authStatus === 'verified' && user && profileRole\(appUser\) === 'customer' \? 'workspace' : 'public'/);
   assert.match(root, /Suspense fallback=\{<SessionLoadingScreen variant="public"/);
-  assert.match(login, /Suspense fallback=\{<SessionLoadingScreen variant="public"/);
+  assert.match(login, /redirect\(customerLoginEntryDestination\(params\)\)/);
+  assert.doesNotMatch(login, /AuthEntry|SessionLoadingScreen/);
   assert.match(loading, /Preparing InventaAPI…/);
   assert.match(loading, /src="\/inventa-logo\.png"/);
 });
@@ -97,7 +98,7 @@ test('verified Customer reaches protected route; unauthenticated and Admin ident
   assert.equal(navigationDecision({ path: '/dashboard', initializing: false, role: 'customer' }), null);
   await gate.accept(null);
   assert.equal(current.status, 'unauthenticated');
-  assert.equal(navigationDecision({ path: '/dashboard', initializing: false, role: null }), '/login');
+  assert.equal(navigationDecision({ path: '/dashboard', initializing: false, role: null }), customerLoginEntryDestination());
   assert.equal(navigationDecision({ path: '/dashboard', initializing: false, role: 'admin' }), 'admin-app');
   gate.stop();
 });

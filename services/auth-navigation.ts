@@ -18,10 +18,11 @@ export const CUSTOMER_LOGIN_ENTRY_KEY = 'inventa.customer-login-entry.v1';
 // Presentation only, never account/entitlement authority. Commit this intent
 // only after Customer authentication, verification and segment validation.
 let customerLoginEntry: CustomerLoginEntry | null = null;
-let postLogoutEntry: CustomerLoginEntry = 'generic';
+let postLogoutEntry: CustomerLoginEntry = 'free';
 let postLogoutStorageConsumed = false;
-export function rememberCustomerLoginEntry(entry: CustomerLoginEntry): void {
-  customerLoginEntry = entry === 'free' ? 'free' : 'generic';
+export function rememberCustomerLoginEntry(_entry: CustomerLoginEntry): void {
+  // Legacy generic/unknown UX markers now resolve to the ordinary Free presentation.
+  customerLoginEntry = 'free';
   cancelCustomerLogout(); // A new successful login supersedes a prior logout.
   try { window.sessionStorage.setItem(CUSTOMER_LOGIN_ENTRY_KEY, customerLoginEntry); } catch { /* Optional UX. */ }
 }
@@ -29,9 +30,9 @@ function currentCustomerLoginEntry(): CustomerLoginEntry {
   if (customerLoginEntry !== null) return customerLoginEntry;
   try {
     const stored = window.sessionStorage.getItem(CUSTOMER_LOGIN_ENTRY_KEY);
-    if (stored === 'free' || stored === 'generic') return stored;
+    if (stored === 'free' || stored === 'generic') return 'free';
   } catch { /* Document-local fallback. */ }
-  return 'generic';
+  return 'free';
 }
 // In-flight intent is document-local: a reload cannot turn an unfinished logout
 // into a successful one. Memory also keeps navigation working if storage is denied.
@@ -55,7 +56,7 @@ export function markPostLogoutLogin(): boolean {
   postLogoutEntry = currentCustomerLoginEntry();
   customerLogoutIntent = 'completed';
   postLogoutStorageConsumed = false;
-  customerLoginEntry = 'generic';
+  customerLoginEntry = null;
   try { window.sessionStorage.removeItem(CUSTOMER_LOGIN_ENTRY_KEY); } catch { /* Optional UX. */ }
   try { window.sessionStorage.setItem(POST_LOGOUT_LOGIN_KEY, postLogoutEntry); return true; } catch { return false; }
 }
@@ -66,7 +67,7 @@ export function consumePostLogoutLoginEntry(): CustomerLoginEntry | null {
     const stored = window.sessionStorage.getItem(POST_LOGOUT_LOGIN_KEY);
     // Keep the previous generic marker compatible across an application update.
     if (!postLogoutStorageConsumed && entry === null && (stored === 'free' || stored === 'generic' || stored === '1')) {
-      entry = stored === 'free' ? 'free' : 'generic';
+      entry = 'free';
     }
   } catch { /* Document-local fallback. */ }
   cancelCustomerLogout();
@@ -84,6 +85,7 @@ export function profileRole(profile: AuthProfile | null): 'customer' | 'admin' |
   return ['developer', 'consumer', 'business'].includes(role) ? 'customer' : null;
 }
 export function customerPublicPath(path: string): boolean {
+  // /login is public only to allow its redirect-only compatibility page to run.
   return ['/', '/login', '/signup', '/privacy-policy', '/terms-of-service', '/contact'].includes(path);
 }
 export function navigationDecision({ app = 'customer', path, initializing, role, seen = false,
@@ -93,8 +95,10 @@ export function navigationDecision({ app = 'customer', path, initializing, role,
   if (app === 'admin') return role === 'admin' ? (path === '/login' ? '/' : null)
     : (path === '/login' ? null : '/login');
   if (role === 'admin') return 'admin-app';
-  if (!customerPublicPath(path)) return role === 'customer' ? null : '/login';
-  if (path !== '/' && path !== '/login') return null;
+  if (!customerPublicPath(path)) return role === 'customer' ? null : customerLoginEntryDestination();
+  // The compatibility page owns /login and its allowlisted query redirect.
+  // A concurrent layout redirect here would discard registered/paid intent.
+  if (path !== '/') return null;
   if (role === 'customer') return '/dashboard';
   return null;
 }
@@ -117,6 +121,15 @@ export function loginEntryQuery(params: URLSearchParams): string {
   if (['free', 'pro', 'pro_max', 'enterprise'].includes(params.get('pendingPlan') || '')) out.set('pendingPlan', params.get('pendingPlan')!);
   if (['admin_auth_failed', 'token_expired', 'admin_only', 'user_not_found'].includes(params.get('error') || '')) out.set('error', params.get('error')!);
   return out.toString();
+}
+// Fixed same-app landing destination. Free is presentation, never entitlement.
+// Only established query intents survive; no visitor-supplied return URL.
+export function customerLoginEntryDestination(params = new URLSearchParams()): string {
+  const safe = new URLSearchParams(loginEntryQuery(params));
+  safe.set('login', 'true');
+  const plan = safe.get('pendingPlan');
+  safe.set('pendingPlan', plan === 'pro' || plan === 'pro_max' ? plan : 'free');
+  return `/?${safe.toString()}`;
 }
 export function invalidSessionError(error: unknown): boolean {
   const value = error as { status?: number; code?: string } | null;

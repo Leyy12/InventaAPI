@@ -9,7 +9,7 @@ import { readSubscription, establishCustomerTrial, type SubscriptionState } from
 import { createEntitlementPoller } from '@/lib/entitlement-poller';
 import { activeCustomerSegment } from '../../../../services/customer-segment.js';
 import { createAuthSession, createLogoutAction, beginCustomerLogout, cancelCustomerLogout,
-  customerLogoutDestination, markPostLogoutLogin, profileRole, verifyWithin,
+  customerLogoutDestination, customerLoginEntryDestination, markPostLogoutLogin, profileRole, verifyWithin,
   type AuthStatus, type LogoutResult } from '../../../../services/auth-navigation';
 
 interface AppUser {
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
       rejected: () => {
         // Signup owns its create-profile-then-signout transaction. Never auto-create a missing profile here.
-        const destination = customerLogoutDestination('/login');
+        const destination = customerLogoutDestination(customerLoginEntryDestination());
         if (window.location.pathname !== '/signup' && destination) router.replace(destination);
       },
     });
@@ -119,7 +119,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const confirmAccountDeletion = () => {
     // Called ONLY after the existing backend confirms deletion. Never restore that session on cleanup failure.
     sessionGate.current?.deny();
-    router.replace('/login');
+    router.replace(customerLoginEntryDestination());
   };
 
   const customerSession = profileRole(appUser) === 'customer';

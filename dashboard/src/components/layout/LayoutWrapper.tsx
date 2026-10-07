@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen, customerLogoutDestination } from '../../../../services/auth-navigation';
+import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen, customerLogoutDestination, customerLoginEntryDestination } from '../../../../services/auth-navigation';
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import SubscriptionExpiryBanner from "@/components/shared/SubscriptionExpiryBanner";
@@ -18,7 +18,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const isPublicRoute = customerPublicPath(pathname);
   const rejected = authStatus === 'denied' || authStatus === 'invalid';
   const screen = authScreen(authStatus);
-  const destination = rejected && pathname !== '/signup' && pathname !== '/login' ? '/login'
+  const destination = rejected && !isPublicRoute ? customerLoginEntryDestination()
     : navigationDecision({ path: pathname, initializing: screen !== 'ready', role, entryFlow: true });
   useEffect(() => {
     // Read the synchronous logout intent when the effect executes, including
