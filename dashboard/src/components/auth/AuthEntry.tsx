@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-react";
-import LoginModal from "@/components/auth/LoginModal";
+import LoginForm from "@/components/auth/LoginForm";
 import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
-import { consumePostLogoutLoginEntry, navigationDecision, profileRole } from '../../../../services/auth-navigation';
+import { consumePostLogoutLoginEntry, customerSignupDestination, navigationDecision, profileRole } from '../../../../services/auth-navigation';
 
 const purchaseBlocked = (plan: PlanId, entitlement: ReturnType<typeof useAuth>['entitlement']) => {
   if (!entitlement) return true;
@@ -29,8 +29,6 @@ export default function AuthEntry() {
   const planIntent = searchParams.get('pendingPlan');
   const initialPlan: PlanId | null = planIntent === 'free' || planIntent === 'pro' || planIntent === 'pro_max'
     ? planIntent : searchParams.get('choosePlan') === 'true' || searchParams.get('payment') === 'cancelled' ? 'pro' : null;
-  const explicitLogin = searchParams.get('login') === 'true' || searchParams.get('logout') === 'true';
-  const [showLoginModal, setShowLoginModal] = useState(explicitLogin);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("pro");
   const [pendingPlan, setPendingPlan] = useState<PlanId | null>(initialPlan);
@@ -56,11 +54,9 @@ export default function AuthEntry() {
 
   useEffect(() => {
     if (!loading && !user) {
-      const entry = consumePostLogoutLoginEntry();
-      if (entry) {
-        setPendingPlan('free');
-        setShowLoginModal(true);
-      }
+      // Retain the synchronous logout race barrier, but consume legacy popup
+      // markers without changing the permanently visible inline form.
+      consumePostLogoutLoginEntry();
     }
   }, [loading, user]);
 
@@ -73,7 +69,7 @@ export default function AuthEntry() {
 
   // Check for error query params from admin panel redirects.
   // Each handler runs ONCE, then the consumed params are stripped from the URL
-  // so a reload/back-navigation does not re-open the modals or toasts.
+  // so a reload/back-navigation does not repeat entry notifications.
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     let handled = false;
@@ -94,37 +90,27 @@ export default function AuthEntry() {
       handled = true;
     }
 
-    // Auto-open login modal when a visitor clicks "Login" on the signup page.
+    // Legacy login/logout flags are consumed without opening a popup.
     if (searchParams.get("login") === "true" || searchParams.get("logout") === "true") {
-      setShowLoginModal(true);
       handled = true;
     }
 
-    // Show success banner when coming from signup and auto-open the login modal
-    // so the user can log in their freshly created account and enter the dashboard.
+    // Registration succeeded only after profile provisioning and SDK sign-out.
     if (searchParams.get("registered") === "true") {
       setSuccessMessage("✅ Account created successfully! Please log in to continue.");
       setTimeout(() => setSuccessMessage(null), 8000);
-      setShowLoginModal(true);
       handled = true;
     }
 
-    // After a new Pro-intent signup, the user arrives with choosePlan=true.
-    // Do NOT open the SubscriptionModal directly here — the user just signed out
-    // after registration and is unauthenticated. Instead, set pendingPlan so the
-    // routing useEffect (which waits for auth to resolve) opens the correct modal:
-    // LoginModal for unauthenticated visitors, SubscriptionModal for logged-in ones.
+    // Paid intent is UX only and waits for verified authentication/entitlement.
     if (searchParams.get("choosePlan") === "true") {
       setPendingPlan(initialPlan ?? 'pro');
       handled = true;
     }
 
-    // Handle checkout cancellations.
-    // As explicitly requested, cancellation should return the user to the Login Modal
-    // so they start the Pro plan journey over and re-confirm their login.
+    // Checkout cancellation is presented inline, never proof of payment.
     if (searchParams.get("payment") === "cancelled") {
       setPendingPlan(initialPlan ?? 'pro');
-      setShowLoginModal(true);
       setModalError("Payment was not completed. You can try again below.");
       handled = true;
     }
@@ -139,60 +125,22 @@ export default function AuthEntry() {
     }
   }, [searchParams, router, initialPlan]);
 
-  // Single decision point for plan clicks, run only AFTER Firebase auth has settled.
-  // During the initial onAuthStateChanged, `user` is still null even for logged-in
-  // visitors; deciding earlier would wrongly open the login modal (and the previous
-  // auto-conversion here would later hijack it once the session resolved — the cause
-  // of "login modal gone on the second Subscribe Now click").
+  // Restored paid intent waits for authoritative entitlement. A login already
+  // in progress owns its segment/role checks and cannot be hijacked by this effect.
   useEffect(() => {
-    if (loading || !pendingPlan) return;
-
-    if (user) {
-      // Prevent race condition: if the user JUST logged in via LoginModal,
-      // let LoginModal's own handleLogin finish fetching the Firestore user
-      // document and executing its own plan checks (which redirects already-Pro
-      // users to the dashboard). Do not aggressively hijack the flow here.
-      if (showLoginModal) {
-        return;
-      }
-
-      // Free plan needs no upgrade — the LoginModal handles onboarding
-      // (segment selection) and routes the user straight into the dashboard.
-      if (pendingPlan === "free") {
-        setPendingPlan(null);
-        return; // keep the login modal open — do NOT open the subscription modal
-      }
-      // Auth restoration is not subscription verification. Preserve the existing
-      // paid-plan precheck using its authoritative state before choosing a modal.
-      if (!entitlement) return;
-      // Already-active paid plan check. openSubscription runs the same check when
-      // auth has already settled, but a click that landed during the initial
-      // loading window is deferred here — so this pre-check MUST be duplicated in
-      // the routing effect for the "already Pro" modal to open (otherwise the
-      // checkout/GCash modal would wrongly appear for paid subscribers).
-      if (purchaseBlocked(pendingPlan, entitlement)) {
-        setPendingPlan(null);
-        setShowAlreadyProModal(true);
-        return;
-      }
-      // Logged in + paid: open the upgrade/subscription modal directly, no login.
-      setSelectedPlan(pendingPlan);
+    if (loading || !pendingPlan || loginStarted || !user) return;
+    if (profileRole(appUser) !== 'customer' || authStatus !== 'verified') return;
+    if (pendingPlan === "free") { setPendingPlan(null); return; }
+    if (!entitlement) return;
+    if (purchaseBlocked(pendingPlan, entitlement)) {
       setPendingPlan(null);
-      setShowLoginModal(false);
-      setShowSubscriptionModal(true);
+      setShowAlreadyProModal(true);
       return;
     }
-
-    // Logged out: (any plan) open the login modal; pendingPlan stays set so a
-    // successful login continues into the correct post-login flow.
-    setShowLoginModal(true);
-  }, [loading, user, appUser, entitlement, pendingPlan, showLoginModal]);
-
-  const openSubscription = (plan: PlanId) => {
-    // Same landing CTA behavior as before; the standalone-only branch is gone.
-    setPendingPlan(plan);
-    setShowLoginModal(true);
-  };
+    setSelectedPlan(pendingPlan);
+    setPendingPlan(null);
+    setShowSubscriptionModal(true);
+  }, [loading, user, appUser, authStatus, entitlement, pendingPlan, loginStarted]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const proExpiryDisplay = (() => {
@@ -215,7 +163,7 @@ export default function AuthEntry() {
       {/* Error Toast Notification */}
       {errorMessage && (
         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[150] animate-in slide-in-from-top duration-300">
-          <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-6 py-4 flex items-center gap-3 shadow-2xl backdrop-blur-md min-w-[400px]">
+          <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-6 py-4 flex items-center gap-3 shadow-2xl backdrop-blur-md w-[calc(100vw-2rem)] max-w-lg">
             <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse flex-shrink-0"></div>
             <span className="text-red-100 font-medium text-sm flex-1">{errorMessage}</span>
             <button
@@ -231,7 +179,7 @@ export default function AuthEntry() {
       {/* Success Toast Notification (e.g. after signup) */}
       {successMessage && (
         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[150] animate-in slide-in-from-top duration-300">
-          <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-xl px-6 py-4 flex items-center gap-3 shadow-2xl backdrop-blur-md min-w-[400px]">
+          <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-xl px-6 py-4 flex items-center gap-3 shadow-2xl backdrop-blur-md w-[calc(100vw-2rem)] max-w-lg">
             <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse flex-shrink-0"></div>
             <span className="text-emerald-100 font-medium text-sm flex-1">{successMessage}</span>
             <button
@@ -247,7 +195,7 @@ export default function AuthEntry() {
       {/* Navigation */}
       <>
       <nav className="fixed w-full z-50 top-0 border-b border-white/5 bg-[#020617]/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2">
               <Image
@@ -264,7 +212,6 @@ export default function AuthEntry() {
               <a href="#features" className="hover:text-white transition-colors">Features</a>
               <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
               <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
-              <a href="/docs" className="hover:text-white transition-colors">API Docs</a>
 
             </div>
             <div className="flex items-center gap-4 text-sm">
@@ -290,32 +237,44 @@ export default function AuthEntry() {
             <a href="#features" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Features</a>
             <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">How it Works</a>
             <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Pricing</a>
-            <a href="/docs" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">API Docs</a>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+      <section className="relative pt-28 pb-16 lg:pt-32 lg:pb-24 overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/20 blur-[120px] rounded-full pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-slate-300 mb-8">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-            Data-as-a-Service Platform v1.0
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-16">
+          <div className="min-w-0 text-center lg:text-left">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-slate-300 mb-8">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
+              Data-as-a-Service Platform v1.0
+            </div>
+
+            <h1 className="text-4xl sm:text-5xl xl:text-6xl font-extrabold tracking-tight mb-8 leading-tight">
+              Centralized Product <br className="hidden md:block" />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
+                Database for SMEs
+              </span>
+            </h1>
+
+            <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+              Stop building your product catalog from scratch. Consume our standardized, highly-available REST API to power your Point of Sale, Inventory, or E-Commerce applications instantly.
+            </p>
           </div>
-
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight">
-            Centralized Product <br className="hidden md:block" />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
-              Database for SMEs
-            </span>
-          </h1>
-
-          <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Stop building your product catalog from scratch. Consume our standardized, highly-available REST API to power your Point of Sale, Inventory, or E-Commerce applications instantly.
-          </p>
-
+          <div className="min-w-0 w-full max-w-md mx-auto lg:justify-self-end">
+            <LoginForm
+              onStart={() => { setLoginStarted(true); }}
+              onComplete={() => { setPendingPlan(null); setLoginStarted(false); }}
+              pendingPlan={pendingPlan}
+              onOpenSubscription={(plan) => {
+                setSelectedPlan(plan); setPendingPlan(null);
+                setShowSubscriptionModal(true); setLoginStarted(false);
+              }}
+              initialError={modalError}
+            />
+          </div>
         </div>
       </section>
 
@@ -419,7 +378,7 @@ export default function AuthEntry() {
               </div>
 
               <button
-                onClick={() => openSubscription("free")}
+                onClick={() => router.push(customerSignupDestination("free"))}
                 className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
                 {SUBSCRIPTION_PLANS.free.ctaText} →
               </button>
@@ -460,7 +419,7 @@ export default function AuthEntry() {
               </div>
 
               <button
-                onClick={() => openSubscription("pro")}
+                onClick={() => router.push(customerSignupDestination("pro"))}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25">
                 {SUBSCRIPTION_PLANS.pro.ctaText} →
               </button>
@@ -488,7 +447,7 @@ export default function AuthEntry() {
               </div>
 
               <button
-                onClick={() => openSubscription("pro_max")}
+                onClick={() => router.push(customerSignupDestination("pro_max"))}
                 className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
                 {SUBSCRIPTION_PLANS.pro_max.ctaText} →
               </button>
@@ -522,19 +481,6 @@ export default function AuthEntry() {
         </div>
       </footer>
       </>
-
-      {/* Login is required only when a visitor chooses a pricing plan. */}
-      <LoginModal
-        isOpen={showLoginModal}
-        onStart={() => { setLoginStarted(true); }}
-        onClose={() => {
-          setShowLoginModal(false); setPendingPlan(null); setModalError(""); setLoginStarted(false);
-          if (searchParams.get('login') === 'true' || searchParams.get('logout') === 'true') router.replace('/', { scroll: false });
-        }}
-        pendingPlan={pendingPlan}
-        onOpenSubscription={(plan) => { setSelectedPlan(plan); setShowSubscriptionModal(true); }}
-        initialError={modalError}
-      />
 
       {/* Subscription Modal */}
       <SubscriptionModal

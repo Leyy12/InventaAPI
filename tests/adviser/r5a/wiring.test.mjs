@@ -11,14 +11,15 @@ test('root always renders Landing and does not consult browser visit state', () 
   assert.match(source, /<AuthEntry \/>/);
   assert.doesNotMatch(source, /landingSeen|useSyncExternalStore|completeLanding|setItem/);
 });
-test('Landing Login opens a dismissible modal while Signup remains a route', () => {
+test('Landing permanently embeds login while registration remains pricing-first', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
-  assert.match(source, /<LoginModal[\s\S]*isOpen=\{showLoginModal\}/);
+  assert.match(source, /<LoginForm/);
+  assert.doesNotMatch(source, /showLoginModal|<LoginModal/);
   const header = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
   assert.doesNotMatch(header, />\s*Sign Up\s*</);
-  assert.match(read('dashboard/src/components/auth/LoginModal.tsx'), /Create Account/);
+  assert.match(read('dashboard/src/components/auth/LoginForm.tsx'), /href="#pricing"[\s\S]*Register/);
   assert.match(read('dashboard/src/app/signup/page.tsx'), /Create Account/);
-  assert.match(source, /const openSubscription = \(plan: PlanId\) => \{[\s\S]*?setPendingPlan\(plan\);[\s\S]*?setShowLoginModal\(true\)/);
+  assert.match(source, /router\.push\(customerSignupDestination\("free"\)\)/);
   assert.doesNotMatch(source, /completeLanding|browserStorage/);
 });
 test('legacy Login is redirect-only; signup and footer use the central landing entry', () => {
@@ -26,7 +27,7 @@ test('legacy Login is redirect-only; signup and footer use the central landing e
   assert.doesNotMatch(read('dashboard/src/app/login/page.tsx'), /AuthEntry|loginOnly/);
   const source = read('dashboard/src/app/signup/page.tsx');
   assert.match(source, /customerLoginEntryDestination\(intent\)/);
-  assert.match(source, /href=\{customerLoginEntryDestination\(\)\}/);
+  assert.match(source, /href=\{customerLoginEntryDestination\(new URLSearchParams/);
   assert.doesNotMatch(source, /\/login\?registered|href="\/login"/);
 });
 test('Customer guard hides protected children before auth/role verification', () => {
@@ -81,7 +82,7 @@ test('Admin protected UI and Login use authoritative role gate with own logout',
   assert.match(read('admin-panel/src/app/login/page.tsx'), /profileRole/);
 });
 test('Admin handoff is configured origin only; no token bridge or visitor return URL', () => {
-  const modal = read('dashboard/src/components/auth/LoginModal.tsx');
+  const modal = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.match(modal, /adminLoginDestination\(process.env.NEXT_PUBLIC_ADMIN_APP_ORIGIN/);
   assert.doesNotMatch(modal, /authToken|[?&]next=|[?&]redirect=|[?&]returnUrl=/);
   assert.match(modal, /profileRole\(userData \?\? null\)/);
@@ -89,7 +90,7 @@ test('Admin handoff is configured origin only; no token bridge or visitor return
 });
 test('landing Login is dismissible and still verifies the selected account segment', () => {
   assert.doesNotMatch(read('dashboard/src/components/auth/AuthEntry.tsx'), /loginOnly|standalone=|Continue to Login/);
-  const modal = read('dashboard/src/components/auth/LoginModal.tsx');
+  const modal = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.match(modal, /loginSegmentAllowed\(\{ \.\.\.userData, plan \}, chosenSegment\)/);
   assert.match(modal, /auth.currentUser !== user/);
 });
@@ -358,11 +359,10 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
       destination, snapshotPath, router, customerLogoutDestination);
   };
   const root = () => {
-    modal = new URL(path, 'https://synthetic.invalid').searchParams.get('login') === 'true';
-    new Function('loading', 'user', 'consumePostLogoutLoginEntry', 'setShowLoginModal', 'setPendingPlan',
+    modal = false; // No login popup can be opened by legacy state.
+    new Function('loading', 'user', 'consumePostLogoutLoginEntry',
       'if (!loading' + bodyBetween(entry, '  useEffect(() => {\n    if (!loading', '\n  }, [loading, user]'))(
-      state?.loading ?? false, state?.user ?? null, consumePostLogoutLoginEntry,
-      value => { modal = value; }, value => { pendingPlan = value; });
+      state?.loading ?? false, state?.user ?? null, consumePostLogoutLoginEntry);
   };
   const clearSession = () => gate.invalidate();
   const logoutAction = { current: null }, sessionGate = { current: gate };
@@ -387,12 +387,6 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
     run: () => logoutAction.current(), captureGuard, root,
     complete: () => finishSignOut(),
     settle() { if (requests.length) path = requests.at(-1); },
-    dismiss() {
-      const close = bodyBetween(entry, '        onClose={() => {\n          setShowLoginModal(false);', '\n        }}');
-      modal = false;
-      new Function('setPendingPlan', 'setModalError', 'setLoginStarted', 'pathname', 'searchParams', 'router', close)(
-        value => { pendingPlan = value; }, () => {}, () => {}, path, new URLSearchParams(), router);
-    },
     direct(target) { path = target; },
     state: () => ({ path, modal, pendingPlan, busy, error, user: state?.user, profile: state?.profile }), requests, values,
     dispose() { gate.stop(); rememberCustomerLoginEntry('generic'); cancelCustomerLogout(); globalThis.window = previousWindow; },
@@ -415,27 +409,22 @@ for (const storageDenied of [false, true]) {
       assert.ok(h.requests.length > 0); assert.ok(h.requests.every(route => route === '/'));
       assert.equal(customerLogoutDestination('/login'), '/');
       h.settle(); h.root();
-      assert.equal(h.state().path, '/'); assert.equal(h.state().modal, true);
+      assert.equal(h.state().path, '/'); assert.equal(h.state().modal, false);
       assert.equal(h.values.has(POST_LOGOUT_LOGIN_KEY), false);
       assert.equal(consumePostLogoutLogin(), false, 'intent consumed exactly once');
-      if (storageDenied) {
-        const escape = bodyBetween('dashboard/src/components/auth/LoginModal.tsx',
-          '    const onKeyDown = (event: KeyboardEvent) => {', '\n    };');
-        new Function('event', 'standalone', 'onClose', escape)({ key: 'Escape' }, false, () => h.dismiss());
-      } else h.dismiss();
       h.settle(); assert.equal(h.state().path, '/'); assert.equal(h.state().modal, false);
-      h.root(); assert.equal(h.state().modal, false, 'remount/refresh must not reopen modal');
+      h.root(); assert.equal(h.state().modal, false, 'legacy markers never resurrect a popup');
       h.captureGuard()(); h.settle(); assert.equal(h.state().path, '/', 'no redirect loop');
       await h.login(); const second = h.run(); await Promise.resolve(); await Promise.resolve();
-      h.complete(); await second; h.settle(); h.root(); assert.equal(h.state().modal, true);
+      h.complete(); await second; h.settle(); h.root(); assert.equal(h.state().modal, false);
     } finally { h.dispose(); }
   });
 }
-test('race: unauthenticated protected visit reaches landing login once; dismissing does not loop', () => {
+test('race: unauthenticated protected visit reaches inline landing login without a loop', () => {
   const h = logoutRaceHarness();
   try {
     h.captureGuard()(); h.settle(); assert.equal(h.state().path, customerLoginEntryDestination());
-    h.root(); assert.equal(h.state().modal, true);
+    h.root(); assert.equal(h.state().modal, false);
     h.direct('/'); // Landing consumes its entry query with replace, retaining the modal.
     h.requests.length = 0; h.captureGuard()(); assert.deepEqual(h.requests, []);
   } finally { h.dispose(); }
@@ -466,7 +455,7 @@ test('race: provider rejection cannot introduce a second /login redirect during 
 });
 
 for (const storageDenied of [false, true]) {
-  test(`free entry: verified Free session returns to Free modal once (storage denied=${storageDenied})`, async () => {
+  test(`free entry: verified Free session returns to persistent inline login without popup (storage denied=${storageDenied})`, async () => {
     const h = logoutRaceHarness({ storageDenied });
     try {
       await h.login('free');
@@ -474,17 +463,17 @@ for (const storageDenied of [false, true]) {
       assert.equal(consumePostLogoutLoginEntry(), null, 'unfinished signout cannot open a modal');
       h.complete(); assert.deepEqual(await pending, { ok: true });
       h.settle(); h.root();
-      assert.equal(h.state().path, '/'); assert.equal(h.state().modal, true);
-      assert.equal(h.state().pendingPlan, 'free');
+      assert.equal(h.state().path, '/'); assert.equal(h.state().modal, false);
+      assert.equal(h.state().pendingPlan, null);
       assert.equal(h.values.has(POST_LOGOUT_LOGIN_KEY), false);
       assert.equal(h.values.has(CUSTOMER_LOGIN_ENTRY_KEY), false);
       assert.equal(consumePostLogoutLoginEntry(), null);
-      h.dismiss(); h.root(); assert.equal(h.state().modal, false);
+      h.root(); assert.equal(h.state().modal, false);
       await h.login();
       const generic = h.run(); await Promise.resolve(); await Promise.resolve();
       h.complete(); await generic; h.settle(); h.root();
-      assert.equal(h.state().modal, true); assert.equal(h.state().pendingPlan, 'free',
-        'ordinary Login now always uses the Free presentation');
+      assert.equal(h.state().modal, false); assert.equal(h.state().pendingPlan, null,
+        'inline ordinary Free presentation requires no query or popup intent');
     } finally { h.dispose(); }
   });
 }
@@ -513,8 +502,8 @@ async function exerciseLoginEntry({ pendingPlan = null, failure = null } = {}) {
   const profile = { role: 'Developer', businessSegment: 'Grocery', selectedSegment: 'Grocery' };
   const effective = { plan: 'Free' };
   const events = [];
-  const body = bodyBetween('dashboard/src/components/auth/LoginModal.tsx',
-    '      // 1. Sign in with Firebase', '      // The modal closes as part');
+  const body = bodyBetween('dashboard/src/components/auth/LoginForm.tsx',
+    '      // 1. Sign in with Firebase', '      // The inline form completes as part');
   const bindings = {
     signInWithEmailAndPassword: async () => {
       if (failure === 'firebase') throw Error('synthetic login failure');
@@ -563,11 +552,11 @@ for (const failure of ['firebase', 'profile', 'missing', 'subscription', 'segmen
   });
 }
 
-test('free entry: opening/closing a Free CTA never commits an authenticated-session entry', () => {
+test('free entry: registration CTA never commits an authenticated-session entry', () => {
   const entry = read('dashboard/src/components/auth/AuthEntry.tsx');
-  assert.match(entry, /openSubscription\("free"\)/);
+  assert.match(entry, /customerSignupDestination\("free"\)/);
   assert.doesNotMatch(entry, /rememberCustomerLoginEntry/);
-  const modal = read('dashboard/src/components/auth/LoginModal.tsx');
+  const modal = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.equal((modal.match(/rememberCustomerLoginEntry\(/g) ?? []).length, 1);
   assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('loginSegmentAllowed('));
   assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('await refreshUserDoc();'));

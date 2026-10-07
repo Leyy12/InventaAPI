@@ -309,7 +309,9 @@ function SignupPageInner() {
         </form>
 
         <p className="text-center text-sm text-slate-500 mt-8">
-          Already have an account? <Link href={customerLoginEntryDestination()} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
+          Already have an account? <Link href={customerLoginEntryDestination(new URLSearchParams(
+                pendingPlan === "pro" || pendingPlan === "pro_max" ? { pendingPlan } : {}
+              ))} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>
         </p>
       </div>
     </div>

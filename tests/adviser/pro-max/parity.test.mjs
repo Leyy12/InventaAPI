@@ -36,7 +36,7 @@ test('shared effective limits and rendered pricing contract are 0–50, 500/day 
   assert.equal(SUBSCRIPTION_PLANS.pro_max.priceDisplay, '₱4,999');
   for (const file of ['dashboard/src/app/dashboard/products/page.tsx', 'dashboard/src/app/dashboard/free-trial/page.tsx',
     'dashboard/src/components/reports/CustomerUsageSummary.tsx', 'dashboard/src/app/docs/page.tsx',
-    'dashboard/src/app/privacy-policy/page.tsx', 'dashboard/src/components/auth/LoginModal.tsx']) {
+    'dashboard/src/app/privacy-policy/page.tsx', 'dashboard/src/components/auth/LoginForm.tsx']) {
     assert.doesNotMatch(source(file), /Minimum [Rr]equired|minimum 50|at least 50|50–500|\/ 500\b|5,000 requests/);
   }
 });
@@ -77,7 +77,7 @@ test('Free, Pro, Pro Max public plans retain truthful inherited capabilities and
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One Business Segment'));
   assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('Real Sales Analytics Feed'));
   assert.ok(!JSON.stringify(SUBSCRIPTION_PLANS).match(/\bSLA\b|Custom Endpoints|Priority Support|AI-powered|confidence score/iu));
-  assert.match(source('dashboard/src/components/auth/AuthEntry.tsx'), /openSubscription\("pro_max"\)/u);
+  assert.match(source('dashboard/src/components/auth/AuthEntry.tsx'), /customerSignupDestination\("pro_max"\)/u);
   assert.match(source('dashboard/src/components/subscription/SubscriptionModal.tsx'), /JSON\.stringify\(\{ plan: selectedPlan \}\)/u);
 });
 

@@ -55,7 +55,7 @@ function landing(query = '') {
   const h = hooks(), time = clock(), b = browser(), routes = [];
   let params = new URLSearchParams(query);
   const authState = { user: null, appUser: null, loading: false, authStatus: 'unauthenticated', entitlement: null };
-  const router = { replace: route => routes.push(route) };
+  const router = { replace: route => routes.push(route), push: route => routes.push(route) };
   // Marketing objects do not participate in authorization; load the real config.
   const plans = load('dashboard/src/config/plans.ts', 'exports.SUBSCRIPTION_PLANS', h, {
     '../../../functions/entitlement-limits.mjs': { PRO_DAILY_REQUEST_LIMIT: 500, TRIAL_MAX_PRODUCTS: 50 },
@@ -64,13 +64,13 @@ function landing(query = '') {
   const component = load('dashboard/src/components/auth/AuthEntry.tsx', 'AuthEntry', h, {
     'next/image': 'Image', 'lucide-react': icons,
     'next/navigation': { useRouter: () => router, useSearchParams: () => params },
-    '@/components/auth/LoginModal': 'LoginModal', '@/components/auth/SessionLoadingScreen': 'Loading',
+    '@/components/auth/LoginForm': 'LoginForm', '@/components/auth/SessionLoadingScreen': 'Loading',
     '@/components/subscription/SubscriptionModal': 'SubscriptionModal',
     '@/lib/firebase/auth-context': { useAuth: () => authState }, '@/config/plans': { SUBSCRIPTION_PLANS: plans },
     '../../../../services/auth-navigation': navigation,
   }, { window: b.window, setTimeout: time.schedule, clearTimeout: time.cancel, console: silent });
   h.mount(component);
-  return { h, routes, authState, modal: () => find(h, node => node.type === 'LoginModal').props,
+  return { h, routes, authState, modal: () => find(h, node => node.type === 'LoginForm').props,
     consumeQuery() { params = new URLSearchParams(); h.render(); }, stop() { h.stop(); } };
 }
 
@@ -79,7 +79,7 @@ function modal(pendingPlan = null, plan = 'Free', blocked = false, resetFailure 
   let signins = 0, signouts = 0;
   const user = { uid: 'synthetic', email: 'fixture@example.invalid' }, auth = { currentUser: null };
   const profile = { role: 'Developer', businessSegment: 'Grocery', selectedSegment: 'Grocery', plan, disabled: blocked };
-  const component = load('dashboard/src/components/auth/LoginModal.tsx', 'LoginModal', h, {
+  const component = load('dashboard/src/components/auth/LoginForm.tsx', 'LoginForm', h, {
     'next/image': 'Image', 'lucide-react': icons,
     'firebase/auth': {
       signInWithEmailAndPassword: async () => { signins++; auth.currentUser = user; return { user }; },
@@ -96,7 +96,7 @@ function modal(pendingPlan = null, plan = 'Free', blocked = false, resetFailure 
     '../../../../services/customer-segment.js': { loginSegmentAllowed },
     '@/lib/subscription': { readSubscription: async () => ({ plan, canPurchaseProMax: plan === 'Pro' }) },
   }, { window: b.window, setTimeout: time.schedule, clearTimeout: time.cancel, console: silent });
-  h.mount(component, { isOpen: true, pendingPlan, onClose() {}, onOpenSubscription: value => upgrades.push(value) });
+  h.mount(component, { pendingPlan, onComplete() {}, onOpenSubscription: value => upgrades.push(value) });
   return { h, time, routes, upgrades, writes, resets, profile,
     get signins() { return signins; }, get signouts() { return signouts; },
     async login(segment = 'Grocery') {
@@ -119,10 +119,10 @@ for (const intent of ['', 'free', 'pro', 'pro_max', 'https://evil.example']) {
     const route = new URL(fixture.routes[0], 'https://synthetic.invalid');
     assert.equal(route.pathname, '/');
     assert.equal(route.searchParams.get('registered'), 'true');
-    assert.equal(route.searchParams.get('login'), 'true');
-    assert.equal(route.searchParams.get('pendingPlan'), ['pro', 'pro_max'].includes(intent) ? intent : 'free');
+    assert.equal(route.searchParams.has('login'), false);
+    assert.equal(route.searchParams.get('pendingPlan'), ['pro', 'pro_max'].includes(intent) ? intent : null);
     const entry = landing(route.search.slice(1)); await flush();
-    assert.equal(entry.modal().isOpen, true);
+    assert.ok(entry.modal());
     assert.equal(entry.modal().pendingPlan, route.searchParams.get('pendingPlan'));
     assert.match(text(entry.h.output), /Account created successfully/);
     entry.stop(); fixture.h.stop();
@@ -134,10 +134,10 @@ for (const failure of ['profile', 'signout']) test(`signup ${failure} failure ca
   assert.match(text(fixture.h.output), /synthetic .* failure/);
   fixture.h.stop();
 });
-test('signup footer resolves to landing Free modal', () => {
+test('signup footer preserves paid intent in the inline landing entry', () => {
   const fixture = signup('pendingPlan=pro');
   const link = find(fixture.h, node => node.type === 'Link' && text(node).trim() === 'Login');
-  assert.equal(link.props.href, navigation.customerLoginEntryDestination()); fixture.h.stop();
+  assert.equal(link.props.href, navigation.customerLoginEntryDestination(new URLSearchParams({ pendingPlan: 'pro' }))); fixture.h.stop();
 });
 
 for (const query of [{}, { registered: 'true' }, { pendingPlan: 'pro' }, { pendingPlan: 'pro_max' },
@@ -157,18 +157,19 @@ for (const query of [{}, { registered: 'true' }, { pendingPlan: 'pro' }, { pendi
     catch (error) { assert.ok(error.destination); target = error.destination; }
     const url = new URL(target, 'https://synthetic.invalid');
     assert.equal(url.origin, 'https://synthetic.invalid'); assert.equal(url.pathname, '/');
-    assert.equal(url.searchParams.get('pendingPlan'), typeof query.pendingPlan === 'string' ? query.pendingPlan : 'free');
+    assert.equal(url.searchParams.get('pendingPlan'), typeof query.pendingPlan === 'string' ? query.pendingPlan : null);
     for (const key of ['next', 'redirect', 'returnUrl', 'callbackUrl']) assert.equal(url.searchParams.has(key), false);
     const entry = landing(url.search.slice(1)); await flush();
-    assert.equal(entry.modal().isOpen, true); entry.consumeQuery(); await flush();
-    entry.modal().onClose(); await flush(); entry.h.render(); await flush();
-    assert.equal(entry.modal().isOpen, false);
+    assert.ok(entry.modal()); entry.consumeQuery(); await flush();
+    entry.h.render(); await flush();
+    assert.ok(entry.modal(), 'inline form persists after query consumption and remount');
+    assert.equal(url.searchParams.has('login'), false);
     assert.equal(navigation.navigationDecision({ path: '/', initializing: false, role: null }), null);
     assert.ok(entry.routes.every(route => route === '/')); entry.stop();
   });
 }
 
-for (const intent of [null, 'free', 'pro', 'pro_max']) test(`actual modal presentation and safe signup link: ${intent}`, async () => {
+for (const intent of [null, 'free', 'pro', 'pro_max']) test(`actual inline presentation and pricing-first Register link: ${intent}`, async () => {
   const fixture = modal(intent); await flush();
   const copy = text(fixture.h.output);
   assert.ok(copy.includes(intent === 'pro' ? 'Login to continue to your Pro upgrade' :
@@ -177,8 +178,12 @@ for (const intent of [null, 'free', 'pro', 'pro_max']) test(`actual modal presen
   assert.ok(!copy.includes('Welcome to InventaAPI'));
   const segment = find(fixture.h, node => node.props?.id === 'segment');
   assert.deepEqual(nodes(segment, node => node.type === 'option').map(node => node.props.value).filter(Boolean), [...PRODUCT_SEGMENTS]);
-  const signupLink = find(fixture.h, node => node.type === 'a' && String(node.props?.href).startsWith('/signup'));
-  assert.equal(signupLink.props.href, intent === 'pro' || intent === 'pro_max' ? `/signup?pendingPlan=${intent}` : '/signup');
+  const signupLink = find(fixture.h, node => node.type === 'a' && node.props?.href === '#pricing');
+  assert.equal(signupLink.props.href, '#pricing');
+  assert.equal(text(signupLink).trim(), 'Register');
+  assert.equal(segment.props.required, true);
+  assert.equal(nodes(fixture.h.output, node => node.props?.role === 'dialog').length, 0);
+  assert.equal(nodes(fixture.h.output, node => node.props?.['aria-label'] === 'Close login').length, 0);
   fixture.stop();
 });
 for (const [intent, plan, upgrade] of [[null, 'Free', null], [null, 'Pro', null], ['free', 'Pro Max', null],
@@ -225,4 +230,67 @@ for (const failure of [false, true]) test(`landing password reset preserves vali
   assert.ok(text(fixture.h.output).includes(freeTitle));
   assert.equal(nodes(fixture.h.output, node => node.type === 'form').length, 1);
   assert.deepEqual(fixture.routes, []); fixture.stop();
+});
+
+test('plain root needs no query to render inline form; pricing CTAs only register', async () => {
+  const entry = landing(); await flush();
+  assert.ok(entry.modal()); assert.equal(entry.modal().pendingPlan, null);
+  for (const [label, plan] of [['Get Started Free', 'free'], ['Subscribe Now', 'pro'], ['Get Pro Max', 'pro_max']]) {
+    const buttons = nodes(entry.h.output, node => node.type === 'button' && text(node).trim().replace(/\s*→$/, '').trim() === label);
+    assert.equal(buttons.length, 1, label);
+    buttons[0].props.onClick();
+    assert.equal(entry.routes.at(-1), navigation.customerSignupDestination(plan));
+  }
+  assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, false);
+  entry.stop();
+});
+test('login in progress defers root navigation and subscription opening until validated continuation', async () => {
+  const entry = landing('pendingPlan=pro_max'); await flush();
+  entry.modal().onStart(); await flush();
+  Object.assign(entry.authState, { user: { uid: 'synthetic' }, appUser: { role: 'Developer' },
+    authStatus: 'verified', entitlement: { canPurchaseProMax: true, plan: 'Pro' } });
+  entry.h.render(); await flush();
+  assert.ok(entry.modal(), 'public form remains owned by the in-progress login checks');
+  assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, false);
+  assert.ok(!entry.routes.includes('/dashboard'));
+  entry.modal().onComplete(); entry.modal().onOpenSubscription('pro_max'); await flush();
+  assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, true);
+  assert.ok(!entry.routes.includes('/dashboard')); entry.stop();
+});
+test('auth restoration waits without marketing flash, then verified plain Customer redirects', async () => {
+  const entry = landing(); await flush();
+  Object.assign(entry.authState, { loading: true }); entry.h.render(); await flush();
+  assert.equal(nodes(entry.h.output, node => node.type === 'LoginForm').length, 0);
+  Object.assign(entry.authState, { loading: false, authStatus: 'verified',
+    user: { uid: 'synthetic' }, appUser: { role: 'Developer' } });
+  entry.h.render(); await flush();
+  assert.equal(entry.routes.at(-1), '/dashboard'); entry.stop();
+});
+test('cancellation and signup success are inline notices, not checkout authority', async () => {
+  const entry = landing('payment=cancelled&pendingPlan=pro'); await flush();
+  assert.match(entry.modal().initialError, /Payment was not completed/);
+  assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, false);
+  entry.consumeQuery(); await flush(); assert.ok(entry.modal()); entry.stop();
+});
+
+for (const [plan, permitted] of [['pro', true], ['pro', false], ['pro_max', true], ['pro_max', false]]) {
+  test(`restored ${plan} intent waits for authoritative entitlement and preserves eligibility=${permitted}`, async () => {
+    const entry = landing('pendingPlan=' + plan); await flush();
+    Object.assign(entry.authState, { user: { uid: 'synthetic' }, appUser: { role: 'Developer' },
+      authStatus: 'verified' }); entry.h.render(); await flush();
+    assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, false);
+    assert.ok(!entry.routes.includes('/dashboard'));
+    entry.authState.entitlement = { canPurchasePro: permitted, canPurchaseProMax: permitted,
+      activePro: !permitted, plan: permitted ? 'Free' : 'Pro' };
+    entry.h.render(); await flush();
+    assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, permitted);
+    if (!permitted) assert.match(text(entry.h.output), /Your current plan is already active/);
+    entry.stop();
+  });
+}
+for (const role of ['Admin', 'Unknown']) test(`inline form cannot send ${role} identity to Customer dashboard`, async () => {
+  const fixture = modal(); fixture.profile.role = role; await fixture.login();
+  assert.deepEqual(fixture.routes, []); assert.deepEqual(fixture.upgrades, []);
+  if (role === 'Unknown') assert.equal(fixture.signouts, 1);
+  fixture.stop();
 });

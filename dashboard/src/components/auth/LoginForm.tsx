@@ -1,24 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
 import { doc, getDocFromServer, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
-import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkles, Building2, X } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkles, Building2 } from "lucide-react";
 import type { PlanId } from "@/config/plans";
 import { profileRole, adminLoginDestination, rememberCustomerLoginEntry } from '../../../../services/auth-navigation';
 import { PRODUCT_SEGMENTS, normalizeSegment } from '../../../../services/product-contract.js';
 import { loginSegmentAllowed } from '../../../../services/customer-segment.js';
 import { readSubscription } from '@/lib/subscription';
 
-interface LoginModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+interface LoginFormProps {
+  onComplete: () => void;
   onStart?: () => void;
-  standalone?: boolean;
   pendingPlan?: PlanId | null;
   onOpenSubscription?: (plan: PlanId) => void;
   initialError?: string;
@@ -27,11 +25,11 @@ interface LoginModalProps {
 const SEGMENT_OPTIONS = PRODUCT_SEGMENTS.map(id => ({ id, label: id }));
 type SegmentId = (typeof PRODUCT_SEGMENTS)[number];
 
-export default function LoginModal({ isOpen, onClose, onStart, standalone = false, pendingPlan, onOpenSubscription, initialError }: LoginModalProps) {
+export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubscription, initialError }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [segment, setSegment] = useState<SegmentId | "">("");
-  const [showSegment, setShowSegment] = useState(false);
+  const [showSegment, setShowSegment] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -42,41 +40,6 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   const [resetLoading, setResetLoading] = useState(false);
   const router = useRouter();
   const { refreshUserDoc } = useAuth();
-
-  // Reset all state when modal opens/closes
-  useEffect(() => {
-    if (isOpen) {
-      console.log("[LOGIN MODAL] Modal opened - resetting state, pendingPlan:", pendingPlan);
-      setError(initialError || "");
-      setSuccess("");
-      setEmail("");
-      setPassword("");
-      setSegment("");
-      // Segment is an explicit login input for every Customer flow. It is only
-      // an active-context preference; profile/plan authority is verified after
-      // Firebase authentication and can still reject the selection.
-      setShowSegment(true);
-      setSegmentBlocked(false);
-      setShowPassword(false);
-      setLoading(false);
-      setForgotMode(false);
-      setResetSent(false);
-      setResetLoading(false);
-    }
-  // Re-run whenever isOpen, pendingPlan, OR initialError changes so segment visibility and initial errors are always
-  // correct even when they are set after the modal first mounts.
-  }, [isOpen, pendingPlan, initialError]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !standalone) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, standalone, onClose]);
-
-  if (!isOpen) return null;
 
   // Explicit paid CTA intent keeps its checkout presentation. Every ordinary
   // Customer login uses Free copy only; this does not change account entitlement.
@@ -214,23 +177,23 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       if (auth.currentUser !== user) throw new Error('Session ended during login.');
       rememberCustomerLoginEntry('free');
 
-      // The modal closes as part of the successful route transition; retaining
+      // The inline form completes as part of the successful route transition; retaining
       // the selector state until then avoids a flash of an unvalidated session.
 
-      // ── Upgrade intent (user clicked a Pro/Enterprise CTA before logging in) ──
+      // ── Explicit paid registration intent preserved through signup ──
       // IMPORTANT: only fire if pendingPlan is STRICTLY a paid plan ("pro" or
-      // "enterprise"). If pendingPlan is null, undefined, or "free", skip this
+      // "pro_max"). If pendingPlan is null, undefined, or "free", skip this
       // entire block and fall through to the plain-login redirect below.
       // This prevents a stale pendingPlan="pro" (from a previously closed upgrade
       // modal) from hijacking a Free user's plain login.
       if ((pendingPlan === "pro" || pendingPlan === "pro_max")
         && (!isPaidPlan || pendingPlan === 'pro_max' && effective.canPurchaseProMax)) {
-        // Free/Starter user who explicitly came through a Pro/Enterprise CTA —
-        // continue the upgrade journey: open the plan chooser → GCash checkout.
+        // Continue the existing authenticated subscription chooser. This login
+        // intent never grants entitlement or changes provider/payment authority.
         setSuccess("Login successful!");
         setTimeout(() => {
           if (auth.currentUser !== user) return;
-          onClose();
+          onComplete();
           onOpenSubscription?.(pendingPlan);
         }, 600);
         return;
@@ -241,7 +204,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
         setSuccess("You already have an active subscription! Redirecting to your dashboard...");
         setTimeout(() => {
           if (auth.currentUser !== user) return;
-          onClose();
+          onComplete();
           router.push("/dashboard");
         }, 800);
         return;
@@ -256,7 +219,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
       setSuccess("Login successful!");
       setTimeout(() => {
         if (auth.currentUser !== user) return;
-        onClose();
+        onComplete();
         router.push("/dashboard");
       }, 600);
     } catch (err: unknown) {
@@ -335,28 +298,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Dark semi-transparent overlay - click anywhere outside to close */}
-      <div
-        className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
-        onClick={standalone ? undefined : onClose}
-      />
-
-      {/* Modal Content - Glassmorphism */}
-      <div role="dialog" aria-modal="true" aria-labelledby="login-modal-title" className="w-full max-w-md glass-card rounded-2xl p-8 relative z-10 shadow-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md animate-in fade-in zoom-in duration-200">
-
-        {/* Close button - lets the consumer back out of the login modal */}
-        <div className="absolute top-3 right-3 flex items-center gap-2">
-          {!standalone && <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close login"
-            className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>}
-        </div>
-
+    <section aria-labelledby="login-form-title" className="w-full glass-card rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/10 bg-slate-900/60">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">
             <Image
@@ -368,19 +310,19 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
               priority
             />
           </div>
-          <h2 id="login-modal-title" className="text-2xl font-bold text-white tracking-tight mt-2">{modalTitle}</h2>
+          <h2 id="login-form-title" className="text-2xl font-bold text-white tracking-tight mt-2">{modalTitle}</h2>
           <p className="text-slate-400 text-sm mt-2">{modalSubtitle}</p>
         </div>
 
-        {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-400 text-sm animate-in fade-in duration-200">
+        {(error || initialError) && (
+          <div role="alert" className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-400 text-sm animate-in fade-in duration-200">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p className="flex-1">{error}</p>
+            <p className="flex-1">{error || initialError}</p>
           </div>
         )}
 
         {success && (
-          <div className="mb-6 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-sm animate-in fade-in duration-200">
+          <div role="status" className="mb-6 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-sm animate-in fade-in duration-200">
             <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <p className="flex-1">{success}</p>
           </div>
@@ -394,7 +336,6 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
               <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 id="email"
-                autoFocus
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -433,13 +374,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
             </div>
           </div>
 
-          {/* Business Segment dropdown — visible upfront for all non-upgrade logins
-              (plain login and the Free flow), alongside the credentials. After
-              authentication it is hidden for accounts that don't need it (paid plans,
-              or Free accounts that already have a saved segment); for Free/Starter
-              without a segment it stays on screen and login remains blocked until one
-              is chosen and saved. Upgrade-intent logins (Pro/Enterprise checkout
-              handoff) never show it. */}
+          {/* Required UX context only; server/profile checks below remain authoritative. */}
           {showSegment && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between ml-1">
@@ -452,6 +387,7 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
               <Building2 className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <select
                 id="segment"
+                required
                 value={segment}
                 onChange={(e) => {
                   setSegment(e.target.value as SegmentId | "");
@@ -552,15 +488,14 @@ export default function LoginModal({ isOpen, onClose, onStart, standalone = fals
           <p className="text-sm text-slate-400">
             Don't have an account?{" "}
             <a
-              href={`/signup${isUpgradeIntent ? `?pendingPlan=${pendingPlan}` : ""}`}
+              href="#pricing"
               className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
             >
-              Create Account
+              Register
             </a>
           </p>
         </div>
-      </div>
-    </div>
+    </section>
   );
 }
 

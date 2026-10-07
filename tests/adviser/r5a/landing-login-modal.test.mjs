@@ -11,10 +11,10 @@ test('Customer root is Landing for fresh and returning unauthenticated browsers'
   assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /if \(loading \|\| destination\) return/);
 });
 
-test('Landing retains its Login modal flow and Create Account remains available', () => {
+test('Landing retains permanent login and pricing-first registration', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
-  assert.match(source, /setShowLoginModal\(true\)/);
-  assert.match(read('dashboard/src/components/auth/LoginModal.tsx'), /Create Account/);
+  assert.match(source, /<LoginForm/);
+  assert.match(read('dashboard/src/components/auth/LoginForm.tsx'), /Register/);
   assert.doesNotMatch(source, /proceed\('\/login'\)/);
 });
 
@@ -24,15 +24,17 @@ test('Landing page keeps centered sections and navbar navigation without redunda
   assert.match(header, /Features/);
   assert.match(header, /How it Works/);
   assert.match(header, /Pricing/);
-  assert.match(header, /API Docs/);
+  assert.doesNotMatch(header, /API Docs/);
   assert.doesNotMatch(header, />\s*Login\s*</);
   assert.doesNotMatch(header, />\s*Sign Up\s*</);
   assert.match(header, /href="#features"[^>]*>Features</);
   assert.match(header, /href="#how-it-works"[^>]*>How it Works</);
   assert.match(header, /href="#pricing"[^>]*>Pricing</);
-  assert.match(header, /href="\/docs"[^>]*>API Docs</);
+  assert.doesNotMatch(header, /href="\/docs"/);
   assert.doesNotMatch(source, /Get Started →|See How It Works →|View Plans(?: →)?/);
-  assert.match(source, /max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center/);
+  assert.match(source, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,440px\)\]/);
+  assert.match(source, /min-w-0 text-center lg:text-left/);
+  assert.doesNotMatch(header, /max-w-7xl|mx-auto/);
   assert.match(source, /grid md:grid-cols-3 gap-8/);
   assert.doesNotMatch(source, /mt-12 text-center/);
   assert.match(source, /focus-visible:ring-2/);
@@ -54,7 +56,8 @@ test('Landing navigation exposes accessible mobile links and the existing Docs r
   const mobileNavigation = navigation.slice(navigation.indexOf('id="landing-mobile-navigation"'));
 
   assert.ok(read('dashboard/src/app/docs/page.tsx'));
-  assert.equal((navigation.match(/href="\/docs"/g) || []).length, 2);
+  assert.equal((navigation.match(/href="\/docs"/g) || []).length, 0);
+  assert.match(read('dashboard/src/components/layout/dashboard-navigation.ts'), /name: 'Documentation', href: '\/docs'/);
   assert.match(navigation, /aria-label=\{mobileMenuOpen \? "Close navigation menu" : "Open navigation menu"\}/);
   assert.match(navigation, /aria-expanded=\{mobileMenuOpen\}/);
   assert.match(navigation, /aria-controls="landing-mobile-navigation"/);
@@ -67,24 +70,23 @@ test('Landing navigation exposes accessible mobile links and the existing Docs r
     ['Features', '#features'],
     ['How it Works', '#how-it-works'],
     ['Pricing', '#pricing'],
-    ['API Docs', '/docs'],
   ]) {
     assert.match(mobileNavigation, new RegExp(`href="${href.replace('#', '\\#')}"[^>]*>[\\s\\S]*?${label}`));
     assert.match(mobileNavigation, /onClick=\{\(\) => setMobileMenuOpen\(false\)\}/);
   }
 });
 
-test('Login modal exposes close, Escape, dialog semantics, and existing form paths', () => {
-  const source = read('dashboard/src/components/auth/LoginModal.tsx');
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
-  assert.match(source, /event\.key === 'Escape'/);
-  assert.match(source, /aria-label="Close login"/);
-  for (const token of ['Forgot password?', 'Create Account', 'Business Segment']) assert.ok(source.includes(token), token);
+test('Inline login has no popup or dismissal and preserves existing form paths', () => {
+  const source = read('dashboard/src/components/auth/LoginForm.tsx');
+  assert.doesNotMatch(source, /role="dialog"/);
+  assert.doesNotMatch(source, /aria-modal|fixed inset-0|zoom-in|backdrop-blur/);
+  assert.doesNotMatch(source, /onClose|Escape/);
+  assert.match(source, /aria-labelledby="login-form-title"/);
+  for (const token of ['Forgot password?', 'Register', 'Business Segment']) assert.ok(source.includes(token), token);
 });
 
 test('Customer Login always requires the canonical business segment before Firebase auth', () => {
-  const source = read('dashboard/src/components/auth/LoginModal.tsx');
+  const source = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.match(source, /PRODUCT_SEGMENTS.*product-contract\.js/);
   assert.match(source, /setShowSegment\(true\)/);
   assert.match(source, /id="segment"/);
@@ -99,7 +101,7 @@ test('Customer Login always requires the canonical business segment before Fireb
 });
 
 test('Segment selection is profile/plan-authorized and cannot grant access client-side', () => {
-  const source = read('dashboard/src/components/auth/LoginModal.tsx');
+  const source = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.match(source, /normalizeSegment\(userData\?\.selectedSegment\)/);
   assert.match(source, /normalizeSegment\(userData\?\.businessSegment\)/);
   assert.match(source, /await readSubscription\(user\)/);
@@ -111,14 +113,14 @@ test('Segment selection is profile/plan-authorized and cannot grant access clien
 });
 
 test('Selector reset and existing Admin authentication boundary remain intact', () => {
-  const source = read('dashboard/src/components/auth/LoginModal.tsx');
-  assert.match(source, /setSegment\(""\)/);
+  const source = read('dashboard/src/components/auth/LoginForm.tsx');
+  assert.match(source, /useState<SegmentId \| "">\(""\)/);
   assert.match(source, /if \(role === "admin"\)/);
   assert.match(source, /adminLoginDestination\(/);
   assert.match(read('services/product-contract.js'), /PRODUCT_SEGMENTS = Object\.freeze\(\['Grocery', 'Pharmacy', 'Hardware'\]\)/);
 });
 
-test('Successful Customer logout returns to root with one-time modal intent', () => {
+test('Successful Customer logout returns to root without resurrecting popup intent', () => {
   const source = read('dashboard/src/lib/firebase/auth-context.tsx');
   assert.ok(source.includes('if (busy) beginCustomerLogout();'));
   assert.ok(source.includes("clearSession(); router.replace('/')"));

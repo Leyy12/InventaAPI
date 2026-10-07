@@ -99,7 +99,7 @@ export function navigationDecision({ app = 'customer', path, initializing, role,
   // The compatibility page owns /login and its allowlisted query redirect.
   // A concurrent layout redirect here would discard registered/paid intent.
   if (path !== '/') return null;
-  if (role === 'customer') return '/dashboard';
+  if (role === 'customer') return entryFlow ? null : '/dashboard';
   return null;
 }
 // An operator-configured app origin, never a URL supplied by a visitor/query string.
@@ -122,14 +122,14 @@ export function loginEntryQuery(params: URLSearchParams): string {
   if (['admin_auth_failed', 'token_expired', 'admin_only', 'user_not_found'].includes(params.get('error') || '')) out.set('error', params.get('error')!);
   return out.toString();
 }
-// Fixed same-app landing destination. Free is presentation, never entitlement.
+// Fixed same-app inline login destination, never an entitlement decision.
 // Only established query intents survive; no visitor-supplied return URL.
 export function customerLoginEntryDestination(params = new URLSearchParams()): string {
   const safe = new URLSearchParams(loginEntryQuery(params));
-  safe.set('login', 'true');
-  const plan = safe.get('pendingPlan');
-  safe.set('pendingPlan', plan === 'pro' || plan === 'pro_max' ? plan : 'free');
-  return `/?${safe.toString()}`;
+  safe.delete('login');
+  if (!['free', 'pro', 'pro_max'].includes(safe.get('pendingPlan') || '')) safe.delete('pendingPlan');
+  const query = safe.toString();
+  return query ? `/?${query}` : '/';
 }
 export function invalidSessionError(error: unknown): boolean {
   const value = error as { status?: number; code?: string } | null;
@@ -285,4 +285,9 @@ export function createAuthSession<U extends { uid: string }, P extends AuthProfi
     stop() { stopped = true; finish(); },
   };
   return gate;
+}
+
+// Registration is the only public pricing CTA destination. Intent is not entitlement.
+export function customerSignupDestination(plan: string): string {
+  return ['free', 'pro', 'pro_max'].includes(plan) ? `/signup?pendingPlan=${plan}` : '/signup';
 }

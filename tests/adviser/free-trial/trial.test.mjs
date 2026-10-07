@@ -805,7 +805,7 @@ test('Trial UX consistently uses product limits, one key and actual expiry rathe
   const files = ['dashboard/src/app/dashboard/products/page.tsx', 'dashboard/src/app/dashboard/api-keys/page.tsx',
     'dashboard/src/app/dashboard/free-trial/page.tsx', 'dashboard/src/app/dashboard/plan-billing/page.tsx',
     'dashboard/src/components/reports/CustomerUsageSummary.tsx', 'dashboard/src/config/plans.ts',
-    'dashboard/src/app/docs/page.tsx', 'dashboard/src/components/auth/LoginModal.tsx', 'dashboard/src/app/privacy-policy/page.tsx'];
+    'dashboard/src/app/docs/page.tsx', 'dashboard/src/components/auth/LoginForm.tsx', 'dashboard/src/app/privacy-policy/page.tsx'];
   for (const file of [...files, 'dashboard/src/app/dashboard/page.tsx']) assert.doesNotMatch(read(file), /500 total (?:API )?requests|500-request|50\/month|50 requests\/month|Pro Trial|Free plan · inactive|\/forever|trial total/);
   const overview = read(files[4]);
   for (const label of ['Products', 'Remaining Slots', 'Active API Keys', 'Trial expires']) assert.ok(overview.includes(label));
