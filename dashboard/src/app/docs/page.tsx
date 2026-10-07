@@ -19,7 +19,7 @@ export default function DocsPage() {
       <p>The successful catalog envelope uses <code>status: &quot;success&quot;</code>, <code>meta</code> and <code>products</code>, not <code>success/data</code>. Product IDs are strings. Read product fields and variants from the response; do not assume every product has a variant or SKU.</p>
       <pre className="bg-slate-950 p-4 overflow-x-auto text-xs">{JSON.stringify({ status: 'success', message: 'No authorized products available', meta: { count: 0, keyName: 'Example key', plan: 'Free' }, products: [] }, null, 2)}</pre>
       <p className="text-xs text-slate-400">Illustrative empty-result envelope. Exact messages and optional metadata vary. There is no DaaS /products/:id route; search uses the catalog query above.</p>
-      <p><code>GET /daas/v1/health</code> is a health check, not a product request. Recommendations and sales endpoints below use the same account-level quota and security/IP limits as catalog requests.</p>
+      <p><code>GET /daas/v1/health</code> is a health check, not a product request. Sales endpoints below use the same account-level quota and security/IP limits as catalog requests.</p>
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Completed sales integration</h2>
@@ -29,11 +29,10 @@ export default function DocsPage() {
       <p><code>externalTransactionId</code> is unique per account. Retrying the same canonical sale returns <code>created: false</code> without double-counting. Reusing the reference for different content returns <code>409 SALE_CONFLICT</code>. A different key on the account cannot replay another integration&apos;s sale.</p>
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
-      <h2 className="text-xl font-semibold text-white">Real sales reporting and recommendations</h2>
+      <h2 className="text-xl font-semibold text-white">Real sales reporting</h2>
       <p><code>GET /daas/v1/sales-feed</code> is for active Pro/Pro Max (and compatible legacy paid) plans, not Free or Trial. It returns your own completed sales: PHP summary, UTC daily time series, and top products. With no sales it returns zeros, empty arrays, and <code>hasData: false</code>—never sample figures.</p>
       <p>Optional <code>from</code> and <code>to</code> are inclusive UTC dates in <code>YYYY-MM-DD</code> format. Default is the last 30 days; maximum is 90 days. Invalid/future/unbounded ranges return <code>400 INVALID_RANGE</code>. Very large result sets fail closed with <code>503 SALES_REPORT_TOO_LARGE</code>; select a shorter range.</p>
-      <p><code>GET /daas/v1/recommendations</code> is available during an active Free Trial, Pro, and Pro Max under their existing key, segment, and quota rules. It returns authorized current products with rank, factual reason, and <code>basis: sales</code> or <code>basis: catalog</code>. Without useful sales evidence it falls back to catalog availability. It does not infer market demand or use AI.</p>
-      <p>The Customer dashboard reads the same reports via Firebase-authenticated <code>/api/v1/customer/insights/sales-feed</code> and <code>/api/v1/customer/insights/recommendations</code>, without exposing an API key to the browser. These dashboard reads do not consume a DaaS key allowance; they remain account-owned and server-authorized.</p>
+      <p>The Customer dashboard reads the same reports via Firebase-authenticated <code>/api/v1/customer/insights/sales-feed</code>, without exposing an API key to the browser. These dashboard reads do not consume a DaaS key allowance; they remain account-owned and server-authorized.</p>
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Account usage and recorded history</h2>

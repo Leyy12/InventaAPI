@@ -22,7 +22,7 @@ export function historyRecord(data) {
   return {
     keyName,
     timestamp: recordedTimestamp(data.timestamp),
-    endpoint: ['/catalog', '/sales', '/sales-feed', '/recommendations'].includes(data.endpoint) ? `/daas/v1${data.endpoint}` : null,
+    endpoint: ['/catalog', '/sales', '/sales-feed'].includes(data.endpoint) ? `/daas/v1${data.endpoint}` : null,
     method: ['GET', 'POST'].includes(data.method) ? data.method : null,
     statusCode: Number.isInteger(data.statusCode) && data.statusCode >= 100 && data.statusCode <= 599 ? data.statusCode : null,
   };

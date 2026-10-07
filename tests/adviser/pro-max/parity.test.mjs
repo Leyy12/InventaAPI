@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createApiHistoryHandler } from '../../../services/api-history.js';
@@ -56,11 +56,11 @@ test('shared UI/server change predicate counts unique IDs and permits only legac
 
 test('public Pro Max capabilities have a fixed one-to-one proof map; no new marketing line can silently appear', () => {
   assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], [
-    'unlimited_account_quota', 'all_segments', 'product_recommendations', 'real_sales_feed',
+    'unlimited_account_quota', 'all_segments', 'real_sales_feed',
     'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term',
   ]);
   assert.deepEqual([...SUBSCRIPTION_PLANS.pro_max.incrementalFeatures], [
-    'Unlimited account API quota*', 'All Business Segments', 'Product Recommendations',
+    'Unlimited account API quota*', 'All Business Segments',
     'Real Sales Analytics Feed', 'Multiple API Keys', 'API Playground',
     'Usage & Integration History', '30-day renewable subscription',
   ]);
@@ -73,7 +73,7 @@ test('Free, Pro, Pro Max public plans retain truthful inherited capabilities and
   assert.equal(SUBSCRIPTION_PLANS.pro.price, 1499);
   assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 4999);
   assert.equal(SUBSCRIPTION_PLANS.pro.highlighted, true);
-  assert.ok(SUBSCRIPTION_PLANS.free.features.includes('Product Recommendations'));
+  assert.ok(!SUBSCRIPTION_PLANS.free.features.includes('Product Recommendations'));
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One Business Segment'));
   assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('Real Sales Analytics Feed'));
   assert.ok(!JSON.stringify(SUBSCRIPTION_PLANS).match(/\bSLA\b|Custom Endpoints|Priority Support|AI-powered|confidence score/iu));
@@ -121,38 +121,40 @@ test('Pro Max Admin view displays authoritative plan and observed unlimited usag
   assert.equal(response.body.accounts.owner.used, 19);
 });
 
-test('sales and recommendation integration requests remain in bounded account-owned history', async () => {
+test('sales and unavailable historical requests remain in bounded account-owned history', async () => {
   const db = memoryFirestore({ 'users/owner': owner,
     'api_telemetry/s': { userId: 'owner', keyName: 'POS', endpoint: '/sales', method: 'POST', statusCode: 200, timestamp: now },
     'api_telemetry/r': { userId: 'owner', keyName: 'POS', endpoint: '/recommendations', method: 'GET', statusCode: 200, timestamp: now },
     'api_telemetry/other': { userId: 'other', keyName: 'Other', endpoint: '/sales', method: 'POST', statusCode: 200, timestamp: now },
   });
   const handler = createApiHistoryHandler({ getDb: () => db, verifyIdToken: async () => ({ uid: 'owner' }), documentId: '__name__' });
+  const historical = db.read('api_telemetry/r');
   const response = await invoke(handler);
   assert.equal(response.statusCode, 200); assert.equal(response.body.records.length, 2);
-  assert.deepEqual(new Set(response.body.records.map(row => row.endpoint)), new Set(['/daas/v1/sales', '/daas/v1/recommendations']));
+  assert.deepEqual(new Set(response.body.records.map(row => row.endpoint)), new Set(['/daas/v1/sales', null]));
+  assert.deepEqual(db.read('api_telemetry/r'), historical);
 });
 
-test('Customer routes and API Playground visibly expose real recommendations and paid sales', () => {
+test('Customer routes and API Playground expose paid sales without removed recommendations', () => {
   const routes = source('routes/daas.js');
   assert.match(routes, /router\.post\('\/sales', authenticateApiKey, enforceRequestLimit, intelligence\.sale\)/u);
-  assert.match(routes, /router\.get\('\/recommendations', authenticateApiKey, enforceRequestLimit, intelligence\.recommendations\)/u);
+  assert.doesNotMatch(routes, /recommendations/u);
   assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence\.feed\)/u);
   assert.match(source('server.js'), /app\.use\('\/api\/v1\/customer\/insights', customerInsightsRouter\)/u);
   assert.match(source('functions/index.js'), /'Pro Max', 'pro max'/u);
-  assert.match(source('dashboard/src/app/dashboard/recommendations/page.tsx'), /customer\/insights\/recommendations/u);
+  assert.equal(existsSync(new URL('../../../dashboard/src/app/dashboard/recommendations/page.tsx', import.meta.url)), false);
   assert.match(source('dashboard/src/app/dashboard/analytics/page.tsx'), /SalesAnalyticsPanel/u);
   assert.match(source('dashboard/src/components/reports/SalesAnalyticsPanel.tsx'), /customer\/insights\/sales-feed/u);
-  assert.match(source('dashboard/src/app/dashboard/api-playground/page.tsx'), /\/daas\/v1\/recommendations/u);
+  assert.doesNotMatch(source('dashboard/src/app/dashboard/api-playground/page.tsx'), /recommendations/iu);
   assert.match(source('dashboard/src/app/dashboard/api-playground/page.tsx'), /\/daas\/v1\/sales-feed/u);
-  assert.match(source('dashboard/src/components/layout/dashboard-navigation.ts'), /\/dashboard\/recommendations/u);
+  assert.doesNotMatch(source('dashboard/src/components/layout/dashboard-navigation.ts'), /recommendations/iu);
   assert.equal(evaluateEntitlement(owner, now).limit, null);
 });
 
-test('reconciled navigation retains Plan & Billing and exposes recommendations on shared desktop/mobile routes', () => {
+test('shared desktop/mobile navigation retains Plan & Billing without recommendations', () => {
   const navigation = source('dashboard/src/components/layout/dashboard-navigation.ts');
   assert.match(navigation, /name: 'Plan & Billing', href: '\/dashboard\/plan-billing'/u);
-  assert.match(navigation, /name: 'Recommendations', href: '\/dashboard\/recommendations'/u);
+  assert.doesNotMatch(navigation, /recommendations/iu);
   assert.doesNotMatch(navigation, /name: ['"]7-Day Pro Trial['"]/u);
   assert.match(source('dashboard/src/components/layout/Sidebar.tsx'), /import \{ dashboardRoutes, routeActive \}/u);
   assert.match(source('dashboard/src/components/layout/Navbar.tsx'), /dashboardRoutes/u);

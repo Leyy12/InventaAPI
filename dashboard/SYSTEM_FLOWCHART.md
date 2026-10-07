@@ -91,13 +91,13 @@
         │                 │            │              │
         └─────────┬───────┴────────────┴──────────────┘
                   │
-        ┌─────────▼──────────┐  ┌────────────────┐
-        │5.RECOMMENDATIONS   │  │6.ANALYTICS     │
-        │                    │  │                │
-        │ • AI Insights      │  │ • Traffic Chart│
-        │ • Trending         │  │ • Breakdown    │
-        │ • Inventory Tips   │  │ • Performance  │
-        └────────────────────┘  └────────────────┘
+        ┌─────────▼──────────┐
+        │5.ANALYTICS         │
+        │                    │
+        │ • Traffic Chart    │
+        │ • Breakdown        │
+        │ • Performance      │
+        └────────────────────┘
 ```
 
 ---
@@ -399,9 +399,8 @@ WEEK 2+: REGULAR USAGE
 ┌─────────────────────────────────────────────────────────────┐
 │ 21. Check Overview → Monitor quota usage                    │
 │ 22. View 7-day chart → Analyze API traffic                  │
-│ 23. Check Recommendations → Discover trending products      │
-│ 24. View Analytics → Detailed performance reports           │
-│ 25. Generate additional keys for staging/mobile             │
+│ 23. View Analytics → Detailed performance reports           │
+│ 24. Generate additional keys for staging/mobile             │
 └─────────────────────────────────────────────────────────────┘
 
 MONTH 2+: OPTIMIZATION

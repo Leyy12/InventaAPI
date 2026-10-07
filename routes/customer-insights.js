@@ -7,5 +7,4 @@ const router = Router();
 const handlers = createCustomerIntelligenceHandlers({ getDb: getFirestore,
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked) });
 router.get('/sales-feed', handlers.feed);
-router.get('/recommendations', handlers.recommendations);
 export default router;

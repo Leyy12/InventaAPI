@@ -10,6 +10,8 @@ export default function nextConfig(phase: string): NextConfig {
     NODE_ENV: phase === PHASE_DEVELOPMENT_SERVER ? 'development' : 'production',
   }, 'dashboard');
   return {
+    // Unmatched routes must remain 404s instead of entering Customer auth navigation.
+    experimental: { globalNotFound: true },
     turbopack: {
       root: resolve(process.cwd(), '..'),
     },

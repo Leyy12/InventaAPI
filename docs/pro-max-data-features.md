@@ -9,8 +9,8 @@ The candidate ports only the original feature commit `5b93ed36` onto production
 `6728bbe3`. The old feature `8ec468dc` is retained in the local backup ref
 `backup/pro-max-pre-reconcile-8ec468d`; its superseded hotfix was not replayed.
 Pro/Pro Max purchase and renewal controls live in Plan & Billing. Settings keeps
-the production link to that page. Shared desktop/mobile navigation adds
-Recommendations without restoring the permanent Trial item. API Keys stays
+the production link to that page. Shared desktop/mobile navigation retains Sales Analytics without restoring
+the permanent Trial item. API Keys stays
 management-only; Products retains ordinary generation, and atomic replacement
 keeps the released one-time-secret, active-count and daily-marker behavior.
 The released Admin Sign Out color is unchanged.
@@ -71,19 +71,6 @@ range fails closed; there are no mock fallback figures. The new composite
 `customer_sales(userId ASC, occurredAt ASC, __name__ ASC)` index must be
 reviewed and deployed before application cutover, with the existing index
 reconciliation procedure; this local task does not deploy it.
-
-## Product recommendations
-
-`GET /daas/v1/recommendations` uses the key's current linked-product and
-segment authorization and consumes the normal protected-request allowance.
-The Customer page uses Firebase-authenticated
-`GET /api/v1/customer/insights/recommendations`, scoped to the account's
-current visible catalog and segment. The deterministic algorithm ranks
-authorized products by real units sold in the recent 30 days and notes a
-recent-versus-previous 30-day increase only when both periods have evidence.
-Products without relevant sales use a `basis: catalog` availability reason.
-Empty catalogs produce empty recommendations. It is not AI, a market forecast,
-or a claim about competitors or industry-wide demand.
 
 Sales and usage history is not reset by Trial, plan upgrade, renewal, or
 expiry. The replacement PayMongo account, real checkout/webhook acceptance,

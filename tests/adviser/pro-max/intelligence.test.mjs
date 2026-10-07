@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
-import { validateSale, recordSale, salesRange, readSales, aggregateSales, recommendations, customerCatalog,
+import { validateSale, recordSale, salesRange, readSales, aggregateSales,
   paidSalesEligible } from '../../../services/customer-intelligence.js';
 import { createCustomerIntelligenceHandlers, createDaaSIntelligenceHandlers } from '../../../services/customer-intelligence-handlers.js';
 import { consumeAccountQuota } from '../../../services/account-quota.js';
@@ -103,22 +103,6 @@ test('corrupt persisted sale line totals fail closed instead of producing fabric
   await assert.rejects(readSales(db, 'a', salesRange({}, NOW)), error => error.code === 'SALES_DATA_UNAVAILABLE');
 });
 
-test('recommendations rank own real units deterministically with explainable trend and honest catalog fallback', () => {
-  const rows = [
-    { occurredAt: '2026-08-10T10:00:00.000Z', items: [{ productId: 'bread', quantity: 1 }] },
-    { occurredAt: '2026-09-26T10:00:00.000Z', items: [{ productId: 'bread', quantity: 3 }] },
-    { occurredAt: '2026-09-26T11:00:00.000Z', items: [{ productId: 'medicine', quantity: 2 }] },
-  ];
-  const ranked = recommendations([pharmacy, grocery], rows, NOW);
-  assert.deepEqual(ranked.map(row => row.product.id), ['bread', 'medicine']);
-  assert.equal(ranked[0].basis, 'sales'); assert.match(ranked[0].reason, /rose from 1.*to 3/u);
-  const fallback = recommendations([pharmacy, grocery], [], NOW);
-  assert.deepEqual(fallback.map(row => row.product.id), ['bread', 'medicine']);
-  assert.ok(fallback.every(row => row.basis === 'catalog' && !/demand|confidence|trend|market/iu.test(row.reason)));
-  assert.deepEqual(recommendations([], rows, NOW), []);
-  assert.deepEqual(recommendations([grocery], rows, NOW).map(row => row.product.id), ['bread']);
-});
-
 test('Customer Firebase UID controls reads; Free and Trial cannot read paid sales, Pro/Max can', async () => {
   const db = seed();
   await recordSale(db, 'a', validateSale(sale(), [grocery], NOW), NOW);
@@ -136,19 +120,6 @@ test('Customer Firebase UID controls reads; Free and Trial cannot read paid sale
   assert.equal((await invoke(handlers.feed, { token: 'a' })).statusCode, 403);
   db.seed('users/a', account('a', 'Pro Max'));
   assert.equal((await invoke(handlers.feed, { token: 'a' })).statusCode, 200);
-});
-
-test('Customer recommendations cannot include another account sales or unauthorized segment', async () => {
-  const db = seed();
-  await recordSale(db, 'b', validateSale(sale('other', 'medicine', 99, 20), [pharmacy], NOW), NOW);
-  db.seed('users/a', { ...account('a'), plan: 'Free', apiRequestLimit: 50 });
-  const handlers = createCustomerIntelligenceHandlers({ getDb: () => db, clock: () => NOW,
-    verifyIdToken: async token => ({ uid: token }) });
-  const view = await invoke(handlers.recommendations, { token: 'a' });
-  assert.equal(view.statusCode, 200);
-  assert.deepEqual(view.body.recommendations.map(row => row.product.id), ['bread']);
-  assert.ok(view.body.recommendations.every(row => row.basis === 'catalog'));
-  assert.equal((await invoke(handlers.recommendations, { token: 'b' })).body.hasSalesData, true);
 });
 
 test('DaaS ingestion validates key-linked current products and never accepts cross-account catalog IDs', async () => {

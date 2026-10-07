@@ -48,10 +48,11 @@ test('Upgrade cards use canonical plan config and preserve server purchase permi
   assert.match(billing, /Renew \$\{plan\.name\}/u);
   assert.match(billing, /Get \$\{plan\.name\}/u);
   assert.match(billing, /Standard security, abuse protection, and IP rate limits still apply\./u);
-  for (const benefit of ['${PRO_DAILY_REQUEST_LIMIT} requests per day', 'All Business Segments', 'Product Recommendations',
+  for (const benefit of ['${PRO_DAILY_REQUEST_LIMIT} requests per day', 'All Business Segments',
     'Real Sales Analytics Feed', 'Multiple API Keys', 'Unlimited account API quota', 'API Playground']) {
     assert.ok(plans.includes(benefit), `canonical plan config must contain ${benefit}`);
   }
+  assert.doesNotMatch(plans, /Product Recommendations/);
   assert.doesNotMatch(billing, /₱5\b|500 pesos|five-peso/i);
 });
 
@@ -295,10 +296,14 @@ test('rendered billing uses the same uncapped horizontal workspace as Products a
   }
 });
 
-test('width-only change preserves the reviewed billing copy, handlers and internal spacing', () => {
+test('billing preserves reviewed copy, handlers and spacing except the explicitly removed capability filters', () => {
   // Fingerprint of d0cd41c's page with only its outer layout classes omitted.
   // Line endings and outer class ordering do not affect this scope assertion.
-  const source = billing.replaceAll('\r\n', '\n');
+  // Reverse only the two approved filter deletions to retain the original scope fingerprint.
+  assert.doesNotMatch(billing, /Product Recommendations/);
+  assert.equal((billing.match(/All Business Segments\|Real Sales Analytics Feed/g) || []).length, 2);
+  const source = billing.replaceAll('\r\n', '\n')
+    .replaceAll('All Business Segments|Real Sales Analytics Feed', 'All Business Segments|Product Recommendations|Real Sales Analytics Feed');
   const outer = /return <div className="[^"]+">\n    <header>/;
   assert.match(source, outer);
   const unchanged = source.replace(outer, 'return <div className="__OUTER_LAYOUT__">\n    <header>');

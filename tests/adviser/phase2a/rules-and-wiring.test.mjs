@@ -36,7 +36,8 @@ test('static wiring: protected DaaS endpoints consume account quota, with paid s
   const routes = source('../routes/daas.js');
   assert.match(routes, /router\.get\('\/catalog', authenticateApiKey, enforceRequestLimit/u);
   assert.match(routes, /router\.post\('\/sales', authenticateApiKey, enforceRequestLimit/u);
-  assert.match(routes, /router\.get\('\/recommendations', authenticateApiKey, enforceRequestLimit/u);
+  assert.doesNotMatch(routes, /recommendations/u);
+  assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit/u);
   assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit/u);
   assert.match(source('../services/account-quota.js'), /paidSubscriptionRequired && \(entitlement\.level < 1 \|\| entitlement\.activeTrial\)/u);
   assert.match(routes, /requestsUsed: req\.requestUsage\.used/u);

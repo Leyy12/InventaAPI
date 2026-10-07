@@ -19,8 +19,8 @@ function PlanCard({ planId, currentPlan, canPurchase, onChoose }: {
   const plan = SUBSCRIPTION_PLANS[planId];
   const isCurrent = currentPlan === plan.name;
   const benefits = plan.incrementalFeatures.filter(feature => {
-    if (planId === 'pro') return /requests per day|All Business Segments|Product Recommendations|Real Sales Analytics Feed|Multiple API Keys/.test(feature);
-    return /Unlimited account API quota|All Business Segments|Product Recommendations|Real Sales Analytics Feed|Multiple API Keys|API Playground/.test(feature);
+    if (planId === 'pro') return /requests per day|All Business Segments|Real Sales Analytics Feed|Multiple API Keys/.test(feature);
+    return /Unlimited account API quota|All Business Segments|Real Sales Analytics Feed|Multiple API Keys|API Playground/.test(feature);
   }).map(feature => {
     if (/^\d+ requests per day$/.test(feature)) return `${plan.requestLimitDisplay.replace(' requests/day', '')} API requests/day`;
     if (feature === 'Unlimited account API quota*') return plan.requestLimitDisplay.replace(/\*$/, '');

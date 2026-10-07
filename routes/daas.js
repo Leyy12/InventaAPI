@@ -271,7 +271,6 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 // Authenticated integrations submit completed sales; the same account quota,
 // IP limiter, key ownership, and segment rules apply as to catalog requests.
 router.post('/sales', authenticateApiKey, enforceRequestLimit, intelligence.sale);
-router.get('/recommendations', authenticateApiKey, enforceRequestLimit, intelligence.recommendations);
 router.get('/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence.feed);
 
 export default router;

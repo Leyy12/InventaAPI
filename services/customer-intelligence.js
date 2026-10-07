@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import { dateMillis, planKind } from '../functions/subscription-lifecycle.mjs';
 import { validDocumentId } from './api-key-security.js';
-import { projectProduct } from './product-contract.js';
-import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 
 export class IntelligenceError extends Error {
   constructor(status, code, message) { super(message); Object.assign(this, { status, code }); }
@@ -177,43 +175,6 @@ export function aggregateSales(rows, range) {
     topProducts: [...products.values()].sort((a, b) => b.salesMinor - a.salesMinor || a.productId.localeCompare(b.productId))
       .slice(0, 10).map(row => ({ productId: row.productId, name: row.name,
         unitsSold: row.unitsSold, sales: pesos(row.salesMinor) })) };
-}
-
-export function recommendations(products, sales, now = new Date()) {
-  const current = new Map(products.map(product => [product.id, product]));
-  const recentStart = now.getTime() - 30 * 86400000;
-  const previousStart = now.getTime() - 60 * 86400000;
-  const counts = new Map();
-  for (const sale of sales) {
-    const instant = dateMillis(sale.occurredAt);
-    if (!Number.isFinite(instant) || instant < previousStart || instant > now.getTime()) continue;
-    for (const item of sale.items) {
-      if (!current.has(item.productId)) continue;
-      const entry = counts.get(item.productId) || { recent: 0, previous: 0 };
-      if (instant >= recentStart) entry.recent += item.quantity;
-      else entry.previous += item.quantity;
-      counts.set(item.productId, entry);
-    }
-  }
-  const ranked = [...products].map(product => {
-    const count = counts.get(product.id) || { recent: 0, previous: 0 };
-    const salesBacked = count.recent > 0;
-    const trend = count.previous > 0 && count.recent > count.previous;
-    return { product: { id: product.id, name: product.name, category: product.category, segment: product.segment },
-      basis: salesBacked ? 'sales' : 'catalog', score: count.recent,
-      reason: trend ? `Units sold rose from ${count.previous} in the previous 30 days to ${count.recent} in the recent 30 days.`
-        : salesBacked ? `${count.recent} units sold in the recent 30 days.`
-          : 'Available in your authorized catalog.' };
-  }).sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name) || a.product.id.localeCompare(b.product.id));
-  return ranked.slice(0, 10).map((entry, index) => ({ ...entry, rank: index + 1 }));
-}
-
-export async function customerCatalog(db, account, maxProducts = 2000) {
-  const snapshot = await db.collection('products').limit(maxProducts + 1).get();
-  if (snapshot.docs.length > maxProducts) reject(503, 'CATALOG_TOO_LARGE', 'Catalog recommendations require a smaller authorized dataset.');
-  const segment = restrictedSegmentAccount(account) ? activeCustomerSegment(account) : null;
-  return snapshot.docs.map(doc => projectProduct(doc.data(), doc.id))
-    .filter(product => product?.visibility.visible && (!restrictedSegmentAccount(account) || product.segment === segment));
 }
 
 export function intelligenceFailure(res, error) {

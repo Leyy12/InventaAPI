@@ -1,13 +1,8 @@
 import { validDocumentId } from './api-key-security.js';
 import { accountBlocked, evaluateEntitlement } from '../functions/subscription-lifecycle.mjs';
 import { resolveCurrentCatalogProducts } from './daas-catalog.js';
-import { aggregateSales, canonicalSaleInput, customerCatalog, existingSale, intelligenceFailure, IntelligenceError,
-  paidSalesEligible, readSales, recommendations, recordSale, salesRange, validateSale } from './customer-intelligence.js';
-
-function historyRange(now) {
-  const from = new Date(now.getTime() - 59 * 86400000).toISOString().slice(0, 10);
-  return salesRange({ from, to: now.toISOString().slice(0, 10) }, now);
-}
+import { aggregateSales, canonicalSaleInput, existingSale, intelligenceFailure, IntelligenceError,
+  paidSalesEligible, readSales, recordSale, salesRange, validateSale } from './customer-intelligence.js';
 
 export function createDaaSIntelligenceHandlers({ getDb, clock = () => new Date() }) {
   async function authorizedCatalog(req, db) {
@@ -53,12 +48,6 @@ export function createDaaSIntelligenceHandlers({ getDb, clock = () => new Date()
       const range = salesRange(req.query, now);
       return aggregateSales(await readSales(db, req.apiKeyData.userId, range), range);
     }),
-    recommendations: handle(async (req, db, now) => {
-      if (Object.keys(req.query || {}).length) throw new IntelligenceError(400, 'INVALID_QUERY', 'Recommendations have no query parameters.');
-      const [catalog, sales] = await Promise.all([authorizedCatalog(req, db),
-        readSales(db, req.apiKeyData.userId, historyRange(now))]);
-      return { recommendations: recommendations(catalog, sales, now), hasSalesData: sales.length > 0 };
-    }),
   };
 }
 
@@ -94,14 +83,6 @@ export function createCustomerIntelligenceHandlers({ getDb, verifyIdToken, clock
       }
       const range = salesRange(req.query, now);
       return aggregateSales(await readSales(db, uid, range), range);
-    }),
-    recommendations: handle(async (req, db, account, entitlement, uid, now) => {
-      if (Object.keys(req.query || {}).length) throw new IntelligenceError(400, 'INVALID_QUERY', 'Recommendations have no query parameters.');
-      // Customer application access is unchanged by Upgrade Required; protected
-      // DaaS key access remains blocked by the quota transaction.
-      const effectiveAccount = { ...account, plan: entitlement.plan };
-      const [catalog, sales] = await Promise.all([customerCatalog(db, effectiveAccount), readSales(db, uid, historyRange(now))]);
-      return { recommendations: recommendations(catalog, sales, now), hasSalesData: sales.length > 0 };
     }),
   };
 }

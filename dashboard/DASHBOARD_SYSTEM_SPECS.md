@@ -199,7 +199,6 @@ Ang bawat industry ay may **sariling kulay scheme** para maging personalized:
      - Products API
      - Categories API
      - Search API
-     - Recommendations API
    - For each endpoint:
      - HTTP Method (GET, POST, etc.)
      - Full URL path
@@ -226,21 +225,7 @@ Ang bawat industry ay may **sariling kulay scheme** para maging personalized:
 
 ---
 
-### 5. **PRODUCT RECOMMENDATIONS** (deterministic, not AI)
-**Route:** `/dashboard/recommendations`
-
-The implemented page requests Firebase-authenticated, account-owned recommendations
-from `/api/v1/customer/insights/recommendations`. DaaS integrations use
-`GET /daas/v1/recommendations` with an API key and the normal account quota.
-Only visible products within the current account/key and segment scope are
-eligible. Recent account-owned completed sales determine factual unit-based
-ranking and reasons when available. Without supporting sales, the response
-identifies its basis as `catalog` and orders eligible products deterministically.
-An empty authorized catalog produces an empty state—not fabricated trends.
-No AI/ML model, seasonal forecast, market percentage, confidence score, or
-competitor signal is implemented or advertised.
-
-### 6. **REAL SALES ANALYTICS**
+### 5. **REAL SALES ANALYTICS**
 **Route:** `/dashboard/analytics` → Sales Analytics tab
 
 Integrations submit completed PHP sales through `POST /daas/v1/sales`.
@@ -274,7 +259,6 @@ zero/empty data with `hasData: false`. The older API Usage/Catalog tab remains.
    - Shows percentage per API endpoint:
      - Products API: 80%
      - Search API: 15%
-     - Recommendations API: 5%
    - Click to drill down details
    - Color-coded by endpoint type
 
@@ -371,7 +355,6 @@ Customers **CAN** see:
 12. Navigates to Documentation
 13. Integrates API into their POS/inventory system
 14. Monitors usage in Analytics page
-15. Gets AI recommendations for inventory
 
 ### Returning User Journey:
 1. Logs in
@@ -380,9 +363,8 @@ Customers **CAN** see:
 4. Reviews 7-day usage chart
 5. Copies API key if needed
 6. Browses new products
-7. Checks recommendations
-8. Views detailed analytics
-9. Logs out
+7. Views detailed analytics
+8. Logs out
 
 ---
 
@@ -474,7 +456,6 @@ Neutrals:   Background: #0F172A (Slate 900)
 - [ ] Products page (catalog + sandbox)
 - [ ] API Keys page (generation + management)
 - [ ] Documentation page (full guide)
-- [x] Recommendations page (deterministic authorized catalog/sales inputs)
 - [x] Analytics page (existing reports plus real account-owned sales)
 - [ ] Mobile responsive sidebar
 - [ ] Backend API integration
@@ -496,7 +477,6 @@ Neutrals:   Background: #0F172A (Slate 900)
    - **Products:** Explore and test catalog
    - **API Keys:** Manage credentials
    - **Docs:** Learn how to integrate
-   - **Recommendations:** Get business insights
    - **Analytics:** Monitor performance
 
 3. **Security is paramount:**

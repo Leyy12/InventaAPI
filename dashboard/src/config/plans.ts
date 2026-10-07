@@ -8,7 +8,7 @@ import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
 export const PRO_MAX_CAPABILITY_IDS = [
-  'unlimited_account_quota', 'all_segments', 'product_recommendations', 'real_sales_feed',
+  'unlimited_account_quota', 'all_segments', 'real_sales_feed',
   'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term',
 ] as const;
 
@@ -37,7 +37,6 @@ export const SUBSCRIPTION_PLANS = {
       "One API key",
       "One Business Segment",
       "Product Catalog endpoint",
-      "Product Recommendations",
       "API Key Management",
       "API Usage & History",
       "One-time 7-Day Free Trial",
@@ -82,7 +81,6 @@ export const SUBSCRIPTION_PLANS = {
       "API keys share the account allowance",
       `${PRO_DAILY_REQUEST_LIMIT} requests per day`,
       "Paid linked-product catalog access",
-      "Product Recommendations",
       "Real Sales Analytics Feed",
       "All Business Segments",
       "Multiple API Keys",
@@ -126,7 +124,6 @@ export const SUBSCRIPTION_PLANS = {
     incrementalFeatures: [
       "Unlimited account API quota*",
       "All Business Segments",
-      "Product Recommendations",
       "Real Sales Analytics Feed",
       "Multiple API Keys",
       "API Playground",
