@@ -27,7 +27,7 @@ function document(tree) {
     <div class="flex-1 flex flex-col overflow-hidden relative"><header class="h-16 shrink-0">Customer workspace</header>
     <main class="flex-1 overflow-y-auto p-6 lg:p-10">${content}</main></div></div></body></html>`;
 }
-test('full-width catalog stays the same width with no/one/many selections; upper bar never overlays the product scroller', { timeout: 60000 }, async () => {
+test('full-width catalog uses only the outer page scroll with no/one/many selections', { timeout: 60000 }, async () => {
   const f = await productsFixture({ included: 2 });
   const before = document(f.h.output);
   await f.click(f.card('grocery-2'));
@@ -36,14 +36,14 @@ test('full-width catalog stays the same width with no/one/many selections; upper
   const many = document(f.h.output);
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ hasTouch: true });
+    const touch = await page.context().newCDPSession(page);
     await page.route('**/*', route => route.abort());
     for (const [width, height] of [[1920,1080], [1440,900], [1366,768], [768,1024], [390,844]]) {
       await page.setViewportSize({ width, height });
       let initial;
       for (const [state, html] of [['none',before], ['one',selected], ['many',many]]) {
         await page.setContent(html);
-        if (width >= 1024) await page.locator('[aria-label="Product catalog workspace"]').scrollIntoViewIfNeeded();
         const result = await page.evaluate(() => {
           const workspace = document.querySelector('[aria-label="Product catalog workspace"]');
           const list = document.querySelector('[aria-label="Product list"]');
@@ -58,11 +58,20 @@ test('full-width catalog stays the same width with no/one/many selections; upper
           return {workspace:w,list:l,grid:g,summary:s,summaryPosition:summary && getComputedStyle(summary).position,
             columns:getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length,
             listOverflow:getComputedStyle(list).overflowY,
+            listClipped:list.scrollHeight>list.clientHeight+1,
+            verticalScrollers:[...document.querySelectorAll('body *')].filter(node=>
+              /^(auto|scroll)$/.test(getComputedStyle(node).overflowY) && node.scrollHeight>node.clientHeight+1
+            ).map(node=>node.tagName),
+            pageOverflow:document.documentElement.scrollHeight>innerHeight+1,
             overflow:main.scrollWidth>main.clientWidth || list.scrollWidth>list.clientWidth || document.documentElement.scrollWidth>innerWidth,
             controls:controls.every(control=>{const r=box(control);return r.width>0 && r.x>=0 && r.right<=innerWidth && (!s || r.bottom<=s.y);}),
             border:style && ['Top','Right','Bottom','Left'].map(side=>[style['border'+side+'Width'],style['border'+side+'Color']])};
         });
         assert.equal(result.overflow, false, `${width}/${state}: horizontal overflow`);
+        assert.deepEqual(result.verticalScrollers, ['MAIN'], `${width}/${state}: only outer page scrollbar`);
+        assert.equal(result.pageOverflow, false, `${width}/${state}: no second browser scrollbar`);
+        assert.equal(result.listOverflow, 'visible', `${width}/${state}: list in document flow`);
+        assert.equal(result.listClipped, false, `${width}/${state}: cards not clipped`);
         assert.equal(result.controls, true, `${width}/${state}: controls usable above summary`);
         assert.equal(result.list.width, result.workspace.width, `${width}/${state}: no side reservation`);
         assert.ok(result.grid.width >= result.workspace.width - 32, `${width}/${state}: full-width grid`);
@@ -76,28 +85,61 @@ test('full-width catalog stays the same width with no/one/many selections; upper
           if (width >= 1024) assert.ok(result.summary.height <= 96, `${width}/${state}: compact horizontal bar`);
           for (const edge of result.border) assert.deepEqual(edge, ['2px','rgb(99, 102, 241)']);
         }
-        if (width >= 1024 && state !== 'none') {
-          assert.equal(result.listOverflow, 'auto');
-          for (const scroll of [500,2000,10000]) {
-            await page.evaluate(scroll=>{document.querySelector('[aria-label="Product list"]').scrollTop=scroll;},scroll);
-            const after=await page.evaluate(()=>{
-              const summary=document.querySelector('[aria-label="Product selection summary"]');
-              const s=summary.getBoundingClientRect(),list=document.querySelector('[aria-label="Product list"]').getBoundingClientRect();
-              const main=document.querySelector('main').getBoundingClientRect();
-              const top=document.elementFromPoint(s.left+s.width/2,s.top+s.height/2);
-              return {y:s.y,noOverlap:s.bottom<=list.top,visible:s.top>=main.top&&s.bottom<=main.bottom,ownsPoint:summary.contains(top),
-                actions:[...summary.querySelectorAll('button,a')].every(node=>{const r=node.getBoundingClientRect();return r.top>=main.top&&r.bottom<=main.bottom;})};
-            });
-            assert.equal(after.y,result.summary.y, `${width}: upper bar stable during list scroll`);
-            assert.equal(after.noOverlap,true);assert.equal(after.visible,true);assert.equal(after.ownsPoint,true);assert.equal(after.actions,true);
-          }
+        const card = page.locator('[aria-label="Product list"] .glass-card').nth(2);
+        await card.scrollIntoViewIfNeeded();
+        const point = await card.boundingBox();
+        const start = await page.evaluate(()=>document.querySelector('main').scrollTop);
+        await page.mouse.move(point.x+point.width/2, point.y+point.height/2);
+        await page.mouse.wheel(0, 500);
+        await page.waitForFunction(start=>document.querySelector('main').scrollTop>start+20, start, {timeout:3000});
+        assert.equal(await page.evaluate(()=>document.querySelector('[aria-label="Product list"]').scrollTop), 0);
+        if (state !== 'none') {
+          const after = await page.evaluate(()=>{
+            const summary=document.querySelector('[aria-label="Product selection summary"]');
+            const s=summary.getBoundingClientRect(),list=document.querySelector('[aria-label="Product list"]').getBoundingClientRect();
+            return {y:s.y,noOverlap:s.bottom<=list.top};
+          });
+          assert.ok(after.y<result.summary.y, `${width}/${state}: summary scrolls away naturally`);
+          assert.equal(after.noOverlap,true);
         }
+        await card.scrollIntoViewIfNeeded();
+        await card.locator('button').first().focus();
+        const keyboardStart = await page.evaluate(()=>document.querySelector('main').scrollTop);
+        await page.keyboard.press('PageDown');
+        await page.waitForFunction(start=>document.querySelector('main').scrollTop>start+20, keyboardStart, {timeout:3000});
+        if (width < 1024) {
+          await card.scrollIntoViewIfNeeded();
+          const box = await card.boundingBox();
+          const touchStart = await page.evaluate(()=>document.querySelector('main').scrollTop);
+          const x=box.x+box.width/2, y=Math.min(height-40,box.y+box.height/2+100);
+          await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+          for (const offset of [40,100,180,260]) {
+            await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-offset}]});
+          }
+          await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+          await page.waitForFunction(start=>document.querySelector('main').scrollTop>start+20, touchStart, {timeout:3000});
+        }
+        const last = page.locator('[aria-label="Product list"] .glass-card').last();
+        await card.locator('button').first().focus();
+        await page.keyboard.press('Control+End');
+        await page.waitForFunction(()=>{
+          const main=document.querySelector('main'); return main.scrollTop+main.clientHeight>=main.scrollHeight-2;
+        },null,{timeout:3000});
+        const bottom = await page.evaluate(()=>{
+          const main=document.querySelector('main').getBoundingClientRect();
+          const cards=document.querySelectorAll('[aria-label="Product list"] .glass-card');
+          const last=cards[cards.length-1].getBoundingClientRect();
+          return {visible:last.top>=main.top&&last.bottom<=main.bottom,innerScroll:document.querySelector('[aria-label="Product list"]').scrollTop};
+        });
+        assert.equal(bottom.visible,true,`${width}/${state}: final row reachable through page scroll`);
+        assert.equal(bottom.innerScroll,0);
+        assert.equal(await last.isVisible(),true);
         if (width === 1366 && state === 'one') {
-          await page.evaluate(()=>{document.querySelector('[aria-label="Product list"]').scrollTop=0;});
+          await page.evaluate(()=>{document.querySelector('main').scrollTop=0;});
           await page.screenshot({path:process.env.PRODUCT_SELECTION_SCREENSHOT || join(tmpdir(),'inventa-products-selection-layout.png')});
         }
       }
-      console.log(`Layout ${width}x${height}: ${initial.columns} columns; no/one/many selections PASS`);
+      console.log(`Layout ${width}x${height}: ${initial.columns} columns; no/one/many selections; single outer scroll, wheel, keyboard, final row PASS`);
     }
   } finally { f.stop(); await browser.close(); }
 });

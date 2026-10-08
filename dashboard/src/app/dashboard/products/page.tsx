@@ -515,8 +515,8 @@ DAAS_API_KEY=${generatedKey}
       <p role="status" className="text-sm text-slate-300">Product Available: {productAvailable ?? '—'}
         {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}</p>
 
-      {/* Controls and summary stay above a separate desktop product scroller. */}
-      <section aria-label="Product catalog workspace" className="min-w-0 space-y-4 lg:flex lg:h-[calc(100dvh-10rem)] lg:min-h-96 lg:flex-col lg:gap-4 lg:space-y-0">
+      {/* Controls, summary, and product cards share the normal page scroll. */}
+      <section aria-label="Product catalog workspace" className="min-w-0 space-y-4">
       {/* Filter Row */}
       <div className="flex shrink-0 flex-wrap items-center gap-3">
         {/* Search Bar */}
@@ -660,7 +660,7 @@ DAAS_API_KEY=${generatedKey}
         </section>
       )}
 
-      <div role="region" aria-label="Product list" tabIndex={0} className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-gutter:stable] lg:p-1">
+      <div role="region" aria-label="Product list" className="min-w-0 lg:p-1">
       {/* Product Grid */}
       {catalogView === 'loading' ? (
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>

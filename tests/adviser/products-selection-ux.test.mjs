@@ -139,15 +139,14 @@ test('legitimate empty verified catalog still uses segment empty state under eit
   }
 }));
 
-test('full-width catalog has no empty selection area; compact upper summary is separate from the product scroller', () => using({}, async f => {
+test('full-width catalog has no empty selection area; compact upper summary and cards stay in normal page flow', () => using({}, async f => {
   assert.equal(f.find(n => n.type === 'aside'), undefined);
   assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
   const workspace = f.find(n => n.props['aria-label'] === 'Product catalog workspace');
-  assert.match(workspace.props.className, /lg:flex .*lg:flex-col/);
-  assert.doesNotMatch(workspace.props.className, /grid-cols|col-start/);
+  assert.doesNotMatch(workspace.props.className, /grid-cols|col-start|(?:^|:)h-|min-h-|max-h-|overflow|overscroll/);
   const list = f.find(n => n.props['aria-label'] === 'Product list');
-  assert.match(list.props.className, /lg:flex-1 lg:overflow-y-auto/);
-  assert.match(list.props.className, /scrollbar-gutter:stable/);
+  assert.doesNotMatch(list.props.className, /(?:^|:)h-|min-h-|max-h-|overflow|overscroll|scrollbar-gutter|flex-1/);
+  assert.equal(list.props.tabIndex, undefined);
   const gridBefore = nodes(list, n => n.props.style?.gridTemplateColumns)[0];
   assert.equal(gridBefore.props.style.gridTemplateColumns, 'repeat(auto-fill, minmax(min(100%, 15rem), 1fr))');
   await f.click(f.card('grocery-0'));
