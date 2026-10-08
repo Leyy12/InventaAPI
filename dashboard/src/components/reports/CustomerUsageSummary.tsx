@@ -1,5 +1,4 @@
 "use client";
-import { TRIAL_MAX_PRODUCTS } from "../../../../functions/entitlement-limits.mjs";
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from "@/lib/trial-display.mjs";
 import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
@@ -34,9 +33,9 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
   </section>;
   if (trial) return <section aria-label="Free Trial catalog" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      {[["Products", `${trial.productsIncluded.toLocaleString()} of ${TRIAL_MAX_PRODUCTS}`],
+      {[["Products", trial.productsIncluded.toLocaleString()],
         ["Remaining Slots", trialRemainingSlots(trial.productsIncluded).toLocaleString()],
-        ["Active API Keys", `${trial.activeKeys} of 1`]].map(([label, value]) =>
+        ["Active API Keys", trial.activeKeys.toLocaleString()]].map(([label, value]) =>
         <div key={label} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
           <p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold text-white">{value}</p>
         </div>)}
