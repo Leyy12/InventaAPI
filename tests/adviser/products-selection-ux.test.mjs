@@ -82,13 +82,13 @@ test('search composes with selection; selection empty and search empty are disti
   await f.search('nonexistent-fixture-query');
   assert.equal(f.find(n => n.type === 'fixture-empty-catalog').props.kind, 'search');
   assert.doesNotMatch(text(f.h.output), /No unselected products/);
-  assert.match(text(f.h.output), /Product Available:\s+60/);
+  assert.match(text(f.find(n => n.props['aria-label'] === 'Catalog availability')), /60\s+Grocery/);
 }));
 
 test('paid selection composes with verified current segment; full segment availability remains authoritative', () => using({ trial: false }, async f => {
   await f.click(f.card('hardware-0')); await f.click(f.card('grocery-0'));
   await f.segment('Grocery'); await f.filter('selected');
-  assert.deepEqual(ids(f), ['grocery-0']); assert.match(text(f.h.output), /Product Available:\s+60/);
+  assert.deepEqual(ids(f), ['grocery-0']); assert.match(text(f.find(n => n.props['aria-label'] === 'Catalog availability')), /60\s+Grocery/);
   await f.filter('not-selected'); await f.search('milk');
   assert.equal(f.cards().length, 29); assert.ok(ids(f).every(id => id.startsWith('grocery-')));
   assert.match(text(f.h.output), /60\s+Grocery/);
@@ -128,7 +128,7 @@ test('paid Select All is limited to the current visible search and selection res
   await f.click(f.button('Select All')); assert.equal(f.cards().length, 0);
   assert.match(text(f.h.output), /No unselected products\./);
   await f.filter('selected'); assert.equal(f.cards().length, 30);
-  assert.match(text(f.h.output), /Product Available:\s+60/);
+  assert.match(text(f.find(n => n.props['aria-label'] === 'Catalog availability')), /60\s+Grocery/);
 }));
 
 test('legitimate empty verified catalog still uses segment empty state under either selection filter', () => using({ count: 0 }, async f => {

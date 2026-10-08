@@ -190,8 +190,8 @@ test('manual usage refresh cancels stale reads; late responses and unmounted sub
 test('Customer wiring uses server trialCatalog for Products/Overview, locks cards/chips, and exposes add/clear-pending semantics', () => {
   const products = read('dashboard/src/app/dashboard/products/page.tsx');
   const overview = read('dashboard/src/components/reports/CustomerUsageSummary.tsx');
-  assert.match(products, /Products: \{trialCatalog.productsIncluded\}/);
-  assert.match(products, /Active API keys: \{trialCatalog.activeKeys\}/);
+  assert.match(products, /Included: \{trialCatalog.productsIncluded\}/);
+  assert.match(products, /Active keys: \{trialCatalog.activeKeys\}/);
   assert.match(overview, /trial.productsIncluded/);
   assert.match(products, /trialState.included.has\(productId\)/);
   assert.match(products, /disabled=\{selectionDisabled\}/);
@@ -200,7 +200,7 @@ test('Customer wiring uses server trialCatalog for Products/Overview, locks card
   assert.match(products, /Add Selected Products/);
   assert.doesNotMatch(products, /Save Trial Catalog|saveTrialCatalog|trialCatalogChangeAllowed/);
   assert.match(products, /Clear New Selections/);
-  assert.match(products, /Select products to link to your first API key, then generate the key/);
+  assert.doesNotMatch(products, /Select products to link to your first API key, then generate the key/);
   assert.doesNotMatch(products, /Create your API key before adding products/);
   assert.match(products, /receiveTrialCatalog\(await apiKeyRequest\(user\), user.uid\)/);
   assert.match(products, /invalidateAccountUsage\(user.uid\)/);

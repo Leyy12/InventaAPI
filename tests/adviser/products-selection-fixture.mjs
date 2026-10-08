@@ -9,7 +9,7 @@ import * as segment from '../../services/customer-segment.js';
 const stub = () => null;
 export const text = tree => Array.isArray(tree) ? tree.map(text).join(' ') : tree && typeof tree === 'object'
   ? text(tree.props?.children) : String(tree ?? '');
-export async function productsFixture({ trial = true, included = 0, count = 60 } = {}) {
+export async function productsFixture({ trial = true, included = 0, count = 60, catalogMode = 'ready', trialMode = 'ready' } = {}) {
   const h = hooks(), c = clock(), b = browser(), calls = [], keyCalls = [];
   const user = { uid: 'synthetic-products-only' };
   const state = { user, appUser: { plan: trial ? 'Free' : 'Pro', businessSegment: 'Grocery' },
@@ -39,12 +39,17 @@ export async function productsFixture({ trial = true, included = 0, count = 60 }
     '@/lib/linked-product-selection': linked,
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       if (init?.method) throw Error('Persisted mutations prohibited in selection fixture');
-      keyCalls.push(path); return evidence;
+      keyCalls.push(path);
+      if (trialMode === 'loading') return new Promise(() => {});
+      if (trialMode === 'error') throw Error('Trial catalog verification unavailable.');
+      return evidence;
     } },
     '@/lib/segment-catalog': { ...catalog, createCatalogRefresh: options => catalog.createCatalogRefresh({ ...options, schedule: c.schedule, cancel: c.cancel }) },
   }, { ...b, fetch: async (url, init) => {
     if (init?.method) throw Error('Persisted mutations prohibited in selection fixture');
     calls.push(url);
+    if (catalogMode === 'loading') return new Promise(() => {});
+    if (catalogMode === 'error') return { ok: false };
     const chosen = new URL(url).searchParams.get('businessSegment');
     const scoped = products.filter(p => chosen === 'All' || p.segment === chosen);
     return { ok: true, json: async () => ({ products: scoped, availability: { segment: chosen === 'All' ? null : chosen, total: scoped.length },

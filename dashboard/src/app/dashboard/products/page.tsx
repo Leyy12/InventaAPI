@@ -475,12 +475,16 @@ DAAS_API_KEY=${generatedKey}
   };
 
   return (
-    <div className="w-full px-6 lg:px-8 min-w-0 space-y-6 pb-10">
+    <div className="w-full px-6 lg:px-8 min-w-0 space-y-4 pb-10">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Product Catalog</h1>
-          <p className="text-slate-400">Select products to include in your custom API endpoint</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight text-white">Product Catalog</h1>
+          <p className="text-sm text-slate-400">Select products to include in your custom API endpoint</p>
+          {activeTrial && <p role="status" aria-label="Free Trial status" className="text-xs leading-5 text-slate-400">
+            {trialCatalog ? <>Free Trial · 7 days · Included: {trialCatalog.productsIncluded}/{TRIAL_MAX_PRODUCTS} · Slots left: {trialRemainingSlots(trialCatalog.productsIncluded)} · Active keys: {trialCatalog.activeKeys}/1</>
+              : 'Verifying persisted Trial catalog…'}
+          </p>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {trialState.mode === 'existing-key' && activeTrial ? <button onClick={addTrialProducts}
@@ -508,12 +512,9 @@ DAAS_API_KEY=${generatedKey}
         </div>
       </div>
 
-      {activeTrial && (trialCatalog ? <p role="status" className="text-sm text-slate-300">Free Trial · 7 days · Products: {trialCatalog.productsIncluded} of {TRIAL_MAX_PRODUCTS} · Remaining slots: {trialRemainingSlots(trialCatalog.productsIncluded)} · Active API keys: {trialCatalog.activeKeys} of 1. {trialCapacityMessage(trialCatalog.productsIncluded) ?? 'Products are managed under one account allowance and one active API key.'}</p>
-        : <p role="status" className="text-sm text-slate-300">Verifying persisted Trial catalog…</p>)}
-      {activeTrial && trialState.mode === 'first-key' && <p className="text-sm text-slate-300">Select products to link to your first API key, then generate the key.</p>}
+      {activeTrial && trialCatalog && trialCapacityMessage(trialCatalog.productsIncluded) &&
+        <p role="status" className="text-sm text-slate-300">{trialCapacityMessage(trialCatalog.productsIncluded)}</p>}
       {selectionError && <p role="alert" className="text-red-300">{selectionError}</p>}
-      <p role="status" className="text-sm text-slate-300">Product Available: {productAvailable ?? '—'}
-        {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}</p>
 
       {/* Controls, summary, and product cards share the normal page scroll. */}
       <section aria-label="Product catalog workspace" className="min-w-0 space-y-4">
@@ -548,16 +549,16 @@ DAAS_API_KEY=${generatedKey}
           )}
         </div>
 
-        {/* Active filter badge */}
-        {activeSegment !== "All" && (
-          <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+        {/* One authoritative availability badge for the current catalog scope. */}
+          <span role="status" aria-label="Catalog availability" className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+            activeSegment === "All" ? "bg-slate-800 text-slate-300 border-slate-700" :
             activeSegment === "Pharmacy" ? "bg-green-500/15 text-green-400 border-green-500/30" :
             activeSegment === "Hardware" ? "bg-orange-500/15 text-orange-400 border-orange-500/30" :
             "bg-blue-500/15 text-blue-400 border-blue-500/30"
           }`}>
-            {productAvailable ?? '—'} {activeSegment}
+            {activeSegment === "All" ? <>Product Available: {productAvailable ?? '—'}</> : <>{productAvailable ?? '—'} {activeSegment}</>}
+            {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}
           </span>
-        )}
 
         {/* Category Dropdown */}
         <div className="relative">

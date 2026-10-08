@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { productsFixture } from './products-selection-fixture.mjs';
 const require = createRequire(new URL('../../dashboard/package.json', import.meta.url));
-const { createElement } = require('react');
+const { createElement, Fragment } = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const cssRoot = new URL('../../dashboard/.next/static/', import.meta.url);
 const css = readdirSync(cssRoot, { recursive: true }).filter(name => name.endsWith('.css'))
@@ -18,7 +18,8 @@ assert.ok(css.includes('grid-template-columns'), 'Customer built CSS required');
 function element(value, key = 'root') {
   if (Array.isArray(value)) return value.map((child, index) => element(child, String(index)));
   if (!value || typeof value !== 'object') return value;
-  return createElement(value.type, { ...value.props, key: value.key ?? key }, element(value.props.children));
+  // The isolated JSX runtime represents React fragments with an undefined type.
+  return createElement(value.type ?? Fragment, { ...value.props, key: value.key ?? key }, element(value.props.children));
 }
 function document(tree) {
   const content = renderToStaticMarkup(element(tree));
@@ -34,6 +35,11 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
   const selected = document(f.h.output);
   await f.click(f.button('Select All'));
   const many = document(f.h.output);
+  const headerCases = [];
+  for (const [name, options] of [['first-key', {}], ['full-trial', {included:50}], ['paid-all', {trial:false}], ['verification-error', {trialMode:'error'}]]) {
+    const fixture = await productsFixture(options);
+    try { headerCases.push([name, document(fixture.h.output)]); } finally { fixture.stop(); }
+  }
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ hasTouch: true });
@@ -49,6 +55,8 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
           const list = document.querySelector('[aria-label="Product list"]');
           const grid = list.querySelector('.grid');
           const summary = document.querySelector('[aria-label="Product selection summary"]');
+          const trialStatus = document.querySelector('[aria-label="Free Trial status"]');
+          const availability = document.querySelectorAll('[aria-label="Catalog availability"]');
           const main = document.querySelector('main');
           const box = node => { const r=node.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right}; };
           const w=box(workspace), l=box(list), g=box(grid), s=summary && box(summary);
@@ -57,6 +65,8 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
           const style=selectedCard && getComputedStyle(selectedCard);
           return {workspace:w,list:l,grid:g,summary:s,summaryPosition:summary && getComputedStyle(summary).position,
             columns:getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length,
+            trialStatusHeight:trialStatus.getBoundingClientRect().height,
+            trialStatusText:trialStatus.textContent.trim(),availabilityCount:availability.length,
             listOverflow:getComputedStyle(list).overflowY,
             listClipped:list.scrollHeight>list.clientHeight+1,
             verticalScrollers:[...document.querySelectorAll('body *')].filter(node=>
@@ -68,6 +78,12 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
             border:style && ['Top','Right','Bottom','Left'].map(side=>[style['border'+side+'Width'],style['border'+side+'Color']])};
         });
         assert.equal(result.overflow, false, `${width}/${state}: horizontal overflow`);
+        assert.equal(result.trialStatusText, 'Free Trial · 7 days · Included: 2/50 · Slots left: 48 · Active keys: 1/1');
+        assert.equal(result.availabilityCount, 1);
+        if (width >= 1024) {
+          assert.ok(result.trialStatusHeight <= 24, `${width}/${state}: compact single Trial status row`);
+          assert.ok(result.list.y <= (state === 'none' ? 300 : 380), `${width}/${state}: cards begin higher than previous header`);
+        }
         assert.deepEqual(result.verticalScrollers, ['MAIN'], `${width}/${state}: only outer page scrollbar`);
         assert.equal(result.pageOverflow, false, `${width}/${state}: no second browser scrollbar`);
         assert.equal(result.listOverflow, 'visible', `${width}/${state}: list in document flow`);
@@ -139,7 +155,30 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
           await page.screenshot({path:process.env.PRODUCT_SELECTION_SCREENSHOT || join(tmpdir(),'inventa-products-selection-layout.png')});
         }
       }
-      console.log(`Layout ${width}x${height}: ${initial.columns} columns; no/one/many selections; single outer scroll, wheel, keyboard, final row PASS`);
+      console.log(`Layout ${width}x${height}: ${initial.columns} columns; first row y=${initial.list.y}; compact status, single availability, no/one/many selections; single outer scroll, wheel, keyboard, final row PASS`);
+      for (const [name, html] of headerCases) {
+        await page.setContent(html);
+        const header = await page.evaluate(()=>{
+          const main=document.querySelector('main'), root=main.firstElementChild, heading=root.firstElementChild;
+          const status=heading.querySelector('[aria-label="Free Trial status"]');
+          const warning=[...root.querySelectorAll('[role="alert"],[role="status"]')].find(node=>
+            /product limit reached|Catalog verification unavailable/.test(node.textContent));
+          const m=main.getBoundingClientRect(), s=status?.getBoundingClientRect(), w=warning?.getBoundingClientRect();
+          const controls=root.querySelector('[aria-label="Product catalog workspace"]').firstElementChild.getBoundingClientRect();
+          return {overflow:main.scrollWidth>main.clientWidth || document.documentElement.scrollWidth>innerWidth,
+            availability:[...root.querySelectorAll('[aria-label="Catalog availability"]')].map(node=>node.textContent.trim()),
+            status:status?.textContent.trim(),statusHeight:s?.height,
+            warningVisible:w&&w.top>=m.top&&w.bottom<=m.bottom&&w.bottom<=controls.top,
+            actions:[...heading.querySelectorAll('button,a')].every(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>=32&&r.left>=0&&r.right<=innerWidth&&r.bottom<=controls.top;})};
+        });
+        assert.equal(header.overflow,false,`${width}/${name}: header no horizontal overflow`);
+        assert.equal(header.actions,true,`${width}/${name}: header actions usable`);
+        assert.equal(header.availability.length,1,`${width}/${name}: availability shown once`);
+        if (name==='paid-all') { assert.equal(header.status,undefined); assert.equal(header.availability[0],'Product Available: 180'); }
+        else if (width>=1024) assert.ok(header.statusHeight<=24,`${width}/${name}: one compact Trial status row`);
+        if (name==='first-key') assert.equal(header.status,'Free Trial · 7 days · Included: 0/50 · Slots left: 50 · Active keys: 0/1');
+        if (name==='full-trial'||name==='verification-error') assert.equal(header.warningVisible,true,`${width}/${name}: important warning visible above controls`);
+      }
     }
   } finally { f.stop(); await browser.close(); }
 });

@@ -201,7 +201,7 @@ test('Customer wiring uses same response for grid/count, safe segment identity, 
   assert.doesNotMatch(source, /addEventListener\(['"](?:focus|visibilitychange)/);
   assert.match(source, /catalogRefresh.current\?\.refresh\(\)/);
   assert.match(source, /refresh.stop\(\)/);
-  assert.match(source, /Products: \{trialCatalog.productsIncluded\}/);
+  assert.match(source, /Included: \{trialCatalog.productsIncluded\}/);
   assert.match(source, /trialRemainingSlots\(trialCatalog.productsIncluded\)/);
   assert.match(source, /Add Selected Products|Clear New Selections/);
   assert.match(source, /trialState.included.has\(productId\)/);
