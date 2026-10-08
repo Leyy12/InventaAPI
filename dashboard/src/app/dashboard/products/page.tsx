@@ -34,6 +34,7 @@ interface CartSummary {
 
 const COPY_REDIRECT_DELAY = 1500;
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002';
+const PRODUCT_GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 15rem), 1fr))' };
 
 // Treat 'deleted', 'free', 'starter' all as Free plan.
 // The DB may store 'deleted' for churned/reset free accounts — they still
@@ -79,6 +80,7 @@ function CustomerCatalogSession() {
   const currentCatalog = catalogSource?.segment === activeSegment ? catalogSource : null;
   const productAvailable = currentCatalog?.status === 'ready' ? currentCatalog.total : null;
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'not-selected'>('all');
   
   // API Key Generation State
   const [showGenModal, setShowGenModal] = useState(false);
@@ -160,8 +162,13 @@ function CustomerCatalogSession() {
     return searchCatalog(scopeCustomerProducts(products, appUser).filter(product => visibleIds.has(product.id)), searchQuery);
   }, [products, currentCatalog, searchQuery, appUser]);
 
-  const filteredProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
-  const catalogView = catalogPresentationState(currentCatalog, filteredProducts.length, searchQuery);
+  const searchedProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
+  const filteredProducts = searchedProducts.filter(product => {
+    const isSelected = selectedProducts.has(product.id!) || (activeTrial && trialState.included.has(product.id!));
+    return selectionFilter === 'all' || (selectionFilter === 'selected' ? isSelected : !isSelected);
+  });
+  // Search/segment emptiness is evaluated before the presentation-only selection filter.
+  const catalogView = catalogPresentationState(currentCatalog, searchedProducts.length, searchQuery);
   const selectableIds = catalogSelectableIds(filteredProducts, selectedProducts, activeTrial ? {
     included: trialState.included, remaining: trialState.remaining,
     allowed: trialState.canToggle && trialReady && !upgradeRequired && !generating,
@@ -459,27 +466,29 @@ DAAS_API_KEY=${generatedKey}
 
   // ==================== RENDER ====================
 
+  const openGenerationModal = () => {
+    setShowGenModal(true);
+    setGeneratedKey(null);
+    setGeneratedKeyName(null);
+    setKeyName("");
+    setCopied(false);
+  };
+
   return (
-    <div className="w-full px-6 lg:px-8 space-y-6 pb-10">
+    <div className="w-full px-6 lg:px-8 min-w-0 space-y-6 pb-10">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Product Catalog</h1>
           <p className="text-slate-400">Select products to include in your custom API endpoint</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {trialState.mode === 'existing-key' && activeTrial ? <button onClick={addTrialProducts}
             disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
             className="px-6 py-3 rounded-xl bg-indigo-500 text-white disabled:opacity-50">Add Selected Products</button> : !upgradeRequired && (selectedProducts.size > 0 || activeTrial) && (
             <button
               disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey)}
-              onClick={() => { 
-                setShowGenModal(true); 
-                setGeneratedKey(null); 
-                setGeneratedKeyName(null);
-                setKeyName(""); 
-                setCopied(false); 
-              }}
+              onClick={openGenerationModal}
               className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
               aria-label={`Generate API Key for ${selectedProducts.size} selected products`}
             >
@@ -506,15 +515,17 @@ DAAS_API_KEY=${generatedKey}
       <p role="status" className="text-sm text-slate-300">Product Available: {productAvailable ?? '—'}
         {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}</p>
 
-      {/* Shopping Cart Summary - Sticky */}
+      {/* A reserved desktop column prevents the persistent summary from covering the catalog.
+          Keep the column even without pending selections so cards never jump sideways. */}
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] xl:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+      <aside aria-label="Product selection summary" className="min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
       {selectedProducts.size > 0 && (
-        <div className="glass-card rounded-xl p-6 border-2 border-indigo-500/30 sticky top-4 z-10">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
+        <div className="rounded-xl bg-slate-900 p-5 border border-indigo-500/50 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 shrink-0 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
                 <ShoppingCart className="w-6 h-6 text-indigo-400" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-lg font-bold text-white mb-1">{activeTrial ? 'New Product Selections' : 'Selected Products'}</h3>
                 <p className="text-sm text-slate-400 mb-3">{activeTrial ? `${trialState.pending.size} selected to add` : `Your custom API will return these ${cartSummary.totalProducts} products`}</p>
                 <div className="flex flex-wrap gap-2">
@@ -529,7 +540,13 @@ DAAS_API_KEY=${generatedKey}
                 </div>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
+              {activeTrial && trialState.mode === 'existing-key' ? <button onClick={addTrialProducts}
+                disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
+                className="px-4 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Add Selected Products</button>
+                : !upgradeRequired && <button onClick={openGenerationModal}
+                  disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey)}
+                  className="px-4 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Generate API Key</button>}
               <button
                 onClick={clearSelection}
                 disabled={generating}
@@ -546,14 +563,15 @@ DAAS_API_KEY=${generatedKey}
                 Test in Playground
               </Link>
             </div>
-          </div>
         </div>
       )}
+      </aside>
+      <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
 
       {/* Filter Row */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {/* Search Bar */}
-        <div className="relative flex-1">
+        <div className="relative min-w-0 basis-full xl:basis-auto xl:flex-1">
           <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
             <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
@@ -580,8 +598,6 @@ DAAS_API_KEY=${generatedKey}
             </button>
           )}
         </div>
-
-        <div className="flex-1" />
 
         {/* Active filter badge */}
         {activeSegment !== "All" && (
@@ -622,6 +638,17 @@ DAAS_API_KEY=${generatedKey}
           </div>
         </div>
 
+        <div className="min-w-0">
+          <label htmlFor="selection-filter" className="sr-only">Filter products by selection</label>
+          <select id="selection-filter" value={selectionFilter}
+            onChange={event => setSelectionFilter(event.target.value as typeof selectionFilter)}
+            className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+            <option value="all">All Products</option>
+            <option value="selected">Selected</option>
+            <option value="not-selected">Not Selected</option>
+          </select>
+        </div>
+
         {/* Select All button */}
         {filteredProducts.length > 0 && (
           <button
@@ -637,7 +664,7 @@ DAAS_API_KEY=${generatedKey}
 
       {/* Product Grid */}
       {catalogView === 'loading' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2048px]:grid-cols-6 gap-4">
+        <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
           {[...Array(6)].map((_, i) => (
             <div key={i} className="glass-card rounded-xl p-6 animate-pulse">
               <div className="w-full h-32 bg-slate-800 rounded-lg mb-4" />
@@ -662,8 +689,14 @@ DAAS_API_KEY=${generatedKey}
           searchQuery={searchQuery}
           onClearSearch={() => setSearchQuery("")}
         />
+      ) : filteredProducts.length === 0 && selectionFilter !== 'all' ? (
+        <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-8 text-center">
+          <h2 className="text-lg font-semibold text-white">{selectionFilter === 'selected' ? 'No selected products.' : 'No unselected products.'}</h2>
+          <p className="mt-2 text-sm text-slate-400">{searchQuery.trim() ? 'Within your current search and business segment.' : 'Within your current business segment.'}</p>
+          <button type="button" onClick={() => setSelectionFilter('all')} className="mt-3 text-sm text-indigo-300">View All Products</button>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2048px]:grid-cols-6 gap-4">
+        <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
           {filteredProducts.map((product) => {
             const isIncluded = activeTrial && trialState.included.has(product.id!);
             const selectionDisabled = upgradeRequired || !trialReady || generating || (activeTrial && (isIncluded
@@ -679,6 +712,9 @@ DAAS_API_KEY=${generatedKey}
                 key={product.id}
                 onClick={() => toggleProduct(product)}
                 aria-disabled={selectionDisabled || undefined}
+                aria-label={`${product.name}${isIncluded ? ', Included' : isSelected ? ', Selected' : ''}`}
+                style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : '#334155',
+                  boxShadow: isSelected ? '0 0 0 1px #818cf8, 0 4px 20px rgb(99 102 241 / 0.2)' : undefined }}
                 className={`glass-card rounded-xl transition-all overflow-hidden ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
                   isSelected
                     ? "border-2 border-indigo-500 shadow-lg shadow-indigo-500/20"
@@ -780,6 +816,8 @@ DAAS_API_KEY=${generatedKey}
           })}
         </div>
       )}
+      </div>
+      </div>
 
       {/* Generate API Key Modal */}
       {showGenModal && canGenerate && (

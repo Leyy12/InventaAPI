@@ -192,7 +192,7 @@ test('Customer wiring uses same response for grid/count, safe segment identity, 
   assert.match(source, /businessSegment: activeSegment, limit: '200'/);
   assert.match(source, /catalogSource\?\.segment === activeSegment/);
   assert.match(source, /currentCatalog\.total/);
-  assert.match(source, /catalogPresentationState\(currentCatalog, filteredProducts\.length, searchQuery\)/);
+  assert.match(source, /catalogPresentationState\(currentCatalog, searchedProducts\.length, searchQuery\)/);
   assert.match(source, /currentCatalog.products.map/);
   assert.match(source, /Product Available: \{productAvailable/);
   assert.match(source, /filteredProducts.length\} results/);
