@@ -349,7 +349,7 @@ export default function AuthEntry() {
             <p className="text-slate-400 max-w-2xl mx-auto">All plans include an API key, documentation access, and DPA compliance. No hidden fees.</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          <div id="pricing-plans" className="scroll-mt-24 grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {/* Free Plan */}
             <div className="glass-card p-8 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all">
               <div className="mb-6">

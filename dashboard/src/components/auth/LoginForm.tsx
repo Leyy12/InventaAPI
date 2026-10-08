@@ -41,39 +41,11 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
   const router = useRouter();
   const { refreshUserDoc } = useAuth();
 
-  // Explicit paid CTA intent keeps its checkout presentation. Every ordinary
-  // Customer login uses Free copy only; this does not change account entitlement.
-  const isUpgradeIntent = pendingPlan === "pro" || pendingPlan === "pro_max";
-
-  const modalTitle = isUpgradeIntent
-    ? pendingPlan === "pro"
-      ? "Login to continue to your Pro upgrade"
-      : "Login to continue to Pro Max"
-    : "Login to continue to InventaAPI Free";
-
-  const modalSubtitle = isUpgradeIntent
-    ? "Log in to continue to the secure PayMongo checkout."
-    : "Log in to access your Free plan dashboard.";
-
-  const segmentHint = isUpgradeIntent ? (
-    <>
-      Choose the business segment your account will access. This is required to log in and your catalog is
-      tailored to it. After logging in, you will continue to PayMongo checkout to{" "}
-      {pendingPlan === "pro" ? (
-        <>
-          unlock <span className="text-indigo-400">Pro</span> (500 requests/day, all segments).
-        </>
-      ) : (
-        <>unlock <span className="text-indigo-400">Pro Max</span> (unlimited account quota, all segments).</>
-      )}
-    </>
-  ) : (
-    <>
-      Choose the business segment your account accesses. This is required to log in, and your catalog is
-      tailored to it. Your one-time Free Trial lasts 7 days with up to 50 selected products and one active API key; upgrade to{" "}
-      <span className="text-indigo-400">Pro</span> to unlock all segments.
-    </>
-  );
+  // Login presentation is plan-neutral. Paid continuation remains internal to
+  // the existing validated handleLogin flow, never account entitlement.
+  const loginTitle = "Login to InventaAPI";
+  const loginSubtitle = "Log in to access your dashboard and manage your account.";
+  const segmentHint = "Choose your required business segment. Catalog access is verified against your account.";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -298,20 +270,20 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
   };
 
   return (
-    <section aria-labelledby="login-form-title" className="w-full glass-card rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/10 bg-slate-900/60">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
+    <section aria-labelledby="login-form-title" className="w-full glass-card rounded-2xl p-5 sm:p-6 shadow-2xl border border-white/10 bg-slate-900/60">
+        <div className="text-center mb-4">
+          <div className="inline-flex items-center justify-center mb-2">
             <Image
               src="/inventa-logo.png"
               alt="InventaAPI Logo"
-              width={120}
-              height={120}
+              width={64}
+              height={64}
               className="object-contain"
               priority
             />
           </div>
-          <h2 id="login-form-title" className="text-2xl font-bold text-white tracking-tight mt-2">{modalTitle}</h2>
-          <p className="text-slate-400 text-sm mt-2">{modalSubtitle}</p>
+          <h2 id="login-form-title" className="text-2xl font-bold text-white tracking-tight">{loginTitle}</h2>
+          <p className="text-slate-400 text-sm mt-1">{loginSubtitle}</p>
         </div>
 
         {(error || initialError) && (
@@ -329,7 +301,7 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
         )}
 
         {!forgotMode && (
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-3">
           <div className="space-y-1.5">
             <label htmlFor="email" className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
             <div className="relative">
@@ -340,7 +312,7 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                 placeholder="name@company.com"
               />
             </div>
@@ -361,7 +333,7 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-11 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                 placeholder="••••••••"
               />
               <button
@@ -396,7 +368,7 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                     setError("");
                   }
                 }}
-                className={`w-full appearance-none bg-slate-900/50 border rounded-xl pl-11 pr-10 py-3 text-sm text-slate-200 focus:outline-none focus:ring-1 transition-all placeholder:text-slate-600 cursor-pointer ${
+                className={`w-full appearance-none bg-slate-900/50 border rounded-xl pl-11 pr-10 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 transition-all placeholder:text-slate-600 cursor-pointer ${
                   segmentBlocked
                     ? "border-red-500/70 focus:border-red-500/70 focus:ring-red-500/30"
                     : "border-slate-700 focus:border-indigo-500/50 focus:ring-indigo-500/50"
@@ -411,7 +383,7 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </div>
-            <p className="text-[11px] text-slate-500 ml-1">{segmentHint}</p>
+            <p className="text-xs text-slate-400 ml-1">{segmentHint}</p>
           </div>
           )}
 
@@ -484,11 +456,11 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
         )}
 
         {/* Create Account Link */}
-        <div className="mt-6 text-center">
+        <div className="mt-4 text-center">
           <p className="text-sm text-slate-400">
             Don't have an account?{" "}
             <a
-              href="#pricing"
+              href="#pricing-plans"
               className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
             >
               Register

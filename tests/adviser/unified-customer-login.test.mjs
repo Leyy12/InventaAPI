@@ -15,8 +15,8 @@ const find = (h, predicate) => {
   return matches[0];
 };
 const silent = { log() {}, error() {}, warn() {} };
-const freeTitle = 'Login to continue to InventaAPI Free';
-const freeSubtitle = 'Log in to access your Free plan dashboard.';
+const loginTitle = 'Login to InventaAPI';
+const loginSubtitle = 'Log in to access your dashboard and manage your account.';
 
 function signup(query = '', failure = '') {
   const h = hooks(), events = [], routes = [], profiles = [];
@@ -172,14 +172,14 @@ for (const query of [{}, { registered: 'true' }, { pendingPlan: 'pro' }, { pendi
 for (const intent of [null, 'free', 'pro', 'pro_max']) test(`actual inline presentation and pricing-first Register link: ${intent}`, async () => {
   const fixture = modal(intent); await flush();
   const copy = text(fixture.h.output);
-  assert.ok(copy.includes(intent === 'pro' ? 'Login to continue to your Pro upgrade' :
-    intent === 'pro_max' ? 'Login to continue to Pro Max' : freeTitle));
-  if (!intent || intent === 'free') assert.ok(copy.includes(freeSubtitle));
+  assert.ok(copy.includes(loginTitle));
+  assert.ok(copy.includes(loginSubtitle));
+  assert.ok(!copy.includes('InventaAPI Free') && !copy.includes('Free plan dashboard'));
   assert.ok(!copy.includes('Welcome to InventaAPI'));
   const segment = find(fixture.h, node => node.props?.id === 'segment');
   assert.deepEqual(nodes(segment, node => node.type === 'option').map(node => node.props.value).filter(Boolean), [...PRODUCT_SEGMENTS]);
-  const signupLink = find(fixture.h, node => node.type === 'a' && node.props?.href === '#pricing');
-  assert.equal(signupLink.props.href, '#pricing');
+  const signupLink = find(fixture.h, node => node.type === 'a' && node.props?.href === '#pricing-plans');
+  assert.equal(signupLink.props.href, '#pricing-plans');
   assert.equal(text(signupLink).trim(), 'Register');
   assert.equal(segment.props.required, true);
   assert.equal(nodes(fixture.h.output, node => node.props?.role === 'dialog').length, 0);
@@ -227,7 +227,7 @@ for (const failure of [false, true]) test(`landing password reset preserves vali
   assert.deepEqual(fixture.resets, ['fixture@example.invalid']);
   assert.match(text(fixture.h.output), failure ? /synthetic reset failure/ : /Reset link sent/);
   find(fixture.h, node => node.type === 'button' && /Back to Login/.test(text(node))).props.onClick(); await flush();
-  assert.ok(text(fixture.h.output).includes(freeTitle));
+  assert.ok(text(fixture.h.output).includes(loginTitle));
   assert.equal(nodes(fixture.h.output, node => node.type === 'form').length, 1);
   assert.deepEqual(fixture.routes, []); fixture.stop();
 });

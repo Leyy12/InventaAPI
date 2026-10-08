@@ -24,7 +24,7 @@ test('desktop hero places unchanged marketing first and reusable inline login se
 test('mobile stacks marketing and login with shrinkable columns and bounded card width', () => {
   assert.match(hero, /min-w-0 w-full max-w-md mx-auto/);
   assert.doesNotMatch(hero, /grid-cols-2|w-\[440px\]/);
-  assert.match(form, /w-full glass-card[\s\S]*p-6 sm:p-8/);
+  assert.match(form, /w-full glass-card[\s\S]*p-5 sm:p-6/);
   assert.match(entry, /w-\[calc\(100vw-2rem\)\] max-w-lg/);
 });
 test('both navbar variants retain three section links, not public API Docs', () => {
@@ -44,9 +44,9 @@ test('form remains accessible, required-segment and ordinary Free presentation',
   assert.match(form, /aria-labelledby="login-form-title"/);
   assert.match(form, /role="alert"/); assert.match(form, /role="status"/);
   assert.match(form, /id="segment"\s+required/);
-  for (const value of ['Email Address', 'Password', 'Business Segment', 'Forgot password?', 'Login to continue to InventaAPI Free']) assert.ok(form.includes(value));
+  for (const value of ['Email Address', 'Password', 'Business Segment', 'Forgot password?', 'Login to InventaAPI']) assert.ok(form.includes(value));
   assert.doesNotMatch(form, /Welcome to InventaAPI/);
-  assert.match(form, /href="#pricing"[\s\S]*Register/);
+  assert.match(form, /href="#pricing-plans"[\s\S]*Register/);
 });
 for (const plan of ['free', 'pro', 'pro_max']) test('pricing intent registers without granting entitlement: ' + plan, () => {
   assert.equal(customerSignupDestination(plan), '/signup?pendingPlan=' + plan);

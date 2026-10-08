@@ -120,24 +120,24 @@ function SignupPageInner() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center px-4 py-6">
       <div className="blob blob-1" />
       <div className="blob blob-2" />
       
-      <div className="w-full max-w-xl glass-card rounded-2xl p-8 relative z-10 shadow-2xl">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
+      <div className="w-full max-w-xl glass-card rounded-2xl p-5 sm:p-6 relative z-10 shadow-2xl">
+        <div className="text-center mb-4">
+          <div className="inline-flex items-center justify-center mb-2">
             <Image
               src="/inventa-logo.png"
               alt="InventaAPI Logo"
-              width={160}
-              height={160}
+              width={64}
+              height={64}
               className="object-contain"
               priority
             />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight mt-2">Create an Account</h1>
-          <p className="text-slate-400 text-sm mt-2">Join InventaAPI to manage your centralized product data</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Create an Account</h1>
+          <p className="text-slate-400 text-sm mt-1">Join InventaAPI to manage your centralized product data</p>
         </div>
 
         {error && (
@@ -147,8 +147,8 @@ function SignupPageInner() {
           </div>
         )}
 
-        <form onSubmit={handleSignup} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={handleSignup} className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5 md:col-span-2">
               <label htmlFor="fullName" className="text-sm font-medium text-slate-300 ml-1">Full Name</label>
               <div className="relative">
@@ -160,7 +160,7 @@ function SignupPageInner() {
                   value={formData.fullName}
                   onChange={handleChange}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="Juan dela Cruz"
                 />
               </div>
@@ -177,7 +177,7 @@ function SignupPageInner() {
                   value={formData.email}
                   onChange={handleChange}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="developer@example.com"
                 />
               </div>
@@ -195,7 +195,7 @@ function SignupPageInner() {
                   onChange={handleChange}
                   required
                   minLength={6}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-11 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="••••••••"
                 />
                 <button
@@ -220,7 +220,7 @@ function SignupPageInner() {
                   onChange={handleChange}
                   required
                   minLength={6}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-11 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="••••••••"
                 />
                 <button
@@ -244,7 +244,7 @@ function SignupPageInner() {
                   value={formData.businessName}
                   onChange={handleChange}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   placeholder="e.g. JD Hardware"
                 />
               </div>
@@ -260,7 +260,7 @@ function SignupPageInner() {
                   value={formData.businessSegment}
                   onChange={handleChange}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-10 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all appearance-none cursor-pointer"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-10 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all appearance-none cursor-pointer"
                 >
                   {BUSINESS_SEGMENTS.map(segment => (
                     <option key={segment} value={segment}>{segment}</option>
@@ -273,7 +273,7 @@ function SignupPageInner() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3 mt-6 mb-2">
+          <div className="flex items-start gap-3">
             <div className="flex items-center h-5">
               <input
                 id="privacyConsent"
@@ -292,7 +292,7 @@ function SignupPageInner() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-70 disabled:cursor-not-allowed mt-4"
+            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -308,7 +308,7 @@ function SignupPageInner() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-slate-500 mt-8">
+        <p className="text-center text-sm text-slate-500 mt-4">
           Already have an account? <Link href={customerLoginEntryDestination(new URLSearchParams(
                 pendingPlan === "pro" || pendingPlan === "pro_max" ? { pendingPlan } : {}
               ))} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Login</Link>

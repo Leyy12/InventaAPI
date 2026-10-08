@@ -560,8 +560,9 @@ test('free entry: registration CTA never commits an authenticated-session entry'
   assert.equal((modal.match(/rememberCustomerLoginEntry\(/g) ?? []).length, 1);
   assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('loginSegmentAllowed('));
   assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('await refreshUserDoc();'));
-  assert.match(modal, /Login to continue to InventaAPI Free/);
-  assert.match(modal, /Log in to access your Free plan dashboard\./);
+  assert.match(modal, /Login to InventaAPI/);
+  assert.match(modal, /Log in to access your dashboard and manage your account\./);
+  assert.doesNotMatch(modal, /InventaAPI Free|Free plan dashboard/);
   assert.doesNotMatch(modal, /Welcome to InventaAPI|Log in to manage your DaaS platform/);
 });
 
