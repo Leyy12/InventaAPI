@@ -515,61 +515,10 @@ DAAS_API_KEY=${generatedKey}
       <p role="status" className="text-sm text-slate-300">Product Available: {productAvailable ?? '—'}
         {searchQuery.trim() && currentCatalog?.status === 'ready' ? ` · ${filteredProducts.length} results` : ''}</p>
 
-      {/* A reserved desktop column prevents the persistent summary from covering the catalog.
-          Keep the column even without pending selections so cards never jump sideways. */}
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] xl:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
-      <aside aria-label="Product selection summary" className="min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
-      {selectedProducts.size > 0 && (
-        <div className="rounded-xl bg-slate-900 p-5 border border-indigo-500/50 space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 shrink-0 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
-                <ShoppingCart className="w-6 h-6 text-indigo-400" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-lg font-bold text-white mb-1">{activeTrial ? 'New Product Selections' : 'Selected Products'}</h3>
-                <p className="text-sm text-slate-400 mb-3">{activeTrial ? `${trialState.pending.size} selected to add` : `Your custom API will return these ${cartSummary.totalProducts} products`}</p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(cartSummary.bySegment).map(([segment, count]) => (
-                    <span 
-                      key={segment}
-                      className="px-3 py-1 rounded-full text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300"
-                    >
-                      {segment}: {count}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              {activeTrial && trialState.mode === 'existing-key' ? <button onClick={addTrialProducts}
-                disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
-                className="px-4 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Add Selected Products</button>
-                : !upgradeRequired && <button onClick={openGenerationModal}
-                  disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey)}
-                  className="px-4 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Generate API Key</button>}
-              <button
-                onClick={clearSelection}
-                disabled={generating}
-                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors"
-                aria-label={activeTrial ? 'Clear new selections' : 'Clear all selected products'}
-              >
-                {activeTrial ? 'Clear New Selections' : 'Clear All'}
-              </button>
-              <Link
-                href={`/dashboard/api-playground?products=${Array.from(selectedProducts).join(',')}`}
-                className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-colors flex items-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" />
-                Test in Playground
-              </Link>
-            </div>
-        </div>
-      )}
-      </aside>
-      <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
-
+      {/* Controls and summary stay above a separate desktop product scroller. */}
+      <section aria-label="Product catalog workspace" className="min-w-0 space-y-4 lg:flex lg:h-[calc(100dvh-10rem)] lg:min-h-96 lg:flex-col lg:gap-4 lg:space-y-0">
       {/* Filter Row */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3">
         {/* Search Bar */}
         <div className="relative min-w-0 basis-full xl:basis-auto xl:flex-1">
           <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
@@ -662,6 +611,56 @@ DAAS_API_KEY=${generatedKey}
         )}
       </div>
 
+      {selectedProducts.size > 0 && (
+        <section aria-label="Product selection summary" className="shrink-0 rounded-xl bg-slate-900 px-4 py-3 border border-indigo-500/50">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <div className="w-8 h-8 shrink-0 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
+                <ShoppingCart className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-white">{activeTrial ? 'New Product Selections' : 'Selected Products'}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{activeTrial ? `${trialState.pending.size} selected to add` : `${cartSummary.totalProducts} selected`}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(cartSummary.bySegment).map(([segment, count]) => (
+                  <span
+                    key={segment}
+                    className="px-3 py-1 rounded-full text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300"
+                  >
+                    {segment}: {count}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTrial && trialState.mode === 'existing-key' ? <button onClick={addTrialProducts}
+                disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
+                className="px-3 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Add Selected Products</button>
+                : !upgradeRequired && <button onClick={openGenerationModal}
+                  disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey)}
+                  className="px-3 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Generate API Key</button>}
+              <button
+                onClick={clearSelection}
+                disabled={generating}
+                className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors"
+                aria-label={activeTrial ? 'Clear new selections' : 'Clear all selected products'}
+              >
+                {activeTrial ? 'Clear New Selections' : 'Clear All'}
+              </button>
+              <Link
+                href={`/dashboard/api-playground?products=${Array.from(selectedProducts).join(',')}`}
+                className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-colors flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Test in Playground
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <div role="region" aria-label="Product list" tabIndex={0} className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-gutter:stable] lg:p-1">
       {/* Product Grid */}
       {catalogView === 'loading' ? (
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
@@ -817,7 +816,7 @@ DAAS_API_KEY=${generatedKey}
         </div>
       )}
       </div>
-      </div>
+      </section>
 
       {/* Generate API Key Modal */}
       {showGenModal && canGenerate && (

@@ -139,18 +139,31 @@ test('legitimate empty verified catalog still uses segment empty state under eit
   }
 }));
 
-test('summary has a permanent separate desktop column, opaque panel and mobile flow, never wraps cards/filters', () => using({}, async f => {
-  const emptyAside = f.find(n => n.type === 'aside');
-  assert.match(emptyAside.props.className, /lg:col-start-2.*lg:sticky lg:top-0/);
-  assert.equal(nodes(emptyAside, n => n.type === 'button').length, 0);
+test('full-width catalog has no empty selection area; compact upper summary is separate from the product scroller', () => using({}, async f => {
+  assert.equal(f.find(n => n.type === 'aside'), undefined);
+  assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
+  const workspace = f.find(n => n.props['aria-label'] === 'Product catalog workspace');
+  assert.match(workspace.props.className, /lg:flex .*lg:flex-col/);
+  assert.doesNotMatch(workspace.props.className, /grid-cols|col-start/);
+  const list = f.find(n => n.props['aria-label'] === 'Product list');
+  assert.match(list.props.className, /lg:flex-1 lg:overflow-y-auto/);
+  assert.match(list.props.className, /scrollbar-gutter:stable/);
+  const gridBefore = nodes(list, n => n.props.style?.gridTemplateColumns)[0];
+  assert.equal(gridBefore.props.style.gridTemplateColumns, 'repeat(auto-fill, minmax(min(100%, 15rem), 1fr))');
   await f.click(f.card('grocery-0'));
-  const aside = f.find(n => n.type === 'aside');
-  assert.equal(aside.props.className, emptyAside.props.className);
-  assert.doesNotMatch(aside.props.className, /(?:^| )sticky |(?:^| )fixed |z-10|top-4/);
-  assert.ok(nodes(aside, n => n.props.className?.includes('bg-slate-900')).length);
-  assert.equal(nodes(aside, n => n.props.id === 'selection-filter' || n.props.id === 'product-search' || n.props.onClick && n.props.className?.includes('glass-card')).length, 0);
+  const summary = f.find(n => n.props['aria-label'] === 'Product selection summary');
+  assert.equal(summary.type, 'section');
+  assert.match(summary.props.className, /px-4 py-3/);
+  assert.doesNotMatch(summary.props.className, /sticky|fixed|z-10|top-4/);
+  assert.ok(nodes(summary, n => n.props.className?.includes('flex flex-wrap items-center justify-between')).length);
+  assert.equal(nodes(summary, n => n.props.id === 'selection-filter' || n.props.id === 'product-search' || n.props.onClick && n.props.className?.includes('glass-card')).length, 0);
   assert.ok(f.button('Generate API Key')); assert.ok(f.button('Clear New Selections'));
-  assert.ok(nodes(aside, n => n.type === 'a' && n.props.href?.startsWith('/dashboard/api-playground')).length);
-  assert.match(text(aside), /Grocery\s*:\s+1/);
-  assert.ok(f.find(n => n.props.className?.includes('lg:grid-cols-[minmax(0,1fr)_16rem]')));
+  assert.ok(nodes(summary, n => n.type === 'a' && n.props.href?.startsWith('/dashboard/api-playground')).length);
+  assert.match(text(summary), /Grocery\s*:\s+1/);
+  const listAfter = f.find(n => n.props['aria-label'] === 'Product list');
+  assert.equal(listAfter.props.className, list.props.className);
+  assert.deepEqual(nodes(listAfter, n => n.props.style?.gridTemplateColumns)[0].props.style, gridBefore.props.style);
+  assert.equal(nodes(listAfter, n => n.props['aria-label'] === 'Product selection summary').length, 0);
+  await f.click(f.button('Clear New Selections'));
+  assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
 }));
