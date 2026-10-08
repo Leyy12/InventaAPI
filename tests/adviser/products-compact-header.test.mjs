@@ -16,7 +16,7 @@ for (const included of [0, 17, 48, 50, 51]) {
     const expected = `Free Trial · 7 days · Included: ${included}/50 · Slots left: ${Math.max(50-included, 0)} · Active keys: ${included ? 1 : 0}/1`;
     assert.equal(normalized(status(f)), expected);
     assert.match(status(f).props.className, /text-xs leading-5/);
-    const header = f.h.output.props.children[0];
+    const header = f.h.output.props.children.find(node => node?.type === 'div');
     assert.equal(nodes(header, n => n.props['aria-label'] === 'Free Trial status').length, 1);
     assert.equal(availability(f).length, 1);
     assert.equal(normalized(availability(f)[0]), '60 Grocery');

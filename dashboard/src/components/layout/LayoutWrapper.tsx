@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/firebase/auth-context';
 import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen, customerLogoutDestination, customerLoginEntryDestination } from '../../../../services/auth-navigation';
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
+import { WorkspaceHeaderSlotProvider } from './WorkspaceHeaderSlot';
 import SubscriptionExpiryBanner from "@/components/shared/SubscriptionExpiryBanner";
 import SessionLoadingScreen, { SessionRecoveryState } from "@/components/auth/SessionLoadingScreen";
 import { customerProtectedReady } from '@/lib/customer-readiness';
@@ -61,6 +62,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   }
 
   return (
+    <WorkspaceHeaderSlotProvider>
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden relative z-10">
@@ -73,6 +75,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         </main>
       </div>
     </div>
+    </WorkspaceHeaderSlotProvider>
   );
 }
 

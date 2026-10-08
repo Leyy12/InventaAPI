@@ -22,6 +22,8 @@ function fixture(owned, { count = 55, evidence = { keys: [], trialCatalog: measu
   const products = ['Hardware', 'Grocery', 'Pharmacy'].flatMap(s => Array.from({ length: count }, (_, i) => product(s, i)));
   let authoritative = evidence;
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
+    'react-dom': { createPortal: stub },
+    '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => null },
     '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
     '@/lib/trial-display.mjs': display, '@/lib/trial-catalog-selection': selection,
     '@/lib/account-usage-events': { invalidateAccountUsage: uid => invalidations.push(uid) },

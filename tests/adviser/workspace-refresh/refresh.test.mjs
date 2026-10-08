@@ -22,6 +22,8 @@ function customer() {
   let fail = false;
   const state = { user, appUser: { plan: 'Pro', businessSegment: 'Grocery' }, entitlement: { activePro: true, plan: 'Pro' } };
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
+    'react-dom': { createPortal: stub },
+    '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => null },
     '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
     '@/lib/trial-display.mjs': { trialCapacityMessage: () => '', trialRemainingSlots: () => 50 },
     '@/lib/trial-catalog-selection': selection, '@/lib/account-usage-events': { invalidateAccountUsage },

@@ -7,6 +7,8 @@ import type { TrialCatalog } from '@/lib/quota-refresh';
 import { GENERATION_POLICY, generationErrorMessage } from '@/lib/api-key-generation';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from 'react-dom';
+import { useWorkspaceHeaderSlot } from '@/components/layout/WorkspaceHeaderSlot';
 import { Database, ShoppingCart, Check, Copy, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -62,6 +64,9 @@ function CustomerCatalogSession() {
     || (paywalledUserId === user?.uid && !paidAccess);
   const canGenerate = !!entitlement && !upgradeRequired;
   const activeTrial = entitlement?.activeTrial === true;
+  const headerSlot = useWorkspaceHeaderSlot()?.target ?? null;
+  const [summaryElement, setSummaryElement] = useState<HTMLElement | null>(null);
+  const [summaryViewport, setSummaryViewport] = useState<{ target: HTMLElement; above: boolean } | null>(null);
   const [trialSelection, setTrialSelection] = useState<{ uid: string; key: TrialCatalogKey | null; catalog: TrialCatalog } | null>(null);
   const [selectionError, setSelectionError] = useState('');
   const trialKey = trialSelection && trialSelection.uid === user?.uid ? trialSelection.key : null;
@@ -94,6 +99,26 @@ function CustomerCatalogSession() {
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const trialState = trialSelectionState(trialCatalog, trialKey, selectedProducts);
   const trialReady = !activeTrial || trialState.mode !== 'blocked';
+  const hasPendingSelection = activeTrial ? trialState.pending.size > 0 : selectedProducts.size > 0;
+
+  useEffect(() => {
+    const summary = summaryElement;
+    const main = summary?.closest('main');
+    if (!hasPendingSelection || !headerSlot || !summary || !main) return;
+    let active = true;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (active && entry.rootBounds) {
+        // Below the viewport is not docked; partial visibility keeps inline controls.
+        const above = entry.boundingClientRect.bottom <= entry.rootBounds.top;
+        setSummaryViewport(previous => previous?.target === summary && previous.above === above ? previous : { target: summary, above });
+      }
+    // Extend only the lower observation boundary so a direct jump from below
+    // the viewport to above it still crosses an observer boundary. The upper
+    // boundary remains the actual main viewport used for the dock decision.
+    }, { root: main, rootMargin: `0px 0px ${main.scrollHeight}px 0px`, threshold: [0, 1] });
+    observer.observe(summary);
+    return () => { active = false; observer.disconnect(); };
+  }, [hasPendingSelection, headerSlot, summaryElement]);
 
   const receiveTrialCatalog = useCallback((data: { keys: TrialCatalogKey[]; trialCatalog?: TrialCatalog }, uid: string) => {
     if (!data.trialCatalog || !Array.isArray(data.keys)) {
@@ -473,9 +498,33 @@ DAAS_API_KEY=${generatedKey}
     setKeyName("");
     setCopied(false);
   };
+  const addSelectionDisabled = !canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0;
+  const generateSelectionDisabled = !canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey);
+  const returnToSummary = () => summaryElement?.scrollIntoView({ block: 'center' });
 
   return (
     <div className="w-full px-6 lg:px-8 min-w-0 space-y-4 pb-10">
+      {hasPendingSelection && summaryViewport?.target === summaryElement && summaryViewport?.above && headerSlot && createPortal(
+        <div role="group" aria-label="Docked product selections" className="flex min-w-0 items-center gap-2">
+          <button type="button" onClick={returnToSummary}
+            aria-label={`Return to product selections, ${activeTrial ? trialState.pending.size : cartSummary.totalProducts} selected${activeTrial ? ' to add' : ''}`}
+            className="flex shrink-0 items-center gap-2 rounded-lg bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/25">
+            <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+            {activeTrial ? trialState.pending.size : cartSummary.totalProducts} selected
+          </button>
+          <div className="hidden xl:flex items-center gap-2">
+            {activeTrial && trialState.mode === 'existing-key' ? <button type="button" onClick={addTrialProducts}
+              disabled={addSelectionDisabled}
+              className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Add Selected Products</button>
+              : !upgradeRequired && <button type="button" onClick={openGenerationModal} disabled={generateSelectionDisabled}
+                className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Generate API Key</button>}
+            <button type="button" onClick={clearSelection} disabled={generating}
+              aria-label={activeTrial ? 'Clear new selections' : 'Clear all selected products'}
+              className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50">Clear</button>
+            <Link href={`/dashboard/api-playground?products=${Array.from(selectedProducts).join(',')}`}
+              className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700">Playground</Link>
+          </div>
+        </div>, headerSlot)}
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="min-w-0 space-y-1">
@@ -612,8 +661,8 @@ DAAS_API_KEY=${generatedKey}
         )}
       </div>
 
-      {selectedProducts.size > 0 && (
-        <section aria-label="Product selection summary" className="shrink-0 rounded-xl bg-slate-900 px-4 py-3 border border-indigo-500/50">
+      {hasPendingSelection && (
+        <section ref={setSummaryElement} aria-label="Product selection summary" className="shrink-0 rounded-xl bg-slate-900 px-4 py-3 border border-indigo-500/50">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <div className="w-8 h-8 shrink-0 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
@@ -636,10 +685,10 @@ DAAS_API_KEY=${generatedKey}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {activeTrial && trialState.mode === 'existing-key' ? <button onClick={addTrialProducts}
-                disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
+                disabled={addSelectionDisabled}
                 className="px-3 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Add Selected Products</button>
                 : !upgradeRequired && <button onClick={openGenerationModal}
-                  disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey)}
+                  disabled={generateSelectionDisabled}
                   className="px-3 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Generate API Key</button>}
               <button
                 onClick={clearSelection}

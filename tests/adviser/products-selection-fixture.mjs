@@ -9,7 +9,7 @@ import * as segment from '../../services/customer-segment.js';
 const stub = () => null;
 export const text = tree => Array.isArray(tree) ? tree.map(text).join(' ') : tree && typeof tree === 'object'
   ? text(tree.props?.children) : String(tree ?? '');
-export async function productsFixture({ trial = true, included = 0, count = 60, catalogMode = 'ready', trialMode = 'ready' } = {}) {
+export async function productsFixture({ trial = true, included = 0, count = 60, catalogMode = 'ready', trialMode = 'ready', headerTarget = null, Observer } = {}) {
   const h = hooks(), c = clock(), b = browser(), calls = [], keyCalls = [];
   const user = { uid: 'synthetic-products-only' };
   const state = { user, appUser: { plan: trial ? 'Free' : 'Pro', businessSegment: 'Grocery' },
@@ -24,6 +24,8 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
     linkedVariantSelections: {}, productIds: includedIds }] : [],
     trialCatalog: { productsIncluded: included, productsAvailable: 50 - included, activeKeys: included ? 1 : 0, expiresAt: null } };
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
+    'react-dom': { createPortal: (children, target) => ({ type: 'fixture-header-portal', props: { children, target } }) },
+    '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => ({target:headerTarget}) },
     '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
     '@/lib/trial-display.mjs': display, '@/lib/trial-catalog-selection': selection,
     '@/lib/account-usage-events': { invalidateAccountUsage: stub },
@@ -45,7 +47,7 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
       return evidence;
     } },
     '@/lib/segment-catalog': { ...catalog, createCatalogRefresh: options => catalog.createCatalogRefresh({ ...options, schedule: c.schedule, cancel: c.cancel }) },
-  }, { ...b, fetch: async (url, init) => {
+  }, { ...b, IntersectionObserver: Observer, fetch: async (url, init) => {
     if (init?.method) throw Error('Persisted mutations prohibited in selection fixture');
     calls.push(url);
     if (catalogMode === 'loading') return new Promise(() => {});

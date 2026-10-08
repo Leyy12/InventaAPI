@@ -8,10 +8,12 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import NotificationBell from "@/components/shared/NotificationBell";
 import { notifySubscriptionExpiringSoon } from "@/lib/firebase/notifications";
 import { dashboardRoutes, routeActive } from './dashboard-navigation';
+import { useWorkspaceHeaderSlot } from './WorkspaceHeaderSlot';
 
 export default function Navbar() {
   const { user, entitlement } = useAuth();
   const pathname = usePathname();
+  const headerSlot = useWorkspaceHeaderSlot();
   const [menuOpen, setMenuOpen] = useState(false);
 
   // ── Subscription expiry warning ───────────────────────────────────────────
@@ -30,12 +32,13 @@ export default function Navbar() {
   }, [user, entitlement]);
 
   return (
-    <header className="h-16 glass border-b border-slate-800/60 px-6 flex items-center justify-between sticky top-0 z-30">
-      <div className="flex items-center gap-4 flex-1">
-        <button type="button" className="md:hidden rounded-lg p-2 text-slate-200 hover:bg-slate-800" aria-label={menuOpen ? 'Close workspace navigation' : 'Open workspace navigation'}
+    <header className="h-16 shrink-0 glass border-b border-slate-800/60 px-6 flex items-center justify-between gap-3 sticky top-0 z-30">
+      <div className="flex min-w-0 items-center gap-4 flex-1">
+        <button type="button" className="md:hidden shrink-0 rounded-lg p-2 text-slate-200 hover:bg-slate-800" aria-label={menuOpen ? 'Close workspace navigation' : 'Open workspace navigation'}
           aria-controls="customer-mobile-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}>
           {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
+        {pathname === '/dashboard/products' && <div ref={headerSlot?.register} className="contents" />}
       </div>
       {menuOpen && <nav id="customer-mobile-navigation" aria-label="Customer workspace" className="absolute left-0 right-0 top-full max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-slate-700 bg-slate-950 p-3 shadow-xl md:hidden">
         {dashboardRoutes.map(route => <Link key={route.href} href={route.href} onClick={() => setMenuOpen(false)}
@@ -45,7 +48,7 @@ export default function Navbar() {
         </Link>)}
       </nav>}
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         {/* Notification Bell */}
         {user && (
           <NotificationBell userId={user.uid} accentColor="indigo" />
