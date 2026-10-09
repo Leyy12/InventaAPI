@@ -34,7 +34,10 @@ function text(value = '', maximum = 200, required = false) {
 }
 
 export function validateSubmissionContent(input) {
-  object(input, ['name', 'brand', 'segment', 'category', 'description', 'sku', 'variants', 'image_url']);
+  object(input, ['name', 'brand', 'segment', 'category', 'description', 'sku', 'variants', 'image_url', 'image_asset_id']);
+  if (input.image_asset_id !== undefined && (typeof input.image_asset_id !== 'string' || !/^[a-f0-9]{64}$/u.test(input.image_asset_id))) {
+    throw submissionError(400, 'Invalid image asset ID.');
+  }
   const segment = normalizeSegment(text(input.segment, 40, true));
   if (!segment) throw submissionError(400, 'Unsupported product segment.');
   let image_url;
@@ -47,6 +50,7 @@ export function validateSubmissionContent(input) {
     name: text(input.name, 160, true), brand: text(input.brand, 120), segment,
     category: text(input.category, 120, true), description: text(input.description, 4000),
     sku: text(input.sku, 120), image_url,
+    ...(input.image_asset_id ? { image_asset_id: input.image_asset_id } : {}),
     variants: variants.map(variant => {
       object(variant, [...fields, 'price']);
       const result = {};

@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { normalizeProductImageUrl } from "@/lib/product-image-url";
 import { useAuth } from "@/lib/firebase/auth-context";
+import ProductImageField from './ProductImageField';
+import { uploadProductImage, type MediaUpload } from '@/lib/product-media-client';
 import { activeCustomerSegment, restrictedSegmentAccount } from '../../../../services/customer-segment.js';
 
 interface AddProductModalProps {
@@ -28,9 +30,10 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   const { user, appUser } = useAuth();
   const segmentLocked = restrictedSegmentAccount(appUser);
   const busy = useRef(false);
-  const attempt = useRef<{ uid: string; key: string; body: string } | null>(null);
+  const attempt = useRef<{ uid: string; key: string; body: string; media?: MediaUpload } | null>(null);
   const [pending, setPending] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   const [name, setName]             = useState("");
   const [brand, setBrand]           = useState("");
@@ -47,7 +50,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   useEffect(() => {
     if (!open || attempt.current) return;
     setName(""); setBrand(""); setSegment(""); setCategory("");
-    setImageUrl(""); setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
+    setImageUrl(""); setImageFile(null); setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
     setError(""); setSuccess("");
   }, [open]);
 
@@ -74,9 +77,20 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
         });
         const payload = { name: name.trim(), brand: brand.trim(), segment, category: category.trim(),
           description: description.trim(), variants: cleanedVariants, image_url: normalizeProductImageUrl(imageUrl) };
-        attempt.current = { uid: user.uid, key: crypto.randomUUID(), body: JSON.stringify(payload) };
+        const key = crypto.randomUUID();
+        attempt.current = { uid: user.uid, key, body: JSON.stringify(payload),
+          ...(imageFile ? { media: { uid: user.uid, key, file: imageFile } } : {}) };
       }
       setPending(true);
+      if (attempt.current.media && !attempt.current.media.assetId) {
+        try {
+          const assetId = await uploadProductImage(user, 'submission', attempt.current.media);
+          attempt.current.body = JSON.stringify({ ...JSON.parse(attempt.current.body), image_asset_id: assetId });
+        } catch (cause) {
+          if ([400, 413, 415].includes((cause as { status?: number }).status ?? 0)) { attempt.current = null; setPending(false); }
+          throw cause;
+        }
+      }
       const token = await user.getIdToken();
       const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
       const response = await fetch(base + "/api/v1/product-submissions", {
@@ -144,7 +158,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             <span>This submits a review request, not a catalog product. Admin approval is required before publication.</span>
           </div>
 
-          <fieldset disabled={saving || pending || !!success} className="space-y-5">
+          <fieldset disabled={saving || pending || !!success} className="min-w-0 space-y-5">
           {/* Base fields */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -174,11 +188,8 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             </div>
           </div>
 
-          <div>
-            <label className={labelCls}>Image URL (optional, HTTPS)</label>
-            <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-              placeholder="https://example.com/product.jpg" className={inputCls} />
-          </div>
+          <ProductImageField imageUrl={imageUrl} onImageUrlChange={setImageUrl} file={imageFile} onFileChange={setImageFile}
+            disabled={saving || pending || !!success} />
 
           {/* Variants */}
           <div>

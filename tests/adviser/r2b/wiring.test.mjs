@@ -22,7 +22,7 @@ test('Storage references are confined to initialization and the two dormant sour
     }
   }
 });
-test('actual product pages mount URL workflows, not binary upload components', () => {
+test('actual product pages mount managed pickers and retain HTTPS compatibility without direct Storage access', () => {
   const customer = read('dashboard/src/app/dashboard/products/page.tsx');
   const form = read('dashboard/src/components/products/AddProductModal.tsx');
   const admin = read('admin-panel/src/app/products/page.tsx');
@@ -32,7 +32,10 @@ test('actual product pages mount URL workflows, not binary upload components', (
   assert.match(admin, /<AddProductModal/u); assert.match(admin, /<EditModal/u);
   assert.match(admin, /image_url: normalizeProductImageUrl\(imageUrl\)/u);
   assert.match(admin, /const image_url = normalizeProductImageUrl\(imageUrl\)/u);
-  assert.doesNotMatch(customer + form, /type="file"|firebase\/storage/u);
+  assert.match(form + admin, /<ProductImageField/u);
+  assert.match(read('dashboard/src/components/products/ProductImageField.tsx'), /type="file"/u);
+  assert.match(read('dashboard/src/lib/product-media-client.ts'), /\/api\/v1\/product-media\/upload\//u);
+  assert.doesNotMatch(customer + form + admin, /firebase\/storage|uploadBytes|deleteObject/u);
 });
 for (const app of frontends) test(`${app}: image markup wires validated URL, local fallback and reset on URL changes`, () => {
   const page = read(app + '/src/app/' + (app === 'dashboard' ? 'dashboard/' : '') + 'products/page.tsx');
@@ -44,15 +47,23 @@ for (const app of frontends) test(`${app}: image markup wires validated URL, loc
   assert.doesNotMatch(page, /dangerouslySetInnerHTML|next\/image|src=\{product\.image/u);
   assert.doesNotMatch(read(app + '/next.config.ts'), /remotePatterns|domains\s*:/u);
 });
-test('backend and Functions contain no Storage object operations or image URL transport', () => {
+test('only the managed adapter handles object bytes; URL metadata is never fetched by catalog/Functions', () => {
   const paths = ['server.js', ...['routes', 'services', 'functions'].flatMap(files)];
   for (const path of paths) {
     const source = read(path);
+    if (['routes/product-media.js', 'services/product-media-processing.js'].includes(path)) continue;
     assert.doesNotMatch(source, /firebase\/storage|\.storage\s*\(|\.bucket\s*\(|uploadBytes|downloadURL/iu, path);
     if (/image_url|imageUrl/u.test(source)) {
       assert.doesNotMatch(source, /\bfetch\s*\(|\baxios\b|https?\.(?:get|request)|\bsharp\s*\(/u, path);
     }
   }
+  const adapter = read('routes/product-media.js');
+  assert.match(adapter, /PRODUCT_MEDIA_ENABLED === 'true'/u);
+  assert.match(adapter, /ifGenerationMatch: 0/u);
+  assert.match(adapter, /publicAccessPrevention/u);
+  assert.doesNotMatch(adapter, /makePublic\s*\(|getSignedUrl\s*\(/u);
+  assert.match(adapter, /if \(metadata\.metadata\?\.firebaseStorageDownloadTokens\) throw/u);
+  assert.match(read('product-media.storage.rules'), /allow read, write: if false/u);
 });
 test('Storage remains absent from deployment/emulators, with explicit non-deployment documentation', () => {
   const config = JSON.parse(read('firebase.json'));

@@ -776,7 +776,9 @@ DAAS_API_KEY=${generatedKey}
                     <img
                       src={productImageSource(product)}
                       alt={product.name}
-                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                      className="w-full h-full object-contain p-5 pt-9"
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       onError={showProductImageFallback}
                     />

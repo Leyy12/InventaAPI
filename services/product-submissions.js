@@ -3,6 +3,7 @@ import { accountBlocked, evaluateEntitlement } from '../functions/subscription-l
 import { prepareCatalogWrite } from './catalog-writer.js';
 import { submissionError, validateSubmissionContent } from './product-submission-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
+import { prepareSubmissionMedia, prepareRejectedMedia } from './product-media-binding.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const idPattern = /^[a-zA-Z0-9_-]{1,128}$/u;
@@ -90,6 +91,8 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       }
       if ((await tx.get(ref)).exists) throw submissionError(409, 'Submission identifier collision. Retry later.');
       const at = timestamp();
+      const applyMedia = await prepareSubmissionMedia({ tx, db, uid, operationId, submissionId: ref.id, content, at });
+      applyMedia();
       tx.set(ref, { version: 1, userId: uid, operationId, content, status: 'submitted',
         createdAt: at, updatedAt: at, reviewedAt: null, reviewedBy: null, productId: null });
       tx.set(operationRef, { userId: uid, submissionId: ref.id, digest, createdAt: at });
@@ -137,9 +140,11 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       if (decision === 'approved') {
         await account(tx, db, data.userId);
         productId = `submission_${ref.id}`;
-        prepared = await prepareCatalogWrite({ tx, db, uid, action: 'create', productId, input: content, at, deriveReservationId });
+        prepared = await prepareCatalogWrite({ tx, db, uid, action: 'create', productId, input: content, at, deriveReservationId, submissionId: ref.id });
       }
+      const rejectMedia = decision === 'rejected' ? await prepareRejectedMedia({ tx, db, content, submissionId: ref.id, at }) : null;
       prepared?.apply();
+      rejectMedia?.();
       tx.update(ref, { status: decision, productId, reviewedBy: uid, reviewedAt: at, updatedAt: at });
       return { body: { id: ref.id, status: decision, productId, replayed: false } };
     });

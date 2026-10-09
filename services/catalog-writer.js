@@ -3,6 +3,7 @@ import { evaluateProductVisibility, productIdentityKeys } from './product-contra
 import { normalizeProductImageUrl } from './product-submission-contract.js';
 import { catalogError, identityId, possibleDuplicates, reservationIntegrityError, reservationIntegrityProblems, validateCatalogProduct } from './catalog-contract.js';
 import { auditCatalog } from './catalog-audit.js';
+import { prepareCatalogMedia } from './product-media-binding.js';
 
 export async function requireCatalogAdmin(tx, db, uid) {
   const account = (await tx.get(db.collection('users').doc(uid))).data();
@@ -18,7 +19,7 @@ export async function readCatalog(tx, db) {
 
 // Read/validate first; returned apply closure stages writes only after caller's other reads.
 // This enables submission finalization and import receipts in the SAME transaction.
-export async function prepareCatalogWrite({ tx, db, uid, action, productId, input = {}, expectedRevision, at, deriveReservationId = identityId }) {
+export async function prepareCatalogWrite({ tx, db, uid, action, productId, input = {}, expectedRevision, at, deriveReservationId = identityId, submissionId }) {
   await requireCatalogAdmin(tx, db, uid);
   if (typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,180}$/u.test(productId)) throw catalogError(400, 'Invalid product ID.');
   if (!['create', 'edit', 'archive', 'restore', 'delete'].includes(action)) throw catalogError(400, 'Invalid catalog action.');
@@ -38,6 +39,7 @@ export async function prepareCatalogWrite({ tx, db, uid, action, productId, inpu
   // Existing malformed catalogs/collisions require explicit offline operator resolution.
   if (!audit.ok) throw catalogError(409, 'Catalog audit required: historical collision or malformed product.');
   const payload = ['create', 'edit'].includes(action) ? validateCatalogProduct(input, previous) : {};
+  const applyMedia = await prepareCatalogMedia({ tx, db, uid, productId, payload, previous, action, submissionId, at });
   let product = { ...previous, ...payload };
   if (action === 'archive' || action === 'restore') {
     product = { ...product, status: action === 'archive' ? 'Archived' : 'Active', is_active: action === 'restore' };
@@ -81,6 +83,7 @@ export async function prepareCatalogWrite({ tx, db, uid, action, productId, inpu
   const warnings = action === 'delete' ? [] : possibleDuplicates(product, records, productId);
   return { product: { ...product, id: productId }, possibleDuplicates: warnings,
     apply() {
+      applyMedia();
       if (action === 'delete') tx.delete(ref); else tx.set(ref, product);
       for (const claim of claims) tx.set(claim.ref, claim.data);
       // Shared serializing fence also protects legacy identities not yet backfilled.

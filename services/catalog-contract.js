@@ -92,10 +92,14 @@ function safePayload(value, depth = 0) {
 
 // Canonical identity remains exclusively productIdentityKeys from Phase 1.
 export function validateCatalogProduct(input, previous = null) {
-  onlyFields(input, ['name', 'brand', 'segment', 'category', 'description', 'sku', 'variants', 'image_url', 'status']);
+  onlyFields(input, ['name', 'brand', 'segment', 'category', 'description', 'sku', 'variants', 'image_url', 'image_asset_id', 'status']);
   if (Object.values(input).some(value => value === null || value === undefined)) throw catalogError(400, 'Product fields cannot be null or undefined.');
   const old = previous ? projectProduct(previous) : null;
   const result = {};
+  if (Object.hasOwn(input, 'image_asset_id')) {
+    if (typeof input.image_asset_id !== 'string' || (input.image_asset_id && !/^[a-f0-9]{64}$/u.test(input.image_asset_id))) throw catalogError(400, 'Invalid image asset ID.');
+    result.image_asset_id = input.image_asset_id;
+  }
   for (const [field, maximum, required] of [['name', 160, true], ['brand', 120, false], ['category', 120, true],
     ['description', 4000, false], ['sku', 120, false]]) {
     // Do not materialize a projected variant SKU as a new root SKU on edits.

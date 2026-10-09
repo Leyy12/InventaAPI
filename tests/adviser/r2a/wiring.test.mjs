@@ -12,7 +12,7 @@ test('Customer Add Product CTA opens secured modal; no nonexistent request route
   assert.match(form, /Submitted for review/u); assert.match(form, /attempt\.current\.body/u);
   assert.match(form, /busy\.current/u); assert.match(form, /image_url: normalizeProductImageUrl\(imageUrl\)/u);
 });
-test('Admin Add and Edit validate and persist canonical image URL without uploads', () => {
+test('Admin Add and Edit preserve HTTPS compatibility and route managed uploads through trusted backend', () => {
   const source = read('admin-panel/src/app/products/page.tsx');
   const edit = source.slice(source.indexOf('function EditModal'), source.indexOf('function AddProductModal'));
   const add = source.slice(source.indexOf('function AddProductModal'));
@@ -23,7 +23,9 @@ test('Admin Add and Edit validate and persist canonical image URL without upload
   assert.match(add, /const image_url = normalizeProductImageUrl\(imageUrl\)/u);
   assert.match(add, /variants: cleaned, image_url/u);
   assert.match(add, /catalogRequest/u);
-  assert.equal((source.match(/Image URL \(optional, HTTPS\)/gu) || []).length, 2);
+  assert.equal((source.match(/<ProductImageField/gu) || []).length, 2);
+  assert.match(edit + add, /uploadProductImage/u);
+  assert.match(edit, /expectedRevision: product.catalogRevision/u);
   assert.doesNotMatch(edit + add, /uploadBytes|firebase\/storage/u);
 });
 test('Admin review navigation and endpoints are wired with revocation-aware SDK verification', () => {

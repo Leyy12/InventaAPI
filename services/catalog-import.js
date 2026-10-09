@@ -15,6 +15,7 @@ const aliases = {
   pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size',
   flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expirationDate',
   expiry: 'expirationDate', expiry_date: 'expirationDate', exp_date: 'expirationDate', expirationdate: 'expirationDate',
+  image_url: 'image_url', imageurl: 'image_url',
 };
 export function previewCatalogImport(matrix, records) {
   if (!Array.isArray(matrix) || matrix.length < 2 || matrix.length > 201 || JSON.stringify(matrix).length > 200000
@@ -38,8 +39,8 @@ export function previewCatalogImport(matrix, records) {
       if (values.length !== headers.length) throw catalogError(400, 'Column count does not match header.');
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
-      const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '' } = fields;
-      row.product = validateCatalogProduct({ name, brand, category, segment, description, sku,
+      const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
+      row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
         variants: [{ size, flavor, sku, expirationDate, price: strictPrice(fields.price) }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
       const keys = new Set(productIdentityKeys(row.product));

@@ -1,7 +1,10 @@
 "use client";
 import { normalizeProductImageUrl, productImageSource, showProductImageFallback } from '@/lib/product-image-url';
+import { catalogCsv } from '@/lib/catalog-csv';
+import ProductImageField from '@/components/products/ProductImageField';
+import { uploadProductImage, type MediaUpload } from '@/lib/product-media-client';
 
-import { useState, useEffect, useMemo, useId } from "react";
+import { useState, useEffect, useMemo, useId, useRef } from "react";
 import {
   Package, Pencil, Search, Download, Upload,
   Eye, RotateCcw, X, ShoppingCart, Wrench, Pill, Layers,
@@ -10,7 +13,7 @@ import {
 } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { catalogRequest, catalogPrice, brandNameWarning } from "@/lib/catalog-client";
-import { db } from "@/lib/firebase/config";
+import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -221,18 +224,14 @@ const segmentStyle = (seg?: string) => {
 
 const exportCSV = (data: Product[]) => {
   if (!data.length) return;
-  const rows = data.map(p => [
-    `"${(getProductName(p)).replace(/"/g, '""')}"`, `"${getBrand(p)}"`,
-    `"${p.segment || ""}"`, `"${p.category || ""}"`,
-    `"${getFlavors(p).join(", ")}"`, `"${getSizes(p).join(", ")}"`,
-    `"${getPricing(p)}"`, `"${getStatus(p)}"`,
-  ].join(","));
-  const csv = ["Name,Brand,Segment,Category,Flavors,Specs,Pricing,Status", ...rows].join("\n");
+  const csv = catalogCsv(data.map(p => [getProductName(p), getBrand(p), p.segment || '', p.category || '',
+    getFlavors(p).join(', '), getSizes(p).join(', '), String(getPricing(p)), getStatus(p), productImageSource(p)]));
   const a = Object.assign(document.createElement("a"), {
     href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
     download: "master_catalog.csv"
   });
   a.click();
+  URL.revokeObjectURL(a.href);
 };
 
 // ─── Expand More Button ───────────────────────────────────────────────────────
@@ -425,6 +424,9 @@ function EditModal({
 
   const [name, setName] = useState(getProductName(product));
   const [imageUrl, setImageUrl] = useState(product.image_url ?? product.image ?? "");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const imageUpload = useRef<MediaUpload | null>(null);
+  const savingRef = useRef(false);
   const [brand, setBrand] = useState(getBrand(product));
   const [category, setCategory] = useState(product.category || "");
   const [segment, setSegment] = useState(product.segment || "");
@@ -455,13 +457,24 @@ function EditModal({
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
 
   const handleSave = async () => {
+    if (savingRef.current) return;
     if (!name.trim()) { setError("Product name is required."); return; }
+    savingRef.current = true;
     setSaving(true); setError("");
     try {
       const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+      let imageFields: { image_url?: string; image_asset_id?: string } = {};
+      if (imageFile) {
+        const user = auth.currentUser;
+        if (!user) throw new Error('Sign in as Admin to upload.');
+        imageUpload.current ??= { uid: user.uid, key: crypto.randomUUID(), file: imageFile };
+        imageFields = { image_url: '', image_asset_id: await uploadProductImage(user, 'catalog', imageUpload.current) };
+      } else if (imageUrl !== (product.image_url ?? product.image ?? '')) {
+        imageFields = { image_url: normalizeProductImageUrl(imageUrl), image_asset_id: '' };
+      }
       const payload = {
         name: name.trim(), brand: brand.trim(), category: category.trim(), segment, status,
-        image_url: normalizeProductImageUrl(imageUrl), variants: cleaned,
+        ...imageFields, variants: cleaned,
       };
       const result = await catalogRequest<{ product: Product; possibleDuplicates: string[] }>(
         '/' + encodeURIComponent(product.id), 'PATCH',
@@ -472,6 +485,7 @@ function EditModal({
     } catch (e: any) {
       setError(e.message || "Failed to save. Try again.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -510,8 +524,8 @@ function EditModal({
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Product name" className={inputCls} />
             </div>
             <div className="col-span-2">
-              <label className={labelCls}>Image URL (optional, HTTPS)</label>
-              <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)} className={inputCls} />
+              <ProductImageField imageUrl={imageUrl} onImageUrlChange={setImageUrl} file={imageFile}
+                onFileChange={file => { imageUpload.current = null; setImageFile(file); }} disabled={saving} />
             </div>
             <div>
               <label className={labelCls}>Brand</label>
@@ -624,6 +638,10 @@ function AddProductModal({
 }) {
   const [name, setName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const createAttempt = useRef<{ uid: string; key: string; product: Record<string, unknown>; media?: MediaUpload } | null>(null);
+  const creating = useRef(false);
+  const [pendingCreate, setPendingCreate] = useState(false);
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [segment, setSegment] = useState("");
@@ -653,20 +671,37 @@ function AddProductModal({
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
 
   const handleAdd = async () => {
+    if (creating.current) return;
     if (!name.trim()) { setError("Product name is required."); return; }
+    creating.current = true;
     setSaving(true); setError("");
     try {
-      const image_url = normalizeProductImageUrl(imageUrl);
-      const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+      const user = auth.currentUser;
+      if (!user) throw new Error('Sign in as Admin to create a product.');
+      if (createAttempt.current && createAttempt.current.uid !== user.uid) throw new Error('Sign back into the creating account to retry.');
+      if (!createAttempt.current) {
+        const image_url = normalizeProductImageUrl(imageUrl);
+        const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+        const key = crypto.randomUUID();
+        createAttempt.current = { uid: user.uid, key,
+          product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },
+          ...(imageFile ? { media: { uid: user.uid, key, file: imageFile } } : {}) };
+      }
+      setPendingCreate(true);
+      if (createAttempt.current.media && !createAttempt.current.media.assetId) {
+        createAttempt.current.product.image_asset_id = await uploadProductImage(user, 'catalog', createAttempt.current.media);
+      }
       const result = await catalogRequest<{ product: Product; possibleDuplicates: string[] }>('', 'POST', {
-        product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },
-      });
+        product: createAttempt.current.product,
+      }, createAttempt.current.key);
       onAdded({ product: result.product, isUpdate: false });
       if (result.possibleDuplicates.length) alert('Created separately. Possible Brand + Product Name duplicates: ' + result.possibleDuplicates.join(', '));
       onClose();
     } catch (e: any) {
       setError(e.message || "Failed to save. Try again.");
+      if ([400, 413, 415].includes(e.status)) { createAttempt.current = null; setPendingCreate(false); }
     } finally {
+      creating.current = false;
       setSaving(false);
     }
   };
@@ -702,7 +737,7 @@ function AddProductModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <fieldset disabled={saving || pendingCreate} className="flex-1 min-w-0 overflow-y-auto p-6 space-y-5">
 
           {/* Duplicate warning */}
           {matchedProduct && (
@@ -724,9 +759,9 @@ function AddProductModal({
               <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Piattos Cheese" className={inputCls} />
             </div>
             <div className="col-span-2">
-              <label className={labelCls}>Image URL (optional, HTTPS)</label>
-              <input type="url" maxLength={2048} value={imageUrl} onChange={e => setImageUrl(e.target.value)} className={inputCls} />
-              <p className="text-xs text-slate-500">Optional external HTTPS URL; no file upload.</p>
+              <ProductImageField imageUrl={imageUrl} onImageUrlChange={setImageUrl} file={imageFile} onFileChange={setImageFile}
+                disabled={saving || pendingCreate} />
+
             </div>
             <div>
               <label className={labelCls}>Brand</label>
@@ -800,8 +835,7 @@ function AddProductModal({
               {error}
             </div>
           )}
-        </div>
-
+        </fieldset>
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-800 bg-slate-900/80 shrink-0">
           <button onClick={onClose} disabled={saving}
@@ -811,7 +845,7 @@ function AddProductModal({
           <button onClick={handleAdd} disabled={saving}
             className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {saving ? "Saving…" : "Save Product"}
+            {saving ? "Saving…" : pendingCreate ? "Retry Same Product" : "Save Product"}
           </button>
         </div>
       </div>

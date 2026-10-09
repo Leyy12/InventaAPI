@@ -20,10 +20,27 @@ test('BOM/header whitespace normalization and existing aliases', () => {
 for (const field of ['name', 'segment', 'category', 'price']) test(`missing required header ${field}`, () => {
   assert.throws(() => preview(headers.filter(h => h !== field), [values.filter((_, i) => headers[i] !== field)]), /Missing required columns/);
 });
-test('unknown fields including unsupported image_url are visible ignored warnings', () => {
+test('unknown columns warn, but invalid image metadata blocks the row instead of being discarded', () => {
   const result = preview([...headers, 'mystery', 'image_url'], [[...values, 'unused', 'javascript:bad']]);
-  assert.equal(result.warnings.length, 2); assert.equal(result.rows[0].product.image_url, '');
-  assert.equal(result.rows[0].product.mystery, undefined);
+  assert.equal(result.warnings.length, 1); assert.equal(result.rows[0].status, 'INVALID');
+  assert.match(result.rows[0].reason, /image URL/i);
+});
+for (const alias of ['image_url', 'Image URL', 'imageurl']) test(`optional image alias ${alias} preserves canonical identity`, () => {
+  const result = preview([...headers, alias], [[...values, 'https://example.invalid/pack.webp?a=1&b=2']]);
+  assert.equal(result.rows[0].product.image_url, 'https://example.invalid/pack.webp?a=1&b=2');
+  assert.deepEqual(productIdentityKeys(result.rows[0].product), productIdentityKeys(preview().rows[0].product));
+});
+test('blank image remains optional and duplicate image aliases reject ambiguous headers', () => {
+  assert.equal(preview([...headers, 'image_url'], [[...values, '']]).rows[0].status, 'NEW');
+  assert.throws(() => preview([...headers, 'image_url', 'image url'], [[...values, '', '']]), /Duplicate column mapping/);
+});
+for (const value of ['C:\\photos\\a.jpg', 'file:///a.png', 'http://example.invalid/a', 'data:image/png;base64,eA==', 'https://u:p@example.invalid/a']) {
+  test(`CSV rejects unsafe image value ${value}`, () => assert.equal(preview([...headers, 'image_url'], [[...values, value]]).rows[0].status, 'INVALID'));
+}
+test('existing canonical product is skipped even if CSV supplies a different valid image', () => {
+  const old = preview().rows[0].product;
+  const result = preview([...headers, 'image_url'], [[...values, 'https://example.invalid/new.webp']], [{id:'existing',data:old}]);
+  assert.equal(result.rows[0].status, 'EXACT_EXISTING_MATCH'); assert.equal(old.image_url, '');
 });
 for (const extra of ['name', 'Product Name', 'productname']) test(`ambiguous duplicate header ${extra}`, () => {
   assert.throws(() => preview([...headers, extra], [[...values, 'other']]), /Duplicate column mapping/);

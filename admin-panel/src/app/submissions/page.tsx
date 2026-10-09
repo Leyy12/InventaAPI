@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
 import { reviewSubmission } from '@/lib/submission-review';
+import ProductImagePreview from '@/components/products/ProductImagePreview';
+import PrivateProductImage from '@/components/products/PrivateProductImage';
 
 type Submission = {
   id: string; userId: string; status: string; createdAt: string; productId: string | null;
   content?: { name: string; brand: string; segment: string; category: string; description: string;
-    image_url: string; sku: string; variants: Record<string, string | number>[] };
+    image_url: string; image_asset_id?: string; sku: string; variants: Record<string, string | number>[] };
 };
 
 export default function SubmissionsPage() {
@@ -91,8 +93,8 @@ export default function SubmissionsPage() {
       {row.content && <>
         <p>Brand: {row.content.brand || '—'} · Segment: {row.content.segment} · Category: {row.content.category}</p>
         <p>SKU: {row.content.sku || '—'}</p><p>{row.content.description}</p>
-        <p>Image URL: <span className="select-all">{row.content.image_url || 'None'}</span></p>
-        <p className="text-xs text-slate-400">URL metadata only; no automatic preview or remote image verification.</p>
+        {row.content.image_asset_id ? <PrivateProductImage key={row.content.image_asset_id + ':' + user?.uid} assetId={row.content.image_asset_id} />
+          : <><ProductImagePreview url={row.content.image_url} name={row.content.name} /><p className="text-xs">Image URL: <span className="select-all">{row.content.image_url || 'None'}</span></p></>}
         <ul className="text-sm">{row.content.variants.map((variant, index) => <li key={index}>
           {Object.entries(variant).map(([key, value]) => `${key}: ${value}`).join(' · ')}
         </li>)}</ul>

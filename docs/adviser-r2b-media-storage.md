@@ -1,5 +1,10 @@
 # R2B — Media architecture and storage monitoring
 
+> Historical URL-only acceptance record. The opt-in, backend-mediated managed
+> media proposal now lives in [product image management](product-image-management.md).
+> Its activation is blocked on separately approved staging infrastructure. Nothing
+> in this historical document authorizes deployment of the dormant Storage rules.
+
 ## Decision and scope
 
 **MODE A — URL-ONLY.** Reviewed from R2A `0585fb33dfa85533216f0dcfe8de81ad5745206a`;

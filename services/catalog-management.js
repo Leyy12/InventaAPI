@@ -21,11 +21,26 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
   };
   const mutate = action => wrap(async (req, db, uid) => {
     onlyFields(req.body, action === 'create' ? ['product'] : action === 'edit' ? ['product', 'expectedRevision'] : ['expectedRevision']);
-    const productId = action === 'create' ? makeId() : req.params?.id;
+    const key = action === 'create' ? req.headers['idempotency-key'] : undefined;
+    if (key !== undefined && (typeof key !== 'string' || !/^[a-zA-Z0-9_-]{16,128}$/u.test(key))) throw catalogError(400, 'Invalid catalog operation key.');
+    const receiptRef = key ? db.collection('catalog_create_operations').doc(catalogDigest([uid, key])) : null;
+    const digest = key ? catalogDigest(req.body.product) : null;
+    const productId = action === 'create' ? (key ? `catalog_${catalogDigest([uid, key])}` : makeId()) : req.params?.id;
     return db.runTransaction(async tx => {
+      if (receiptRef) {
+        await requireCatalogAdmin(tx, db, uid);
+        const receipt = (await tx.get(receiptRef)).data();
+        if (receipt) {
+          if (receipt.uid !== uid || receipt.digest !== digest) throw catalogError(409, 'Catalog key already used for different content.');
+          const product = (await tx.get(db.collection('products').doc(productId))).data();
+          if (!product) throw catalogError(409, 'Previously created product was removed; refresh the catalog.');
+          return { product: { ...product, id: productId }, deleted: false, possibleDuplicates: [], replayed: true };
+        }
+      }
       const prepared = await prepareCatalogWrite({ tx, db, uid, action, productId, input: req.body.product,
         expectedRevision: req.body.expectedRevision, at: now().toISOString(), deriveReservationId });
       prepared.apply();
+      if (receiptRef) tx.set(receiptRef, { uid, digest, productId, createdAt: now().toISOString() });
       return { product: action === 'delete' ? null : prepared.product, deleted: action === 'delete', possibleDuplicates: prepared.possibleDuplicates };
     });
   });

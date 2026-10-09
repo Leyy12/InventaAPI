@@ -19,6 +19,7 @@ import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
 import catalogManagementRouter from './routes/catalog-management.js';
 import { customerSubmissionsRouter, adminSubmissionsRouter } from './routes/product-submissions.js';
+import productMediaRouter from './routes/product-media.js';
 import daasRouter from './routes/daas.js';
 import apiKeysRouter from './routes/apikeys.js';
 import notificationsRouter from './routes/notifications.js';
@@ -128,6 +129,9 @@ app.use('/api/webhooks', express.json({
         req.rawBody = buf.toString('utf8');
     },
 }));
+
+// Bounded raw photo transport precedes JSON; no base64 media in documents.
+app.use('/api/v1/product-media', productMediaRouter);
 
 // Express body parsers (for all other routes)
 app.use(express.json({ limit: '10mb' })); // Support larger base64 images if needed
