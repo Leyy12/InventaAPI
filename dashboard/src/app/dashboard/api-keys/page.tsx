@@ -7,7 +7,6 @@ import type { User } from "firebase/auth";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
-import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import RequestHistory from "@/components/api/RequestHistory";
 import CodeSnippet from "@/components/shared/CodeSnippet";
 
@@ -109,7 +108,6 @@ function AccountKeysSession({ user, entitlementStatus }: {
         <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2"><Shield className="w-5 h-5 text-amber-400" /> Keep Your Keys Secure</h2>
         <p className="text-sm text-slate-300">Secrets are shown only once. Store them securely and never put them in public repositories or client-side code. Revoking a key immediately disables that credential; revocation does not create another key.</p>
       </div>
-      <CustomerUsageSummary />
       <p className="text-sm text-slate-400">Free Trial permits one active API key with up to 50 currently linked products for 7 days. API calls do not consume products. Manage the catalog and create keys in Products. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
       <RequestHistory />
 

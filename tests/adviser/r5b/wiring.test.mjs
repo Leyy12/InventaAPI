@@ -22,8 +22,9 @@ test('no fabricated Consumer Name, status fallback or complete-history claim',()
   assert.match(ui,/Key name \(at request\)/);assert.match(ui,/No recorded requests available/);assert.match(ui,/Unable to load request history/);
   assert.match(ui,/not a complete history/);assert.doesNotMatch(ui,/appUser|businessName|fullName|email|Consumer Name/);
 });
-test('API key quota uses existing authoritative R4 summary once, not repeated key counters',()=>{
-  const ui=source('dashboard/src/app/dashboard/api-keys/page.tsx');assert.match(ui,/<CustomerUsageSummary/);assert.match(ui,/<RequestHistory/);
+test('Overview owns the authoritative account summary; API Keys retains history without duplicate quota counters',()=>{
+  const ui=source('dashboard/src/app/dashboard/api-keys/page.tsx');assert.doesNotMatch(ui,/CustomerUsageSummary/);assert.match(ui,/<RequestHistory/);
+  assert.match(source('dashboard/src/app/dashboard/page.tsx'),/<CustomerUsageSummary\s*\/>/);
   assert.doesNotMatch(ui,/apiKey\.requestsUsed|apiKey\.requestLimit/);assert.match(ui,/listError \?/);
 });
 test('copy targets are deliberate, contextual and report clipboard failure',()=>{
@@ -31,9 +32,10 @@ test('copy targets are deliberate, contextual and report clipboard failure',()=>
   assert.match(snippets,/copy\(endpoint, 'Endpoint'\)/);assert.match(snippets,/copy\(examples\[language\], 'Example'\)/);
   assert.match(snippets,/Copy endpoint/);assert.match(snippets,/Copy example/);assert.match(snippets,/await navigator.clipboard.writeText/);
   assert.match(snippets,/Copy failed/);assert.doesNotMatch(snippets,/useEffect|apiKey:/);
-  for(const path of ['api-keys','products']) {
-    const ui=source(`dashboard/src/app/dashboard/${path}/page.tsx`);assert.match(ui,/Copy API key/i);assert.match(ui,/await navigator.clipboard.writeText/);assert.match(ui,/Copy failed/);
-  }
+  const products=source('dashboard/src/app/dashboard/products/page.tsx');
+  assert.match(products,/Copy API key/i);assert.match(products,/await navigator.clipboard.writeText/);assert.match(products,/Copy failed/);
+  const keys=source('dashboard/src/app/dashboard/api-keys/page.tsx');
+  assert.match(keys,/apiKey\.keyPrefix\}••••••••/);assert.doesNotMatch(keys,/Copy API key|navigator\.clipboard|apiKey\.secret/);
 });
 test('placeholder examples centralized across keys/docs/playground and admin route is not a DaaS example',()=>{
   for(const path of ['dashboard/api-keys','dashboard/api-playground','docs']) assert.match(source(`dashboard/src/app/${path}/page.tsx`),/<CodeSnippet/);
