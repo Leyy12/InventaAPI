@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRef, useState } from 'react';
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
+import SignOutDialog from '@/components/auth/SignOutDialog';
 import { dashboardRoutes, routeActive } from './dashboard-navigation';
 
 // Helper: Map legacy plan values to correct display names
@@ -24,8 +26,11 @@ function getPlanDisplayName(plan: string | undefined): string {
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, appUser, logout, loading } = useAuth();
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const signOutButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
+    <>
     <aside className="w-64 glass border-r border-slate-800/60 hidden md:flex flex-col relative z-20">
       <div className="h-16 flex items-center px-6 border-b border-slate-800/60">
         <div className="flex items-center gap-2 text-indigo-400 font-bold text-lg tracking-tight">
@@ -116,11 +121,9 @@ export default function Sidebar() {
           </div>
         )}
         <button
-          onClick={() => {
-            if (window.confirm("Are you sure you want to logout?")) {
-              logout();
-            }
-          }}
+          type="button"
+          ref={signOutButtonRef}
+          onClick={() => { signOutButtonRef.current?.focus(); setSignOutOpen(true); }}
           className="flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors w-full"
         >
           <LogOut className="w-4 h-4" />
@@ -128,5 +131,7 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+    {signOutOpen && <SignOutDialog onClose={() => setSignOutOpen(false)} onSignOut={() => logout()} />}
+    </>
   );
 }
