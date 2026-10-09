@@ -22,13 +22,13 @@ test('Plan & Billing keeps its concise header and uses the embedded authoritativ
   assert.match(trial, /trial\.secondsRemaining/);
   assert.match(trial, /trial\.startedAt/);
   assert.match(trial, /trial\.expiresAt/);
-  assert.match(trial, /trial\.productsIncluded\.toLocaleString\(\)} of \$\{TRIAL_MAX_PRODUCTS\}/);
+  assert.match(trial, /label: 'PRODUCTS', value: trial\.productsIncluded\.toLocaleString\(\)/);
   assert.match(trial, /trialRemainingSlots\(trial\.productsIncluded\)/);
   assert.doesNotMatch(trial, /Minimum required:/i);
   assert.doesNotMatch(trial, /trial\.maximumProducts|trial\.productsAvailable/);
   assert.match(trial, /trialCapacityMessage\(trial\.productsIncluded\)/);
   assert.match(trial, /trial\.activeKeys/);
-  assert.match(trial, /trial\.activeKeys\} of 1/);
+  assert.match(trial, /label: 'ACTIVE API KEYS', value: trial\.activeKeys\.toLocaleString\(\)/);
   assert.match(trial, /API requests do not reduce your product allowance/);
   assert.match(overview, /Remaining Slots/);
   assert.doesNotMatch(overview, /trial\.productsAvailable|Trial Expires: \{trial\.expiresAt\}/);
@@ -81,7 +81,7 @@ test('Trial product usage displays account-level capacity without negative slots
   assert.equal(trialCapacityMessage(50), 'Free Trial product limit reached — 50 of 50 products.');
   assert.equal(trialCapacityMessage(51), 'Your Free Trial product limit is 50 products.');
   assert.match(overview, /Active API Keys/);
-  assert.match(trial, /ACTIVE API KEYS', value: `\$\{trial\.activeKeys\} of 1`/);
+  assert.match(trial, /ACTIVE API KEYS', value: trial\.activeKeys\.toLocaleString\(\)/);
   for (const source of [overview, trial, read('dashboard/src/app/dashboard/products/page.tsx')]) {
     assert.doesNotMatch(source, /Remove products before adding more|Remove a product before adding another|Legacy over-cap catalog preserved/);
   }
@@ -252,8 +252,8 @@ for (const plan of ['Pro', 'Pro Max']) {
 test('rendered active embedded Trial preserves metrics, expiry, progress and explanatory copy without a CTA container', async () => {
   const tree = await renderTrial();
   const text = visibleText(tree);
-  for (const copy of ['7-Day Free Trial', 'ACTIVE', 'PRODUCTS', '10 of 50', 'REMAINING SLOTS', '40',
-    'ACTIVE API KEYS', '1 of 1', 'TIME REMAINING', '4d', 'API requests do not reduce your product allowance']) {
+  for (const copy of ['7-Day Free Trial', 'ACTIVE', 'PRODUCTS', '10', 'REMAINING SLOTS', '40',
+    'ACTIVE API KEYS', '1', 'TIME REMAINING', '4d', 'API requests do not reduce your product allowance']) {
     assert.ok(text.includes(copy), copy);
   }
   const progress = nodes(tree, node => node.props.role === 'progressbar');
@@ -263,6 +263,45 @@ test('rendered active embedded Trial preserves metrics, expiry, progress and exp
   assert.equal(nodes(tree, node => node.type === 'time')[0].props.dateTime, fixture.expiresAt);
   assert.equal(nodes(tree, node => node.props.className?.includes('mt-5 inline-flex')).length, 0);
 });
+for (const productsIncluded of [0, 10, 50]) {
+  for (const activeKeys of [0, 1]) {
+    test(`embedded Trial renders count-only metrics for ${productsIncluded} products and ${activeKeys} keys while standalone retains limits`, async () => {
+      const state = { ...fixture, productsIncluded, activeKeys, secondsRemaining: 435600 };
+      const tree = await renderTrial({ state });
+      const cards = nodes(tree, node => node.type === 'div' && node.props.className?.includes('bg-slate-950/35'));
+      assert.equal(cards.length, 4);
+      const metric = label => {
+        const card = cards.find(node => visibleText(node.props.children[0]) === label);
+        assert.ok(card, label);
+        return card;
+      };
+      for (const [label, expected] of [['PRODUCTS', productsIncluded], ['ACTIVE API KEYS', activeKeys],
+        ['REMAINING SLOTS', 50 - productsIncluded], ['TIME REMAINING', '5d 1h']]) {
+        const card = metric(label);
+        assert.equal(visibleText(card.props.children[1]), String(expected));
+        assert.doesNotMatch(visibleText(card), / of /);
+      }
+      const expiry = nodes(tree, node => node.type === 'time')[0];
+      assert.equal(expiry.props.dateTime, fixture.expiresAt);
+      assert.equal(visibleText(expiry), formatTrialExpiry(fixture.expiresAt));
+      const progress = nodes(tree, node => node.props.role === 'progressbar')[0];
+      assert.equal(progress.props['aria-valuenow'], 72);
+      assert.equal(progress.props['aria-valuetext'], '5d 1h remaining');
+      assert.equal(progress.props.children.props.style.width, '72%');
+      const warnings = nodes(tree, node => node.props.role === 'status');
+      assert.deepEqual(warnings.map(visibleText), productsIncluded === 50
+        ? ['Free Trial product limit reached — 50 of 50 products.'] : []);
+      assert.match(visibleText(tree).replace(/\s+/g, ' '), /includes up to 50 account-level products and 1 active API key/);
+      const standalone = await renderTrial({ embedded: false, state });
+      const standaloneText = visibleText(standalone).replace(/\s+/g, ' ');
+      assert.match(standaloneText, new RegExp(`Products: ${productsIncluded} of 50`));
+      assert.match(standaloneText, new RegExp(`Active API keys: ${activeKeys} of 1`));
+      assert.match(standaloneText, /121 hours remaining\./);
+      assert.equal(nodes(standalone, node => node.type === 'time')[0].props.dateTime, fixture.expiresAt);
+    });
+  }
+}
+
 test('rendered embedded full-capacity Trial keeps its warning and zero remaining slots', async () => {
   const tree = await renderTrial({ state: { ...fixture, productsIncluded: 50 } });
   assert.match(visibleText(tree), /Free Trial product limit reached — 50 of 50 products/);

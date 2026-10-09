@@ -102,9 +102,9 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
       : totalHours > 0 ? `${totalHours}h` : 'Less than 1h';
     const expiryLabel = formatTrialExpiry(trial.expiresAt);
     const metrics = [
-      { label: 'PRODUCTS', value: `${trial.productsIncluded.toLocaleString()} of ${TRIAL_MAX_PRODUCTS}`, detail: 'Account-level allowance' },
+      { label: 'PRODUCTS', value: trial.productsIncluded.toLocaleString(), detail: 'Account-level allowance' },
       { label: 'REMAINING SLOTS', value: trialRemainingSlots(trial.productsIncluded).toLocaleString(), detail: 'Available in your account' },
-      { label: 'ACTIVE API KEYS', value: `${trial.activeKeys} of 1`, detail: 'Free Trial limit' },
+      { label: 'ACTIVE API KEYS', value: trial.activeKeys.toLocaleString(), detail: 'Free Trial limit' },
       { label: 'TIME REMAINING', value: remainingLabel, detail: 'Based on verified Trial dates' },
     ];
     return <section aria-label="Current plan: Free Trial" className="rounded-2xl border border-indigo-400/25 bg-[#0d1526] p-5 shadow-lg shadow-indigo-950/20 sm:p-7">
