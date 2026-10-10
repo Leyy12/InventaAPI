@@ -30,6 +30,7 @@ test('Customer retries exact file/key/payload across failed upload, failed submi
     '@/lib/product-image-url':{normalizeProductImageUrl},'@/lib/firebase/auth-context':{useAuth:()=>({user,appUser:{plan:'Free',businessSegment:'Grocery'}})},
     '../../../../services/customer-segment.js':{restrictedSegmentAccount:()=>true,activeCustomerSegment:()=> 'Grocery'},
     './ProductImageField':'image-field','@/lib/product-media-client':{uploadProductImage:async(_,workflow,operation)=>{assert.equal(workflow,'submission');uploadOperations.push(operation);if(++uploads===1)throw Error('Upload unavailable');operation.assetId='a'.repeat(64);return operation.assetId;}},
+    './SubmissionFeedbackDialog':'submission-feedback',
   },{crypto:{randomUUID:()=> 'stable-operation-key-1234'},fetch:async(_,options)=>{posts++;bodies.push(options.body);return {ok:posts>1,status:posts>1?200:503,json:async()=>posts>1?{id:'request-1'}:{error:'Retry same request'}};}});
   const props={open:true,onClose(){},onAdded(){added++;}};h.mount(Modal,props);await flush();
   nodes(h.output,n=>n.type==='input'&&n.props.placeholder==='e.g. Piattos Cheese')[0].props.onChange({target:{value:'Bottle'}});

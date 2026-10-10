@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import {
-  Plus, X, AlertTriangle, Check, Save, Loader2, Upload
+  Plus, X, Save, Loader2, Upload
 } from "lucide-react";
 import { normalizeProductImageUrl } from "@/lib/product-image-url";
 import { useAuth } from "@/lib/firebase/auth-context";
 import ProductImageField from './ProductImageField';
 import { uploadProductImage, type MediaUpload } from '@/lib/product-media-client';
 import { activeCustomerSegment, restrictedSegmentAccount } from '../../../../services/customer-segment.js';
+import SubmissionFeedbackDialog, { trapSubmissionFocus, type SubmissionFeedback } from './SubmissionFeedbackDialog';
 
 interface AddProductModalProps {
   open: boolean;
@@ -30,6 +31,8 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   const { user, appUser } = useAuth();
   const segmentLocked = restrictedSegmentAccount(appUser);
   const busy = useRef(false);
+  const accepted = useRef(false);
+  const formRef = useRef<HTMLDialogElement>(null);
   const attempt = useRef<{ uid: string; key: string; body: string; media?: MediaUpload } | null>(null);
   const [pending, setPending] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
@@ -43,15 +46,31 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   const [description, setDescription] = useState("");
   const [variants, setVariants]     = useState<VariantRow[]>([{ flavor: "", size: "", sku: "", price: "" }]);
   const [saving, setSaving]         = useState(false);
-  const [error, setError]           = useState("");
-  const [success, setSuccess]       = useState("");
+  const [feedback, setFeedback] = useState<SubmissionFeedback | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+
+  useLayoutEffect(() => {
+    const dialog = formRef.current;
+    if (!open || confirmed || !dialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog.showModal();
+    dialog.querySelector<HTMLInputElement>('input')?.focus();
+    return () => {
+      dialog.close();
+      document.body.style.overflow = overflow;
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [open, confirmed]);
 
   // Preserve an uncertain operation across close/reopen; retry its exact immutable payload.
   useEffect(() => {
     if (!open || attempt.current) return;
     setName(""); setBrand(""); setSegment(""); setCategory("");
     setImageUrl(""); setImageFile(null); setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
-    setError(""); setSuccess("");
+    setConfirmed(false);
+    accepted.current = false;
   }, [open]);
 
   const updateVariant = (i: number, field: keyof VariantRow, val: string) =>
@@ -62,11 +81,13 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
     setVariants(prev => prev.filter((_, idx) => idx !== i));
 
   const handleSave = async () => {
-    if (busy.current || success) return;
-    if (!user || typeof user.getIdToken !== "function") { setError("Please sign in again."); return; }
-    if (!name.trim() || !category.trim() || !segment) { setError("Name, category and segment are required."); return; }
+    if (busy.current || accepted.current) return;
+    if (!user || typeof user.getIdToken !== "function") { setFeedback({ kind: 'error', message: 'Please sign in again before submitting.' }); return; }
+    if (!name.trim() || !category.trim() || !segment) { setFeedback({ kind: 'error', message: 'Product name, category and segment are required.' }); return; }
     busy.current = true;
-    setSaving(true); setError("");
+    setSaving(true); setFeedback(null);
+    let submissionSent = false;
+    let succeeded = false;
     try {
       if (attempt.current && attempt.current.uid !== user.uid) throw new Error("Sign back into the submitting account to retry.");
       if (!attempt.current) {
@@ -83,41 +104,45 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
       }
       setPending(true);
       if (attempt.current.media && !attempt.current.media.assetId) {
-        try {
-          const assetId = await uploadProductImage(user, 'submission', attempt.current.media);
-          attempt.current.body = JSON.stringify({ ...JSON.parse(attempt.current.body), image_asset_id: assetId });
-        } catch (cause) {
-          if ([400, 413, 415].includes((cause as { status?: number }).status ?? 0)) { attempt.current = null; setPending(false); }
-          throw cause;
-        }
+        const assetId = await uploadProductImage(user, 'submission', attempt.current.media);
+        attempt.current.body = JSON.stringify({ ...JSON.parse(attempt.current.body), image_asset_id: assetId });
       }
       const token = await user.getIdToken();
       const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+      submissionSent = true;
       const response = await fetch(base + "/api/v1/product-submissions", {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
           "Idempotency-Key": attempt.current.key }, body: attempt.current.body,
       });
       const result = await response.json();
       if (!response.ok) {
-        // A validation failure cannot have committed. Other errors retain the operation for safe retry.
-        if (response.status === 400) { attempt.current = null; setPending(false); }
-        throw new Error(result.error || "Submission failed. Retry the same submission.");
+        throw Object.assign(new Error(result.error || 'The request was not confirmed.'), { status: response.status });
       }
-      setSuccess(`Submitted for review (reference: ${result.id}). Only Admin approval publishes to the catalog.`);
+      if (typeof result.id !== 'string' || !result.id.trim()) throw new Error('Submission reference unavailable.');
+      setFeedback({ kind: 'success', reference: result.id,
+        message: 'Your product has been sent to Admin for review. It will appear in the catalog only after Admin approval.' });
+      setConfirmed(true);
+      accepted.current = true;
+      succeeded = true;
       attempt.current = null; setPending(false);
-      onAdded?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Submission uncertain. Retry the same submission.");
+      const status = (err as { status?: number }).status;
+      const uncertain = submissionSent && (!status || status >= 500);
+      setFeedback({ kind: uncertain ? 'uncertain' : 'error', message: uncertain
+        ? 'We could not confirm the result. Your request may have reached us. Retry the same submission to safely check its result; do not start a new request.'
+        : err instanceof Error ? err.message : 'Please return to the form and retry the same request.' });
     } finally {
       busy.current = false; setSaving(false);
     }
+    if (succeeded) { onClose(); onAdded?.(); }
   };
 
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden">
+  return <>
+    {open && !confirmed && <dialog ref={formRef} aria-labelledby="add-product-title" aria-describedby="add-product-description" aria-busy={saving}
+      onKeyDown={trapSubmissionFocus}
+      onCancel={event => { event.preventDefault(); if (!busy.current) onClose(); }}
+      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-3xl max-h-[calc(100dvh-2rem)] rounded-2xl border border-slate-700/80 bg-slate-900 p-0 text-slate-200 shadow-2xl backdrop:bg-slate-950/85 backdrop:backdrop-blur-sm">
+      <div className="max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
@@ -126,11 +151,11 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
               <Plus className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">Add New Product</h2>
-              <p className="text-[11px] text-slate-500">Submit product information for Admin review.</p>
+              <h2 id="add-product-title" className="text-sm font-bold text-white">Add New Product</h2>
+              <p id="add-product-description" className="text-[11px] text-slate-500">Submit product information for Admin review.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+          <button type="button" aria-label="Close Add Product" disabled={saving} onClick={() => { if (!busy.current) onClose(); }} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors disabled:opacity-40">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -138,36 +163,23 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-          {/* Success banner */}
-          {success && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 font-medium">
-              <Check className="w-3.5 h-3.5 shrink-0" /> {success}
-            </div>
-          )}
-
-          {/* Error banner */}
-          {error && (
-            <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 font-medium">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
-            </div>
-          )}
-
           {/* Info note */}
           <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-indigo-500/8 border border-indigo-500/20 text-xs text-indigo-300/80">
             <Upload className="w-3.5 h-3.5 mt-0.5 shrink-0 text-indigo-400" />
             <span>This submits a review request, not a catalog product. Admin approval is required before publication.</span>
           </div>
 
-          <fieldset disabled={saving || pending || !!success} className="min-w-0 space-y-5">
+          {pending && !saving && <p role="status" className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs leading-5 text-amber-200">This request is saved for retry. Its details and image stay unchanged until the result is confirmed.</p>}
+          <fieldset disabled={saving || pending} className="min-w-0 space-y-5">
           {/* Base fields */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className={labelCls}>Product Name *</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Piattos Cheese" className={inputCls} />
+              <input aria-label="Product name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Piattos Cheese" className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Brand</label>
-              <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Jack 'n Jill" className={inputCls} />
+              <input aria-label="Brand" value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Jack 'n Jill" className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Segment *</label>
@@ -180,16 +192,16 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Category *</label>
-              <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Snacks" className={inputCls} />
+              <input aria-label="Category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Snacks" className={inputCls} />
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Description <span className="text-slate-600 normal-case tracking-normal font-normal">(optional)</span></label>
-              <textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief product description…" className={inputCls + " resize-none"} />
+              <textarea aria-label="Description" rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief product description…" className={inputCls + " resize-none"} />
             </div>
           </div>
 
           <ProductImageField imageUrl={imageUrl} onImageUrlChange={setImageUrl} file={imageFile} onFileChange={setImageFile}
-            disabled={saving || pending || !!success} />
+            disabled={saving || pending} />
 
           {/* Variants */}
           <div>
@@ -203,7 +215,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               {/* Header row */}
-              <div className="grid grid-cols-[1fr_90px_110px_90px_32px] bg-slate-800/60 px-3 py-2 gap-2">
+              <div className="hidden sm:grid grid-cols-[1fr_90px_110px_90px_32px] bg-slate-800/60 px-3 py-2 gap-2">
                 {["Flavor", "Size", "SKU", "Price", ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
@@ -212,20 +224,20 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
               {/* Variant rows */}
               <div className="divide-y divide-slate-800/60">
                 {variants.length === 0 && (
-                  <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
+                  <p className="text-xs text-slate-600 text-center py-4">No variants. Click &quot;Add Variant&quot; to begin.</p>
                 )}
                 {variants.map((v, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_90px_110px_90px_32px] px-3 py-2 gap-2 items-center hover:bg-slate-800/20">
-                    <input value={v.flavor} onChange={e => updateVariant(i, "flavor", e.target.value)}
+                  <div key={i} className="grid grid-cols-2 sm:grid-cols-[1fr_90px_110px_90px_32px] px-3 py-2 gap-2 items-center hover:bg-slate-800/20">
+                    <input aria-label={`Variant ${i + 1} flavor`} value={v.flavor} onChange={e => updateVariant(i, "flavor", e.target.value)}
                       placeholder="e.g. Cheese" className={inputCls + " py-1.5 text-xs"} />
-                    <input value={v.size} onChange={e => updateVariant(i, "size", e.target.value)}
+                    <input aria-label={`Variant ${i + 1} size`} value={v.size} onChange={e => updateVariant(i, "size", e.target.value)}
                       placeholder="e.g. 85g" className={inputCls + " py-1.5 text-xs"} />
-                    <input value={v.sku} onChange={e => updateVariant(i, "sku", e.target.value)}
+                    <input aria-label={`Variant ${i + 1} SKU`} value={v.sku} onChange={e => updateVariant(i, "sku", e.target.value)}
                       placeholder="e.g. ABC-001" className={inputCls + " py-1.5 text-xs"} />
-                    <input type="number" min="0" step="0.01" value={v.price}
+                    <input aria-label={`Variant ${i + 1} price`} type="number" min="0" step="0.01" value={v.price}
                       onChange={e => updateVariant(i, "price", e.target.value)}
                       placeholder="0.00" className={inputCls + " py-1.5 text-xs"} />
-                    <button onClick={() => removeVariant(i)}
+                    <button type="button" aria-label={`Remove variant ${i + 1}`} onClick={() => removeVariant(i)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -238,18 +250,20 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
         </div>
 
         {/* ── Footer ── */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-end gap-2 shrink-0">
-          <button onClick={onClose}
+        <div className="px-4 sm:px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex flex-wrap items-center justify-end gap-2 shrink-0">
+          {saving && <p role="status" className="mr-auto text-xs text-emerald-300">Submitting your product…</p>}
+          <button type="button" disabled={saving} onClick={() => { if (!busy.current) onClose(); }}
             className="px-4 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors">
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving || !!success}
+          <button type="button" onClick={() => { void handleSave(); }} disabled={saving}
             className="inline-flex items-center gap-1.5 px-5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {saving ? "Submitting…" : pending ? "Retry Same Submission" : "Submit for Review"}
           </button>
         </div>
       </div>
-    </div>
-  );
+    </dialog>}
+    {feedback && <SubmissionFeedbackDialog key={feedback.kind} feedback={feedback} onDismiss={() => setFeedback(null)} />}
+  </>;
 }

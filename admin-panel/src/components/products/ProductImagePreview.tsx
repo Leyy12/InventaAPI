@@ -2,9 +2,9 @@
 
 import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 
-export default function ProductImagePreview({ url, name }: { url?: string; name: string }) {
+export default function ProductImagePreview({ url, name, size }: { url?: string; name: string; size?: 'thumbnail' | 'review' }) {
   const source = productImageSource({ image_url: url });
-  return <div key={source} className="relative h-28 w-28 shrink-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+  return <div key={source} className={'relative shrink-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-800 ' + (size === 'thumbnail' ? 'h-20 w-20' : size === 'review' ? 'aspect-square w-full max-w-xs' : 'h-28 w-28')}>
     {/* Browser-only external URLs; no server optimizer fetch. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
     {source && <img src={source} alt={name} loading="lazy" decoding="async" referrerPolicy="no-referrer"

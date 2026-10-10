@@ -9,7 +9,7 @@ test('Customer Add Product CTA opens secured modal; no nonexistent request route
   const form = read('dashboard/src/components/products/AddProductModal.tsx');
   assert.doesNotMatch(form, /firebase\/firestore|addDoc|notifyAdminNewRequest|directly add the product/u);
   assert.match(form, /\/api\/v1\/product-submissions/u); assert.match(form, /Idempotency-Key/u);
-  assert.match(form, /Submitted for review/u); assert.match(form, /attempt\.current\.body/u);
+  assert.match(read('dashboard/src/components/products/SubmissionFeedbackDialog.tsx'), /Product Submitted for Review/u); assert.match(form, /attempt\.current\.body/u);
   assert.match(form, /busy\.current/u); assert.match(form, /image_url: normalizeProductImageUrl\(imageUrl\)/u);
 });
 test('Admin Add and Edit preserve HTTPS compatibility and route managed uploads through trusted backend', () => {
@@ -30,7 +30,7 @@ test('Admin Add and Edit preserve HTTPS compatibility and route managed uploads 
 });
 test('Admin review navigation and endpoints are wired with revocation-aware SDK verification', () => {
   assert.match(read('admin-panel/src/components/layout/AdminSidebar.tsx'), /href: "\/submissions"/u);
-  const ui = read('admin-panel/src/app/submissions/page.tsx');
+  const ui = read('admin-panel/src/app/submissions/page.tsx') + read('admin-panel/src/components/products/SubmissionReviewDialog.tsx');
   for (const value of ['approve', 'reject', 'image_url', 'userId', 'createdAt']) assert.ok(ui.includes(value));
   const route = read('routes/product-submissions.js');
   assert.match(route, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);
@@ -57,5 +57,6 @@ test('review page preserves status, uses tested conflict helper and gates stale 
   assert.match(page, /await reviewSubmission<Submission>/u);
   assert.match(page, /read: \(\) => request\(`/u);
   assert.match(page, /row.id === id \? result.submission : row/u);
-  assert.match(page, /row.status === 'submitted' && row.content && !lockedIds.includes\(row.id\)/u);
+  assert.match(page, /row.status !== 'submitted' \|\| lockedIds.includes\(id\)/u);
+  assert.match(read('admin-panel/src/components/products/SubmissionReviewDialog.tsx'), /row.status === 'submitted' && !!content && !locked/u);
 });

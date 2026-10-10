@@ -64,6 +64,7 @@ export function hooks() {
       });
     },
   };
+  React.useLayoutEffect = React.useEffect;
   function render() { index = 0; output = component(props); while (effects.length) effects.shift()(); return output; }
   return { React, get output() { return output; },
     mount(fn, value = {}) { component = fn; props = value; return render(); },

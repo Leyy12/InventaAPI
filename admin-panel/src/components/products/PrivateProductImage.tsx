@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
 
-export default function PrivateProductImage({ assetId }: { assetId: string }) {
+export default function PrivateProductImage({ assetId, size, name = 'Private submitted product photo' }: {
+  assetId: string; size?: 'thumbnail' | 'review'; name?: string;
+}) {
   const { user } = useAdminAuth();
   const [source, setSource] = useState('');
   const [error, setError] = useState('');
@@ -29,12 +31,12 @@ export default function PrivateProductImage({ assetId }: { assetId: string }) {
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [assetId, user, retry]);
   return <div className="space-y-2">
-    <div className="flex h-40 w-40 items-center justify-center rounded-xl border border-slate-700 bg-slate-800">
+    <div className={'flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-800 ' + (size === 'thumbnail' ? 'h-20 w-20' : size === 'review' ? 'aspect-square w-full max-w-xs' : 'h-40 w-40')}>
       {/* Private authenticated response is rendered from a short-lived local object URL. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {source && !error ? <img src={source} alt="Private submitted product photo" className="h-full w-full object-contain p-3" /> : <span className="text-xs text-slate-400">{error ? 'Photo unavailable' : 'Loading photo…'}</span>}
+      {source && !error ? <img src={source} alt={name} className={'h-full w-full object-contain ' + (size === 'thumbnail' ? 'p-2' : 'p-5')} /> : <span className="px-2 text-center text-[10px] text-slate-400">{error ? 'Photo unavailable' : 'Loading photo…'}</span>}
     </div>
-    <p className="text-xs text-slate-400">Private attachment — published only after approval.</p>
-    {error && <><p role="alert" className="text-xs text-rose-300">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="text-xs text-indigo-300">Retry image preview</button></>}
+    {size !== 'thumbnail' && <p className="text-xs text-slate-400">Private attachment — published only after approval.</p>}
+    {error && <>{size !== 'thumbnail' && <p role="alert" className="text-xs text-rose-300">{error}</p>}<button type="button" onClick={() => setRetry(value => value + 1)} className="text-xs text-indigo-300">{size === 'thumbnail' ? 'Retry photo' : 'Retry image preview'}</button></>}
   </div>;
 }
