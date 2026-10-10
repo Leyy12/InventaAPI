@@ -109,7 +109,8 @@ app.use((req, res, next) => {
 // 3. Express Rate Limit: Prevent Denial of Service (DoS) and brute-force scanning
 const { verifyClientIp, limiter } = createIpRateLimiter({
     windowMs: 60 * 1000, // 1 minute
-    max: 60, // limit each IP/SME to 60 requests per minute
+    max: 60, // ordinary API/DaaS requests retain their shared per-IP protection
+    publicImages: true,
 });
 app.use('/api/', verifyClientIp, limiter);
 app.use('/daas/', verifyClientIp, limiter);

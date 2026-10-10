@@ -33,6 +33,7 @@ export function createIpRateLimiter({
     vercel = process.env.VERCEL === '1',
     windowMs = 60 * 1000,
     max = 60,
+    publicImages = false,
 } = {}) {
     const verifiedIp = Symbol('verified rate-limit client IP');
     const verifyClientIp = (req, res, next) => {
@@ -42,16 +43,27 @@ export function createIpRateLimiter({
         return next();
     };
 
-    const limiter = rateLimit({
+    const createLimiter = (limit, message) => rateLimit({
         windowMs,
-        max,
+        max: limit,
         standardHeaders: true,
         legacyHeaders: false,
-        message: { error: 'Too many requests. Please try again after 1 minute to maintain system security. Maximum 60 requests per minute.' },
+        message: { error: message },
         keyGenerator: req => {
             if (!req[verifiedIp]) throw new Error('Rate-limit client IP verification was bypassed');
             return req[verifiedIp];
         },
     });
+    const ordinary = createLimiter(max, 'Too many requests. Please try again after 1 minute to maintain system security. Maximum 60 requests per minute.');
+    // Four office users can each scroll a 200-image catalog batch in a minute.
+    // Browser cache hits need no request; revalidations and failures still count.
+    // Separate MemoryStores are process-local bounds, not distributed/edge limits.
+    const images = publicImages ? createLimiter(800, 'Too many image requests. Please try again after 1 minute. Maximum 800 image requests per minute.') : null;
+    const limiter = images ? (req, res, next) => {
+        // Match the raw canonical URL, not Express's decoded/case-insensitive
+        // routing. HEAD, queries, private routes and uploads retain the 60 limit.
+        const publicGet = req.method === 'GET' && /^\/api\/v1\/product-media\/[a-f0-9]{64}\/image$/u.test(req.originalUrl);
+        return (publicGet ? images : ordinary)(req, res, next);
+    } : ordinary;
     return { verifyClientIp, limiter };
 }

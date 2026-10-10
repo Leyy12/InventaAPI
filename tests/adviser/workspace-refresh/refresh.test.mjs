@@ -226,3 +226,68 @@ test('both active frontend trees contain no automatic focus/visibility/page-show
   assert.match(source('admin-panel/src/app/consumers/page.tsx'), /JSON.stringify\(\[usersMap, apiKeys\]\)/);
   assert.match(source('admin-panel/src/app/security/page.tsx'), /JSON.stringify\(\[usersMap, apiKeys\]\)/);
 });
+
+
+test('Admin submission status/review survive 30s, 60s, 5min and window switches; decisions refresh once', async () => {
+  const h = hooks(), c = clock(), b = browser(), calls = [];
+  const user = { uid: 'admin', getIdToken: async () => 'synthetic-admin' };
+  const { reviewSubmission } = await import('../../../admin-panel/src/lib/submission-review.ts');
+  let row = { id: 'submission', status: 'submitted', createdAt: '2026-10-10T00:00:00Z',
+    content: { name: 'Bottle', brand: 'Brand', segment: 'Grocery', category: 'Beverages', variants: [{ size: '250ml' }] } };
+  const Page = load('admin-panel/src/app/submissions/page.tsx', 'SubmissionsPage', h, {
+    'lucide-react': icons,
+    '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    '@/lib/submission-review': { reviewSubmission },
+    '@/components/products/SubmissionReviewDialog': { __esModule: true, default: 'review-dialog', SubmissionImage: stub,
+      ReviewStatus: stub, submittedDate: value => value, reviewButtonClass: 'button' },
+  }, { ...b, setTimeout: c.schedule, clearTimeout: c.cancel, fetch: async (url, init) => {
+    calls.push({ url, method: init.method });
+    if (init.method === 'POST') { row = { ...row, status: 'approved', productId: 'product' }; return { ok: true, json: async () => row }; }
+    return { ok: true, json: async () => ({ submissions: [row], next: null }) };
+  } });
+  h.mount(Page); await c.advance(0); assert.equal(calls.length, 1);
+  const filter = () => nodes(h.output, n => n.type === 'select')[0];
+  filter().props.onChange({ target: { value: 'approved' } }); await flush(); await c.advance(0);
+  assert.equal(filter().props.value, 'approved');
+  for (let i = 0; i < 10; i++) b.cycle();
+  await c.advance(30000); await c.advance(30000); await c.advance(240000);
+  assert.equal(calls.length, 2); assert.equal(filter().props.value, 'approved');
+  filter().props.onChange({ target: { value: 'submitted' } }); await flush(); await c.advance(0);
+  nodes(h.output, n => n.type === 'button' && n.props['aria-label'] === 'Review Bottle')[0].props.onClick(); await flush();
+  const modal = () => nodes(h.output, n => n.type === 'review-dialog')[0];
+  for (let i = 0; i < 10; i++) b.cycle(); await c.advance(300000);
+  assert.equal(calls.length, 3); assert.equal(modal().props.row.id, 'submission'); assert.equal(b.window.scrollY, 143);
+  modal().props.onReview('submission', 'approve'); await flush();
+  assert.equal(calls.filter(call => call.method === 'POST').length, 1);
+  assert.equal(calls.filter(call => call.method === 'GET').length, 4);
+  assert.equal(modal(), undefined);
+  nodes(h.output, n => n.type === 'button' && Array.isArray(n.props.children) && n.props.children.includes('Refresh'))[0].props.onClick(); await flush();
+  assert.equal(calls.filter(call => call.method === 'GET').length, 5); h.stop();
+});
+
+test('Admin catalog search/segment/status remain stable with one Firestore load across idle and switching', async () => {
+  const h = hooks(), c = clock(), b = browser(); let reads = 0;
+  const Page = load('admin-panel/src/app/products/page.tsx', 'MasterProductCatalogPage', h, {
+    'lucide-react': icons,
+    '@/lib/product-image-url': { normalizeProductImageUrl: value => value, productImageSource: () => '', showProductImageFallback: stub },
+    '@/lib/catalog-csv': { catalogCsv: stub }, '@/components/products/ProductImageField': { default: stub },
+    '@/lib/product-media-client': { uploadProductImage: stub },
+    'firebase/firestore': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
+      { id: 'product', data: () => ({ name: 'Synthetic Rice', brand: 'Brand', segment: 'Grocery', status: 'Active', variants: [] }) }] }; } },
+    '@/lib/catalog-client': { catalogRequest: stub, catalogPrice: () => 1, brandNameWarning: () => '' },
+    '@/lib/firebase/config': { db: {}, auth: {} }, '@/components/admin/ImportCsvModal': { default: stub },
+  }, { ...b, setTimeout: c.schedule, clearTimeout: c.cancel });
+  h.mount(Page); await flush(); assert.equal(reads, 1);
+  const search = () => nodes(h.output, n => n.type === 'input' && n.props.placeholder?.includes('Search'))[0];
+  search().props.onChange({ target: { value: 'Rice' } }); await flush();
+  const selects = () => nodes(h.output, n => n.type === 'select');
+  const segmentSelect = selects().find(n => n.props.value === 'All');
+  assert.ok(segmentSelect); segmentSelect.props.onChange({ target: { value: 'Grocery' } }); await flush();
+  const statusButton = () => nodes(h.output, n => n.type === 'button' && n.props.children === 'Archived')[0];
+  statusButton().props.onClick(); await flush();
+  for (let i = 0; i < 10; i++) b.cycle();
+  await c.advance(30000); await c.advance(30000); await c.advance(240000);
+  assert.equal(reads, 1); assert.equal(search().props.value, 'Rice');
+  assert.ok(selects().some(n => n.props.value === 'Grocery')); assert.match(statusButton().props.className, /bg-slate-700 text-white/);
+  assert.equal(b.window.scrollY, 143); h.stop();
+});

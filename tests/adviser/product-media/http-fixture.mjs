@@ -22,7 +22,7 @@ export const missingId = 'b'.repeat(64);
 // Execute the checked-in router AND server body, including their actual Helmet,
 // CORS, rate limiting, compression and error middleware. Only external SDKs and
 // unrelated routers are replaced; no credentials/config initialization is run.
-export async function mediaHttpFixture({ enabled = true } = {}) {
+export async function mediaHttpFixture({ enabled = true, vercel = false } = {}) {
   const bytes = await sharp({ create: { width: 140, height: 240, channels: 4,
     background: { r: 34, g: 145, b: 98, alpha: 0.8 } } }).webp().toBuffer();
   const asset = { version: 1, uid: 'owner', state: 'published', productId: 'fixture',
@@ -50,7 +50,9 @@ export async function mediaHttpFixture({ enabled = true } = {}) {
     .map(([, name]) => [name, express.Router()]));
   runInNewContext(executable(serverSource).replaceAll('import.meta.url', 'sourceUrl') + '\nresult.app = app;', { ...routers,
     customerSubmissionsRouter: express.Router(), adminSubmissionsRouter: express.Router(), productMediaRouter: result.router,
-    express, helmet, cors, compression, createIpRateLimiter, trustedRateLimitIp, path,
+    express, helmet, cors, compression,
+    createIpRateLimiter: options => createIpRateLimiter({ ...options, vercel }),
+    trustedRateLimitIp: req => trustedRateLimitIp(req, { vercel }), path,
     fileURLToPath, sourceUrl: new URL('../../../server.js', import.meta.url).href,
     process: { env: { VERCEL: '1', NODE_ENV: 'test' } },
     console: { log() {}, warn() {}, error() {} }, result,
