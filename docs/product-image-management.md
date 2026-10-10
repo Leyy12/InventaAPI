@@ -152,6 +152,33 @@ import expects row-level variant fields such as size/price. Therefore an unchang
 full export is **not a full-fidelity import round trip**; this task adds image
 metadata without redesigning those unrelated columns or merge rules.
 
+## Published cross-origin delivery and local regression
+
+Published image delivery overrides Helmet's default resource policy with
+`Cross-Origin-Resource-Policy: cross-origin` only after publication, current
+product binding/visibility, Storage read, and byte-integrity checks succeed.
+Private images and denied/unavailable responses retain the global `same-origin`
+policy. Content type, caching, CSP, CORS, authentication and rate limits are
+unchanged, including authorized conditional 304 responses.
+
+Run `node scripts/run-product-media-http-tests.mjs` for synthetic local HTTP and
+two-origin Chromium regressions at desktop/mobile sizes. The fixture executes
+the checked-in server middleware and media router with synthetic SDK adapters;
+it cannot contact real Firebase or Storage. It verifies ordinary no-CORS image
+decoding, denied states, private ownership, failures and unchanged headers.
+Before correction, the same fixture recorded HTTP 200 / image/webp / same-origin
+with valid 140×240 bytes while Chromium blocked both cards with
+`ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`. This is local delivery verification,
+not proof of an activated staging upload workflow.
+
+Staging still requires approved private bucket configuration, effective metadata
+and object permissions, isolated API/frontend bindings, Auth domains/origins,
+stable media origin, cost approval, resource measurements and synthetic E2E.
+Cloud Run can provide attached service-account identity through Application
+Default Credentials, but the current initializer accepts only the certificate
+environment triple or a local credential file. ADC initialization is a separate
+staging-readiness change; no credentials or infrastructure are changed here.
+
 ## Retention, cleanup and cost recommendation (not activated)
 
 No cleanup job or live deletion runs here. Recommended operator policy, pending

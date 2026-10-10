@@ -97,6 +97,8 @@ export function createProductMediaHandlers({ getDb, verifyIdToken, storage, proc
     res.set('Content-Type', 'image/webp'); res.set('X-Content-Type-Options', 'nosniff');
     // No shared cache for pending bytes; short public cache bounds retired visibility.
     res.set('Cache-Control', privateAccess ? 'private, no-store' : 'public, max-age=300');
+    // Only verified published bytes may override Helmet's same-origin default.
+    if (!privateAccess) res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     return res.status(200).send(bytes);
   });
   return { upload, privateImage: read(true), publicImage: read(false) };
