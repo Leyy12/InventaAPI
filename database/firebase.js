@@ -1,21 +1,29 @@
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { initializeApp, cert, getApps, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { firebaseCredentialMode, initializeStagingAdc } from './firebase-credentials.js';
 
 // ─── Firebase Initialization ────────────────────────────────────────────────
 // Mode 1 (Production/Vercel): uses environment variables
 // Mode 2 (Local dev): reads service-account.json from project root
+// Mode 3 (explicit staging only): Cloud Run attached identity through ADC
 
-if (!getApps().length) {
+const credentialMode = firebaseCredentialMode(process.env);
+if (credentialMode === 'adc') {
+    await initializeStagingAdc({ env: process.env, getApps, applicationDefault, initializeApp });
+    console.log('[Firebase] Initialized via staging application default credentials.');
+} else if (!getApps().length) {
     if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
         // Production: initialize from env vars
-        initializeApp({
+        try { initializeApp({
             credential: cert({
                 projectId: process.env.FIREBASE_PROJECT_ID,
                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
                 // Vercel stores \n as literal \\n — convert back to real newlines
                 privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
             }),
-        });
+        }); } catch {
+            throw new Error('[Firebase] Certificate initialization failed; verify environment credential configuration.');
+        }
         console.log('[Firebase] Initialized via environment variables.');
     } else {
         // Local dev: load from service-account.json
@@ -40,7 +48,12 @@ if (!getApps().length) {
 }
 
 
-const firestore = getFirestore();
+let firestore;
+try { firestore = getFirestore(); }
+catch (error) {
+    if (credentialMode === 'adc') throw new Error('[Firebase] Staging Firestore initialization failed; verify ADC configuration.');
+    throw error;
+}
 
 // ─── FirestoreDatabase Class ─────────────────────────────────────────────────
 // Centralized Product Information Management (PIM) database layer

@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { globalTestBillingConfiguration } from '../services/payment-contract.js';
+import { firebaseCredentialMode } from '../database/firebase-credentials.js';
 
 const NODE_MAJOR = 22;
 const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin', 'functions']);
@@ -81,11 +82,14 @@ export function validateReleaseConfig(env, {
 
   if (backend) {
     required('NODE_ENV', { valid: value => value === mode, expectation: mode });
-    required('FIREBASE_AUTH_MODE', {
+    let credentialMode;
+    try { credentialMode = firebaseCredentialMode(env); }
+    catch (error) { add(errors, 'INVALID_CREDENTIAL_CONFIG', error.configurationName, error.message); }
+    if (credentialMode !== 'adc') required('FIREBASE_AUTH_MODE', {
       valid: value => ['service_account_env', 'application_default'].includes(value),
       expectation: 'service_account_env or application_default',
     });
-    if (env.FIREBASE_AUTH_MODE === 'service_account_env') {
+    if (credentialMode === 'legacy' && env.FIREBASE_AUTH_MODE === 'service_account_env') {
       required('FIREBASE_PROJECT_ID', {
         valid: value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u.test(value) && notPlaceholder(value),
         expectation: 'a non-placeholder Firebase project ID',
@@ -103,9 +107,9 @@ export function validateReleaseConfig(env, {
         },
         expectation: 'a PEM private key',
       });
-    } else if (env.FIREBASE_AUTH_MODE === 'application_default') {
+    } else if (credentialMode === 'legacy' && env.FIREBASE_AUTH_MODE === 'application_default') {
       add(errors, 'UNSUPPORTED_AUTH_MODE', 'FIREBASE_AUTH_MODE',
-        'root backend currently implements service_account_env only; managed identity is supported by Functions, not this initializer');
+        'root backend ADC requires explicit FIREBASE_CREDENTIAL_MODE=adc and the approved staging project');
       for (const name of ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY']) {
         if (isPresent(env[name])) add(errors, name === 'FIREBASE_PRIVATE_KEY' ? 'MALFORMED_SECRET' : 'MALFORMED_PUBLIC', name,
           'must be omitted when FIREBASE_AUTH_MODE=application_default; use the managed runtime identity');

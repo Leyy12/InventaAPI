@@ -33,8 +33,9 @@ does not initialize Firebase or call PayMongo, and it never prints secret values
 |---|---|---|---|
 | `NODE_ENV` | Yes | No | Must equal the validation mode: `production` or `test`. |
 | `API_PORT` | No | No | Express listen port for non-serverless hosting; one numeric TCP port. |
-| `FIREBASE_AUTH_MODE` | Yes | No | `service_account_env` for the root backend. This is a validator selector, not an initializer switch. `application_default` is rejected: the tracked root initializer does not implement it. |
-| `FIREBASE_PROJECT_ID` | Conditional | No | Required with `service_account_env`; valid Firebase project ID. |
+| `FIREBASE_CREDENTIAL_MODE` | No | No | Omitted/empty preserves certificate/local behavior. Exactly `adc` enables keyless staging only; unknown modes fail. |
+| `FIREBASE_AUTH_MODE` | Conditional | No | `service_account_env` for existing backend releases. With explicit staging ADC, omit or set `application_default`; this selector alone cannot enable ADC. |
+| `FIREBASE_PROJECT_ID` | Conditional | No | Required with `service_account_env`; valid Firebase project ID. Explicit ADC requires exactly `inventaapi-staging`. |
 | `FIREBASE_CLIENT_EMAIL` | Conditional | No | Required with `service_account_env`; service-account email. |
 | `FIREBASE_PRIVATE_KEY` | Conditional | Yes | Required with `service_account_env`; PEM private key, normally injected with escaped newlines. |
 | `PAYMONGO_MODE` | Yes | No | Exactly `test` or `live`, independent of `NODE_ENV`. Missing/invalid fails closed. Current capstone: `test`; live deferred until commercial launch. |
@@ -46,14 +47,23 @@ does not initialize Firebase or call PayMongo, and it never prints secret values
 | `FREE_MONTHLY_QUOTA_CUTOVER_AT` | No* | No* | **Set this for the coordinated production release** to the same canonical UTC instant on every backend instance, after the monthly policy is active everywhere. Only accounts provably created after it (Firestore creation metadata, not profile fields) may open an absent monthly counter immediately. Missing, invalid, future or ambiguous evidence means a next-UTC-month hold. Runtime validation deliberately keeps it optional/fail-closed, but release operations should supply it. Never reuse/backdate the old daily cutover. No production value is selected here. |
 | `VERCEL` | Provider-managed | No | Read by `server.js` to suppress `listen()`. Its presence does not prove Vercel is the production target. Do not set it manually as deployment evidence. |
 
-Correction to R0: root `database/firebase.js` supports the complete environment
-credential triple or a local `service-account.json` fallback, not application-default
-credentials. The release validator now rejects the unsupported ADC assertion.
-The local credential file must never be included in release artifacts. Use the
-environment triple from the secret store and run backend preflight before startup.
-Firebase Functions independently call `initializeApp()` and use managed identity;
-they do not need the root backend's private-key variables. An operator needing
-root managed identity must obtain a separate reviewed initializer implementation.
+Root `database/firebase.js` preserves the complete environment credential triple
+and local `service-account.json` fallback unless explicit staging ADC is selected.
+The local credential file must never be included in release artifacts. Production
+does not need a new variable and must not select the staging-only ADC mode.
+
+Staging ADC uses `applicationDefault()` with explicit project `inventaapi-staging`.
+Certificate email/key variables and `GOOGLE_APPLICATION_CREDENTIALS` must be omitted;
+conflicting Auth selectors or ambient project IDs fail before credential access.
+The default app is created synchronously before awaiting a token availability
+check (10-second deadline); startup fails safely on provider/token/init failure.
+The token is never logged. A matching default ADC app is reused, while conflicting
+or multiple existing apps are rejected. Auth, Firestore and Storage use this same
+default app; no bucket is inferred or accessed by initialization.
+
+Firebase Functions independently use managed identity; their initialization and
+deployment remain unchanged. Run `node scripts/run-firebase-initialization-tests.mjs`
+for mocked certificate/local/ADC paths, failure cases and media integration.
 
 ## Free Trial warning Function configuration — release gate
 

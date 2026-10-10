@@ -174,10 +174,44 @@ not proof of an activated staging upload workflow.
 Staging still requires approved private bucket configuration, effective metadata
 and object permissions, isolated API/frontend bindings, Auth domains/origins,
 stable media origin, cost approval, resource measurements and synthetic E2E.
-Cloud Run can provide attached service-account identity through Application
-Default Credentials, but the current initializer accepts only the certificate
-environment triple or a local credential file. ADC initialization is a separate
-staging-readiness change; no credentials or infrastructure are changed here.
+Cloud Run keyless initialization is now explicitly supported through
+`FIREBASE_CREDENTIAL_MODE=adc` and `FIREBASE_PROJECT_ID=inventaapi-staging`.
+Omit certificate variables and `GOOGLE_APPLICATION_CREDENTIALS`; the attached
+service identity supplies ADC. See `docs/release-environment.md`. This source
+support does not activate media or change credentials/infrastructure.
+
+## Ordered staging activation approval packet (not executed)
+
+Read-only Cloud Run configuration verified the API's attached identity as
+`inventaapi-api-staging@inventaapi-staging.iam.gserviceaccount.com` on revision
+`inventaapi-api-staging-00006-9sb`. No service-account replacement or key is needed.
+Effective resource authorization remains a separate live integration gate.
+
+| Order / approval scope | Expected impact | Verification before proceeding | Rollback / containment |
+| --- | --- | --- | --- |
+| 1. Read-only existing bucket consumer/object/ACL/token inventory | Establish whether the existing staging bucket can safely change | Record consumers, effective policies, object generations and any public dependencies | No writes; choose a separately approved media bucket if shared consumers conflict |
+| 2. Staging bucket uniform access and enforced public-access prevention | Remove ACL-based/public grants; may affect existing consumers | Verify metadata matches the approved bucket/project and test client denial | Record previous settings; uniform-access rollback is time-limited by the provider; do not bypass the private-bucket gate to restore unsafe media access |
+| 3. Staging identity IAM only | Permit bucket metadata and immutable object creation/read | Prove `storage.buckets.get`, `storage.objects.create`, `storage.objects.get` using the deployed identity; verify denials outside approved scope | Revoke only newly approved grants and disable media; reserve deletion authority for approved cleanup |
+| 4. Staging API environment and reviewed revision | Select explicit ADC, staging project, API_PORT=8080, approved media bucket/project number and stable HTTPS API origin | Confirm existing attached identity, no key/file override, default app project, token availability and resource access | Restore the previous staging revision/environment; do not switch to Production certificates |
+| 5. Customer/Admin staging build configuration and Auth domains/origins | Isolate both applications from shared Production Firebase/API bindings | Verify staging project/app IDs, API base, private CORS/preflight and published-image decoding; retain CORP fix | Restore prior staging builds and remove only newly added domains/origin entries |
+| 6. API resource/concurrency measurements | Establish safe Sharp/Storage capacity and image-grid rate limits | Measure cold/warm, maximum dimensions, concurrent uploads, retries, memory and latency | Reduce approved concurrency, restore resource settings/revision or disable media |
+| 7. Synthetic account/data approval and end-to-end review | One Customer, Admin and temporary second Customer for denial checks; pending/approved/rejected/replacement/image-less/CSV fixtures | Prove upload replay, isolation, current roles, approval atomicity, replacement conflict safety, desktop/mobile/CSV behavior | Retire/delete only manifest-listed synthetic references/objects with generation and reference checks; preserve audit receipts |
+| 8. Storage/bandwidth budget and retention owner | Account for optimized objects, Firestore metadata, processing, Storage/API egress and soft deletion | Approve regional usage budgets/alerts, 24-hour abandoned and seven-day rejected/retired proposals, pending-age alerts; alerts are not spend caps | Disable media for containment; separately approve cleanup, never delete published assets by blanket lifecycle |
+
+Scope IAM to the staging project/database and selected bucket. Media workflows
+also need Firestore transaction/query/write permissions and Auth user-read access
+for revocation checks (`firebaseauth.users.get`). Existing broader API account
+management permissions require separate least-privilege review. Do not grant
+Storage Admin, public access, token-signing or Production roles merely to enable
+media. A proposed cleanup identity may need generation-specific object deletion;
+this is not required by normal media upload/read handlers.
+
+All four `PRODUCT_MEDIA_*` values remain explicit. Keep media disabled until
+bucket/security/IAM/configuration checks are approved and integration passes.
+Staging Auth web apps already exist, but future Preview domains and exact API
+origins require approval. Shared Vercel Preview bindings must not be reused with
+Production Firebase defaults. No deployment, configuration, IAM, data or billing
+operation is authorized by this packet.
 
 ## Retention, cleanup and cost recommendation (not activated)
 
