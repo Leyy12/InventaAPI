@@ -6,8 +6,10 @@ import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
 import { LinkedProducts, useLinkedProductNames } from "@/components/admin/LinkedProducts";
+import { activeAccountProductCounts, type InventoryKey } from "@/lib/api-key-inventory";
+import { InventoryPlanBadge, InventoryPlanUsage, InventoryTimeline } from "@/components/admin/InventoryDetails";
 
-type KeyRow = { id: string; userId: string; name?: string; userEmail?: string; status?: string; linkedProductIds?: string[]; createdAt?: string; lastUsed?: string };
+type KeyRow = InventoryKey & { id: string; name?: string; userEmail?: string; createdAt?: unknown; lastUsed?: unknown };
 type OwnerRow = { id: string; businessName?: string; fullName?: string; email?: string };
 export default function ConsumersPage() {
   const [apiKeys, setApiKeys] = useState<KeyRow[]>([]);
@@ -19,7 +21,8 @@ export default function ConsumersPage() {
 
   const loading = !usersReady || !keysReady;
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId), JSON.stringify([usersMap, apiKeys]), refreshVersion);
+  const { accounts: entitlements, status: entitlementState } = useAccountEntitlements(apiKeys.map(k => k.userId), JSON.stringify([usersMap, apiKeys]), refreshVersion, true);
+  const productCounts = useMemo(() => activeAccountProductCounts(apiKeys), [apiKeys]);
   const linkedProducts = useLinkedProductNames(apiKeys);
 
   useEffect(() => {
@@ -64,7 +67,7 @@ export default function ConsumersPage() {
 
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10 animate-fadeIn">
-      <button type="button" onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300">Refresh entitlements</button>
+      <button type="button" disabled={loading || entitlementState === 'loading' || entitlementState === 'refreshing'} onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400">{entitlementState === 'refreshing' ? 'Refreshing entitlements…' : 'Refresh entitlements'}</button>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
@@ -108,7 +111,7 @@ export default function ConsumersPage() {
               <tr className="bg-slate-900/30 border-b border-slate-800/60">
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Customer Info</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">API Key & Plan</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Shared account usage (UTC)</th>
+                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Plan Usage & Limits</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Linked Products</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeline</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
@@ -134,9 +137,6 @@ export default function ConsumersPage() {
                   // Authoritative join: api_key.userId → users/{userId}
                   const user = usersMap[k.userId] || {};
                   const entitlement = entitlements[k.userId];
-                  const usedPct = entitlement?.limit && entitlement.used != null
-                    ? Math.min(100, entitlement.used / entitlement.limit * 100) : 0;
-                  const isOverage = usedPct >= 80;
 
                   return (
                     <tr key={k.id} className="hover:bg-slate-800/30 transition-colors group">
@@ -161,35 +161,14 @@ export default function ConsumersPage() {
                       <td className="p-4 align-top">
                         <div className="text-sm font-bold text-slate-200">{k.name || "Unnamed Key"}</div>
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-                            {entitlement?.plan || 'Verifying'} · {entitlement?.status || 'unverified'}
-                          </span>
+                          <InventoryPlanBadge account={entitlement} state={entitlementState} />
                         </div>
                       </td>
 
-                      {/* Usage with progress bar */}
+                      {/* Current allowance is shared by the owner, including on historical rows. */}
                       <td className="p-4 align-top min-w-[160px]">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">Account requests {entitlement?.status === 'upgrade_required' ? '(paused)' : `(${entitlement?.period || 'unverified'})`}</span>
-                          <span className={`text-xs font-bold ${isOverage ? 'text-red-400' : 'text-white'}`}>
-                            {entitlement?.status === 'upgrade_required' ? 'Upgrade Required'
-                              : `${entitlement?.used ?? '—'} / ${entitlement ? (entitlement.limit === null ? 'Unlimited' : entitlement.limit) : '—'}`}
-                          </span>
-                        </div>
-                        {entitlement?.holdUntil && <p className="text-xs text-amber-300">Monthly activation hold until {entitlement.holdUntil}</p>}
-                        {entitlement?.trial && !entitlement.trial.active && <p className="text-xs text-slate-400">Trial ended: {entitlement.trial.used} / 500 total</p>}
-                        {entitlement?.status === 'upgrade_required' && <p className="text-xs text-amber-300">Paid Pro is required to resume API access. Free monthly usage is historical only.</p>}
-                        {entitlement?.limit != null && entitlement?.used != null && <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full transition-all ${isOverage ? 'bg-red-500' : 'bg-emerald-500'}`}
-                            style={{ width: `${usedPct}%` }}
-                          />
-                        </div>}
-                        {entitlement?.limit != null && entitlement?.used != null && (
-                          <div className="text-[10px] text-slate-500 text-right mt-0.5">
-                            {Math.max(0, entitlement.limit - entitlement.used)} remaining
-                          </div>
-                        )}
+                        <InventoryPlanUsage account={entitlement} products={productCounts[k.userId] ?? 0} state={entitlementState} />
+                        {entitlement?.holdUntil && <p className="mt-1 text-xs text-amber-300">Monthly activation hold until {entitlement.holdUntil}</p>}
                       </td>
 
                       {/* Linked Products */}
@@ -198,15 +177,8 @@ export default function ConsumersPage() {
                       </td>
 
                       {/* Timeline */}
-                      <td className="p-4 align-top text-xs text-slate-400 space-y-1">
-                        <div>
-                          <span className="text-slate-500">Created: </span>
-                          {k.createdAt ? new Date(k.createdAt).toLocaleDateString() : "N/A"}
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Last Used: </span>
-                          {k.lastUsed ? new Date(k.lastUsed).toLocaleString() : "Never"}
-                        </div>
+                      <td className="p-4 align-top">
+                        <InventoryTimeline createdAt={k.createdAt} lastUsed={k.lastUsed} />
                       </td>
 
                       {/* Status */}
