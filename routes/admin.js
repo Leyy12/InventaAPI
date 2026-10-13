@@ -3,9 +3,12 @@ import { getAuth } from 'firebase-admin/auth';
 import { createAdminEntitlements } from '../services/admin-entitlements.js';
 import { getFirestore, FieldPath } from 'firebase-admin/firestore';
 import { createAdminTrafficHandler } from '../services/admin-traffic.js';
+import { createAdminKeyInventoryHandler } from '../services/admin-key-inventory.js';
 import { verifyFirebaseToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
+router.get('/api-keys/inventory', createAdminKeyInventoryHandler({ getDb: () => getFirestore(),
+  verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
 router.get('/traffic', createAdminTrafficHandler({ getDb: () => getFirestore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
 router.post('/entitlements', createAdminEntitlements({ getDb: () => getFirestore(),

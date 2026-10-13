@@ -2,31 +2,31 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Users, Search, CheckCircle2, AlertTriangle } from "lucide-react";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
+import { useAdminKeyInventory } from "@/lib/use-admin-key-inventory";
 import { LinkedProducts, useLinkedProductNames } from "@/components/admin/LinkedProducts";
-import { activeAccountProductCounts, type InventoryKey } from "@/lib/api-key-inventory";
+import { activeAccountProductCounts } from "@/lib/api-key-inventory";
 import { InventoryPlanBadge, InventoryPlanUsage, InventoryTimeline } from "@/components/admin/InventoryDetails";
 
-type KeyRow = InventoryKey & { id: string; name?: string; userEmail?: string; createdAt?: unknown; lastUsed?: unknown };
 type OwnerRow = { id: string; businessName?: string; fullName?: string; email?: string };
 export default function ConsumersPage() {
-  const [apiKeys, setApiKeys] = useState<KeyRow[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, OwnerRow>>({});
   const [readError, setReadError] = useState(false);
   const [usersReady, setUsersReady] = useState(false);
-  const [keysReady, setKeysReady] = useState(false);
   const [search, setSearch] = useState("");
 
-  const loading = !usersReady || !keysReady;
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const { accounts: entitlements, status: entitlementState } = useAccountEntitlements(apiKeys.map(k => k.userId), JSON.stringify([usersMap, apiKeys]), refreshVersion, true);
+  const { records: apiKeys, status: inventoryState } = useAdminKeyInventory(refreshVersion);
+  const loading = !usersReady || inventoryState === 'loading';
+  const { accounts: entitlements, status: entitlementState } = useAccountEntitlements(apiKeys.map(k => k.userId).filter(Boolean), JSON.stringify([usersMap, apiKeys]), refreshVersion, true);
   const productCounts = useMemo(() => activeAccountProductCounts(apiKeys), [apiKeys]);
   const linkedProducts = useLinkedProductNames(apiKeys);
+  const displayState = inventoryState === 'refreshing' && entitlementState === 'ready' ? 'refreshing' : entitlementState;
 
   useEffect(() => {
-    const unavailable = () => { setReadError(true); setApiKeys([]); setUsersMap({}); };
+    const unavailable = () => { setReadError(true); setUsersMap({}); };
     // Listener 1: Users collection — authoritative customer profile data
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
       const uMap: Record<string, OwnerRow> = {};
@@ -37,17 +37,7 @@ export default function ConsumersPage() {
       setUsersReady(true);
     }, unavailable);
 
-    // Listener 2: API Keys — one row per key, joined to user by userId
-    const q = query(collection(db, "api_keys"), orderBy("createdAt", "desc"));
-    const unsubKeys = onSnapshot(q, (snapshot) => {
-      setApiKeys(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as KeyRow)));
-      setKeysReady(true);
-    }, unavailable);
-
-    return () => {
-      unsubUsers();
-      unsubKeys();
-    };
+    return unsubUsers;
   }, []);
 
   const filteredKeys = useMemo(() => {
@@ -64,10 +54,14 @@ export default function ConsumersPage() {
   }, [apiKeys, usersMap, search]);
 
   if (readError) return <p role="alert" className="p-6 text-rose-300">API key inventory could not be verified. Reload to retry; previous rows have been cleared.</p>;
+  if (inventoryState === 'unavailable') return <div role="alert" className="p-6 text-rose-300">
+    <p>API key inventory could not be verified. Previous rows have been cleared.</p>
+    <button type="button" onClick={() => setRefreshVersion(value => value + 1)} className="mt-3 text-sm text-indigo-300">Retry inventory</button>
+  </div>;
 
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10 animate-fadeIn">
-      <button type="button" disabled={loading || entitlementState === 'loading' || entitlementState === 'refreshing'} onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400">{entitlementState === 'refreshing' ? 'Refreshing entitlements…' : 'Refresh entitlements'}</button>
+      <button type="button" disabled={loading || inventoryState === 'refreshing' || entitlementState === 'loading' || entitlementState === 'refreshing'} onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400">{inventoryState === 'refreshing' || entitlementState === 'refreshing' ? 'Refreshing inventory…' : 'Refresh inventory & entitlements'}</button>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
@@ -94,13 +88,13 @@ export default function ConsumersPage() {
           </div>
           <div className="flex items-center gap-4 text-sm shrink-0">
             <span className="text-slate-400">
-              Total: <span className="text-white font-bold">{apiKeys.length}</span>
+              Total: <span className="text-white font-bold">{loading ? '—' : apiKeys.length}</span>
             </span>
             <span className="text-emerald-400">
-              Active: <span className="font-bold">{apiKeys.filter(k => k.status === 'active').length}</span>
+              Active: <span className="font-bold">{loading ? '—' : apiKeys.filter(k => k.status === 'active').length}</span>
             </span>
             <span className="text-red-400">
-              Revoked: <span className="font-bold">{apiKeys.filter(k => k.status === 'revoked').length}</span>
+              Revoked: <span className="font-bold">{loading ? '—' : apiKeys.filter(k => k.status === 'revoked').length}</span>
             </span>
           </div>
         </div>
@@ -161,13 +155,13 @@ export default function ConsumersPage() {
                       <td className="p-4 align-top">
                         <div className="text-sm font-bold text-slate-200">{k.name || "Unnamed Key"}</div>
                         <div className="flex items-center gap-2 mt-1.5">
-                          <InventoryPlanBadge account={entitlement} state={entitlementState} />
+                          <InventoryPlanBadge account={entitlement} state={displayState} />
                         </div>
                       </td>
 
                       {/* Current allowance is shared by the owner, including on historical rows. */}
                       <td className="p-4 align-top min-w-[160px]">
-                        <InventoryPlanUsage account={entitlement} products={productCounts[k.userId] ?? 0} state={entitlementState} />
+                        <InventoryPlanUsage account={entitlement} products={productCounts[k.userId] ?? 0} state={displayState} />
                         {entitlement?.holdUntil && <p className="mt-1 text-xs text-amber-300">Monthly activation hold until {entitlement.holdUntil}</p>}
                       </td>
 

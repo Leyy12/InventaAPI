@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { TRIAL_MAX_PRODUCTS } from '../../functions/entitlement-limits.mjs';
+import { inventoryRecord } from '../../services/admin-key-inventory-contract.mjs';
 import { hooks, load, flush, browser, nodes } from './workspace-refresh/harness.mjs';
 
 const require = createRequire(new URL('../../admin-panel/package.json', import.meta.url));
@@ -165,11 +166,12 @@ test('legacy hook return remains an account map for Security Center', async () =
 const stub = () => null;
 function pageFixture(view) {
   const h = hooks(), subscriptions = [];
+  let inventoryState = 'ready';
   const keyRows = [
     { id: 'active', userId: 'a', name: 'Current key', status: 'active', linkedProductIds: ['p1'], createdAt: { toDate: () => new Date(stamp) }, lastUsed },
     { id: 'revoked', userId: 'a', name: 'Historical key', status: 'revoked', linkedProductIds: ['old'], createdAt: stamp, lastUsed },
     { id: 'other', userId: 'a', name: 'Second active key', status: 'active', linkedVariantSelections: { p2: ['v1', 'v2'] }, lastUsed: null },
-  ];
+  ].map(row => inventoryRecord(row.id, row));
   const linkedProps = { names: { p1: 'Persisted Product', old: 'Historical Product' }, loading: false, error: false };
   const Component = load(`admin-panel/src/app/${view}/page.tsx`, view === 'consumers' ? 'ConsumersPage' : 'SecurityCenterPage', h, {
     'lucide-react': new Proxy({}, { get: () => stub }),
@@ -178,19 +180,20 @@ function pageFixture(view) {
         ? [{ id: 'a', data: () => ({ businessName: 'Synthetic Owner', email: 'synthetic@invalid.test' }) }]
         : keyRows.map(row => ({ id: row.id, data: () => row }))) }); return stub; } },
     '@/lib/firebase/config': { db: {} },
+    '@/lib/use-admin-key-inventory': { useAdminKeyInventory: () => ({ records: ['ready', 'refreshing'].includes(inventoryState) ? keyRows : [], status: inventoryState }) },
     '@/lib/use-account-entitlements': { useAccountEntitlements: (...args) => args[3] ? { accounts: { a: trial }, status: 'ready' } : { a: pro } },
     '@/lib/api-key-inventory': inventory, '@/components/admin/InventoryDetails': details,
     '@/components/admin/LinkedProducts': { LinkedProducts: stub, useLinkedProductNames: () => linkedProps },
   });
-  return { h, Component, subscriptions, keyRows, linkedProps };
+  return { h, Component, subscriptions, keyRows, linkedProps, setInventoryState: value => { inventoryState = value; h.render(); } };
 }
 test('inventory owner joins/search/counts survive; revoked history and account scope are independent of filtering', async () => {
   const f = pageFixture('consumers'); f.h.mount(f.Component); await flush();
-  assert.deepEqual(f.subscriptions, ['users', 'api_keys']);
+  assert.deepEqual(f.subscriptions, ['users']);
   let cells = nodes(f.h.output, n => n.type === details.InventoryPlanUsage);
   assert.equal(cells.length, 3); assert.ok(cells.every(n => n.props.products === 2));
   const timelines = nodes(f.h.output, n => n.type === details.InventoryTimeline);
-  assert.equal(timelines[1].props.lastUsed, lastUsed);
+  assert.equal(timelines[1].props.lastUsed, new Date(lastUsed).toISOString());
   const links = nodes(f.h.output, n => n.props.link);
   assert.equal(links.length, 3); assert.equal(links[1].props.link.linkedProductIds[0], 'old');
   assert.equal(links[0].props.names.p1, 'Persisted Product');
@@ -205,5 +208,24 @@ test('Security Center renders its existing quota and historical Linked Products 
   assert.equal(nodes(f.h.output, n => n.props.link).length, 3);
   const treeText = JSON.stringify(f.h.output);
   assert.match(treeText, /125/); assert.match(treeText, /500/); assert.match(treeText, /Synthetic Owner/);
+  assert.match(treeText, /Legacy key · Hidden/);
+  assert.equal(nodes(f.h.output, n => n.type === details.InventoryTimeline).length, 3);
+  f.h.stop();
+});
+
+for (const view of ['consumers', 'security']) test(`${view} page hides unavailable rows/counts and exposes explicit refresh and retry`, async () => {
+  const f = pageFixture(view); f.h.mount(f.Component); await flush();
+  f.setInventoryState('loading');
+  assert.doesNotMatch(JSON.stringify(f.h.output), /Current key|Historical key/);
+  assert.match(JSON.stringify(f.h.output), /—/);
+  f.setInventoryState('refreshing');
+  assert.match(JSON.stringify(f.h.output), /Current key/);
+  assert.match(JSON.stringify(f.h.output), /Refreshing inventory/);
+  const refresh = nodes(f.h.output, n => n.type === 'button')[0];
+  assert.equal(refresh.props.disabled, true);
+  f.setInventoryState('unavailable');
+  assert.equal(f.h.output.props.role, 'alert');
+  assert.doesNotMatch(JSON.stringify(f.h.output), /Current key|Historical key|Synthetic Owner/);
+  assert.match(JSON.stringify(f.h.output), /Retry inventory/);
   f.h.stop();
 });

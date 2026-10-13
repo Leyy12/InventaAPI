@@ -2,45 +2,36 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ShieldCheck, Key, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
+import { useAdminKeyInventory } from "@/lib/use-admin-key-inventory";
+import { InventoryTimeline } from "@/components/admin/InventoryDetails";
 import { LinkedProducts, useLinkedProductNames } from "@/components/admin/LinkedProducts";
 
 export default function SecurityCenterPage() {
-  const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const [usersMap, setUsersMap] = useState<Record<string, any>>({});
+  const [usersMap, setUsersMap] = useState<Record<string, { id: string; businessName?: string; fullName?: string; email?: string }>>({});
   const [usersReady, setUsersReady] = useState(false);
-  const [keysReady, setKeysReady] = useState(false);
+  const [readError, setReadError] = useState(false);
   const [search, setSearch] = useState("");
 
-  const loading = !usersReady || !keysReady;
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId), JSON.stringify([usersMap, apiKeys]), refreshVersion);
+  const { records: apiKeys, status: inventoryState } = useAdminKeyInventory(refreshVersion);
+  const loading = !usersReady || inventoryState === 'loading';
+  const entitlements = useAccountEntitlements(apiKeys.map(k => k.userId).filter(Boolean), JSON.stringify([usersMap, apiKeys]), refreshVersion);
   const linkedProducts = useLinkedProductNames(apiKeys);
 
   useEffect(() => {
     // Listener 1: Users — build lookup map by userId
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const uMap: Record<string, any> = {};
+      const uMap: typeof usersMap = {};
       snapshot.docs.forEach(doc => {
         uMap[doc.id] = { id: doc.id, ...doc.data() };
       });
       setUsersMap(uMap);
       setUsersReady(true);
-    });
-
-    // Listener 2: API Keys — ordered by creation date desc
-    const q = query(collection(db, "api_keys"), orderBy("createdAt", "desc"));
-    const unsubKeys = onSnapshot(q, (snapshot) => {
-      setApiKeys(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setKeysReady(true);
-    });
-
-    return () => {
-      unsubUsers();
-      unsubKeys();
-    };
+    }, () => { setReadError(true); setUsersMap({}); });
+    return unsubUsers;
   }, []);
 
   const filteredKeys = useMemo(() => {
@@ -58,18 +49,25 @@ export default function SecurityCenterPage() {
   }, [apiKeys, usersMap, search]);
 
   const activeCount = useMemo(() => apiKeys.filter(k => k.status === 'active').length, [apiKeys]);
-  const revokedCount = useMemo(() => apiKeys.filter(k => k.status !== 'active').length, [apiKeys]);
+  const revokedCount = useMemo(() => apiKeys.filter(k => k.status === 'revoked').length, [apiKeys]);
+
+  if (readError) return <p role="alert" className="p-6 text-rose-300">Customer information could not be verified. Reload to retry; previous rows have been cleared.</p>;
+  if (inventoryState === 'unavailable') return <div role="alert" className="p-6 text-rose-300">
+    <p>Security inventory could not be verified. Previous rows have been cleared.</p>
+    <button type="button" onClick={() => setRefreshVersion(value => value + 1)} className="mt-3 text-sm text-indigo-300">Retry inventory</button>
+  </div>;
 
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
-      <button type="button" onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300">Refresh entitlements</button>
+      <button type="button" disabled={loading || inventoryState === 'refreshing'} onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300 disabled:opacity-50">{inventoryState === 'refreshing' ? 'Refreshing inventory…' : 'Refresh inventory & entitlements'}</button>
+      {inventoryState === 'refreshing' && <p role="status" className="text-xs text-slate-400">Refreshing · last verified records</p>}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
             <ShieldCheck className="w-8 h-8 text-indigo-500" />
             Security Center
           </h1>
-          <p className="text-slate-400">Monitor all API keys, usage limits, and real-time security events.</p>
+          <p className="text-slate-400">Monitor all API keys and account usage limits. Refresh to load current metadata.</p>
         </div>
       </div>
 
@@ -81,7 +79,7 @@ export default function SecurityCenterPage() {
           </div>
           <div>
             <p className="text-sm font-medium text-slate-400">Total API Keys</p>
-            <p className="text-2xl font-bold text-white">{apiKeys.length}</p>
+            <p className="text-2xl font-bold text-white">{loading ? '—' : apiKeys.length}</p>
           </div>
         </div>
         <div className="glass-card rounded-xl p-6 border border-white/5 flex items-center gap-4">
@@ -90,7 +88,7 @@ export default function SecurityCenterPage() {
           </div>
           <div>
             <p className="text-sm font-medium text-slate-400">Active Keys</p>
-            <p className="text-2xl font-bold text-emerald-400">{activeCount}</p>
+            <p className="text-2xl font-bold text-emerald-400">{loading ? '—' : activeCount}</p>
           </div>
         </div>
         <div className="glass-card rounded-xl p-6 border border-white/5 flex items-center gap-4">
@@ -99,7 +97,7 @@ export default function SecurityCenterPage() {
           </div>
           <div>
             <p className="text-sm font-medium text-slate-400">Revoked Keys</p>
-            <p className="text-2xl font-bold text-red-400">{revokedCount}</p>
+            <p className="text-2xl font-bold text-red-400">{loading ? '—' : revokedCount}</p>
           </div>
         </div>
       </div>
@@ -156,11 +154,7 @@ export default function SecurityCenterPage() {
                       <td className="p-4 align-top">
                         <span className="text-sm font-bold text-slate-200">{k.name || "Unnamed Key"}</span>
                         <p className="text-xs font-mono text-slate-500 mt-1">
-                          {k.key
-                            ? k.key.startsWith('daas_')
-                              ? `daas_··········${k.key.slice(-6)}`
-                              : `···${k.key.slice(-6)}`
-                            : "N/A"}
+                          {k.keyLabel}
                         </p>
                       </td>
 
@@ -203,14 +197,7 @@ export default function SecurityCenterPage() {
 
                       {/* Timeline */}
                       <td className="p-4 align-top text-xs text-slate-400 space-y-1">
-                        <div>
-                          <span className="text-slate-500">Created: </span>
-                          {k.createdAt ? new Date(k.createdAt).toLocaleDateString() : 'N/A'}
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Last Used: </span>
-                          {k.lastUsed ? new Date(k.lastUsed).toLocaleDateString() : 'Never'}
-                        </div>
+                        <InventoryTimeline createdAt={k.createdAt} lastUsed={k.lastUsed} />
                       </td>
 
                       {/* Status */}
@@ -220,7 +207,7 @@ export default function SecurityCenterPage() {
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                             : 'bg-red-500/10 text-red-400 border-red-500/20'
                           }`}>
-                          {k.status || 'active'}
+                          {k.status || 'unknown'}
                         </span>
                       </td>
                     </tr>
