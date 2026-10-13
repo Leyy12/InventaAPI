@@ -7,9 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Key,
-  BookOpen,
   Package,
-  ShieldCheck,
   Settings,
   ShieldAlert,
   LogOut,
@@ -24,7 +22,6 @@ const adminRoutes = [
 
   { name: "API Key Inventory",      href: "/consumers", icon: Key             },
 
-  { name: "Security Center",        href: "/security",  icon: ShieldCheck     },
   { name: "Audit Logs",             href: "/audit",     icon: ShieldAlert     },
   { name: "System Settings",        href: "/settings",  icon: Settings        },
 ];

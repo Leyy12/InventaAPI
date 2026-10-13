@@ -158,13 +158,13 @@ test('source/identity changes hide stale authority and ignore late responses', a
   f.complete(2); await flush(); assert.equal(f.h.output.accounts.a.plan, 'Pro');
   f.setUser(null); f.h.render(); assert.equal(f.h.output.status, 'unavailable'); assert.equal(Object.keys(f.h.output.accounts).length, 0); f.h.stop();
 });
-test('legacy hook return remains an account map for Security Center', async () => {
+test('default entitlement hook return remains an account map', async () => {
   const f = hookFixture(); f.h.mount(f.component, { withState: false }); await flush(); f.complete(0); await flush();
   assert.equal(f.h.output.a.limit, 500); assert.equal(f.h.output.accounts, undefined); f.h.stop();
 });
 
 const stub = () => null;
-function pageFixture(view) {
+function pageFixture() {
   const h = hooks(), subscriptions = [];
   let inventoryState = 'ready';
   const keyRows = [
@@ -173,7 +173,7 @@ function pageFixture(view) {
     { id: 'other', userId: 'a', name: 'Second active key', status: 'active', linkedVariantSelections: { p2: ['v1', 'v2'] }, lastUsed: null },
   ].map(row => inventoryRecord(row.id, row));
   const linkedProps = { names: { p1: 'Persisted Product', old: 'Historical Product' }, loading: false, error: false };
-  const Component = load(`admin-panel/src/app/${view}/page.tsx`, view === 'consumers' ? 'ConsumersPage' : 'SecurityCenterPage', h, {
+  const Component = load('admin-panel/src/app/consumers/page.tsx', 'ConsumersPage', h, {
     'lucide-react': new Proxy({}, { get: () => stub }),
     'firebase/firestore': { collection: (_db, name) => name, query: value => value, orderBy: stub,
       onSnapshot: (name, publish) => { subscriptions.push(name); publish({ docs: (name === 'users'
@@ -188,7 +188,7 @@ function pageFixture(view) {
   return { h, Component, subscriptions, keyRows, linkedProps, setInventoryState: value => { inventoryState = value; h.render(); } };
 }
 test('inventory owner joins/search/counts survive; revoked history and account scope are independent of filtering', async () => {
-  const f = pageFixture('consumers'); f.h.mount(f.Component); await flush();
+  const f = pageFixture(); f.h.mount(f.Component); await flush();
   assert.deepEqual(f.subscriptions, ['users']);
   let cells = nodes(f.h.output, n => n.type === details.InventoryPlanUsage);
   assert.equal(cells.length, 3); assert.ok(cells.every(n => n.props.products === 2));
@@ -203,18 +203,40 @@ test('inventory owner joins/search/counts survive; revoked history and account s
   assert.equal(markup('InventoryTimeline', timelines[1].props).includes('3:42 PM PHT'), true);
   f.h.stop();
 });
-test('Security Center renders its existing quota and historical Linked Products with the default account map', async () => {
-  const f = pageFixture('security'); f.h.mount(f.Component); await flush();
-  assert.equal(nodes(f.h.output, n => n.props.link).length, 3);
-  const treeText = JSON.stringify(f.h.output);
-  assert.match(treeText, /125/); assert.match(treeText, /500/); assert.match(treeText, /Synthetic Owner/);
-  assert.match(treeText, /Legacy key · Hidden/);
-  assert.equal(nodes(f.h.output, n => n.type === details.InventoryTimeline).length, 3);
-  f.h.stop();
+test('removed Security Center redirects server-side without duplicate inventory I/O', () => {
+  const calls = [];
+  const redirectSignal = new Error('synthetic Next redirect');
+  const page = displayModule('admin-panel/src/app/security/page.tsx', {
+    'next/navigation': { redirect: destination => { calls.push(destination); throw redirectSignal; } },
+  });
+  assert.throws(() => page.default(), error => error === redirectSignal);
+  assert.deepEqual(calls, ['/consumers']);
+  assert.doesNotMatch(source('admin-panel/src/app/security/page.tsx'), /use client|useEffect|useAdminKeyInventory|useAccountEntitlements|firebase|fetch|<table/);
 });
 
-for (const view of ['consumers', 'security']) test(`${view} page hides unavailable rows/counts and exposes explicit refresh and retry`, async () => {
-  const f = pageFixture(view); f.h.mount(f.Component); await flush();
+test('sidebar retains all six Admin destinations in order, with Inventory active and Audit Logs accessible', () => {
+  const h = hooks();
+  const Link = () => null;
+  const Sidebar = load('admin-panel/src/components/layout/AdminSidebar.tsx', 'AdminSidebar', h, {
+    'next/link': { __esModule: true, default: Link }, 'next/image': { __esModule: true, default: stub },
+    'next/navigation': { usePathname: () => '/consumers' },
+    '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
+    'lucide-react': new Proxy({}, { get: () => stub }),
+    '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ adminUser: null, logout: stub }) },
+  });
+  h.mount(Sidebar);
+  const links = nodes(h.output, n => n.type === Link);
+  assert.deepEqual(links.map(n => [n.props.children.at(-1), n.props.href]), [
+    ['Dashboard', '/'], ['Master Product Catalog', '/products'], ['Product Submissions', '/submissions'],
+    ['API Key Inventory', '/consumers'], ['Audit Logs', '/audit'], ['System Settings', '/settings'],
+  ]);
+  assert.match(links[3].props.className, /text-blue-300/);
+  assert.doesNotMatch(source('admin-panel/src/components/layout/AdminSidebar.tsx'), /Security Center|\/security|ShieldCheck/);
+  h.stop();
+});
+
+test('consumers page hides unavailable rows/counts and exposes explicit refresh and retry', async () => {
+  const f = pageFixture(); f.h.mount(f.Component); await flush();
   f.setInventoryState('loading');
   assert.doesNotMatch(JSON.stringify(f.h.output), /Current key|Historical key/);
   assert.match(JSON.stringify(f.h.output), /—/);

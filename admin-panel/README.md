@@ -46,7 +46,7 @@ admin-panel/
 - Super Admin dashboard
 - Product catalog management (Hardware, Pharmacy, Grocery, Clothing)
 - API consumer management
-- Security center & audit logs
+- Audit logs
 - System settings
 
 ## Tech Stack

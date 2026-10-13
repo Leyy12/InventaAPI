@@ -224,7 +224,9 @@ test('both active frontend trees contain no automatic focus/visibility/page-show
   assert.match(source('admin-panel/src/lib/firebase/admin-auth-context.tsx'), /onIdTokenChanged/);
   assert.match(source('dashboard/src/lib/firebase/auth-context.tsx'), /onIdTokenChanged/);
   assert.match(source('admin-panel/src/app/consumers/page.tsx'), /JSON.stringify\(\[usersMap, apiKeys\]\)/);
-  assert.match(source('admin-panel/src/app/security/page.tsx'), /JSON.stringify\(\[usersMap, apiKeys\]\)/);
+  const removedSecurityPage = source('admin-panel/src/app/security/page.tsx');
+  assert.match(removedSecurityPage, /redirect\("\/consumers"\)/);
+  assert.doesNotMatch(removedSecurityPage, /useEffect|onSnapshot|useAdminKeyInventory|useAccountEntitlements|fetch/);
 });
 
 

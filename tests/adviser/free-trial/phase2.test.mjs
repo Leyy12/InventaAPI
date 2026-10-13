@@ -124,7 +124,8 @@ test('Customer and Admin surfaces expose Upgrade Required without hiding key his
   assert.match(keys, /Active API Keys/);
   assert.match(keys, /Upgrade to Pro/);
   assert.match(settings, /activeCustomerSegment\(appUser\)/);
-  assert.match(admin, /entitlement\?\.status === 'upgrade_required'/);
+  assert.match(admin, /<InventoryPlanBadge account=\{entitlement\}/);
+  assert.match(source('admin-panel/src/lib/api-key-inventory.ts'), /account\.status === 'upgrade_required' \|\| account\.plan === 'Upgrade Required'/);
   assert.doesNotMatch(trial, /returns you to the existing Free monthly balance/);
 });
 test('linked names come only from canonical persisted IDs and authoritative product documents', () => {
@@ -179,16 +180,17 @@ test('Products remains the scoped catalog generation entry point; API Keys canno
   assert.match(keys, /href="\/dashboard\/products"/u);
   assert.doesNotMatch(keys, /api\/v1\/api-keys\/generate|Generate Your First Key|generateNewKey/u);
 });
-test('Admin linked-product displays resolve Firestore names and Security Center hides only the raw UID subline', () => {
+test('Admin Inventory preserves linked-product names and owner details; the removed Security Center redirects', () => {
   const component = readFileSync(new URL('../../../admin-panel/src/components/admin/LinkedProducts.tsx', import.meta.url), 'utf8');
   const security = readFileSync(new URL('../../../admin-panel/src/app/security/page.tsx', import.meta.url), 'utf8');
   const inventory = readFileSync(new URL('../../../admin-panel/src/app/consumers/page.tsx', import.meta.url), 'utf8');
   assert.match(component, /getDocs\(query\(collection\(db, "products"\), where\(documentId\(\), "in", batch\)\)\)/u);
-  for (const page of [security, inventory]) assert.match(page, /<LinkedProducts link=\{k\}/u);
-  assert.doesNotMatch(security, /\{k\.userId\}<\/div>/u);
-  assert.match(security, /usersMap\[k\.userId\]/u);
-  assert.match(security, /k\.userEmail \|\| user\.email/u);
-  assert.match(security, /user\.businessName \|\| user\.fullName/u);
+  assert.match(inventory, /<LinkedProducts link=\{k\}/u);
+  assert.match(inventory, /usersMap\[k\.userId\]/u);
+  assert.match(inventory, /k\.userEmail \|\| user\.email/u);
+  assert.match(inventory, /user\.businessName \|\| user\.fullName/u);
+  assert.match(security, /redirect\("\/consumers"\)/u);
+  assert.doesNotMatch(security, /use client|firebase|<LinkedProducts/u);
 });
 test('Customer API Keys no longer exposes replacement, without changing the backend replacement endpoint', () => {
   const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/api-keys/page.tsx', import.meta.url), 'utf8');
