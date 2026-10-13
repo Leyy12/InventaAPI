@@ -13,13 +13,13 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
       try { token = await verifyIdToken(authorization.slice(7), true); } catch { throw catalogError(401, 'Invalid or revoked authentication.'); }
       if (typeof token?.uid !== 'string' || !token.uid) throw catalogError(401, 'Invalid authentication.');
       onlyFields(req.query || {}, []);
-      return res.status(200).json(await action(req, getDb(), token.uid));
+      return res.status(200).json(await action(req, getDb(), token.uid, token));
     } catch (error) {
       const status = Number.isInteger(error.status) ? error.status : 503;
       return res.status(status).json({ error: status === 503 ? 'Catalog service unavailable; retry safely or refresh.' : error.message });
     }
   };
-  const mutate = action => wrap(async (req, db, uid) => {
+  const mutate = action => wrap(async (req, db, uid, actor) => {
     onlyFields(req.body, action === 'create' ? ['product'] : action === 'edit' ? ['product', 'expectedRevision'] : ['expectedRevision']);
     const key = action === 'create' ? req.headers['idempotency-key'] : undefined;
     if (key !== undefined && (typeof key !== 'string' || !/^[a-zA-Z0-9_-]{16,128}$/u.test(key))) throw catalogError(400, 'Invalid catalog operation key.');
@@ -37,7 +37,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
           return { product: { ...product, id: productId }, deleted: false, possibleDuplicates: [], replayed: true };
         }
       }
-      const prepared = await prepareCatalogWrite({ tx, db, uid, action, productId, input: req.body.product,
+      const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action, productId, input: req.body.product,
         expectedRevision: req.body.expectedRevision, at: now().toISOString(), deriveReservationId });
       prepared.apply();
       if (receiptRef) tx.set(receiptRef, { uid, digest, productId, createdAt: now().toISOString() });
@@ -57,7 +57,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
       return { ...plan, previewId };
     });
   });
-  const commit = wrap(async (req, db, uid) => {
+  const commit = wrap(async (req, db, uid, actor) => {
     onlyFields(req.body, ['previewId', 'rows', 'acknowledgePossible']);
     const { previewId, rows, acknowledgePossible = false } = req.body;
     if (typeof previewId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(previewId)
@@ -82,7 +82,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
             return { row: rowNumber, status: 'SKIPPED', reason: row?.reason || 'Not a valid new row.' };
           }
           if (row.status === 'POSSIBLE_DUPLICATE' && !acknowledgePossible) throw catalogError(409, 'Review and acknowledge possible duplicates.');
-          const prepared = await prepareCatalogWrite({ tx, db, uid, action: 'create',
+          const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'create',
             productId: `import_${previewId}_${rowNumber}`, input: row.product, at: now().toISOString(), deriveReservationId });
           // Other selected rows can add the same Brand+Name after preview; explicit
           // acknowledgement covers these, but never overrides canonical conflicts.

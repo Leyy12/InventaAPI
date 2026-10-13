@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { accountBlocked, evaluateEntitlement } from '../functions/subscription-lifecycle.mjs';
-import { prepareCatalogWrite } from './catalog-writer.js';
+import { prepareCatalogWrite, stageActivityAudit } from './catalog-writer.js';
 import { submissionError, validateSubmissionContent } from './product-submission-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 import { prepareSubmissionMedia, prepareRejectedMedia } from './product-media-binding.js';
@@ -31,7 +31,7 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       try { token = await verifyIdToken(authorization.slice(7), true); }
       catch { throw submissionError(401, 'Invalid or revoked authentication.'); }
       if (!token?.uid || typeof token.uid !== 'string') throw submissionError(401, 'Invalid authentication.');
-      const result = await action(req, getDb(), token.uid);
+      const result = await action(req, getDb(), token.uid, token);
       return res.status(result.code || 200).json(result.body);
     } catch (error) {
       const status = Number.isInteger(error.status) ? error.status : 503;
@@ -67,7 +67,7 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
     return { data, content };
   }
 
-  const submit = wrap(async (req, db, uid) => {
+  const submit = wrap(async (req, db, uid, actor) => {
     onlyKeys(req.query, []);
     const operationKey = req.headers['idempotency-key'];
     if (typeof operationKey !== 'string' || !/^[a-zA-Z0-9_-]{16,128}$/u.test(operationKey)) {
@@ -96,6 +96,8 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       tx.set(ref, { version: 1, userId: uid, operationId, content, status: 'submitted',
         createdAt: at, updatedAt: at, reviewedAt: null, reviewedBy: null, productId: null });
       tx.set(operationRef, { userId: uid, submissionId: ref.id, digest, createdAt: at });
+      stageActivityAudit({ tx, db, uid, actor, action: 'Product Submission Created',
+        entityType: 'product_submission', entityId: ref.id, at });
       return { code: 201, body: { id: ref.id, status: 'submitted', replayed: false } };
     });
   });
@@ -125,7 +127,7 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       return { body: reviewView(snapshot) };
     });
   });
-  const review = decision => wrap(async (req, db, uid) => {
+  const review = decision => wrap(async (req, db, uid, actor) => {
     onlyKeys(req.query, []);
     onlyKeys(req.body, []);
     return db.runTransaction(async tx => {
@@ -146,6 +148,9 @@ export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = ()
       prepared?.apply();
       rejectMedia?.();
       tx.update(ref, { status: decision, productId, reviewedBy: uid, reviewedAt: at, updatedAt: at });
+      stageActivityAudit({ tx, db, uid, actor,
+        action: decision === 'approved' ? 'Product Submission Approved' : 'Product Submission Rejected',
+        entityType: 'product_submission', entityId: ref.id, at, productId });
       return { body: { id: ref.id, status: decision, productId, replayed: false } };
     });
   });

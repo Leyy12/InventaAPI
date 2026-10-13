@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { ShieldAlert, Search, Clock, User, FileText } from "lucide-react";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
+import { auditAction, auditActor, auditDetails, auditMatches, auditTimestamp, type AuditLogRecord } from "@/lib/audit-log-display";
 
 export default function AuditLogsPage() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AuditLogRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -42,10 +43,7 @@ export default function AuditLogsPage() {
     }
   };
 
-  const filteredLogs = logs.filter(l => 
-    (l.action || "").toLowerCase().includes(search.toLowerCase()) || 
-    (l.userEmail || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredLogs = logs.filter(log => auditMatches(log, search));
 
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
@@ -105,23 +103,23 @@ export default function AuditLogsPage() {
                       <div className="flex items-center gap-2 text-slate-300">
                         <Clock className="w-4 h-4 text-slate-500" />
                         <span className="text-sm">
-                          {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : new Date(log.timestamp).toLocaleString()}
+                          {auditTimestamp(log.timestamp)}
                         </span>
                       </div>
                     </td>
                     <td className="p-4">
                       <span className="text-xs font-mono bg-slate-900 border border-slate-700 text-indigo-400 px-2 py-1 rounded">
-                        {log.action || "UNKNOWN"}
+                        {auditAction(log)}
                       </span>
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2 text-slate-300">
                         <User className="w-4 h-4 text-slate-500" />
-                        <span className="text-sm">{log.userEmail || log.userId || "System"}</span>
+                        <span className="text-sm">{auditActor(log)}</span>
                       </div>
                     </td>
                     <td className="p-4 text-sm text-slate-400">
-                      {log.details || JSON.stringify(log.metadata || {})}
+                      {auditDetails(log)}
                     </td>
                   </tr>
                 ))

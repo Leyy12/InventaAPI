@@ -1,9 +1,32 @@
+import { randomUUID } from 'node:crypto';
 import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { evaluateProductVisibility, productIdentityKeys } from './product-contract.js';
 import { normalizeProductImageUrl } from './product-submission-contract.js';
 import { catalogError, identityId, possibleDuplicates, reservationIntegrityError, reservationIntegrityProblems, validateCatalogProduct } from './catalog-contract.js';
 import { auditCatalog } from './catalog-audit.js';
 import { prepareCatalogMedia } from './product-media-binding.js';
+
+// Called only after authorization and validation in the existing server writers.
+// The event commits with the mutation: aborted attempts leave neither, and
+// transaction retries/receipt replays never append a second successful event.
+export function stageActivityAudit({ tx, db, uid, actor, action, entityType, entityId, at, catalogRevision, productId }) {
+  const descriptions = {
+    'Product Created': `Created product ${entityId}.`,
+    'Product Updated': `Updated product information for product ${entityId}.`,
+    'Product Unpublished': `Unpublished product ${entityId}.`,
+    'Product Published': `Published product ${entityId}.`,
+    'Product Deleted': `Deleted product ${entityId}.`,
+    'Product Submission Created': `Created product submission ${entityId}.`,
+    'Product Submission Approved': `Approved product submission ${entityId}; published product ${productId}.`,
+    'Product Submission Rejected': `Rejected product submission ${entityId}.`,
+  };
+  const record = { action, userId: uid, entityType, entityId, timestamp: new Date(at),
+    details: descriptions[action],
+    metadata: { ...(catalogRevision !== undefined ? { catalogRevision } : {}), ...(productId ? { productId } : {}) } };
+  // Email comes from the verified Firebase token, never the request body/profile.
+  if (actor?.uid === uid && typeof actor.email === 'string' && actor.email.length <= 320) record.userEmail = actor.email;
+  tx.set(db.collection('audit_logs').doc(randomUUID()), record);
+}
 
 export async function requireCatalogAdmin(tx, db, uid) {
   const account = (await tx.get(db.collection('users').doc(uid))).data();
@@ -19,7 +42,7 @@ export async function readCatalog(tx, db) {
 
 // Read/validate first; returned apply closure stages writes only after caller's other reads.
 // This enables submission finalization and import receipts in the SAME transaction.
-export async function prepareCatalogWrite({ tx, db, uid, action, productId, input = {}, expectedRevision, at, deriveReservationId = identityId, submissionId }) {
+export async function prepareCatalogWrite({ tx, db, uid, actor, action, productId, input = {}, expectedRevision, at, deriveReservationId = identityId, submissionId }) {
   await requireCatalogAdmin(tx, db, uid);
   if (typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,180}$/u.test(productId)) throw catalogError(400, 'Invalid product ID.');
   if (!['create', 'edit', 'archive', 'restore', 'delete'].includes(action)) throw catalogError(400, 'Invalid catalog action.');
@@ -88,6 +111,12 @@ export async function prepareCatalogWrite({ tx, db, uid, action, productId, inpu
       for (const claim of claims) tx.set(claim.ref, claim.data);
       // Shared serializing fence also protects legacy identities not yet backfilled.
       tx.set(controlRef, { ...control, version: 1, revision: (control?.revision ?? 0) + 1, updatedAt: at });
+      // Approval publishes a product and finalizes a submission in one operation;
+      // its single submission event also identifies the published product.
+      if (!submissionId) stageActivityAudit({ tx, db, uid, actor,
+        action: { create: 'Product Created', edit: 'Product Updated', archive: 'Product Unpublished',
+          restore: 'Product Published', delete: 'Product Deleted' }[action],
+        entityType: 'product', entityId: productId, at, catalogRevision: product.catalogRevision });
     } };
 }
 
