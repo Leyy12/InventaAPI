@@ -14,6 +14,20 @@ const submissionProduct = { ...product, variants: [{ sku: 'TEST-RICE', size: '1k
 function fixture(extra = {}, withEmail = true) {
   const db = memoryFirestore({ 'users/admin': { role: 'Admin', email: 'untrusted-profile@example.test' },
     'users/customer': { role: 'Developer', plan: 'Free', businessSegment: 'Grocery' }, ...extra });
+  const auditAttempts = [], collection = db.collection;
+  let auditSerial = 0;
+  db.collection = name => {
+    const ref = collection(name);
+    if (name !== 'audit_logs') return ref;
+    return { ...ref, add: async record => {
+      // Snapshot before append: business state must already be persisted.
+      auditAttempts.push({ action: record.action, entityId: record.entityId, state: db.dump() });
+      // Firestore add() generates a fresh ID even after unrelated deletions.
+      const document = ref.doc(`audit-event-${++auditSerial}`);
+      await db.runTransaction(async tx => tx.set(document, record));
+      return document;
+    } };
+  };
   let serial = 0;
   const verified = [];
   const dependencies = { getDb: () => db, now: () => new Date(at), makeId: () => `fixture-${++serial}`,
@@ -29,12 +43,13 @@ function fixture(extra = {}, withEmail = true) {
     headers: { 'idempotency-key': 'synthetic-operation-0001' }, ...extra });
   const review = (id, decision = 'approve', extra = {}) => invoke(submissions[decision], { token: 'admin', params: { id }, ...extra });
   const logs = () => Object.entries(db.dump()).filter(([path]) => path.startsWith('audit_logs/')).map(([, data]) => data);
-  return { db, catalog, submissions, call, create, submit, review, logs, verified };
+  return { db, catalog, submissions, call, create, submit, review, logs, verified, auditAttempts };
 }
 
 test('catalog lifecycle audits actual successful outcomes and verified actors', async () => {
   const f = fixture(), made = await f.create();
   assert.equal(made.statusCode, 200);
+  assert.equal(Object.hasOwn(made.body, 'activity'), false);
   const id = made.body.product.id;
   for (const [action, expectedRevision, body] of [['edit', 1, { product: { description: 'New body sentinel' } }],
     ['archive', 2, {}], ['restore', 3, {}], ['delete', 4, {}]]) {
@@ -50,6 +65,8 @@ test('catalog lifecycle audits actual successful outcomes and verified actors', 
   }
   assert.ok(f.verified.every(([, revoked]) => revoked === true));
   assert.doesNotMatch(JSON.stringify(logs), /sentinel|untrusted-profile|TEST-RICE|password|tokenSecret|authorization/);
+  assert.equal(f.auditAttempts[0].state[`products/${id}`].catalogRevision, 1);
+  assert.equal(f.auditAttempts.at(-1).state[`products/${id}`], undefined);
 });
 
 test('create receipt replay and stale edits do not add a second event', async () => {
@@ -98,7 +115,7 @@ test('verified UID is retained when token email is unavailable; profile email is
 });
 
 test('failed submission creation has no record or event and recovers once with the same operation', async () => {
-  const f = fixture(); f.db.failWrite = 'audit_logs/';
+  const f = fixture(); f.db.failWrite = 'product_requests/';
   assert.equal((await f.submit()).statusCode, 503); assert.equal(f.logs().length, 0);
   assert.equal(Object.keys(f.db.dump()).some(path => path.startsWith('product_requests/')), false);
   f.db.failWrite = null;
@@ -106,7 +123,7 @@ test('failed submission creation has no record or event and recovers once with t
   assert.equal(f.logs().length, 1);
 });
 
-for (const failWrite of ['products/', 'audit_logs/']) test(`atomic catalog outage at ${failWrite} has no false success or replayed mutation`, async () => {
+for (const failWrite of ['products/']) test(`atomic catalog outage at ${failWrite} has no false success or replayed mutation`, async () => {
   const f = fixture(); f.db.failWrite = failWrite;
   const extra = { headers: { 'idempotency-key': 'catalog-operation-0002' } };
   assert.equal((await f.create(extra)).statusCode, 503);
@@ -118,7 +135,7 @@ for (const failWrite of ['products/', 'audit_logs/']) test(`atomic catalog outag
 
 for (const decision of ['approve', 'reject']) test(`failed ${decision} commits neither outcome nor event`, async () => {
   const f = fixture(); const id = (await f.submit()).body.id;
-  f.db.failWrite = 'audit_logs/';
+  f.db.failWrite = 'product_requests/';
   assert.equal((await f.review(id, decision)).statusCode, 503);
   assert.equal(f.db.read(`product_requests/${id}`).status, 'submitted'); assert.equal(f.logs().length, 1);
   assert.equal(f.db.read(`products/submission_${id}`), undefined);
@@ -151,6 +168,76 @@ test('historical records remain unchanged and catalog reads produce no activity 
   const f = fixture({ 'audit_logs/old': historical });
   await f.create(); assert.deepEqual(f.db.read('audit_logs/old'), historical);
   await invoke(f.submissions.list, { token: 'admin' }); assert.equal(f.logs().length, 2);
+});
+
+test('audit outage preserves catalog create/edit/archive/restore/delete and emits safe diagnostics', async t => {
+  const warnings = []; t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const f = fixture(); f.db.failWrite = 'audit_logs/';
+  const extra = { headers: { 'idempotency-key': 'catalog-operation-outage' } };
+  const made = await f.create(extra); assert.equal(made.statusCode, 200);
+  const id = made.body.product.id;
+  assert.equal(f.db.read(`products/${id}`).catalogRevision, 1);
+  assert.equal((await f.create(extra)).body.replayed, true); assert.equal(f.auditAttempts.length, 1);
+  for (const [action, expectedRevision, body] of [['edit', 1, { product: { description: 'Changed' } }],
+    ['archive', 2, {}], ['restore', 3, {}], ['delete', 4, {}]]) {
+    assert.equal((await f.call(action, { ...body, expectedRevision }, { id })).statusCode, 200);
+  }
+  assert.equal(f.db.read(`products/${id}`), undefined);
+  assert.equal(f.logs().length, 0); assert.equal(f.auditAttempts.length, 5); assert.equal(warnings.length, 5);
+  assert.doesNotMatch(JSON.stringify(warnings), /sentinel|password|userId|userEmail|authorization/);
+  assert.ok(warnings.every(([message]) => message === '[Audit] Activity append unavailable'));
+});
+
+test('submission audit outage preserves HTTP 201, committed state and receipt replays', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const f = fixture(); f.db.failWrite = 'audit_logs/';
+  const created = await f.submit(); assert.equal(created.statusCode, 201);
+  assert.equal(f.db.read(`product_requests/${created.body.id}`).status, 'submitted');
+  assert.equal(f.auditAttempts[0].state[`product_requests/${created.body.id}`].status, 'submitted');
+  f.db.failWrite = null;
+  assert.equal((await f.submit()).body.replayed, true);
+  assert.equal(f.auditAttempts.length, 1); assert.equal(f.logs().length, 0);
+});
+
+for (const decision of ['approve', 'reject']) test(`audit outage preserves ${decision} and produces no append on receipt replay`, async t => {
+  t.mock.method(console, 'warn', () => {});
+  const f = fixture(); const id = (await f.submit()).body.id;
+  f.db.failWrite = 'audit_logs/';
+  assert.equal((await f.review(id, decision)).statusCode, 200);
+  const expected = decision === 'approve' ? 'approved' : 'rejected';
+  assert.equal(f.db.read(`product_requests/${id}`).status, expected);
+  assert.equal(f.auditAttempts[1].state[`product_requests/${id}`].status, expected);
+  assert.equal(Boolean(f.db.read(`products/submission_${id}`)), decision === 'approve');
+  f.db.failWrite = null;
+  assert.equal((await f.review(id, decision)).body.replayed, true);
+  assert.equal(f.auditAttempts.length, 2); assert.equal(f.logs().length, 1);
+});
+
+test('synchronous append errors cannot change a committed mutation or expose provider payloads', async t => {
+  const warnings = []; t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const f = fixture(), collection = f.db.collection;
+  f.db.collection = name => name === 'audit_logs' ? { add() { throw Error('credential-secret-sentinel'); } } : collection(name);
+  const made = await f.create(); assert.equal(made.statusCode, 200);
+  assert.ok(f.db.read(`products/${made.body.product.id}`)); assert.equal(warnings.length, 1);
+  assert.doesNotMatch(JSON.stringify(warnings), /credential-secret-sentinel/);
+});
+
+test('CSV audit outage preserves imported/skipped rows and never appends again on receipt replay', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const f = fixture();
+  const row = ['Synthetic CSV', 'Food', 'Grocery', 'CSV-OUTAGE', '1'];
+  const rows = [['name', 'category', 'segment', 'sku', 'price'], row, row];
+  const preview = await f.call('preview', { rows }); assert.equal(preview.statusCode, 200);
+  f.db.failWrite = 'audit_logs/';
+  const body = { previewId: preview.body.previewId, rows: [2, 3] };
+  const first = await f.call('commit', body);
+  assert.deepEqual(first.body.results.map(result => result.status), ['IMPORTED', 'SKIPPED']);
+  assert.ok(f.db.read(`products/${first.body.results[0].productId}`));
+  assert.equal(f.auditAttempts[0].state[`products/${first.body.results[0].productId}`].name, 'Synthetic CSV');
+  f.db.failWrite = null;
+  const replay = await f.call('commit', body);
+  assert.equal(replay.body.results[0].replayed, true);
+  assert.equal(f.auditAttempts.length, 1); assert.equal(f.logs().length, 0);
 });
 
 test('existing key lifecycle writer emits once per operation and already covers persisted Customer scope', async () => {

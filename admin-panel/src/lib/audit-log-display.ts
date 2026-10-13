@@ -44,6 +44,6 @@ export function auditTimestamp(value: unknown): string {
 
 export function auditMatches(log: AuditLogRecord, search: string): boolean {
   const term = search.toLowerCase();
-  return [auditAction(log), auditActor(log), text(log.userId), auditDetails(log)]
+  return [text(log.action), auditAction(log), auditActor(log), text(log.userId), auditDetails(log)]
     .some(value => value.toLowerCase().includes(term));
 }

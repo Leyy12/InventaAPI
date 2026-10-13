@@ -27,6 +27,15 @@ test('legacy uppercase action and explicit details remain compatible', () => {
   assert.equal(display.auditAction(record({ action: 'PAYMENT_TRANSACTION' })), 'Payment Transaction');
   assert.equal(display.auditDetails(record({ details: 'Historical activity description' })), 'Historical activity description');
 });
+test('raw and formatted historical actions both match case-insensitively without altering labels', () => {
+  const log = record({ action: 'PAYMENT_TRANSACTION', userEmail: 'historical@example.test', userId: 'historical-uid' });
+  assert.equal(display.auditAction(log), 'Payment Transaction');
+  for (const search of ['PAYMENT_TRANSACTION', 'payment_transaction', 'PaYmEnT_TrAnSaCtIoN',
+    'Payment Transaction', 'payment transaction', 'PAYMENT TRANSACTION', 'HISTORICAL@EXAMPLE.TEST', 'HISTORICAL-UID']) {
+    assert.equal(display.auditMatches(log, search), true, search);
+  }
+  assert.equal(display.auditMatches(log, 'unrelated_action'), false);
+});
 test('metadata rendering excludes raw credentials, tokens, passwords, bodies and unknown objects', () => {
   const log = record({ action: 'API Request', email: 'actor@example.test', endpoint: '/catalog?apiKey=secret-sentinel', status: 200,
     metadata: { keyId: 'key-123', productId: 'product-123', key: 'credential-sentinel', token: 'token-sentinel',

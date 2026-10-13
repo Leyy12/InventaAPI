@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
-import { prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
+import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
 import { previewCatalogImport } from './catalog-import.js';
 
 export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID, deriveReservationId }) {
@@ -26,7 +26,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     const receiptRef = key ? db.collection('catalog_create_operations').doc(catalogDigest([uid, key])) : null;
     const digest = key ? catalogDigest(req.body.product) : null;
     const productId = action === 'create' ? (key ? `catalog_${catalogDigest([uid, key])}` : makeId()) : req.params?.id;
-    return db.runTransaction(async tx => {
+    const { activity, ...result } = await db.runTransaction(async tx => {
       if (receiptRef) {
         await requireCatalogAdmin(tx, db, uid);
         const receipt = (await tx.get(receiptRef)).data();
@@ -41,8 +41,11 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
         expectedRevision: req.body.expectedRevision, at: now().toISOString(), deriveReservationId });
       prepared.apply();
       if (receiptRef) tx.set(receiptRef, { uid, digest, productId, createdAt: now().toISOString() });
-      return { product: action === 'delete' ? null : prepared.product, deleted: action === 'delete', possibleDuplicates: prepared.possibleDuplicates };
+      return { product: action === 'delete' ? null : prepared.product, deleted: action === 'delete',
+        possibleDuplicates: prepared.possibleDuplicates, activity: prepared.activity };
     });
+    if (activity) await appendActivityAudit(db, activity);
+    return result;
   });
   const preview = wrap(async (req, db, uid) => {
     onlyFields(req.body, ['rows']);
@@ -69,7 +72,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     await db.runTransaction(tx => requireCatalogAdmin(tx, db, uid));
     for (const rowNumber of rows) {
       try {
-        const result = await db.runTransaction(async tx => {
+        const { activity, ...result } = await db.runTransaction(async tx => {
           await requireCatalogAdmin(tx, db, uid);
           const plan = (await tx.get(db.collection('catalog_import_previews').doc(previewId))).data();
           if (!plan || plan.uid !== uid) throw catalogError(403, 'Import preview unavailable to this account.');
@@ -89,8 +92,9 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
           if (prepared.possibleDuplicates.length && !acknowledgePossible) throw catalogError(409, 'Possible duplicates changed; refresh preview and review.');
           const saved = { row: rowNumber, status: 'IMPORTED', productId: prepared.product.id, replayed: false };
           prepared.apply(); tx.set(receiptRef, saved);
-          return saved;
+          return { ...saved, activity: prepared.activity };
         });
+        if (activity) await appendActivityAudit(db, activity);
         results.push(result);
       } catch (error) {
         results.push({ row: rowNumber, status: 'FAILED', reason: Number.isInteger(error.status) ? error.message : 'Write unavailable; retry the same preview and row.' });
