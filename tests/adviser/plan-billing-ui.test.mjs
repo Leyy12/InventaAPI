@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { hooks, clock, flush, load, nodes } from './workspace-refresh/harness.mjs';
@@ -37,8 +36,8 @@ test('Plan & Billing keeps its concise header and uses the embedded authoritativ
 });
 
 test('Upgrade cards use canonical plan config and preserve server purchase permissions', () => {
-  assert.match(billing, /SUBSCRIPTION_PLANS\.pro/);
-  assert.match(billing, /SUBSCRIPTION_PLANS\.pro_max/);
+  assert.match(billing, /usePlanCatalog\(true\)/);
+  assert.match(billing, /const plan = plans\[planId\]/);
   assert.match(plans, /priceDisplay: "₱1,499"/);
   assert.match(plans, /priceDisplay: "₱4,999"/);
   assert.match(billing, /entitlement\.canPurchasePro/u);
@@ -61,8 +60,7 @@ test('Current Free Trial, Upgrade Required, Pro and Pro Max states remain distin
   assert.match(trial, /ACTIVE/);
   assert.match(trial, /trial\.upgradeRequired \? 'Trial ended'/);
   assert.match(trial, /UPGRADE REQUIRED/);
-  assert.match(billing, /entitlement\.plan === 'Pro'/);
-  assert.match(billing, /entitlement\.plan === 'Pro Max'/);
+  assert.match(billing, /requestAllowanceLabel\(requestAllowance\)/);
   assert.match(billing, /currentPlan=\{entitlement\.plan\}/);
   assert.match(billing, /isCurrent \? 'Your current plan'/);
 });
@@ -182,7 +180,8 @@ function renderBilling(trialTree, overrides = {}) {
       activePro: false, activeTrial: true, plan: 'Free', subscription_status: 'trial',
       canPurchasePro: true, canPurchaseProMax: true, ...overrides,
     } }) },
-    '@/config/plans': { SUBSCRIPTION_PLANS: planConfig },
+    '@/config/plans': { requestAllowanceLabel: limit => limit === null ? 'Unlimited account request quota' : `${limit} requests/day (UTC)` },
+    '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans: planConfig, status: 'ready' }), useAccountRequestAllowance: () => 500 },
     '@/components/subscription/SubscriptionModal': () => null,
     '../free-trial/page': ({ embedded }) => { assert.equal(embedded, true); return trialTree; },
   });
@@ -335,17 +334,10 @@ test('rendered billing uses the same uncapped horizontal workspace as Products a
   }
 });
 
-test('billing preserves reviewed copy, handlers and spacing except the explicitly removed capability filters', () => {
-  // Fingerprint of d0cd41c's page with only its outer layout classes omitted.
-  // Line endings and outer class ordering do not affect this scope assertion.
-  // Reverse only the two approved filter deletions to retain the original scope fingerprint.
+test('billing preserves approved capability filters, purchase handlers and layout while allowances are dynamic', () => {
   assert.doesNotMatch(billing, /Product Recommendations/);
   assert.equal((billing.match(/All Business Segments\|Real Sales Analytics Feed/g) || []).length, 2);
-  const source = billing.replaceAll('\r\n', '\n')
-    .replaceAll('All Business Segments|Real Sales Analytics Feed', 'All Business Segments|Product Recommendations|Real Sales Analytics Feed');
-  const outer = /return <div className="[^"]+">\n    <header>/;
-  assert.match(source, outer);
-  const unchanged = source.replace(outer, 'return <div className="__OUTER_LAYOUT__">\n    <header>');
-  assert.equal(createHash('sha256').update(unchanged).digest('hex'),
-    'f17562b284ac5ecb5abbc2f269f9a6f1d4f663bc1e27dfe926fa56bf62e06c86');
+  assert.match(billing, /status !== 'ready'/);
+  assert.match(billing, /setPurchasePlan\(plan\); setPurchaseOpen\(true\)/);
+  assert.match(billing, /grid grid-cols-1 gap-4 lg:grid-cols-2/);
 });

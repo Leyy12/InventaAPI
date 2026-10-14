@@ -1,6 +1,7 @@
 import { authenticatedPayment, requirePayment } from './payment-contract.js';
 import { validDocumentId, usageForToday, freeMonthlyUsage, trialUsage } from './api-key-security.js';
 import { accountBlocked, evaluateEntitlement, trialState } from '../functions/subscription-lifecycle.mjs';
+import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 
 export function createAdminEntitlements({ getDb, verifyIdToken, clock = () => new Date(), monthlyCutoverAt = null }) {
   return authenticatedPayment({ getDb, verifyIdToken }, async (req, res, uid, db) => {
@@ -13,10 +14,12 @@ export function createAdminEntitlements({ getDb, verifyIdToken, clock = () => ne
       const accountDoc = await tx.get(db.collection('users').doc(id));
       const account = accountDoc.data();
       const storedUsage = (await tx.get(db.collection('account_api_usage').doc(id))).data();
+      const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+      const requestContracts = (await tx.get(db.collection('account_request_contracts').doc(id))).data();
       if (accountBlocked(account)) return { plan: 'Disabled', status: 'inactive', limit: 0, used: null, active: false };
       try {
         const now = clock();
-        const effective = evaluateEntitlement(account, now);
+        const effective = evaluateEntitlement(account, now, requestLimits, requestContracts);
         let trial = null, trialQuota = null, trialHistoryUnavailable = false;
         try {
           trial = trialState(account, now);
@@ -28,7 +31,7 @@ export function createAdminEntitlements({ getDb, verifyIdToken, clock = () => ne
           trialHistoryUnavailable = true;
         }
         const monthly = effective.level === 0 ? await tx.get(db.collection('account_free_monthly_usage').doc(id)) : null;
-        const usage = effective.upgradeRequired ? null : effective.activeTrial ? trialQuota : effective.level === 0
+        const usage = effective.upgradeRequired ? null : effective.activeTrial && promisedRequestAllowance(requestContracts, 'free_trial') === null ? trialQuota : effective.level === 0
           ? freeMonthlyUsage(monthly.exists ? monthly.data() : null, accountDoc, now, monthlyCutoverAt)
           : storedUsage ? usageForToday(storedUsage, now) : null;
         return { plan: effective.plan, status: effective.status, limit: effective.limit,

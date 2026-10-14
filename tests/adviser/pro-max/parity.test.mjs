@@ -78,7 +78,7 @@ test('Free, Pro, Pro Max public plans retain truthful inherited capabilities and
   assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('Real Sales Analytics Feed'));
   assert.ok(!JSON.stringify(SUBSCRIPTION_PLANS).match(/\bSLA\b|Custom Endpoints|Priority Support|AI-powered|confidence score/iu));
   assert.match(source('dashboard/src/components/auth/AuthEntry.tsx'), /customerSignupDestination\("pro_max"\)/u);
-  assert.match(source('dashboard/src/components/subscription/SubscriptionModal.tsx'), /JSON\.stringify\(\{ plan: selectedPlan \}\)/u);
+  assert.match(source('dashboard/src/components/subscription/SubscriptionModal.tsx'), /JSON\.stringify\(\{ plan: selectedPlan, requestPolicyVersion \}\)/u);
 });
 
 test('Pro Max has paid multi-segment behavior; Free/Trial remain in authoritative segment', async () => {

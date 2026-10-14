@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Check, ArrowLeft, Loader2, ExternalLink } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
-import { SUBSCRIPTION_PLANS, PlanId, getCumulativeFeatures } from "@/config/plans";
+import { type PlanId, getCumulativeFeatures } from "@/config/plans";
+import { usePlanCatalog } from '@/lib/plan-request-policy';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export default function SubscriptionModal({
   initialError,
 }: SubscriptionModalProps) {
   const { user, entitlement } = useAuth();
+  const { plans: currentPlans, status: planPolicyStatus, requestPolicyVersion } = usePlanCatalog(true);
   const router = useRouter();
 
   // Step 1: Plan selection
@@ -69,6 +71,9 @@ export default function SubscriptionModal({
 
   const handlePaidCheckout = async () => {
     if (selectedPlan !== 'pro' && selectedPlan !== 'pro_max') return;
+    if (planPolicyStatus !== 'ready' || !requestPolicyVersion) {
+      setErrorMessage('The current request allowance is unavailable. Refresh the plan details before purchasing.'); setStep(3); return;
+    }
     if (!user?.uid) {
       setErrorMessage("You are not logged in. Please log in before subscribing.");
       setStep(3);
@@ -82,7 +87,7 @@ export default function SubscriptionModal({
       const response = await fetch(`${API_BASE}/api/v1/checkout/create-gcash`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ plan: selectedPlan }),
+        body: JSON.stringify({ plan: selectedPlan, requestPolicyVersion }),
         cache: "no-store",
       });
 
@@ -192,9 +197,9 @@ export default function SubscriptionModal({
               }
 
               // Normal Plan Selection UI
-              const plan = SUBSCRIPTION_PLANS[selectedPlan];
+              const plan = currentPlans[selectedPlan];
               const Icon = plan.icon;
-              const cumulativeFeatures = getCumulativeFeatures(selectedPlan);
+              const cumulativeFeatures = getCumulativeFeatures(selectedPlan, currentPlans);
 
               return (
                 <>

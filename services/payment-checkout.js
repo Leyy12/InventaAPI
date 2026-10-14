@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { checkoutPayload, samePaymentMethods, savedPaymentMethods } from './paymongo-checkout.js';
 import { evaluateEntitlement, planKind } from '../functions/subscription-lifecycle.mjs';
+import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, requestPolicyVersion, purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
 import { purchaseForIntent, settlementForPurchase, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -26,7 +27,8 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
     const purchase = purchaseForIntent(body.plan === undefined ? 'pro' : body.plan);
     requirePayment(purchase, 'UNSUPPORTED_PLAN', 'Unsupported purchase plan.', 400);
     requirePayment(!['planId', 'purchaseId', 'planName', 'discount', 'discountAmount', 'billingProfile', 'listAmount',
-      'globalTestBilling', 'globalTestAmountCentavos', 'expectedAmount', 'settlementAmount'].some(field => Object.hasOwn(body, field)),
+      'globalTestBilling', 'globalTestAmountCentavos', 'expectedAmount', 'settlementAmount', 'requestAllowance',
+      'requestAllowanceContracts', 'planRequestLimits'].some(field => Object.hasOwn(body, field)),
       'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     for (const field of ['amount', 'currency', 'durationDays', 'apiRequestLimit']) {
       requirePayment(body[field] === undefined || body[field] === purchase[field], 'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
@@ -38,8 +40,10 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
     requirePayment(orderIdValid(id), 'ORDER_ID', 'Checkout unavailable.', 503);
     const lockRef = refFor(db, 'locks', uid);
     const desiredMethods = checkoutPayload({ id, ...settlement, mode: config.mode }, config.dashboardUrl).data.attributes.payment_method_types;
+    let acceptedRequestAllowance;
     const makeOrder = (orderId, now) => {
       const order = { id: orderId, userId: uid, ...settlement, mode: config.mode, createdAt: now.toISOString(), state: 'creating',
+        requestAllowance: acceptedRequestAllowance,
         idempotencyKey: `checkout-${config.mode}-${orderId}`, providerKeyFingerprint: keyFingerprint(config.secretKey),
         attemptId, retryAfter: new Date(now.getTime() + LEASE_MS).toISOString() };
       order.providerRequestBody = JSON.stringify(checkoutPayload(order, config.dashboardUrl));
@@ -50,6 +54,15 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       const account = (await tx.get(db.collection('users').doc(uid))).data();
       requireCustomer(account, uid);
       requirePurchasable(account, now, purchase);
+      const limits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+      const contracts = (await tx.get(db.collection('account_request_contracts').doc(uid))).data();
+      const policyVersion = requestPolicyVersion(limits);
+      requirePayment(body.requestPolicyVersion === policyVersion || body.requestPolicyVersion === undefined
+        && policyVersion === requestPolicyVersion(DEFAULT_REQUEST_LIMITS), 'REQUEST_POLICY_CHANGED',
+      'Plan request terms changed. Refresh the plan details before starting checkout.', 409);
+      acceptedRequestAllowance = { planId: purchase.planId,
+        limit: purchaseRequestContracts(account, contracts, purchase.planId, limits[purchase.planId]).plans[purchase.planId].limit,
+        period: 'utc_daily', policyVersion };
       const lock = (await tx.get(lockRef)).data();
       if (lock) {
         requirePayment(orderIdValid(lock.orderId), 'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
@@ -60,6 +73,8 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
           && (previous.state === 'processed' || previous.mode === config.mode
             && (previous.planId ?? 'pro') === purchase.planId),
           'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
+        if (previous.state !== 'processed') requirePayment((previous.requestAllowance?.limit ?? DEFAULT_REQUEST_LIMITS[purchase.planId]) === acceptedRequestAllowance.limit,
+          'PENDING_ORDER_TERMS', 'Your existing checkout retains its original request terms. Complete or resolve that checkout before starting a new purchase.', 409);
         if (previous.state === 'pending') {
           const binding = (await tx.get(refFor(db, 'sessions', modeKey(previous.mode, previous.sessionId)))).data();
           requirePayment(binding?.orderId === previous.id && binding.userId === uid
@@ -212,7 +227,9 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       const userRef = db.collection('users').doc(uid);
       const account = (await tx.get(userRef)).data();
       requireCustomer(account, uid);
-      const effective = evaluateEntitlement(account, now);
+      const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+      const requestContracts = (await tx.get(db.collection('account_request_contracts').doc(uid))).data();
+      const effective = evaluateEntitlement(account, now, requestLimits, requestContracts);
       let paymentConfirmed = false;
       if (orderId !== undefined) {
         const order = (await tx.get(refFor(db, 'orders', orderId))).data();
@@ -226,7 +243,11 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       // Read-only projection. Quota/management and optional scheduler normalize.
       return { plan: effective.plan, subscription_status: effective.status, activePro: effective.activePro,
         activeTrial: effective.activeTrial === true,
-        apiRequestLimit: effective.limit, subscriptionStartedAt: effective.startedAt,
+        apiRequestLimit: effective.limit, requestAllowancePeriod: 'utc_daily',
+        requestPolicyVersion: requestPolicyVersion(requestLimits),
+        purchaseRequestLimits: { pro: purchaseRequestContracts(account, requestContracts, 'pro', requestLimits.pro).plans.pro.limit,
+          pro_max: purchaseRequestContracts(account, requestContracts, 'pro_max', requestLimits.pro_max).plans.pro_max.limit },
+        subscriptionStartedAt: effective.startedAt,
         subscriptionExpiresAt: effective.expiresAt, lastSubscribedAt: account.lastSubscribedAt || null,
         expired: effective.expired, ...(effective.expired ? { expiredAt: effective.expiresAt } : {}), paymentConfirmed,
         canPurchasePro: effective.level < 2 && planKind(account.plan) !== 'pro_max',

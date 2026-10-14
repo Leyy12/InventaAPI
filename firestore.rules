@@ -57,6 +57,13 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.lower() == 'admin';
     }
 
+    // Server-controlled settings gate completed Customer registration. Firebase
+    // Auth identity creation alone never grants an InventaAPI Customer profile.
+    function registrationsAllowed() {
+      return !exists(/databases/$(database)/documents/system/settings)
+        || get(/databases/$(database)/documents/system/settings).data.get('allowNewRegistrations', true) == true;
+    }
+
     // ───────────────────────────────────────────────────────────────────────
     // USERS COLLECTION
     // ───────────────────────────────────────────────────────────────────────
@@ -69,6 +76,7 @@ service cloud.firestore {
       // Prevents privilege escalation at registration.
       // No bootstrap-via-email branch exists here.
       allow create: if isAuthenticated()
+                    && registrationsAllowed()
                     && request.auth.uid == userId
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.role == 'Developer'
@@ -191,6 +199,9 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create, update, delete: if false;
     }
+
+    // Server-saved purchase/activation promises; never trust customer profile fields.
+    match /account_request_contracts/{userId} { allow read, write: if false; }
 
     // ───────────────────────────────────────────────────────────────────────
     // TRANSACTIONS COLLECTION
@@ -318,7 +329,10 @@ service cloud.firestore {
     // Only admins can read or write.
 
     match /system/{docId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      // Settings must use the backend's role check, validation, concurrency
+      // precondition and post-commit audit. Preserve other system documents.
+      allow write: if docId != 'settings' && isAdmin();
     }
 
     // ───────────────────────────────────────────────────────────────────────

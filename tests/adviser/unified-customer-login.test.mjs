@@ -4,6 +4,7 @@ import * as navigation from '../../services/auth-navigation.ts';
 import { hooks, load, nodes, clock, browser, flush } from './workspace-refresh/harness.mjs';
 import { PRODUCT_SEGMENTS, normalizeSegment } from '../../services/product-contract.js';
 import { loginSegmentAllowed } from '../../services/customer-segment.js';
+import { completeCustomerSignup } from '../../services/customer-registration.mjs';
 
 // Real components/handlers, synthetic SDK only. The loader forbids external I/O.
 const icons = new Proxy({}, { get: (_, name) => String(name) });
@@ -34,6 +35,7 @@ function signup(query = '', failure = '') {
       useSearchParams: () => new URLSearchParams(query) },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,
+    '../../../../services/customer-registration.mjs': { completeCustomerSignup, readRegistrationPolicy: async () => true },
   }, { console: silent });
   h.mount(component);
   return { h, events, routes, profiles, async submit() {
@@ -67,6 +69,7 @@ function landing(query = '') {
     '@/components/auth/LoginForm': 'LoginForm', '@/components/auth/SessionLoadingScreen': 'Loading',
     '@/components/subscription/SubscriptionModal': 'SubscriptionModal',
     '@/lib/firebase/auth-context': { useAuth: () => authState }, '@/config/plans': { SUBSCRIPTION_PLANS: plans },
+    '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans, status: 'ready' }) },
     '../../../../services/auth-navigation': navigation,
   }, { window: b.window, setTimeout: time.schedule, clearTimeout: time.cancel, console: silent });
   h.mount(component);
@@ -131,7 +134,7 @@ for (const intent of ['', 'free', 'pro', 'pro_max', 'https://evil.example']) {
 for (const failure of ['profile', 'signout']) test(`signup ${failure} failure cannot claim successful handoff`, async () => {
   const fixture = signup('', failure); await fixture.submit();
   assert.equal(fixture.routes.length, 0);
-  assert.match(text(fixture.h.output), /synthetic .* failure/);
+  assert.match(text(fixture.h.output), failure === 'signout' ? /session could not be closed/ : /Account setup could not be verified/);
   fixture.h.stop();
 });
 test('signup footer preserves paid intent in the inline landing entry', () => {

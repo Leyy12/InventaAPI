@@ -146,30 +146,49 @@ export const SUBSCRIPTION_PLANS = {
 } as const;
 
 export type PlanId = keyof typeof SUBSCRIPTION_PLANS;
+export type PlanRequestLimits = { free_trial: number | null; pro: number; pro_max: number | null };
+export function requestAllowanceLabel(limit: number | null | undefined, trial = false): string {
+  if (limit === undefined) return 'Request allowance unavailable';
+  if (limit === null) return trial ? 'Unlimited requests during the active 7-day Trial' : 'Unlimited account request quota';
+  return `${limit.toLocaleString()} requests/day (UTC)`;
+}
+// Static metadata above contains accepted baseline descriptions, never a runtime
+// fallback. Mounted cards use the verified API policy or explicitly unavailable text.
+export function plansForRequestLimits(limits: PlanRequestLimits | null) {
+  return {
+    free: { ...SUBSCRIPTION_PLANS.free, requestLimit: limits?.free_trial,
+      requestLimitDisplay: requestAllowanceLabel(limits?.free_trial, true),
+      features: [...SUBSCRIPTION_PLANS.free.features, requestAllowanceLabel(limits?.free_trial, true)] },
+    pro: { ...SUBSCRIPTION_PLANS.pro, requestLimit: limits?.pro, requestLimitDisplay: requestAllowanceLabel(limits?.pro),
+      incrementalFeatures: SUBSCRIPTION_PLANS.pro.incrementalFeatures.map(feature => /^\d+ requests per day$/u.test(feature) ? requestAllowanceLabel(limits?.pro) : feature) },
+    pro_max: { ...SUBSCRIPTION_PLANS.pro_max, requestLimit: limits?.pro_max, requestLimitDisplay: requestAllowanceLabel(limits?.pro_max),
+      incrementalFeatures: SUBSCRIPTION_PLANS.pro_max.incrementalFeatures.map(feature => feature === 'Unlimited account API quota*' ? requestAllowanceLabel(limits?.pro_max) : feature) },
+  };
+}
 
 /**
  * Helper to get cumulative features for progressive display format
  * Returns features formatted as "Everything in X, and: [features]"
  */
-export function getCumulativeFeatures(planId: PlanId): { header: string | null; features: readonly string[] } {
+export function getCumulativeFeatures(planId: PlanId, plans: ReturnType<typeof plansForRequestLimits> | typeof SUBSCRIPTION_PLANS = SUBSCRIPTION_PLANS): { header: string | null; features: readonly string[] } {
   if (planId === "free") {
     return {
       header: null,
-      features: SUBSCRIPTION_PLANS.free.features
+      features: plans.free.features
     };
   }
   
   if (planId === "pro") {
     return {
       header: "Everything in Free Trial, and:",
-      features: SUBSCRIPTION_PLANS.pro.incrementalFeatures
+      features: plans.pro.incrementalFeatures
     };
   }
   
   if (planId === "pro_max") {
     return {
       header: "Everything in Pro, and:",
-      features: SUBSCRIPTION_PLANS.pro_max.incrementalFeatures
+      features: plans.pro_max.incrementalFeatures
     };
   }
   

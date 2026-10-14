@@ -1,4 +1,4 @@
-import { PRO_DAILY_REQUEST_LIMIT } from './entitlement-limits.mjs';
+import { DEFAULT_REQUEST_LIMITS, effectiveRequestAllowance } from './request-limit-policy.mjs';
 export { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from './entitlement-limits.mjs';
 
 // Shared by Express and the existing deployable Functions package. No SDK/I/O.
@@ -69,7 +69,7 @@ export function trialState(account, now = new Date()) {
   return { used: true, active: eligiblePlan && account.trialConsumed !== true && !exhausted && now.getTime() < end, exhausted, expired: now.getTime() >= end,
     startedAt: new Date(start).toISOString(), expiresAt: new Date(end).toISOString() };
 }
-export function evaluateEntitlement(account, now = new Date()) {
+export function evaluateEntitlement(account, now = new Date(), requestLimits = DEFAULT_REQUEST_LIMITS, requestContracts) {
   if (accountBlocked(account)) unavailable('ACCOUNT_DISABLED', 403);
   if (!Number.isFinite(now.getTime())) unavailable();
   const kind = planKind(account.plan);
@@ -77,7 +77,7 @@ export function evaluateEntitlement(account, now = new Date()) {
   const level = kind === 'free' ? 0 : kind === 'pro' ? 1 : 2;
   if (level === 0) {
     const trial = trialState(account, now);
-    if (trial.active) return { plan: 'Free Trial', level: 1, limit: null, status: 'trial', activePro: false,
+    if (trial.active) return { plan: 'Free Trial', level: 1, limit: effectiveRequestAllowance(requestContracts, 'free_trial', requestLimits), status: 'trial', activePro: false,
       activeTrial: true, expired: false, expiresAt: trial.expiresAt, startedAt: trial.startedAt, normalization: null };
     // A never-started account has no protected allowance until server session
     // establishment initializes its one-time Trial. Legacy monthly keys cannot bypass it.
@@ -99,7 +99,7 @@ export function evaluateEntitlement(account, now = new Date()) {
         normalization: { ...FREE_ENTITLEMENT } });
     }
     return { plan: kind === 'pro_max' ? 'Pro Max' : 'Pro', level,
-      limit: kind === 'pro_max' ? null : PRO_DAILY_REQUEST_LIMIT,
+      limit: effectiveRequestAllowance(requestContracts, kind, requestLimits),
       status: 'active', activePro, expired, expiresAt, startedAt, normalization: null };
   }
   const limit = account.apiRequestLimit;

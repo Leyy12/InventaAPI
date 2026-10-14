@@ -174,6 +174,7 @@ test('timestamp-only verification cannot remount the actual Customer Usage bound
     '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 }, '@/lib/trial-display.mjs': {},
     'next/link': { default: stub }, '@/lib/api-keys': {}, '@/lib/firebase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement }) },
     '@/lib/reports': reporting, '@/lib/quota-refresh': {}, '@/lib/account-usage-events': {},
+    '@/config/plans': {}, '@/lib/plan-request-policy': { useAccountRequestAllowance: () => entitlement.apiRequestLimit },
   });
   h.mount(Component); const first = nodes(h.output, node => typeof node.type === 'function' && node.key)[0].key;
   entitlement = { ...entitlement, serverTime: 'later' }; h.render();
@@ -190,6 +191,8 @@ test('Customer actual API Keys list preserves expanded integration examples acro
     '@/lib/api-key-generation': { REVOCATION_WARNING: '' },
     '@/components/reports/CustomerUsageSummary': { default: stub }, '@/components/api/RequestHistory': { default: stub },
     '@/components/shared/CodeSnippet': { default: stub },
+    '@/config/plans': { requestAllowanceLabel: () => '1,000 requests/day (UTC)' },
+    '@/lib/plan-request-policy': { useAccountRequestAllowance: () => 1000 },
   }, b);
   h.mount(Component, { user, entitlementStatus: 'active' }); await flush(); assert.equal(reads, 1);
   nodes(h.output, node => node.type === 'button' && node.props.className?.includes('mt-4 w-full'))[0].props.onClick(); await flush();

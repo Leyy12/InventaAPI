@@ -8,7 +8,8 @@ import LoginForm from "@/components/auth/LoginForm";
 import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import { useAuth } from "@/lib/firebase/auth-context";
-import { SUBSCRIPTION_PLANS, PlanId } from "@/config/plans";
+import type { PlanId } from "@/config/plans";
+import { usePlanCatalog } from '@/lib/plan-request-policy';
 import { consumePostLogoutLoginEntry, customerSignupDestination, navigationDecision, profileRole } from '../../../../services/auth-navigation';
 
 const purchaseBlocked = (plan: PlanId, entitlement: ReturnType<typeof useAuth>['entitlement']) => {
@@ -19,6 +20,7 @@ const purchaseBlocked = (plan: PlanId, entitlement: ReturnType<typeof useAuth>['
 };
 
 export default function AuthEntry() {
+  const { plans: SUBSCRIPTION_PLANS, status: planPolicyStatus } = usePlanCatalog();
   const { user, appUser, loading, authStatus, entitlement } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -378,7 +380,7 @@ export default function AuthEntry() {
               </div>
 
               <button
-                onClick={() => router.push(customerSignupDestination("free"))}
+                disabled={planPolicyStatus !== 'ready'} onClick={() => router.push(customerSignupDestination("free"))}
                 className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
                 {SUBSCRIPTION_PLANS.free.ctaText} →
               </button>
@@ -419,7 +421,7 @@ export default function AuthEntry() {
               </div>
 
               <button
-                onClick={() => router.push(customerSignupDestination("pro"))}
+                disabled={planPolicyStatus !== 'ready'} onClick={() => router.push(customerSignupDestination("pro"))}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25">
                 {SUBSCRIPTION_PLANS.pro.ctaText} →
               </button>
@@ -447,11 +449,11 @@ export default function AuthEntry() {
               </div>
 
               <button
-                onClick={() => router.push(customerSignupDestination("pro_max"))}
+                disabled={planPolicyStatus !== 'ready'} onClick={() => router.push(customerSignupDestination("pro_max"))}
                 className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
                 {SUBSCRIPTION_PLANS.pro_max.ctaText} →
               </button>
-              <p className="mt-4 text-xs text-slate-500">*Unlimited account quota. Standard security, abuse-prevention, and rate limits still apply.</p>
+              <p className="mt-4 text-xs text-slate-500">Standard security, abuse-prevention, and IP rate limits apply to every plan.</p>
             </div>
           </div>
         </div>

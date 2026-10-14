@@ -4,6 +4,7 @@ import {
 } from './api-key-security.js';
 import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
+import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
   // Only deployment configuration and Firestore snapshot metadata qualify.
@@ -27,6 +28,8 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     const keyDoc = await transaction.get(keyRef);
     const userDoc = await transaction.get(userRef);
     const usageDoc = await transaction.get(usageRef);
+    const requestLimits = requestLimitPolicy((await transaction.get(db.collection('system').doc('settings'))).data());
+    const requestContracts = (await transaction.get(db.collection('account_request_contracts').doc(userId))).data();
     const now = clock();
     const key = keyDoc.exists ? keyDoc.data() : null;
     assertActiveKey(key, now);
@@ -35,7 +38,7 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     }
     if (!userDoc.exists) throw new ApiSecurityError(401, 'ACCOUNT_NOT_FOUND', 'API-key account no longer exists.');
     const account = userDoc.data();
-    const entitlement = accountEntitlement(account, now);
+    const entitlement = accountEntitlement(account, now, requestLimits, requestContracts);
     const trialKeys = entitlement.activeTrial
       ? await transaction.get(db.collection('api_keys').where('userId', '==', userId)) : null;
     const legacyHistory = entitlement.activeTrial && !Object.hasOwn(account, 'trialConsumed')
@@ -63,15 +66,18 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       // Zero products is also a valid Trial catalog (no product data authorized).
       // Calls do not consume products or change Trial history/expiry. Historical
       // request counters remain audit evidence, never an access allowance.
-      transaction.update(keyRef, { lastUsed: now.toISOString() });
-      return { key: { ...key, id: keyId }, account: effectiveAccount,
-        usage: { used: null, limit: null, remaining: null, period: 'trial_catalog', scope: 'account',
-          resetsAt: entitlement.expiresAt, productsIncluded: products, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS } };
+      if (promisedRequestAllowance(requestContracts, 'free_trial') === null) {
+        transaction.update(keyRef, { lastUsed: now.toISOString() });
+        return { key: { ...key, id: keyId }, account: effectiveAccount,
+          usage: { used: null, limit: null, remaining: null, period: 'trial_catalog', scope: 'account',
+            resetsAt: entitlement.expiresAt, productsIncluded: products, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS } };
+      }
+      if (!usageDoc.exists) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Daily Trial request usage requires verification.');
     }
-    // Trial admission has no request allowance. Paid daily quota
-    // and its existing clean-window cutover semantics are unchanged.
+    // Finite Trial promises share the existing UTC daily accounting path.
+    // Paid quota retains its established clean-window cutover semantics.
     const usage = usageForToday(usageDoc.exists ? usageDoc.data() : null, now);
-    if (!usageDoc.exists && !provablyPostCutover(userDoc, cutoverAt, now)) {
+    if (!entitlement.activeTrial && !usageDoc.exists && !provablyPostCutover(userDoc, cutoverAt, now)) {
       transaction.set(usageRef, { ...usage, holdUntil: usage.resetsAt, updatedAt: now.toISOString() });
       return { pendingCleanWindow: usage.resetsAt };
     }

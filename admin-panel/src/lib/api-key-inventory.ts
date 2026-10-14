@@ -43,7 +43,7 @@ export function inventoryUsage(account: AccountEntitlement | undefined, products
       note: `${Math.max(0, TRIAL_MAX_PRODUCTS - products)} slots remaining`, percent: Math.min(100, products / TRIAL_MAX_PRODUCTS * 100) };
   }
   const used = account?.period === 'daily' && count(account.used) ? account.used : null;
-  if (plan === 'Pro Max') return used === null
+  if (plan === 'Pro Max' && account?.limit === null) return used === null
     ? { label: 'Requests Today (UTC)', value: 'Unlimited requests', note: 'Daily usage unavailable' }
     : { label: 'Requests Today (UTC)', value: `${used} used · Unlimited`, note: 'No daily request limit' };
   if (used === null || !count(account?.limit) || account.limit === 0) return { label: 'Requests Today (UTC)', value: 'Usage unavailable' };

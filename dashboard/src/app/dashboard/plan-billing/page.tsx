@@ -4,7 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Check, CreditCard } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { SUBSCRIPTION_PLANS } from '@/config/plans';
+import { requestAllowanceLabel } from '@/config/plans';
+import { usePlanCatalog, useAccountRequestAllowance } from '@/lib/plan-request-policy';
 import SubscriptionModal from '@/components/subscription/SubscriptionModal';
 import FreeTrialPage from '../free-trial/page';
 
@@ -16,17 +17,16 @@ function PlanCard({ planId, currentPlan, canPurchase, onChoose }: {
   canPurchase: boolean;
   onChoose: (plan: PaidPlanId) => void;
 }) {
-  const plan = SUBSCRIPTION_PLANS[planId];
+  const { plans, status } = usePlanCatalog(true);
+  const plan = plans[planId];
   const isCurrent = currentPlan === plan.name;
-  const benefits = plan.incrementalFeatures.filter(feature => {
-    if (planId === 'pro') return /requests per day|All Business Segments|Real Sales Analytics Feed|Multiple API Keys/.test(feature);
-    return /Unlimited account API quota|All Business Segments|Real Sales Analytics Feed|Multiple API Keys|API Playground/.test(feature);
+  const benefits = [plan.requestLimitDisplay, ...plan.incrementalFeatures.filter(feature => {
+    if (planId === 'pro') return /All Business Segments|Real Sales Analytics Feed|Multiple API Keys/.test(feature);
+    return /All Business Segments|Real Sales Analytics Feed|Multiple API Keys|API Playground/.test(feature);
   }).map(feature => {
-    if (/^\d+ requests per day$/.test(feature)) return `${plan.requestLimitDisplay.replace(' requests/day', '')} API requests/day`;
-    if (feature === 'Unlimited account API quota*') return plan.requestLimitDisplay.replace(/\*$/, '');
     if (feature === 'Real Sales Analytics Feed') return 'Sales Analytics';
     return feature;
-  });
+  })];
 
   return <article className={`flex h-full flex-col rounded-2xl border bg-[#0d1526] p-5 sm:p-6 ${
     isCurrent ? 'border-emerald-500/40 shadow-lg shadow-emerald-950/20' : planId === 'pro'
@@ -51,7 +51,7 @@ function PlanCard({ planId, currentPlan, canPurchase, onChoose }: {
     </ul>
     {planId === 'pro_max' && <p className="mt-4 text-xs leading-5 text-slate-500">Standard security, abuse protection, and IP rate limits still apply.</p>}
     <div className="mt-7">
-      {canPurchase ? <button type="button" onClick={() => onChoose(planId)}
+      {canPurchase ? <button type="button" disabled={status !== 'ready'} onClick={() => onChoose(planId)}
         className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1526] ${
           planId === 'pro' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-sky-600 hover:bg-sky-500'
         }`}>
@@ -64,6 +64,7 @@ function PlanCard({ planId, currentPlan, canPurchase, onChoose }: {
 }
 
 export default function PlanBillingPage() {
+  const requestAllowance = useAccountRequestAllowance();
   const { entitlement, loading } = useAuth();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchasePlan, setPurchasePlan] = useState<PaidPlanId>('pro');
@@ -99,16 +100,14 @@ export default function PlanBillingPage() {
         {entitlement.subscriptionExpiresAt && <p className="text-sm text-slate-300">
           Subscription ends <time dateTime={entitlement.subscriptionExpiresAt}>{new Date(entitlement.subscriptionExpiresAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</time>
         </p>}
-        <p className="text-sm text-slate-400">{entitlement.plan === 'Pro'
-          ? SUBSCRIPTION_PLANS.pro.requestLimitDisplay
-          : entitlement.plan === 'Pro Max' ? `${SUBSCRIPTION_PLANS.pro_max.requestLimitDisplay.replace(/\*$/, '')}. Standard security, abuse protection, and IP rate limits still apply.`
-            : 'Your paid account allowance follows its active entitlement.'}</p>
+        <p className="text-sm text-slate-400">{requestAllowanceLabel(requestAllowance)}. Standard security, abuse protection, and IP rate limits still apply.</p>
       </div>}
       {upgradeRequired && <p className="mt-5 border-t border-slate-700/70 pt-5 text-sm leading-6 text-amber-100/90">
         Your one-time Trial has ended. Upgrade to Pro or Pro Max to restore protected API access. Your account and existing API keys remain available.
       </p>}
       {!paid && !upgradeRequired && <p className="mt-5 border-t border-slate-700/70 pt-5 text-sm text-slate-300">Plan details are being verified. Please refresh in a moment.</p>}
     </section>}
+    {trial && <p className="text-sm text-slate-300">Current Trial request allowance: {requestAllowanceLabel(requestAllowance, true)}.</p>}
 
     <section aria-label="Manage API keys" className="flex flex-col gap-3 rounded-2xl border border-slate-700/70 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <div><h2 className="text-sm font-semibold text-white">API key management</h2><p className="mt-1 text-sm text-slate-400">View and manage your existing keys.</p></div>

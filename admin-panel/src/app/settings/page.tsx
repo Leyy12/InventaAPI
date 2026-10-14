@@ -1,194 +1,216 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Settings, Save, Server, Shield } from "lucide-react";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { Settings, Save, Server, Shield } from 'lucide-react';
+import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+
+type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
+type Configuration = { maintenanceMode: boolean; allowNewRegistrations: boolean; planRequestLimits: PlanLimits };
+type Snapshot = { settings: Configuration; version: string; source: 'stored' | 'defaults'; warnings: string[]; planLimitPeriod: string };
+type Information = { apiVersion: string | null; databaseStatus: 'Connected' | 'Unavailable' | 'Not configured'; checkedAt: string; uptime: string };
+type Phase = 'loading' | 'ready' | 'missing' | 'unauthorized' | 'unavailable' | 'conflict';
+const initial: Configuration = { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null } };
+const editableFields = ['maintenanceMode', 'allowNewRegistrations'] as const;
+const planFields = ['free_trial', 'pro', 'pro_max'] as const;
+const planLabels = { free_trial: 'Free Trial', pro: 'Pro', pro_max: 'Pro Max' };
+const apiOrigin = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5002' : '');
+const deployment = process.env.NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT;
+const environment = ['Production', 'Staging', 'Development'].includes(deployment || '') ? deployment : 'Unknown';
+const controlClass = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50';
+const quickClass = 'w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700 disabled:opacity-50';
+
+function verifiedSnapshot(body: Snapshot & { success?: boolean }): Snapshot {
+  if (body.success !== true || !body.settings || typeof body.version !== 'string'
+    || typeof body.settings.maintenanceMode !== 'boolean' || typeof body.settings.allowNewRegistrations !== 'boolean'
+    || !body.settings.planRequestLimits || !planFields.every(plan => { const limit = body.settings.planRequestLimits[plan];
+      return Number.isSafeInteger(limit) && (limit as number) > 0 || plan !== 'pro' && limit === null; })
+    || !['stored', 'defaults'].includes(body.source) || !Array.isArray(body.warnings)) throw new Error('Invalid settings response');
+  return body;
+}
 
 export default function SettingsPage() {
-  const [loading, setLoading] = useState(true);
+  const { user } = useAdminAuth();
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [draft, setDraft] = useState<Configuration>(initial);
+  const [phase, setPhase] = useState<Phase>('loading');
   const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState({
-    maintenanceMode: false,
-    strictApiValidation: true,
-    maxRequestsPerMinute: 60,
-    allowNewRegistrations: true
-  });
-  const [message, setMessage] = useState("");
+  const [information, setInformation] = useState<Information | null>(null);
+  const [message, setMessage] = useState('');
+  const [health, setHealth] = useState('Not checked');
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const generation = useRef(0);
+  const ready = phase === 'ready' || phase === 'missing';
+  const dirty = !!snapshot && (editableFields.some(field => draft[field] !== snapshot.settings[field])
+    || planFields.some(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]));
+  const changePlan = (plan: keyof PlanLimits, limit: number | null) => setDraft(current => ({ ...current, planRequestLimits: { ...current.planRequestLimits, [plan]: limit } }));
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
+  const request = useCallback(async (path: string, method = 'GET', body?: unknown) => {
+    if (!user) throw Object.assign(new Error('Admin session required'), { status: 401 });
+    const token = await user.getIdToken();
+    const response = await fetch(`/api/v1/admin/system/${path}`, { method, cache: 'no-store',
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
+    const payload = await response.json();
+    if (!response.ok) throw Object.assign(new Error(payload.error || 'System settings unavailable'), { status: response.status });
+    return payload;
+  }, [user]);
 
-  const fetchSettings = async () => {
-    setLoading(true);
+  const load = useCallback(async () => {
+    const current = ++generation.current;
+    setPhase('loading'); setSaving(false); setMessage('');
+    const [configuration, info] = await Promise.allSettled([request('settings'), request('information')]);
+    if (current !== generation.current) return;
+    if (info.status === 'fulfilled' && info.value.success === true) setInformation(info.value);
+    else setInformation(null);
     try {
-      const docSnap = await getDoc(doc(db, "system", "settings"));
-      if (docSnap.exists()) {
-        setSettings({ ...settings, ...docSnap.data() });
+      if (configuration.status === 'rejected') throw configuration.reason;
+      const loaded = verifiedSnapshot(configuration.value);
+      setSnapshot(loaded); setDraft(loaded.settings); setPhase(loaded.source === 'defaults' ? 'missing' : 'ready');
+    } catch (error) {
+      setSnapshot(null);
+      const status = (error as { status?: number }).status;
+      setPhase(status === 401 || status === 403 ? 'unauthorized' : 'unavailable');
+      setMessage(status === 401 || status === 403 ? 'An active Admin session is required to manage settings.'
+        : 'Settings could not be loaded. Refresh Settings before editing.');
+    }
+  }, [request]);
+  useEffect(() => {
+    let active = true;
+    const requestCounter = generation;
+    void Promise.resolve().then(() => { if (active) return load(); });
+    return () => { active = false; requestCounter.current++; };
+  }, [load]);
+  useEffect(() => { if (confirmMaintenance) dialog.current?.showModal(); else dialog.current?.close(); }, [confirmMaintenance]);
+
+  const save = async () => {
+    setConfirmMaintenance(false);
+    if (!snapshot || !ready || !dirty || saving) return;
+    setSaving(true); setMessage('');
+    const current = generation.current;
+    try {
+      const changes: Record<string, unknown> = Object.fromEntries(editableFields.filter(field => draft[field] !== snapshot.settings[field]).map(field => [field, draft[field]]));
+      const changedPlans = planFields.filter(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]);
+      if (changedPlans.length) changes.planRequestLimits = Object.fromEntries(changedPlans.map(plan => [plan, draft.planRequestLimits[plan]]));
+      const payload = await request('settings', 'PATCH', { version: snapshot.version, changes });
+      if (current !== generation.current) return;
+      if (payload.success !== true || payload.saved !== true) throw new Error('Save outcome unverified');
+      if (payload.reloadRequired) {
+        setSnapshot(null); setPhase('unavailable'); setMessage('Settings were saved, but the reload is unavailable. Refresh Settings before editing again.');
+      } else {
+        const loaded = verifiedSnapshot(payload);
+        setSnapshot(loaded); setDraft(loaded.settings); setPhase('ready'); setMessage('Settings saved and reloaded successfully.');
       }
     } catch (error) {
-      console.error("Error fetching settings:", error);
-    } finally {
-      setLoading(false);
-    }
+      if (current !== generation.current) return;
+      const status = (error as { status?: number }).status;
+      if (status === 409) { setPhase('conflict'); setMessage('Another Admin changed settings. Refresh Settings and review your changes.'); }
+      else if (status === 400) setMessage('Check your values. Each finite plan allowance must be a positive whole number. Pro requires a finite daily allowance.');
+      else {
+        setPhase(status === 401 || status === 403 ? 'unauthorized' : 'unavailable');
+        setMessage(status === 401 || status === 403 ? 'Admin authorization is unavailable. Settings were not accepted.'
+          : 'The save outcome could not be verified. Refresh Settings before trying again.');
+      }
+    } finally { if (current === generation.current) setSaving(false); }
   };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage("");
+  const handleSave = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!ready || !dirty || saving) return;
+    if (draft.maintenanceMode && !snapshot?.settings.maintenanceMode) setConfirmMaintenance(true);
+    else void save();
+  };
+  const checkHealth = async () => {
+    setCheckingHealth(true);
     try {
-      await setDoc(doc(db, "system", "settings"), {
-        ...settings,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      setMessage("Settings saved successfully.");
-      setTimeout(() => setMessage(""), 3000);
-    } catch (error) {
-      console.error("Error saving settings:", error);
-      setMessage("Error saving settings.");
-    } finally {
-      setSaving(false);
-    }
+      if (!apiOrigin) { setHealth('API endpoint not configured'); return; }
+      const response = await fetch(`${apiOrigin}/daas/v1/health`, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const body = await response.json();
+      setHealth(response.ok && body.status === 'operational' ? `Available — HTTP ${response.status}; checked ${new Date().toLocaleTimeString()}` : `Unavailable — HTTP ${response.status}`);
+    } catch { setHealth('Unavailable — health request failed'); }
+    finally { setCheckingHealth(false); }
   };
 
-  return (
-    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
-          <Settings className="w-8 h-8 text-indigo-500" />
-          System Settings
-        </h1>
-        <p className="text-slate-400">Configure global parameters and security overrides for the platform.</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <form onSubmit={handleSave} className="glass-card rounded-xl border border-white/5 overflow-hidden">
-            <div className="p-6 border-b border-slate-800">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Server className="w-5 h-5 text-indigo-400" /> General Configuration
-              </h2>
-            </div>
-            <div className="p-6 space-y-6">
-              
-              <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div>
-                  <h3 className="text-sm font-bold text-white">Maintenance Mode</h3>
-                  <p className="text-xs text-slate-400 mt-1">Suspend all API operations and show maintenance page.</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={settings.maintenanceMode} onChange={e => setSettings({...settings, maintenanceMode: e.target.checked})} />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
+  return <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
+    <div>
+      <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3"><Settings className="w-8 h-8 text-indigo-500" />System Settings</h1>
+      <p className="text-slate-400">Manage platform availability, registrations, and plan request allowances.</p>
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="lg:col-span-2 space-y-6">
+        <form onSubmit={handleSave} className="glass-card rounded-xl border border-white/5 overflow-hidden">
+          <div className="p-6 border-b border-slate-800"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Server className="w-5 h-5 text-indigo-400" />General Configuration</h2></div>
+          <div className="p-6 space-y-6">
+            {phase === 'loading' && <p role="status" className="text-slate-400">Loading authoritative settings…</p>}
+            {phase === 'missing' && <p role="status" className="text-amber-300">No settings document exists. The displayed defaults are effective; your first change will initialize settings.</p>}
+            {snapshot?.warnings.map(warning => <p key={warning} role="status" className="text-amber-300">{warning}</p>)}
+            <fieldset disabled={!ready || saving} className="space-y-6 disabled:opacity-60">
+              <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                <div><h3 className="text-sm font-bold text-white">Maintenance Mode</h3><p className="text-xs text-slate-400 mt-1">Pause Customer business operations. Admin recovery, sign-in and payment completion remain available.</p></div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input aria-label="Maintenance Mode" type="checkbox" className="sr-only peer" checked={draft.maintenanceMode} onChange={e => setDraft({ ...draft, maintenanceMode: e.target.checked })} />
+                  <span className="w-11 h-6 bg-slate-700 rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 peer-checked:bg-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
                 </label>
               </div>
-
-              <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div>
-                  <h3 className="text-sm font-bold text-white">Allow New Registrations</h3>
-                  <p className="text-xs text-slate-400 mt-1">Enable or disable new user signups.</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={settings.allowNewRegistrations} onChange={e => setSettings({...settings, allowNewRegistrations: e.target.checked})} />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
+              <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                <div><h3 className="text-sm font-bold text-white">Allow New Registrations</h3><p className="text-xs text-slate-400 mt-1">Control creation of new Customer profiles. Existing customers can still sign in.</p></div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input aria-label="Allow New Registrations" type="checkbox" className="sr-only peer" checked={draft.allowNewRegistrations} onChange={e => setDraft({ ...draft, allowNewRegistrations: e.target.checked })} />
+                  <span className="w-11 h-6 bg-slate-700 rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 peer-checked:bg-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
                 </label>
               </div>
-
               <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div className="mb-4">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-indigo-400" /> Security Limits
-                  </h3>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Shield className="w-4 h-4 text-indigo-400" />Plan Request Limits</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {planFields.map(plan => <div key={plan} className="space-y-2">
+                    <label htmlFor={`${plan}-request-limit`} className="text-sm font-medium text-slate-300">{planLabels[plan]}</label>
+                    {plan === 'pro' ? <p className="text-xs text-slate-400">UTC daily limit</p> : <select aria-label={`${planLabels[plan]} request mode`} value={draft.planRequestLimits[plan] === null ? 'unlimited' : 'finite'}
+                      onChange={event => changePlan(plan, event.target.value === 'unlimited' ? null : 500)} className={controlClass}>
+                      <option value="unlimited">Unlimited</option><option value="finite">UTC daily limit</option>
+                    </select>}
+                    {draft.planRequestLimits[plan] === null ? <p className="text-sm text-slate-200">Unlimited requests</p> : <input id={`${plan}-request-limit`} aria-label={`${planLabels[plan]} daily request allowance`} type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required
+                      value={draft.planRequestLimits[plan] ?? ''} onChange={event => changePlan(plan, Number(event.target.value))} className={controlClass} />}
+                  </div>)}
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-slate-400">Strict API Validation</label>
-                    <select 
-                      value={settings.strictApiValidation ? "true" : "false"} 
-                      onChange={e => setSettings({...settings, strictApiValidation: e.target.value === "true"})}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                    >
-                      <option value="true">Enabled (Recommended)</option>
-                      <option value="false">Disabled</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-slate-400">Max Requests Per Minute (Global Default)</label>
-                    <input 
-                      type="number" 
-                      value={settings.maxRequestsPerMinute} 
-                      onChange={e => setSettings({...settings, maxRequestsPerMinute: Number(e.target.value)})}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
+                <p className="text-xs text-slate-400 mt-3">{snapshot?.planLimitPeriod || 'Finite allowances are shared across all active API keys and reset at midnight UTC.'}</p>
+                <p className="text-xs text-slate-400 mt-2">Increases apply immediately. Lower allowances apply to new contracts; existing paid promises and existing Unlimited Trials remain protected. Saving never resets request usage.</p>
+                <p className="text-xs text-slate-400 mt-2">The Trial remains seven days with 50 products and one active key. Prices and independent abuse protection remain unchanged.</p>
               </div>
-
-            </div>
-            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-between">
-              <span className="text-sm text-emerald-400 font-medium">{message}</span>
-              <button 
-                type="submit" 
-                disabled={loading || saving}
-                className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {saving ? "Saving..." : "Save Settings"}
-              </button>
-            </div>
-          </form>
+            </fieldset>
+          </div>
+          <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex flex-wrap gap-3 items-center justify-between">
+            <div className="text-sm text-slate-300"><p role="status">{message}</p>{dirty && <p className="text-amber-300">Unsaved changes</p>}</div>
+            <button type="submit" disabled={!ready || saving || !dirty} className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Settings'}</button>
+          </div>
+        </form>
+      </div>
+      <div className="space-y-6">
+        <div className="glass-card rounded-xl border border-white/5 p-6">
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Server className="w-5 h-5 text-indigo-400" />System Information</h2>
+          <dl className="space-y-4 text-sm">
+            <div className="flex justify-between gap-4 py-2 border-b border-slate-800"><dt className="text-slate-400">API Version</dt><dd className="font-semibold text-white">{information?.apiVersion ? `v${information.apiVersion}` : 'Unavailable'}</dd></div>
+            <div className="flex justify-between gap-4 py-2 border-b border-slate-800"><dt className="text-slate-400">Database connection</dt><dd className="font-semibold text-white">{information?.databaseStatus || (apiOrigin ? 'Unavailable' : 'Not configured')}</dd></div>
+            <div className="flex justify-between gap-4 py-2 border-b border-slate-800"><dt className="text-slate-400">Environment</dt><dd className="font-semibold text-amber-400">{environment}</dd></div>
+            <div className="flex justify-between gap-4 py-2"><dt className="text-slate-400">Uptime</dt><dd className="text-slate-400">Not tracked</dd></div>
+          </dl>
+          <p className="text-xs text-slate-500 mt-3">{information ? `Database checked ${new Date(information.checkedAt).toLocaleString()}. This is a single probe.` : 'Database connectivity has not been verified.'}</p>
         </div>
-
-        {/* Right Column: System Information & Quick Actions */}
-        <div className="space-y-6">
-          {/* System Information */}
-          <div className="glass-card rounded-xl border border-white/5 p-6">
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <Server className="w-5 h-5 text-indigo-400" />
-              System Information
-            </h2>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center py-2 border-b border-slate-800">
-                <span className="text-sm text-slate-400">API Version</span>
-                <span className="text-sm font-semibold text-white">v1.0.0</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-800">
-                <span className="text-sm text-slate-400">Database monitoring</span>
-                <span className="text-sm font-semibold text-slate-400">Not configured</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-800">
-                <span className="text-sm text-slate-400">Environment</span>
-                <span className="text-sm font-semibold text-amber-400">Development</span>
-              </div>
-              <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-slate-400">Uptime</span>
-                <span className="text-sm font-semibold text-slate-400">Not tracked</span>
-              </div>
-            </div>
+        <div className="glass-card rounded-xl border border-white/5 p-6">
+          <h2 className="text-lg font-bold text-white mb-4">Quick Actions</h2>
+          <div className="space-y-3">
+            <Link href="/audit" className={quickClass}><span>View Audit Logs</span><span aria-hidden="true">→</span></Link>
+            <button type="button" disabled={saving || phase === 'loading'} onClick={() => { void load(); }} className={quickClass}><span>Refresh Settings</span><span aria-hidden="true">→</span></button>
+            <button type="button" disabled={checkingHealth} onClick={() => { void checkHealth(); }} className={quickClass}><span>{checkingHealth ? 'Checking…' : 'Check API Health'}</span><span aria-hidden="true">→</span></button>
           </div>
-
-          {/* Quick Actions */}
-          <div className="glass-card rounded-xl border border-white/5 p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Quick Actions</h2>
-            <div className="space-y-3">
-              <button className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700">
-                <span>View System Logs</span>
-                <span className="text-slate-500">→</span>
-              </button>
-              <button className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700">
-                <span>Clear Cache</span>
-                <span className="text-slate-500">→</span>
-              </button>
-              <button className="w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700">
-                <span>Restart Server</span>
-                <span className="text-slate-500">→</span>
-              </button>
-            </div>
-          </div>
+          <p role="status" className="text-xs text-slate-400 mt-3">{health}</p>
         </div>
       </div>
     </div>
-  );
+    <dialog ref={dialog} aria-labelledby="maintenance-confirm-title" onCancel={() => setConfirmMaintenance(false)} className="bg-slate-900 text-white rounded-xl border border-slate-700 p-6 max-w-md backdrop:bg-black/60">
+      <h2 id="maintenance-confirm-title" className="text-xl font-bold">Enable maintenance mode?</h2>
+      <p className="text-slate-300 mt-3">Customer business operations will pause. Admin recovery, existing sign-in and payment completion remain available.</p>
+      <div className="flex justify-end gap-3 mt-6"><button type="button" autoFocus onClick={() => setConfirmMaintenance(false)} className="rounded-lg px-4 py-2 bg-slate-800">Cancel</button><button type="button" disabled={saving} onClick={() => { void save(); }} className="rounded-lg px-4 py-2 bg-indigo-600">Enable and Save</button></div>
+    </dialog>
+  </div>;
 }

@@ -69,9 +69,10 @@ test('root in-progress auth handoff never bypasses protected routes or Admin sep
 });
 test('successful signup still provisions before sign-out and navigation; footer preserves paid intent', () => {
   const signup = read('dashboard/src/app/signup/page.tsx');
-  assert.ok(signup.indexOf('await setDoc') > signup.indexOf('await createUserWithEmailAndPassword'));
-  assert.ok(signup.indexOf('await signOut(auth)') > signup.indexOf('await setDoc'));
-  assert.ok(signup.indexOf('const redirectUrl = customerLoginEntryDestination(intent)') > signup.indexOf('await signOut(auth)'));
+  const flow = read('services/customer-registration.mjs');
+  assert.ok(flow.indexOf('await writeProfile(user)') > flow.indexOf('await createUser()'));
+  assert.ok(flow.indexOf('await signOut()') > flow.indexOf('await writeProfile(user)'));
+  assert.ok(signup.indexOf('const redirectUrl = customerLoginEntryDestination(intent)') > signup.indexOf('await completeCustomerSignup'));
   assert.ok(signup.indexOf('router.push(redirectUrl)') > signup.indexOf('const redirectUrl = customerLoginEntryDestination(intent)'));
   assert.match(signup, /href=\{customerLoginEntryDestination\(new URLSearchParams/);
 });

@@ -5,8 +5,16 @@ import { getFirestore, FieldPath } from 'firebase-admin/firestore';
 import { createAdminTrafficHandler } from '../services/admin-traffic.js';
 import { createAdminKeyInventoryHandler } from '../services/admin-key-inventory.js';
 import { verifyFirebaseToken, requireAdmin } from '../middleware/auth.js';
+import { createSystemSettingsHandlers } from '../services/system-settings.js';
+import { createRequire } from 'node:module';
 
 const router = express.Router();
+const systemSettings = createSystemSettingsHandlers({ getDb: () => getFirestore(),
+  verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked),
+  apiVersion: createRequire(import.meta.url)('../package.json').version });
+router.get('/system/settings', systemSettings.read);
+router.patch('/system/settings', systemSettings.save);
+router.get('/system/information', systemSettings.information);
 router.get('/api-keys/inventory', createAdminKeyInventoryHandler({ getDb: () => getFirestore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
 router.get('/traffic', createAdminTrafficHandler({ getDb: () => getFirestore(),

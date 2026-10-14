@@ -84,8 +84,8 @@ export async function authenticateCredential(db, credential, now = new Date()) {
   return { ...key, id: snapshot.id };
 }
 
-export function accountEntitlement(account, now = new Date()) {
-  try { return evaluateEntitlement(account, now); }
+export function accountEntitlement(account, now = new Date(), requestLimits, requestContracts) {
+  try { return evaluateEntitlement(account, now, requestLimits, requestContracts); }
   catch (error) { throw new ApiSecurityError(error.status || 503, error.code || 'ENTITLEMENT_UNAVAILABLE', error.message); }
 }
 

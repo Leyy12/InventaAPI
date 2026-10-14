@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
   usageForToday, validDocumentId, upgradeRequiredError, assertActiveKey, trialUsage,
@@ -55,16 +56,19 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     const accountDoc = await tx.get(userRef);
     if (!accountDoc.exists) throw new ApiSecurityError(404, 'ACCOUNT_NOT_FOUND', 'Account not found.');
     const usageDoc = await tx.get(db.collection('account_api_usage').doc(uid));
+    const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+    const requestContracts = (await tx.get(db.collection('account_request_contracts').doc(uid))).data();
     let account = accountDoc.data();
-    let entitlement = accountEntitlement(account, clock());
+    let entitlement = accountEntitlement(account, clock(), requestLimits, requestContracts);
     let legacyConsumed = false;
     if (entitlement.activeTrial && !Object.hasOwn(account, 'trialConsumed')) {
       const history = await tx.get(db.collection('account_trial_usage').doc(uid));
       legacyConsumed = trialUsage(history.data(), entitlement).used === 500;
-      if (legacyConsumed) { account = { ...account, trialConsumed: true }; entitlement = accountEntitlement(account, clock()); }
+      if (legacyConsumed) { account = { ...account, trialConsumed: true }; entitlement = accountEntitlement(account, clock(), requestLimits, requestContracts); }
     }
     const usage = entitlement.upgradeRequired ? { used: null, period: 'upgrade_required', resetsAt: null, state: 'upgrade_required' }
-      : entitlement.activeTrial ? { used: null, period: 'trial_catalog', resetsAt: entitlement.expiresAt }
+      : entitlement.activeTrial && promisedRequestAllowance(requestContracts, 'free_trial') === null ? { used: null, period: 'trial_catalog', resetsAt: entitlement.expiresAt }
+        : entitlement.activeTrial && !usageDoc.exists ? { used: null, period: 'daily', resetsAt: null, state: 'unavailable' }
         : usageForToday(usageDoc.exists ? usageDoc.data() : null, clock());
     if (entitlement.normalization) tx.update(userRef, entitlement.normalization);
     if (legacyConsumed) tx.update(userRef, { trialConsumed: true });
@@ -75,9 +79,13 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
   async function currentAccount(tx, db, uid, context, requireIssuance = false) {
     const account = (await tx.get(db.collection('users').doc(uid))).data();
     const now = clock();
-    const entitlement = accountEntitlement(account, now);
+    // Rename/revoke keep their existing security recovery path even when the
+    // mutable allowance policy is unavailable. Issuance/scope changes reverify it.
+    const requestLimits = context || requireIssuance ? requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data()) : undefined;
+    const requestContracts = context || requireIssuance ? (await tx.get(db.collection('account_request_contracts').doc(uid))).data() : undefined;
+    const entitlement = accountEntitlement(account, now, requestLimits, requestContracts);
     if (requireIssuance && entitlement.upgradeRequired) throw upgradeRequiredError();
-    if (context && (entitlement.plan !== context.entitlement.plan || account.selectedSegment !== context.account.selectedSegment
+    if (context && (entitlement.plan !== context.entitlement.plan || entitlement.limit !== context.entitlement.limit || account.selectedSegment !== context.account.selectedSegment
       || account.businessSegment !== context.account.businessSegment)) {
       throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
     }

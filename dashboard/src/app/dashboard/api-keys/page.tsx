@@ -9,6 +9,8 @@ import { apiKeyRequest } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
 import RequestHistory from "@/components/api/RequestHistory";
 import CodeSnippet from "@/components/shared/CodeSnippet";
+import { requestAllowanceLabel } from '@/config/plans';
+import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
 
 interface ApiKey {
   id: string;
@@ -22,20 +24,23 @@ interface ApiKey {
 
 export default function ApiKeysPage() {
   const { user, entitlement } = useAuth();
+  const requestAllowance = useAccountRequestAllowance();
   return user ? (
     <AccountKeysSession
       key={user.uid}
       user={user}
       entitlementStatus={entitlement?.subscription_status ?? null}
+      requestAllowance={requestAllowance}
     />
   ) : null;
 }
 
 // A route reload, route exit, or account switch destroys this component and
 // its one-time secret. Neither list refreshes nor entitlement updates do.
-function AccountKeysSession({ user, entitlementStatus }: {
+function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
   user: User;
   entitlementStatus: string | null;
+  requestAllowance?: number | null;
 }) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +108,7 @@ function AccountKeysSession({ user, entitlementStatus }: {
         <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro or Pro Max</Link>
       </div>}
       {entitlementStatus === null && <p role="status" className="text-slate-400">Verifying account entitlement…</p>}
+      <p className="text-sm text-slate-300">Account request allowance: {requestAllowanceLabel(requestAllowance)}. Shared across all active API keys.</p>
 
       <div className="glass-card rounded-xl p-6 border-l-4 border-amber-500">
         <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2"><Shield className="w-5 h-5 text-amber-400" /> Keep Your Keys Secure</h2>

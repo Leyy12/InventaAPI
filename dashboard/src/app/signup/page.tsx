@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, setDoc, serverTimestamp, writeBatch, collection } from "firebase/firestore";
+import { createUserWithEmailAndPassword, deleteUser, signOut, type User } from "firebase/auth";
+import { doc, getDocFromServer, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, User as UserIcon, Building, Briefcase, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { customerLoginEntryDestination } from '../../../../services/auth-navigation';
+import { completeCustomerSignup, readRegistrationPolicy } from '../../../../services/customer-registration.mjs';
 
 const BUSINESS_SEGMENTS = [
   "Grocery",
@@ -60,12 +61,13 @@ function SignupPageInner() {
     }
 
     try {
-      // Create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-      const user = userCredential.user;
-
-      // Create user document in Firestore
-      await setDoc(doc(db, "users", user.uid), {
+      const result = await completeCustomerSignup({
+        canRegister: readRegistrationPolicy,
+        createUser: async () => (await createUserWithEmailAndPassword(auth, formData.email, formData.password)).user,
+        profileExists: async (user: User) => (await getDocFromServer(doc(db, 'users', user.uid))).exists(),
+        deleteUser,
+        signOut: () => signOut(auth),
+        writeProfile: (user: User) => setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         fullName: formData.fullName,
         email: formData.email,
@@ -79,14 +81,9 @@ function SignupPageInner() {
         lastLogin: serverTimestamp(),
         privacyConsent: true,
         privacyConsentTimestamp: serverTimestamp()
+        }),
       });
-
-      // Remove Firestore seeding to prevent permission errors
-      // Dashboard now fetches products directly from the DaaS API (data.json)
-
-      // Sign out immediately — Firebase auto-logs in after createUser,
-      // but we want the user to explicitly log in themselves.
-      await signOut(auth);
+      if (!result.ok) { setError(result.message); return; }
       // Return to the single landing login after authoritative profile creation
       // and explicit sign-out. Only a valid paid CTA keeps its upgrade intent.
       const intent = new URLSearchParams({ registered: 'true' });
@@ -95,15 +92,8 @@ function SignupPageInner() {
       }
       const redirectUrl = customerLoginEntryDestination(intent);
       router.push(redirectUrl);
-    } catch (err: any) {
-      console.error("Signup error:", err);
-      if (err.code === "auth/email-already-in-use") {
-        setError("This email is already registered. Please sign in.");
-      } else if (err.code === "permission-denied" || err.message?.includes("permission")) {
-        setError("Account setup failed due to a permission error. Please contact support.");
-      } else {
-        setError(err.message || "Failed to create account. Please try again.");
-      }
+    } catch {
+      setError('Account setup is unavailable. Please try again later.');
     } finally {
       setLoading(false);
     }

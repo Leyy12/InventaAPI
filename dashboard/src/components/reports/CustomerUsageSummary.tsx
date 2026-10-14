@@ -8,8 +8,10 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { quotaSummary, quotaVerificationKey } from "@/lib/reports";
 import { createQuotaRefresh, type QuotaSource } from "@/lib/quota-refresh";
 import { subscribeAccountUsage } from "@/lib/account-usage-events";
+import { requestAllowanceLabel } from '@/config/plans';
+import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
 
-function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequired: boolean; activeTrial: boolean }) {
+function Usage({ user, upgradeRequired, activeTrial, requestAllowance }: { user: User; upgradeRequired: boolean; activeTrial: boolean; requestAllowance?: number | null }) {
   const [source, setSource] = useState<QuotaSource>({ status: "loading", count: null, usage: null });
   const [now, setNow] = useState(() => new Date());
   const [retry, setRetry] = useState(0);
@@ -21,7 +23,8 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
     return () => { unsubscribe(); refresh.stop(); clearInterval(clock); };
   }, [user, retry]);
   const retryControl = source.status === 'error' && <button type="button" className="text-indigo-300" onClick={() => setRetry(value => value + 1)}>Retry usage</button>;
-  const quota = quotaSummary(source.usage, now);
+  const summary = quotaSummary(source.usage, now);
+  const quota = requestAllowance !== undefined && summary?.limit === requestAllowance ? summary : null;
   const trial = source.status === 'ready' ? source.trialCatalog : null;
   const unavailable = source.status === "loading" ? "Loading…" : "Unavailable";
   if (upgradeRequired) return <section aria-label="Account API usage" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-6 space-y-3">
@@ -42,6 +45,8 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
     </div>
     {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
     {trial.expiresAt && <p className="text-sm leading-6 text-slate-300">Trial expires <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time></p>}
+    <p className="text-sm text-slate-300">Request allowance: {requestAllowanceLabel(requestAllowance, true)}.</p>
+    {quota && quota.limit !== null && <p className="text-sm text-slate-400">{quota.used} used today (UTC); {quota.remaining} remaining. Resets at {quota.resetsAt}.</p>}
   </section>;
   if (activeTrial) return <p role={source.status === 'error' ? 'alert' : 'status'} className="text-slate-300">{source.status === 'error'
     ? 'Trial catalog verification unavailable.' : 'Loading Trial catalog…'} {retryControl}</p>;
@@ -63,10 +68,11 @@ function Usage({ user, upgradeRequired, activeTrial }: { user: User; upgradeRequ
 }
 export default function CustomerUsageSummary() {
   const { user, entitlement } = useAuth();
+  const requestAllowance = useAccountRequestAllowance();
   // A verification timestamp alone is not an account-usage invalidation.
   const verification = quotaVerificationKey(user?.uid ?? null, entitlement ? { ...entitlement, serverTime: undefined } : null);
   return <div className="space-y-5">
-    {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} upgradeRequired={entitlement?.subscription_status === 'upgrade_required'} activeTrial={entitlement?.activeTrial === true} />
+    {!user ? <p role="alert">Sign in to view account usage.</p> : verification ? <Usage key={verification} user={user} upgradeRequired={entitlement?.subscription_status === 'upgrade_required'} activeTrial={entitlement?.activeTrial === true} requestAllowance={requestAllowance} />
       : <p role="status">Account usage unavailable while entitlement is being verified.</p>}
     <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-5 flex justify-between gap-4">
       <p className="text-white">{entitlement?.subscription_status === 'upgrade_required' ? 'Upgrade Required · protected API access paused'

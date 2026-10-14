@@ -4,6 +4,9 @@ export interface SubscriptionState {
   plan: string;
   subscription_status: string;
   apiRequestLimit: number | null;
+  requestAllowancePeriod?: 'utc_daily';
+  requestPolicyVersion?: string;
+  purchaseRequestLimits?: { pro: number; pro_max: number | null };
   subscriptionStartedAt: string | null;
   subscriptionExpiresAt: string | null;
   activePro: boolean;

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen, customerLogoutDestination, customerLoginEntryDestination } from '../../../../services/auth-navigation';
@@ -10,9 +10,11 @@ import { WorkspaceHeaderSlotProvider } from './WorkspaceHeaderSlot';
 import SubscriptionExpiryBanner from "@/components/shared/SubscriptionExpiryBanner";
 import SessionLoadingScreen, { SessionRecoveryState } from "@/components/auth/SessionLoadingScreen";
 import { customerProtectedReady } from '@/lib/customer-readiness';
+import CustomerMaintenanceBoundary from '@/components/shared/CustomerMaintenanceBoundary';
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, appUser, entitlement, loading, logout, authStatus, logoutError, logoutBusy, retryVerification } = useAuth();
   const role = user ? profileRole(appUser) : null;
@@ -71,7 +73,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         <SubscriptionExpiryBanner />
         <main className="flex-1 overflow-y-auto p-6 lg:p-10">
           {logoutNotice}
-          {children}
+          <CustomerMaintenanceBoundary pathname={pathname} paymentRecovery={pathname === '/dashboard'
+            && ['success', 'failed'].includes(searchParams.get('payment') || '')}>{children}</CustomerMaintenanceBoundary>
         </main>
       </div>
     </div>

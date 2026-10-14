@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import { createIpRateLimiter, trustedRateLimitIp } from './services/rate-limit-client-ip.js';
+import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from './services/system-settings.js';
+import { getFirestore } from 'firebase-admin/firestore';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -107,6 +109,8 @@ app.use((req, res, next) => {
 });
 
 // 3. Express Rate Limit: Prevent Denial of Service (DoS) and brute-force scanning
+// Policy runs before quota use, business mutations, raw uploads and audits.
+// Admin recovery, authentication and payment settlement never enter this gate.
 const { verifyClientIp, limiter } = createIpRateLimiter({
     windowMs: 60 * 1000, // 1 minute
     max: 60, // ordinary API/DaaS requests retain their shared per-IP protection
@@ -114,6 +118,7 @@ const { verifyClientIp, limiter } = createIpRateLimiter({
 });
 app.use('/api/', verifyClientIp, limiter);
 app.use('/daas/', verifyClientIp, limiter);
+app.use(createSystemPolicyMiddleware({ getDb: () => getFirestore() }));
 
 // 4. Data Compression: Ensure JSON responses are lightweight for Mobile Computing
 app.use(compression());
@@ -146,6 +151,7 @@ app.use((req, res, next) => {
 });
 
 // --- API Routing Hookup (Version 1) ---
+app.get('/api/v1/system/status', createSystemSettingsHandlers({ getDb: () => getFirestore() }).publicStatus);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/products', productsRouter);
 app.use('/api/v1/admin/catalog', catalogManagementRouter);

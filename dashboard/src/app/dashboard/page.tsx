@@ -7,9 +7,11 @@ import { useEffect, useState } from "react";
 import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import { customerReportScope } from "@/lib/reports";
 import { activeCustomerSegment } from '../../../../services/customer-segment.js';
+import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
 
 export default function DashboardPage() {
-  const { user, appUser, loading, refreshUserDoc } = useAuth();
+  const { user, appUser, loading, refreshUserDoc, entitlement } = useAuth();
+  const requestAllowance = useAccountRequestAllowance();
 
   
   const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
@@ -109,7 +111,7 @@ export default function DashboardPage() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-emerald-300">Payment confirmed. Your current subscription is shown below.</p>
           <p className="text-xs text-emerald-400/80 mt-0.5">
-            Current allowance: {appUser?.apiRequestLimit === null ? 'Unlimited account quota' : `${appUser?.apiRequestLimit?.toLocaleString() ?? 'Verifying'} requests/day`} · Subscription end: {appUser?.subscriptionExpiresAt ? new Date(appUser.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
+            Current allowance: {requestAllowance === undefined ? 'Unavailable' : requestAllowance === null ? 'Unlimited account quota' : `${requestAllowance.toLocaleString()} requests/day (UTC)`} · Subscription end: {entitlement?.subscriptionExpiresAt ? new Date(entitlement.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
           </p>
         </div>
         <button

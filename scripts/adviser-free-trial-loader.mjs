@@ -3,6 +3,7 @@ import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Set(["functions/entitlement-limits.mjs","functions/subscription-lifecycle.mjs","services/free-trial.js","services/api-key-security.js","services/api-key-management.js","services/account-quota.js","services/daas-security.js","services/daas-catalog.js","services/product-contract.js","services/customer-segment.js","services/reporting.js","services/product-submissions.js","services/product-submission-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/product-media-binding.js","services/catalog-contract.js","tests/adviser/phase2a/memory-firestore.mjs","tests/adviser/r2a/memory-firestore.mjs","dashboard/src/lib/entitlement-poller.ts","tests/adviser/free-trial/trial.test.mjs"].map(file => resolvePath(root, file)));
 for (const file of ['functions/trial-warning.mjs', 'functions/trial-warning-email.mjs', 'admin-panel/src/lib/linked-product-names.ts', 'dashboard/src/lib/linked-product-selection.ts', 'tests/adviser/free-trial/phase2.test.mjs']) modules.add(resolvePath(root, file));
+modules.add(resolvePath(root, 'functions/request-limit-policy.mjs'));
 for (const file of ['dashboard/src/lib/trial-display.mjs', 'dashboard/src/lib/trial-catalog-selection.ts', 'dashboard/src/lib/account-usage-events.ts',
   'dashboard/src/lib/quota-refresh.ts', 'tests/adviser/free-trial/trial-catalog-add-only.test.mjs']) modules.add(resolvePath(root, file));
 export async function resolve(specifier, context, nextResolve) {

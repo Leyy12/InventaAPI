@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import "./globals.css";
 import LayoutWrapper from "@/components/layout/LayoutWrapper";
 import { AuthProvider } from "@/lib/firebase/auth-context";
+import { PlanRequestPolicyProvider } from '@/lib/plan-request-policy';
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -27,9 +28,9 @@ export default function RootLayout({
             <div className="blob blob-1" />
             <div className="blob blob-2" />
             
-            <LayoutWrapper>
+            <PlanRequestPolicyProvider><LayoutWrapper>
               {children}
-            </LayoutWrapper>
+            </LayoutWrapper></PlanRequestPolicyProvider>
           </AuthProvider>
         </Suspense>
       </body>

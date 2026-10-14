@@ -1,6 +1,7 @@
 import { PRO_DAILY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
 import { validDocumentId } from './api-key-security.js';
 import { accountBlocked, evaluateEntitlement, dateMillis, planKind } from '../functions/subscription-lifecycle.mjs';
+import { validOrderRequestAllowance } from '../functions/request-limit-policy.mjs';
 
 // Existing price/quota/duration; each paid term spans 30 UTC calendar days.
 export const PRO_PURCHASE = Object.freeze({ planId: 'pro', plan: 'Pro', amount: 149900,
@@ -54,7 +55,7 @@ export const matchesPurchase = order => {
   const purchase = purchaseForIntent(order?.planId ?? (order?.plan === 'Pro' ? 'pro' : null));
   // Pre-catalog Pro orders lacked planId; only those exact historical terms
   // retain their original fulfillment contract. Pro Max always requires its ID.
-  return !!purchase && (order.planId === purchase.planId || purchase.planId === 'pro' && order.planId === undefined)
+  return !!purchase && validOrderRequestAllowance(order) && (order.planId === purchase.planId || purchase.planId === 'pro' && order.planId === undefined)
     && Object.entries(purchase).every(([key, value]) => ['planId', 'amount'].includes(key) || order[key] === value
       // Exact historical server-saved Pro quota snapshot; never grants old access.
       || key === 'apiRequestLimit' && purchase.planId === 'pro' && order[key] === 5000)

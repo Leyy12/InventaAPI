@@ -1,7 +1,8 @@
 import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
 import { evaluateEntitlement, trialState, accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { normalizeSegment } from './product-contract.js';
-import { ApiSecurityError, validDocumentId, sendSecurityError, trialUsage } from './api-key-security.js';
+import { ApiSecurityError, validDocumentId, sendSecurityError, trialUsage, usageForToday } from './api-key-security.js';
+import { requestLimitPolicy, newRequestContract, promisedRequestAllowance, REQUEST_LIMIT_PLANS } from '../functions/request-limit-policy.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
 
 export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTokens, clock = () => new Date() }) {
@@ -33,7 +34,12 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
     }
     const segment = normalizeSegment(account.businessSegment);
     if (!segment) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Account business segment requires review.');
-    return { ref, usageRef, segment };
+    const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+    const dailyRef = db.collection('account_api_usage').doc(uid), daily = await tx.get(dailyRef);
+    const contractsRef = db.collection('account_request_contracts').doc(uid), contracts = (await tx.get(contractsRef)).data();
+    for (const plan of REQUEST_LIMIT_PLANS) promisedRequestAllowance(contracts, plan);
+    if (contracts?.plans?.free_trial) throw new ApiSecurityError(503, 'TRIAL_UNAVAILABLE', 'Existing Trial promise requires review.');
+    return { ref, usageRef, segment, requestLimits, dailyRef, daily, contractsRef, contracts };
   }
   return {
     // Session establishment, not a browser timestamp or API-key request, is the
@@ -58,11 +64,18 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
         return { success: true, initialized: false };
       }
       if (previous.exists) throw new ApiSecurityError(503, 'TRIAL_UNAVAILABLE', 'Existing Trial state requires review.');
+      const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+      const dailyRef = db.collection('account_api_usage').doc(uid), daily = await tx.get(dailyRef);
+      const contractsRef = db.collection('account_request_contracts').doc(uid), contracts = (await tx.get(contractsRef)).data();
+      for (const plan of REQUEST_LIMIT_PLANS) promisedRequestAllowance(contracts, plan);
+      if (contracts?.plans?.free_trial) throw new ApiSecurityError(503, 'TRIAL_UNAVAILABLE', 'Existing Trial promise requires review.');
       const segment = normalizeSegment(account.businessSegment);
       if (!segment) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Account business segment requires review.');
       const startedAt = now.toISOString(), expiresAt = new Date(now.getTime() + 7 * 86400000).toISOString();
       tx.update(ref, { trialVersion: 1, hasUsedFreeTrial: true, trialConsumed: false,
         trialStartedAt: startedAt, trialExpiresAt: expiresAt, selectedSegment: segment });
+      tx.set(contractsRef, { version: 1, plans: { ...contracts?.plans, free_trial: newRequestContract(requestLimits.free_trial) } });
+      if (requestLimits.free_trial !== null && !daily.exists) tx.set(dailyRef, { ...usageForToday(null, now), updatedAt: startedAt });
       tx.set(usageRef, { startedAt, expiresAt, used: 0, updatedAt: startedAt });
       return { success: true, initialized: true };
     })),
@@ -79,10 +92,12 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
       try {
         return await db.runTransaction(async tx => {
           const now = clock();
-          const { ref, usageRef, segment } = await eligibleTrial(tx, db, uid, now);
+          const { ref, usageRef, segment, requestLimits, dailyRef, daily, contractsRef, contracts } = await eligibleTrial(tx, db, uid, now);
           const end = new Date(now); end.setUTCDate(end.getUTCDate() + 7);
           const startedAt = now.toISOString(), expiresAt = end.toISOString();
           tx.update(ref, { trialVersion: 1, hasUsedFreeTrial: true, trialStartedAt: startedAt, trialExpiresAt: expiresAt, selectedSegment: segment });
+          tx.set(contractsRef, { version: 1, plans: { ...contracts?.plans, free_trial: newRequestContract(requestLimits.free_trial) } });
+          if (requestLimits.free_trial !== null && !daily.exists) tx.set(dailyRef, { ...usageForToday(null, now), updatedAt: startedAt });
           tx.set(usageRef, { startedAt, expiresAt, used: 0, updatedAt: startedAt });
           return { success: true, startedAt, expiresAt, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS, maximumActiveKeys: 1,
             serverTime: startedAt, reauthenticationRequired: true };
@@ -100,12 +115,14 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
       const account = (await tx.get(db.collection('users').doc(uid))).data();
       customer(account);
       const now = clock(), trial = trialState(account, now);
-      let effective = evaluateEntitlement(account, now);
+      const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
+      const requestContracts = (await tx.get(db.collection('account_request_contracts').doc(uid))).data();
+      let effective = evaluateEntitlement(account, now, requestLimits, requestContracts);
       let legacyConsumed = false;
       if (trial.used && !Object.hasOwn(account, 'trialConsumed')) {
         const history = (await tx.get(db.collection('account_trial_usage').doc(uid))).data();
         legacyConsumed = trialUsage(history, trial).used === 500;
-        if (legacyConsumed && effective.activeTrial) effective = evaluateEntitlement({ ...account, trialConsumed: true }, now);
+        if (legacyConsumed && effective.activeTrial) effective = evaluateEntitlement({ ...account, trialConsumed: true }, now, requestLimits, requestContracts);
       }
       const keys = await tx.get(db.collection('api_keys').where('userId', '==', uid));
       const activeKeys = keys.docs.filter(doc => doc.data().status === 'active');

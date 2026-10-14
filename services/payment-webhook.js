@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
+import { DEFAULT_REQUEST_LIMITS, purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
 import { purchaseForIntent, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -122,8 +123,13 @@ export async function fulfillPayment(db, payment, time) {
     }
     requireCustomer(account, order.userId);
     requirePurchasable(account, now, { planId: order.planId ?? 'pro' });
+    const contractsRef = db.collection('account_request_contracts').doc(order.userId);
+    const requestContracts = (await tx.get(contractsRef)).data();
     const processedAt = now.toISOString();
     const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
+    const requestPlan = order.planId ?? 'pro';
+    const contracts = purchaseRequestContracts(account, requestContracts, requestPlan,
+      order.requestAllowance === undefined ? DEFAULT_REQUEST_LIMITS[requestPlan] : order.requestAllowance.limit);
     tx.set(paymentRef, { ...evidence, userEmail: typeof account.email === 'string' ? account.email : '',
       amount: order.amount, currency: order.currency,
       paymentMethod: payment.paymentMethod ?? 'gcash', paymongoReferenceId: payment.paymentId,
@@ -137,6 +143,7 @@ export async function fulfillPayment(db, payment, time) {
       subscriptionExpiresAt: expiresAt, lastSubscribedAt: processedAt,
       subscriptionStartedAt: dateMillis(account.subscriptionExpiresAt) > now.getTime()
         ? (account.subscriptionStartedAt || account.lastSubscribedAt || processedAt) : processedAt });
+    tx.set(contractsRef, contracts);
     return { duplicate: false };
   });
 }
