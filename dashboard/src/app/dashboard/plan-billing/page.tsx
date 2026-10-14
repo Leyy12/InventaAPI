@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/firebase/auth-context';
 import { requestAllowanceLabel } from '@/config/plans';
 import { usePlanCatalog, useAccountRequestAllowance } from '@/lib/plan-request-policy';
 import SubscriptionModal from '@/components/subscription/SubscriptionModal';
-import FreeTrialPage from '../free-trial/page';
+import FreeTrialContent from '@/components/subscription/FreeTrialContent';
 
 type PaidPlanId = 'pro' | 'pro_max';
 
@@ -83,7 +83,7 @@ export default function PlanBillingPage() {
       <p className="mt-2 text-slate-400">Manage your subscription, usage, and billing.</p>
     </header>
 
-    {trial ? <FreeTrialPage embedded /> : <section aria-label="Current plan" className="rounded-2xl border border-slate-700/80 bg-[#0d1526] p-5 shadow-lg shadow-slate-950/20 sm:p-7">
+    {trial ? <FreeTrialContent embedded /> : <section aria-label="Current plan" className="rounded-2xl border border-slate-700/80 bg-[#0d1526] p-5 shadow-lg shadow-slate-950/20 sm:p-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-400">Current plan</p>

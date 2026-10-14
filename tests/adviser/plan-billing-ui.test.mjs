@@ -7,14 +7,14 @@ import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '..
 
 const read = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const billing = read('dashboard/src/app/dashboard/plan-billing/page.tsx');
-const trial = read('dashboard/src/app/dashboard/free-trial/page.tsx');
+const trial = read('dashboard/src/components/subscription/FreeTrialContent.tsx');
 const plans = read('dashboard/src/config/plans.ts');
 const overview = read('dashboard/src/components/reports/CustomerUsageSummary.tsx');
 
 test('Plan & Billing keeps its concise header and uses the embedded authoritative Trial status', () => {
   assert.match(billing, /Plan &amp; Billing/);
   assert.match(billing, /Manage your subscription, usage, and billing\./);
-  assert.match(billing, /trial \? <FreeTrialPage embedded \/>/);
+  assert.match(billing, /trial \? <FreeTrialContent embedded \/>/);
   assert.match(trial, /fetch\(`\$\{process\.env\.NEXT_PUBLIC_API_URL\}\/api\/v1\/free-trial\/status`/);
   assert.match(trial, /Trial ends/);
   assert.match(trial, /role="progressbar" aria-label="Trial time remaining"/);
@@ -151,11 +151,11 @@ function keyActions(tree) {
 }
 async function renderTrial({ embedded = true, state = fixture, fail = false, pending = false } = {}) {
   const h = hooks(), c = clock();
-  const Component = load('dashboard/src/app/dashboard/free-trial/page.tsx', 'TrialPanel', h, {
+  const Component = load('dashboard/src/components/subscription/FreeTrialContent.tsx', 'TrialPanel', h, {
     'next/link': 'a', 'lucide-react': icons, '@/lib/firebase/auth-context': {},
     '@/lib/account-usage-events': { subscribeAccountUsage: () => () => {} },
     '@/lib/trial-display.mjs': { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots },
-    '../../../../../functions/entitlement-limits.mjs': limits,
+    '../../../../functions/entitlement-limits.mjs': limits,
   }, {
     performance: { now: c.now }, setTimeout: c.schedule, clearTimeout: c.cancel,
     setInterval: () => 1, clearInterval: () => {},
@@ -183,7 +183,7 @@ function renderBilling(trialTree, overrides = {}) {
     '@/config/plans': { requestAllowanceLabel: limit => limit === null ? 'Unlimited account request quota' : `${limit} requests/day (UTC)` },
     '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans: planConfig, status: 'ready' }), useAccountRequestAllowance: () => 500 },
     '@/components/subscription/SubscriptionModal': () => null,
-    '../free-trial/page': ({ embedded }) => { assert.equal(embedded, true); return trialTree; },
+    '@/components/subscription/FreeTrialContent': ({ embedded }) => { assert.equal(embedded, true); return trialTree; },
   });
   const tree = expand(h.mount(Component));
   h.stop();

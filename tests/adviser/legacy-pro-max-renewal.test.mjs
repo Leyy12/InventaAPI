@@ -431,7 +431,7 @@ test('actual personalized Billing cards match renewed legacy Unlimited and genui
     providerHooks.mount(module.PlanRequestPolicyProvider); await flush(); context.value = providerHooks.output.props.value;
     const h = hooks(), Billing = load('dashboard/src/app/dashboard/plan-billing/page.tsx', 'PlanBillingPage', h, {
       'next/link': 'a', 'lucide-react': icons, '@/config/plans': config, '@/lib/plan-request-policy': module,
-      '@/lib/firebase/auth-context': { useAuth: () => auth }, '@/components/subscription/SubscriptionModal': () => null, '../free-trial/page': () => null });
+      '@/lib/firebase/auth-context': { useAuth: () => auth }, '@/components/subscription/SubscriptionModal': () => null, '@/components/subscription/FreeTrialContent': () => null });
     const tree = expand(h.mount(Billing)), card = nodes(tree, node => node.type === 'article').find(node => /Pro Max/.test(text(node)));
     const quota = await f.consume(); assert.equal(quota.usage.limit, response.body.apiRequestLimit);
     assert.match(text(card), account === legacy ? /Unlimited account request quota/ : /10 requests\/day \(UTC\)/);

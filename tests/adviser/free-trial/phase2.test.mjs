@@ -109,7 +109,7 @@ test('API Trial authority is independent of watcher and never revokes keys', () 
 test('Customer and Admin surfaces expose Upgrade Required without hiding key history or owned segment', () => {
   const source = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
   const dashboard = source('dashboard/src/components/reports/CustomerUsageSummary.tsx');
-  const trial = source('dashboard/src/app/dashboard/free-trial/page.tsx');
+  const trial = source('dashboard/src/components/subscription/FreeTrialContent.tsx');
   const keys = source('dashboard/src/app/dashboard/api-keys/page.tsx');
   const settings = source('dashboard/src/app/dashboard/settings/page.tsx');
   const admin = source('admin-panel/src/app/consumers/page.tsx');

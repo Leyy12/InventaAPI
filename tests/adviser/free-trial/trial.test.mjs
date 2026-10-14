@@ -413,7 +413,7 @@ test('route, scoped UI, server counter and URL-only wiring', () => {
   assert.match(read('dashboard/src/app/dashboard/page.tsx'), /Active Business Segment/);
   const add = read('dashboard/src/components/products/AddProductModal.tsx');
   assert.match(add, /disabled=\{segmentLocked\}/); assert.doesNotMatch(add, /uploadBytes|addDoc|setDoc/);
-  const trial = read('dashboard/src/app/dashboard/free-trial/page.tsx');
+  const trial = read('dashboard/src/components/subscription/FreeTrialContent.tsx');
   assert.match(trial, /generation\.current !== request/); assert.match(trial, /setResult\(null\)/);
   assert.doesNotMatch(trial, /\/free-trial\/activate|onClick=\{activate\}/);
   assert.match(read('dashboard/src/lib/firebase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\);\s+await readSubscription\(currentUser\)/);
@@ -569,7 +569,7 @@ test('Customer session/pricing/UI contain automatic Free Trial contract and no m
   const overview = read('dashboard/src/components/reports/CustomerUsageSummary.tsx');
   assert.match(overview, /Free Trial · Active/); assert.match(overview, /Remaining Slots/);
   assert.match(overview, /Trial expires/);
-  for (const file of ['dashboard/src/app/dashboard/page.tsx', 'dashboard/src/app/dashboard/free-trial/page.tsx',
+  for (const file of ['dashboard/src/app/dashboard/page.tsx', 'dashboard/src/components/subscription/FreeTrialContent.tsx',
     'dashboard/src/app/dashboard/plan-billing/page.tsx', 'dashboard/src/config/plans.ts']) {
     assert.doesNotMatch(read(file), /Pro Trial|50 requests|forever|onClick=\{activate\}/);
   }
@@ -808,7 +808,7 @@ test('product-edit retry crossing exact Trial expiry cannot publish an authorize
 });
 test('Trial UX consistently uses product limits, one key and actual expiry rather than request allowance', () => {
   const files = ['dashboard/src/app/dashboard/products/page.tsx', 'dashboard/src/app/dashboard/api-keys/page.tsx',
-    'dashboard/src/app/dashboard/free-trial/page.tsx', 'dashboard/src/app/dashboard/plan-billing/page.tsx',
+    'dashboard/src/components/subscription/FreeTrialContent.tsx', 'dashboard/src/app/dashboard/plan-billing/page.tsx',
     'dashboard/src/components/reports/CustomerUsageSummary.tsx', 'dashboard/src/config/plans.ts',
     'dashboard/src/app/docs/page.tsx', 'dashboard/src/components/auth/LoginForm.tsx', 'dashboard/src/app/privacy-policy/page.tsx'];
   for (const file of [...files, 'dashboard/src/app/dashboard/page.tsx']) assert.doesNotMatch(read(file), /500 total (?:API )?requests|500-request|50\/month|50 requests\/month|Pro Trial|Free plan · inactive|\/forever|trial total/);

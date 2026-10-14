@@ -70,7 +70,7 @@ test('real billing current allowance and cards share verified values; unavailabl
     '@/lib/firebase/auth-context': { useAuth: () => ({ loading: false, entitlement: { activePro: true, plan: 'Pro', subscription_status: 'active', canPurchasePro: true, canPurchaseProMax: true } }) },
     '@/lib/plan-request-policy': { useAccountRequestAllowance: () => ready ? 1000 : undefined,
       usePlanCatalog: () => ({ plans: config.plansForRequestLimits(ready ? { free_trial: null, pro: 1000, pro_max: null } : null), status: ready ? 'ready' : 'unavailable' }) },
-    '@/components/subscription/SubscriptionModal': () => null, '../free-trial/page': () => null,
+    '@/components/subscription/SubscriptionModal': () => null, '@/components/subscription/FreeTrialContent': () => null,
   });
   const expand = value => Array.isArray(value) ? value.map(expand) : value && typeof value === 'object'
     ? typeof value.type === 'function' ? expand(value.type(value.props)) : { ...value, props: { ...value.props, children: expand(value.props.children) } } : value;

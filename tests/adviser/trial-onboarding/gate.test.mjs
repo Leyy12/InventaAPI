@@ -106,7 +106,7 @@ test('navigation, legacy route and locked onboarding UI retain the authoritative
   assert.match(navbar, /customer-mobile-navigation/);
   assert.match(navbar, /aria-current=/);
   assert.match(config, /source: '\/dashboard\/free-trial', destination: '\/dashboard\/plan-billing'/);
-  assert.match(billing, /<FreeTrialPage embedded \/>/);
+  assert.match(billing, /<FreeTrialContent embedded \/>/);
   assert.match(overview, /trialOnboarding\?\.eligible === true/);
   assert.match(overview, /entitlement\?\.plan === 'Free' && entitlement\?\.subscription_status === 'inactive'/);
   assert.match(overview, /Unlock API access/);

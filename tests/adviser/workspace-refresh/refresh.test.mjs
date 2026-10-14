@@ -200,24 +200,29 @@ test('Customer actual API Keys list preserves expanded integration examples acro
   for (let i = 0; i < 10; i++) b.cycle(); await c.advance(300000);
   assert.equal(reads, 1); assert.equal(nodes(h.output, node => node.props.className === 'mt-4').length, expanded); h.stop();
 });
-test('Customer actual Trial panel reads on entry/mutation/expiry, never every 30 seconds or on refocus', async () => {
+for (const embedded of [false, true]) {
+test(`Customer actual ${embedded ? 'embedded' : 'standalone'} Trial panel reads on entry/mutation/expiry, never every 30 seconds or on refocus`, async () => {
   const h = hooks(), c = clock(), b = browser(); let reads = 0;
   const user = { uid: 'trial-synthetic', getIdToken: async () => 'synthetic-not-a-credential' };
-  const Component = load('dashboard/src/app/dashboard/free-trial/page.tsx', 'TrialPanel', h, {
+  const Component = load('dashboard/src/components/subscription/FreeTrialContent.tsx', 'TrialPanel', h, {
     'next/link': { default: stub }, 'lucide-react': icons, '@/lib/firebase/auth-context': {},
     '@/lib/account-usage-events': { subscribeAccountUsage },
     '@/lib/trial-display.mjs': { formatTrialExpiry: () => 'fixture-date', trialCapacityMessage: () => '', trialRemainingSlots: () => 50 },
-    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
+    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
   }, { ...b, performance: { now: c.now }, setInterval: () => 999, clearInterval: stub,
     setTimeout: c.schedule, clearTimeout: c.cancel,
     fetch: async () => { reads++; return { ok: true, json: async () => ({ active: reads < 3, secondsRemaining: 360, productsIncluded: 0, activeKeys: 0 }) }; },
   });
-  h.mount(Component, { user, embedded: false }); await flush(); assert.equal(reads, 1);
+  h.mount(Component, { user, embedded }); await flush(); assert.equal(reads, 1);
   for (let i = 0; i < 10; i++) b.cycle(); await c.advance(300000); assert.equal(reads, 1);
   invalidateAccountUsage(user.uid); await flush(); assert.equal(reads, 2);
   await c.advance(360000); assert.equal(reads, 3, 'one expiry verification');
   await c.advance(300000); assert.equal(reads, 3, 'inactive Trial does not poll'); h.stop();
+  assert.equal(c.timers.size, 0, 'unmount clears the expiry timer');
+  invalidateAccountUsage(user.uid); await flush();
+  assert.equal(reads, 3, 'unmount removes the account usage subscription');
 });
+}
 test('both active frontend trees contain no automatic focus/visibility/page-show refresh wiring', () => {
   const inspect = dir => readdirSync(new URL('../../../' + dir, import.meta.url), { withFileTypes: true }).flatMap(entry =>
     entry.isDirectory() ? inspect(dir + '/' + entry.name) : /\.(?:tsx?|mjs)$/.test(entry.name) ? [dir + '/' + entry.name] : []);
