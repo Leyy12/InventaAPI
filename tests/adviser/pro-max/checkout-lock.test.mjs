@@ -250,7 +250,10 @@ for (const [label, patch] of Object.entries({ owner: { userId: 'stranger' }, mod
     env.configure('live');
     const before = env.db.dump();
     const response = await invoke(env.handlers.checkout, { body: { plan: 'pro_max' } });
-    assert.equal(response.statusCode, 409); assert.equal(response.body.code, 'CHECKOUT_REVIEW');
+    // Owned malformed purchases now stop at contract reconciliation before
+    // checkout-lock recovery; a foreign record is excluded from owned history.
+    assert.equal(response.statusCode, label === 'owner' ? 409 : 503);
+    assert.equal(response.body.code, label === 'owner' ? 'CHECKOUT_REVIEW' : 'REQUEST_CONTRACT_EVIDENCE_UNAVAILABLE');
     assert.deepEqual(env.db.dump(), before); assert.equal(env.attempts.length, 1);
   });
 }

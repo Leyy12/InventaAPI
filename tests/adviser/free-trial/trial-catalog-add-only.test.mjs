@@ -212,6 +212,9 @@ async function fixture(initial = ids(3), paidPlan = null, extras = {}) {
   const db = memoryFirestore({ 'users/owner': { role: 'Developer', plan: paidPlan ?? 'Free', businessSegment: 'Grocery', selectedSegment: 'Grocery',
     ...(paidPlan ? { subscription_status: 'active', subscriptionExpiresAt: '2026-10-25T00:00:00Z', apiRequestLimit: paidPlan === 'Pro Max' ? null : 500 } : {}) },
     'api_keys/key-a': { userId: 'owner', status: 'active', linkedProductIds: initial, scopeVersion: 0 },
+    ...(paidPlan ? { 'account_request_contracts/owner': { version: 1, plans: {
+      [paidPlan === 'Pro Max' ? 'pro_max' : 'pro']: { version: 1, period: 'utc_daily', limit: paidPlan === 'Pro Max' ? null : 500 },
+    } } } : {}),
     ...Object.fromEntries(ids(60).map(id => [`products/${id}`, { name: id, segment: 'Grocery' }])), ...extras });
   const options = { getDb: () => db, verifyIdToken: async () => ({ uid: 'owner' }), clock: () => new Date('2026-10-05T00:00:00Z') };
   if (!paidPlan) await invoke(createFreeTrialHandlers({ ...options, revokeRefreshTokens: async () => {} }).session);

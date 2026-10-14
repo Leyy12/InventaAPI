@@ -38,7 +38,7 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     }
     if (!userDoc.exists) throw new ApiSecurityError(401, 'ACCOUNT_NOT_FOUND', 'API-key account no longer exists.');
     const account = userDoc.data();
-    const resolved = await resolveRequestContracts(transaction, db, userId, account);
+    const resolved = await resolveRequestContracts(transaction, db, userId, account, { recoverHistorical: true, recordCompleteness: true });
     const requestContracts = resolved.contracts;
     const entitlement = accountEntitlement(account, now, requestLimits, requestContracts);
     const trialKeys = entitlement.activeTrial

@@ -127,7 +127,7 @@ export async function normalizeExpiredAccount(db, uid, clock = () => new Date())
     const ref = db.collection('users').doc(uid);
     const account = (await tx.get(ref)).data();
     if (accountBlocked(account)) return false;
-    const resolved = await resolveRequestContracts(tx, db, uid, account);
+    const resolved = await resolveRequestContracts(tx, db, uid, account, { recoverHistorical: true, recordCompleteness: true });
     const effective = evaluateEntitlement(account, clock(), DEFAULT_REQUEST_LIMITS, resolved.contracts);
     if (!effective.normalization) return false;
     preserveRequestContracts(tx, resolved);

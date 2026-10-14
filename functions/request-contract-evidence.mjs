@@ -1,4 +1,4 @@
-import { DEFAULT_REQUEST_LIMITS, REQUEST_LIMIT_PLANS, newRequestContract,
+import { REQUEST_LIMIT_PLANS, newRequestContract,
   promisedRequestAllowance, validOrderRequestAllowance } from './request-limit-policy.mjs';
 
 const paidPlan = name => String(name).toLowerCase() === 'pro max' ? 'pro_max'
@@ -18,33 +18,49 @@ const unavailable = () => {
   throw Object.assign(new Error('Prior paid request terms require verified contract evidence.'),
     { code: 'REQUEST_CONTRACT_EVIDENCE_UNAVAILABLE', status: 503 });
 };
-const mergePromise = (plans, plan, limit, origin, orderId) => {
-  const previous = plans[plan];
-  const promised = previous ? previous.limit === null || limit === null ? null : Math.max(previous.limit, limit) : limit;
-  plans[plan] = { ...newRequestContract(promised), origin, ...(orderId ? { orderId } : {}) };
-};
+const covers = (limit, previous) => limit === null || previous !== null && limit >= previous;
 
 // Read-only resolution inside the caller's transaction. Queue persistence only
 // after ALL reads, atomically with any profile normalization/checkout commit.
 // A client profile field never supplies a request allowance. Existing private
 // commitments are authoritative; overwritten paid plan fields are not history.
-export async function resolveRequestContracts(tx, db, uid, account, { incomingOrder, recoverHistorical = false } = {}) {
+export async function resolveRequestContracts(tx, db, uid, account, { recoverHistorical = false, recordCompleteness = false } = {}) {
   const ref = db.collection('account_request_contracts').doc(uid);
   const stored = (await tx.get(ref)).data();
   for (const plan of REQUEST_LIMIT_PLANS) promisedRequestAllowance(stored, plan);
   const kind = paidPlan(account?.plan);
   const priorPaid = account?.subscriptionExpiresAt != null;
-  const hasPaidPromise = !!(stored?.plans?.pro || stored?.plans?.pro_max);
-  if (kind ? stored?.plans?.[kind] : !recoverHistorical || !priorPaid || hasPaidPromise) return { ref, contracts: stored, changed: false };
-  if (!Number.isFinite(instant(account?.subscriptionExpiresAt))) unavailable();
+  if (account?.uid != null && account.uid !== uid) unavailable();
+  const missing = ['pro', 'pro_max'].filter(plan => !stored?.plans?.[plan]);
+  // Existing Enterprise/Unlimited tiers are outside paid Pro contract recovery.
+  const normalized = ['free', 'starter'].includes(String(account?.plan).toLowerCase());
+  if (!kind && !normalized) return { ref, contracts: stored, changed: false };
+  if (!missing.length || !(kind && missing.includes(kind) || recoverHistorical && priorPaid)) {
+    return { ref, contracts: stored, changed: false };
+  }
+  const accountEnd = instant(account?.subscriptionExpiresAt);
+  const accountStart = instant(account?.subscriptionStartedAt ?? account?.lastSubscribedAt);
+  const intactPromise = !!(kind && stored?.plans?.[kind]);
+  const verifiedHistory = !!(stored?.plans?.pro || stored?.plans?.pro_max)
+    && instant(stored?.historyVerifiedThrough) === accountEnd;
+  if (!Number.isFinite(accountEnd) || (!(intactPromise || verifiedHistory)
+    && (!Number.isFinite(accountStart) || accountStart >= accountEnd))) unavailable();
 
   // Bound recovery. No skipped/truncated history can silently remove a promise.
   const history = await tx.get(db.collection('payment_orders').where('userId', '==', uid).limit(101));
   if (history.docs.length > 100) unavailable();
-  const recovered = {};
+  const evidence = { pro: [], pro_max: [] };
+  // An intact private promise for the current paid tier already verifies that
+  // tier. A normalized profile requires a receipt covering its retained end.
+  let applicable = intactPromise || verifiedHistory;
   for (const doc of history.docs) {
     const order = doc.data();
-    if (order.state !== 'processed') continue;
+    if (order.state !== 'processed') {
+      // Unfulfilled checkout attempts are not purchases. A non-finalized record
+      // claiming an entitlement/paid period needs reconciliation, not omission.
+      if (order.entitlementGranted === true || order.subscriptionPeriodEnd != null) unavailable();
+      continue;
+    }
     const plan = paidPlan(order.plan);
     // Accepted historical settlement shapes, matching the locked payment
     // contract. Recovery cannot treat an arbitrary amount as paid plan evidence.
@@ -61,30 +77,47 @@ export async function resolveRequestContracts(tx, db, uid, account, { incomingOr
     const receipt = (await tx.get(db.collection('transactions').doc(`paymongo_${order.mode}_${order.paymentId}`))).data();
     if (!receipt || receipt.orderId !== order.id || receipt.userId !== uid || receipt.mode !== order.mode
       || receipt.paymentId !== order.paymentId || receipt.sessionId !== order.sessionId || receipt.status !== 'paid'
-      || receipt.entitlementGranted === false || receipt.plan !== order.plan || receipt.amount !== order.amount
-      || receipt.currency !== order.currency || !Number.isFinite(instant(receipt.subscriptionPeriodEnd))
-      || order.subscriptionPeriodEnd != null && instant(order.subscriptionPeriodEnd) !== instant(receipt.subscriptionPeriodEnd)) unavailable();
-    mergePromise(recovered, plan, order.requestAllowance === undefined ? DEFAULT_REQUEST_LIMITS[plan] : order.requestAllowance.limit,
-      'paid_order', order.id);
+      || receipt.entitlementGranted !== true || receipt.plan !== order.plan || receipt.amount !== order.amount
+      || receipt.currency !== order.currency) unavailable();
+    const start = instant(receipt.subscriptionPeriodStart), end = instant(receipt.subscriptionPeriodEnd);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end - start !== 30 * 86400000 || end > accountEnd
+      || order.subscriptionPeriodStart != null && instant(order.subscriptionPeriodStart) !== start
+      || order.subscriptionPeriodEnd == null || instant(order.subscriptionPeriodEnd) !== end) unavailable();
+    if (end === accountEnd && start >= accountStart && (!kind || kind === plan)) applicable = true;
+    if (stored?.plans?.[plan]) continue; // Never replace an authoritative private promise.
+    // The legacy storage envelope and today's policy do not establish terms.
+    // Only the server-owned accepted order snapshot is used here. Records
+    // without it require reconciliation; no historical policy is invented.
+    if (order.requestAllowance === undefined) unavailable();
+    if (receipt.requestAllowance !== undefined && (!validOrderRequestAllowance({ ...order, requestAllowance: receipt.requestAllowance })
+      || receipt.requestAllowance.limit !== order.requestAllowance.limit
+      || receipt.requestAllowance.policyVersion !== order.requestAllowance.policyVersion)) unavailable();
+    evidence[plan].push({ start, end, orderId: order.id, limit: order.requestAllowance.limit });
   }
-  if (kind && !recovered[kind]) {
-    // Capture the still-intact, server-controlled legacy entitlement BEFORE
-    // losing its tier. This fallback is NEVER used for a normalized Free profile.
-    if (kind === 'pro_max' && account.apiRequestLimit !== null
-      || !['active', 'inactive'].includes(account.subscription_status)) unavailable();
-    mergePromise(recovered, kind, DEFAULT_REQUEST_LIMITS[kind], 'legacy_entitlement');
+  if (!applicable) unavailable();
+  const recovered = {};
+  for (const plan of missing) {
+    const purchases = evidence[plan].sort((a, b) => a.end - b.end || a.start - b.start);
+    let previous;
+    for (const purchase of purchases) {
+      // A lower subsequent snapshot or conflicting overlapping periods cannot
+      // silently cancel a protected promise. Distinct plans never share floors.
+      if (previous && (!covers(purchase.limit, previous.limit)
+        || purchase.start < previous.end && purchase.limit !== previous.limit)) unavailable();
+      previous = purchase;
+    }
+    if (previous) recovered[plan] = { ...newRequestContract(previous.limit), origin: 'paid_order', orderId: previous.orderId };
   }
-  if (!Object.keys(recovered).length) {
-    // A verified incoming Unlimited purchase is itself an adequate promise and
-    // cannot reduce unknown prior terms. Finite incoming terms cannot repair
-    // missing historical evidence for an already-normalized paid account.
-    const plan = paidPlan(incomingOrder?.plan);
-    if (plan && validOrderRequestAllowance(incomingOrder)
-      && (incomingOrder.requestAllowance?.limit === null || incomingOrder.requestAllowance === undefined && plan === 'pro_max')) {
-      mergePromise(recovered, plan, null, 'paid_order', incomingOrder.id);
-    } else unavailable();
-  }
-  return { ref, contracts: { version: 1, plans: { ...recovered, ...stored?.plans } }, changed: true };
+  if (kind && !stored?.plans?.[kind] && !recovered[kind]) unavailable();
+  // Record completeness before a normalizer erases the current tier. This is
+  // evidence of a bounded, complete scan and a verified applicable promise,
+  // never an allowance or an assumption that an unscanned plan has no history.
+  // Future resolutions still scan missing plans; the marker cannot bypass the
+  // bound, receipt validation or new conflicting evidence.
+  const historyVerifiedThrough = new Date(accountEnd).toISOString();
+  const changed = Object.keys(recovered).length > 0 || recordCompleteness && stored?.historyVerifiedThrough !== historyVerifiedThrough;
+  return { ref, contracts: changed ? { ...stored, version: 1, plans: { ...stored?.plans, ...recovered },
+    ...(recordCompleteness ? { historyVerifiedThrough } : {}) } : stored, changed };
 }
 
 export function preserveRequestContracts(tx, resolved) {

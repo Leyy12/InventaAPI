@@ -59,7 +59,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     const usageDoc = await tx.get(db.collection('account_api_usage').doc(uid));
     const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
     let account = accountDoc.data();
-    const resolved = await resolveRequestContracts(tx, db, uid, account);
+    const resolved = await resolveRequestContracts(tx, db, uid, account, { recoverHistorical: true, recordCompleteness: true });
     const requestContracts = resolved.contracts;
     let entitlement = accountEntitlement(account, clock(), requestLimits, requestContracts);
     let legacyConsumed = false;

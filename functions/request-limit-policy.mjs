@@ -18,7 +18,8 @@ export const requestPolicyVersion = limits => `requests-v1:${REQUEST_LIMIT_PLANS
 const greaterAllowance = (a, b) => a === null || b === null ? null : Math.max(a, b);
 
 // A saved purchase/activation promise is a floor, not a second mutable policy.
-// Existing customers without a contract retain their accepted default promise.
+// Paid callers resolve verified contracts before evaluating these policy floors.
+// Trial legacy defaults remain separate from paid historical recovery.
 // Increases apply immediately. Reductions affect only newly agreed contracts.
 export function promisedRequestAllowance(contracts, plan) {
   if (contracts !== undefined && (!contracts || contracts.version !== 1 || !contracts.plans || typeof contracts.plans !== 'object' || Array.isArray(contracts.plans))) {
@@ -45,14 +46,8 @@ export function purchaseRequestContracts(account, contracts, plan, promisedLimit
   for (const existingPlan of REQUEST_LIMIT_PLANS) promisedRequestAllowance(contracts, existingPlan);
   if (!validPlanRequestLimit(plan, promisedLimit)) throw new Error('Invalid purchase request promise');
   const previous = contracts?.plans?.[plan];
-  // Existing paid plan promises survive renewal, including the legacy Unlimited
-  // Pro Max promise. A new purchase never lowers an existing paid commitment.
-  const samePaidPlan = (plan === 'pro' && ['pro', 'professional'].includes(String(account.plan).toLowerCase()))
-    || (plan === 'pro_max' && String(account.plan).toLowerCase() === 'pro max');
-  let floor = previous !== undefined || samePaidPlan ? greaterAllowance(promisedRequestAllowance(contracts, plan), promisedLimit) : promisedLimit;
-  // Upgrading an existing paid Pro account cannot lower its paid request promise.
-  if (plan === 'pro_max' && ['pro', 'professional'].includes(String(account.plan).toLowerCase())) {
-    floor = greaterAllowance(floor, promisedRequestAllowance(contracts, 'pro'));
-  }
+  // Verified same-plan promises survive renewal. A different tier's terms and
+  // an ambiguous profile label never supply a purchase floor.
+  const floor = previous !== undefined ? greaterAllowance(previous.limit, promisedLimit) : promisedLimit;
   return { version: 1, plans: { ...contracts?.plans, [plan]: newRequestContract(floor) } };
 }

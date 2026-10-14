@@ -24,6 +24,9 @@ function fixture(account = {}, extra = {}, metadata = {}, auth = {}) {
   let at = START;
   const clock = () => new Date(at);
   const db = memoryFirestore({ 'users/owner': { ...owner, ...account }, 'api_keys/key-a': key,
+    ...(['Pro', 'Pro Max'].includes(account.plan) ? { 'account_request_contracts/owner': { version: 1, plans: {
+      [account.plan === 'Pro Max' ? 'pro_max' : 'pro']: { version: 1, period: 'utc_daily', limit: account.plan === 'Pro Max' ? null : 500 },
+    } } } : {}),
     'api_keys/key-b': { ...key, key: 'daas_trial_b', status: 'revoked' }, ...productRecords,
     'account_api_usage/owner': { window: '2026-09-23', used: 2 },
     'account_free_monthly_usage/owner': { window: '2026-09', used: 2 },
@@ -312,6 +315,7 @@ test('paid Pro supersedes trial; trial time never extends paid renewal base', as
   const f = fixture(); await f.activate(); await f.consume();
   const period = renewalPeriod(f.db.read('users/owner'), f.clock()); assert.equal(period.start, START);
   await f.db.collection('users').doc('owner').update({ plan: 'Pro', subscription_status: 'active', subscriptionExpiresAt: period.end });
+  await f.db.collection('account_request_contracts').doc('owner').set({ version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } });
   assert.equal((await f.consume()).usage.limit, 500); assert.equal(f.db.read('account_trial_usage/owner').used, 0);
   assert.equal((await f.status()).body.status, 'paid'); assert.equal((await f.activate()).statusCode, 409);
   f.time(period.end); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
@@ -366,6 +370,7 @@ test('paid Pro restores the same active key, then paid expiry restores Upgrade R
   await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
   await f.db.collection('users').doc('owner').update({ plan: 'Pro', subscription_status: 'active',
     subscriptionExpiresAt: '2026-10-31T12:00:00.000Z', apiRequestLimit: 5000 });
+  await f.db.collection('account_request_contracts').doc('owner').set({ version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } });
   assert.equal((await f.consume()).usage.used, 1);
   assert.equal(f.db.read('api_keys/key-a').status, 'active');
   assert.equal((await f.status()).body.status, 'paid');

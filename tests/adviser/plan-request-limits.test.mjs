@@ -18,7 +18,8 @@ function quotaFixture({ plan = 'Pro', limits = DEFAULT_REQUEST_LIMITS, used = 0,
   const keys = [issueCredential(), issueCredential()];
   const db = memoryFirestore({ 'users/customer': { ...account(plan), ...profileExtra }, 'system/settings': { planRequestLimits: limits },
     'account_api_usage/customer': { window: '2026-10-14', used },
-    ...(contracts ? { 'account_request_contracts/customer': { version: 1, plans: contracts } } : {}),
+    ...((contracts || plan !== 'Free') ? { 'account_request_contracts/customer': { version: 1,
+      plans: contracts ?? { [plan === 'Pro Max' ? 'pro_max' : 'pro']: newRequestContract(plan === 'Pro Max' ? null : 500) } } } : {}),
     ...Object.fromEntries(keys.map((key, i) => [`api_keys/${key.id}`, { ...key.stored, userId: 'customer', status: trial && i ? 'revoked' : 'active', linkedProductIds: [] }])) });
   const consume = i => consumeAccountQuota(db, { keyId: keys[i || 0].id, userId: 'customer', credential: keys[i || 0].credential, clock: () => at });
   return { db, keys, consume, advance(value) { at = value; } };
@@ -119,7 +120,9 @@ test('missing finite Trial counter is unavailable in metadata and cannot admit o
 
 const orderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 function paymentFixture(limits, initialAccount = { ...account('Free'), subscriptionStartedAt: null, subscriptionExpiresAt: null }) {
-  const db = memoryFirestore({ 'users/customer': initialAccount, 'system/settings': { planRequestLimits: limits } });
+  const db = memoryFirestore({ 'users/customer': initialAccount, 'system/settings': { planRequestLimits: limits },
+    ...(initialAccount.plan !== 'Free' ? { 'account_request_contracts/customer': { version: 1,
+      plans: { [initialAccount.plan === 'Pro Max' ? 'pro_max' : 'pro']: newRequestContract(initialAccount.plan === 'Pro Max' ? null : 500) } } } : {}) });
   let providerCalls = 0;
   const handlers = createPaymentHandlers({ getDb: () => db, verifyIdToken: async () => ({ uid: 'customer' }), clock: () => now,
     newOrderId: () => orderId, getConfig: () => ({ mode: 'test', secretKey: 'sk_test_synthetic', webhookSecret: 'synthetic', dashboardUrl: 'https://customer.invalid' }),
@@ -151,12 +154,12 @@ test('finite Pro Max purchases preserve price and capture finite terms for new c
   assert.equal(f.db.read('account_request_contracts/customer').plans.pro_max.limit, 1000);
   assert.equal(f.db.read('users/customer').apiRequestLimit, null);
 });
-test('existing paid renewal and upgrade quotes preserve higher promises', async () => {
+test('existing paid renewal quotes preserve same-plan promises without merging Pro into Max', async () => {
   const max = paymentFixture({ ...DEFAULT_REQUEST_LIMITS, pro_max: 100 }, account('Pro Max'));
   const quote = await invoke(max.handlers.status, { token: 'synthetic' }); assert.equal(quote.body.purchaseRequestLimits.pro_max, null);
   await max.checkout('pro_max'); await max.fulfill(499900); assert.equal(max.db.read('account_request_contracts/customer').plans.pro_max.limit, null);
   const pro = paymentFixture({ ...DEFAULT_REQUEST_LIMITS, pro: 100, pro_max: 100 }, account('Pro'));
   const upgrade = await invoke(pro.handlers.status, { token: 'synthetic' }); assert.equal(upgrade.body.purchaseRequestLimits.pro, 500);
-  assert.equal(upgrade.body.purchaseRequestLimits.pro_max, 500); assert.equal((await pro.checkout('pro_max')).statusCode, 200);
-  assert.equal(pro.db.read(`payment_orders/${orderId}`).requestAllowance.limit, 500);
+  assert.equal(upgrade.body.purchaseRequestLimits.pro_max, 100); assert.equal((await pro.checkout('pro_max')).statusCode, 200);
+  assert.equal(pro.db.read(`payment_orders/${orderId}`).requestAllowance.limit, 100);
 });

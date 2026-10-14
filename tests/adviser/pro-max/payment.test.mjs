@@ -14,7 +14,10 @@ const pro = { ...free, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 
   subscriptionStartedAt: '2026-09-01T12:00:00.000Z', subscriptionExpiresAt: '2026-10-01T12:00:00.000Z' };
 const config = { mode: 'test', secretKey: 'sk_test_synthetic', webhookSecret: 'synthetic-only', dashboardUrl: 'https://customer.example' };
 function handlers(account = free) {
-  const db = memoryFirestore({ 'users/owner': account });
+  const db = memoryFirestore({ 'users/owner': account,
+    ...(account.plan !== 'Free' ? { 'account_request_contracts/owner': { version: 1, plans: {
+      [account.plan === 'Pro Max' ? 'pro_max' : 'pro']: { version: 1, period: 'utc_daily', limit: account.plan === 'Pro Max' ? null : 500 },
+    } } } : {}) });
   let calls = 0;
   const payment = createPaymentHandlers({ getDb: () => db, verifyIdToken: async token => {
     if (token !== 'owner-token') throw Error('invalid'); return { uid: 'owner' };

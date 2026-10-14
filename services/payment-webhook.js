@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
-import { DEFAULT_REQUEST_LIMITS, purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
+import { purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts } from '../functions/request-contract-evidence.mjs';
 import { purchaseForIntent, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
@@ -124,13 +124,15 @@ export async function fulfillPayment(db, payment, time) {
     }
     requireCustomer(account, order.userId);
     requirePurchasable(account, now, { planId: order.planId ?? 'pro' });
+    requirePayment(order.requestAllowance !== undefined, 'REQUEST_CONTRACT_EVIDENCE_UNAVAILABLE',
+      'Accepted purchase request terms require reconciliation.', 503);
     const contractsRef = db.collection('account_request_contracts').doc(order.userId);
-    const requestContracts = (await resolveRequestContracts(tx, db, order.userId, account, { incomingOrder: order, recoverHistorical: true })).contracts;
+    const requestContracts = (await resolveRequestContracts(tx, db, order.userId, account, { recoverHistorical: true })).contracts;
     const processedAt = now.toISOString();
     const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
     const requestPlan = order.planId ?? 'pro';
     const contracts = purchaseRequestContracts(account, requestContracts, requestPlan,
-      order.requestAllowance === undefined ? DEFAULT_REQUEST_LIMITS[requestPlan] : order.requestAllowance.limit);
+      order.requestAllowance.limit);
     tx.set(paymentRef, { ...evidence, userEmail: typeof account.email === 'string' ? account.email : '',
       amount: order.amount, currency: order.currency,
       paymentMethod: payment.paymentMethod ?? 'gcash', paymongoReferenceId: payment.paymentId,
