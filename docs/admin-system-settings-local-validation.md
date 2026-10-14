@@ -1,5 +1,7 @@
 # System Settings functionalization and plan request allowances
 
+This report records the original `07b20ae` implementation. Its legacy renewal and scheduled deployment conclusions are superseded by [the P1 remediation report](admin-system-settings-legacy-renewal-remediation.md), which preserves promises across normalization, requires verified historical evidence for already-normalized paid accounts, and identifies the scheduled Function package release dependency.
+
 Local implementation on `codex/admin-system-settings-functionalization`, based on `e9256a008a5ddb4a16218682927e05090d96a7a8`. No deployments, remote writes, Firebase publication, database changes, or Git push were performed. The local commit SHA is returned in the completion report.
 
 ## Supported settings

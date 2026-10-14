@@ -1,4 +1,5 @@
 import { DEFAULT_REQUEST_LIMITS, effectiveRequestAllowance } from './request-limit-policy.mjs';
+import { resolveRequestContracts, preserveRequestContracts } from './request-contract-evidence.mjs';
 export { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from './entitlement-limits.mjs';
 
 // Shared by Express and the existing deployable Functions package. No SDK/I/O.
@@ -126,8 +127,10 @@ export async function normalizeExpiredAccount(db, uid, clock = () => new Date())
     const ref = db.collection('users').doc(uid);
     const account = (await tx.get(ref)).data();
     if (accountBlocked(account)) return false;
-    const effective = evaluateEntitlement(account, clock());
+    const resolved = await resolveRequestContracts(tx, db, uid, account);
+    const effective = evaluateEntitlement(account, clock(), DEFAULT_REQUEST_LIMITS, resolved.contracts);
     if (!effective.normalization) return false;
+    preserveRequestContracts(tx, resolved);
     tx.update(ref, effective.normalization);
     return true;
   });

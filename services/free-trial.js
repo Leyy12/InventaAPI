@@ -32,6 +32,7 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
     if (!['free', 'starter'].includes(String(account.plan).toLowerCase())) {
       throw new ApiSecurityError(403, 'TRIAL_INELIGIBLE', 'Only normal Free accounts may activate a trial.');
     }
+    if (account.subscriptionExpiresAt != null) throw new ApiSecurityError(403, 'TRIAL_INELIGIBLE', 'A prior paid account must renew its subscription.');
     const segment = normalizeSegment(account.businessSegment);
     if (!segment) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Account business segment requires review.');
     const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
@@ -64,6 +65,9 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
         return { success: true, initialized: false };
       }
       if (previous.exists) throw new ApiSecurityError(503, 'TRIAL_UNAVAILABLE', 'Existing Trial state requires review.');
+      // Paid normalization retains its server-owned expiry. Do not turn a
+      // lapsed subscription into a new Trial during ordinary session login.
+      if (account.subscriptionExpiresAt != null) return { success: true, initialized: false };
       const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
       const dailyRef = db.collection('account_api_usage').doc(uid), daily = await tx.get(dailyRef);
       const contractsRef = db.collection('account_request_contracts').doc(uid), contracts = (await tx.get(contractsRef)).data();
@@ -127,7 +131,7 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
       const keys = await tx.get(db.collection('api_keys').where('userId', '==', uid));
       const activeKeys = keys.docs.filter(doc => doc.data().status === 'active');
       const productCount = new Set(activeKeys.flatMap(doc => authorizedProductIds(doc.data()))).size;
-      const eligible = !trial.used && ['free', 'starter'].includes(String(account.plan).toLowerCase())
+      const eligible = !trial.used && account.subscriptionExpiresAt == null && ['free', 'starter'].includes(String(account.plan).toLowerCase())
         && !!normalizeSegment(account.businessSegment);
       const exhausted = trial.exhausted || account.trialConsumed === true || legacyConsumed, active = effective.activeTrial === true;
       const paid = effective.activePro || effective.level === 2;

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
 import { DEFAULT_REQUEST_LIMITS, purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
+import { resolveRequestContracts } from '../functions/request-contract-evidence.mjs';
 import { purchaseForIntent, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -124,7 +125,7 @@ export async function fulfillPayment(db, payment, time) {
     requireCustomer(account, order.userId);
     requirePurchasable(account, now, { planId: order.planId ?? 'pro' });
     const contractsRef = db.collection('account_request_contracts').doc(order.userId);
-    const requestContracts = (await tx.get(contractsRef)).data();
+    const requestContracts = (await resolveRequestContracts(tx, db, order.userId, account, { incomingOrder: order, recoverHistorical: true })).contracts;
     const processedAt = now.toISOString();
     const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
     const requestPlan = order.planId ?? 'pro';

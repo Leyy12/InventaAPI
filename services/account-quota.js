@@ -5,6 +5,7 @@ import {
 import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
 import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
+import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
   // Only deployment configuration and Firestore snapshot metadata qualify.
@@ -29,7 +30,6 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     const userDoc = await transaction.get(userRef);
     const usageDoc = await transaction.get(usageRef);
     const requestLimits = requestLimitPolicy((await transaction.get(db.collection('system').doc('settings'))).data());
-    const requestContracts = (await transaction.get(db.collection('account_request_contracts').doc(userId))).data();
     const now = clock();
     const key = keyDoc.exists ? keyDoc.data() : null;
     assertActiveKey(key, now);
@@ -38,11 +38,14 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     }
     if (!userDoc.exists) throw new ApiSecurityError(401, 'ACCOUNT_NOT_FOUND', 'API-key account no longer exists.');
     const account = userDoc.data();
+    const resolved = await resolveRequestContracts(transaction, db, userId, account);
+    const requestContracts = resolved.contracts;
     const entitlement = accountEntitlement(account, now, requestLimits, requestContracts);
     const trialKeys = entitlement.activeTrial
       ? await transaction.get(db.collection('api_keys').where('userId', '==', userId)) : null;
     const legacyHistory = entitlement.activeTrial && !Object.hasOwn(account, 'trialConsumed')
       ? await transaction.get(db.collection('account_trial_usage').doc(userId)) : null;
+    preserveRequestContracts(transaction, resolved);
     if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
     const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
     if (entitlement.upgradeRequired) return { denied: upgradeRequiredError() };

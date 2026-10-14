@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { checkoutPayload, samePaymentMethods, savedPaymentMethods } from './paymongo-checkout.js';
 import { evaluateEntitlement, planKind } from '../functions/subscription-lifecycle.mjs';
 import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, requestPolicyVersion, purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
+import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
 import { purchaseForIntent, settlementForPurchase, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -22,6 +23,14 @@ function requireReplayable(order, config, now) {
 export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createSession, expireSession,
   clock = () => new Date(), newOrderId = randomUUID, report = () => {} }) {
   const authenticate = operation => authenticatedPayment({ getDb, verifyIdToken }, operation);
+  const verifiedContracts = async (tx, db, uid, account) => {
+    try { return await resolveRequestContracts(tx, db, uid, account, { recoverHistorical: true }); }
+    catch (error) {
+      if (error.code === 'REQUEST_CONTRACT_EVIDENCE_UNAVAILABLE') requirePayment(false, error.code,
+        'Prior paid request terms require review before renewal.', 503);
+      throw error;
+    }
+  };
   const checkout = authenticate(async (req, res, uid, db) => {
     const body = req.body || {};
     const purchase = purchaseForIntent(body.plan === undefined ? 'pro' : body.plan);
@@ -50,12 +59,15 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       return order;
     };
     let attempt = await db.runTransaction(async tx => {
+      let resolved;
+      const result = await (async () => {
       const now = clock();
       const account = (await tx.get(db.collection('users').doc(uid))).data();
       requireCustomer(account, uid);
       requirePurchasable(account, now, purchase);
       const limits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
-      const contracts = (await tx.get(db.collection('account_request_contracts').doc(uid))).data();
+      resolved = await verifiedContracts(tx, db, uid, account);
+      const contracts = resolved.contracts;
       const policyVersion = requestPolicyVersion(limits);
       requirePayment(body.requestPolicyVersion === policyVersion || body.requestPolicyVersion === undefined
         && policyVersion === requestPolicyVersion(DEFAULT_REQUEST_LIMITS), 'REQUEST_POLICY_CHANGED',
@@ -126,6 +138,9 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       tx.set(orderRef, order);
       tx.set(lockRef, { orderId: id });
       return { order, existing: false };
+      })();
+      preserveRequestContracts(tx, resolved);
+      return result;
     });
     if (attempt.replace) {
       const old = attempt.order;
@@ -228,7 +243,7 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
       const account = (await tx.get(userRef)).data();
       requireCustomer(account, uid);
       const requestLimits = requestLimitPolicy((await tx.get(db.collection('system').doc('settings'))).data());
-      const requestContracts = (await tx.get(db.collection('account_request_contracts').doc(uid))).data();
+      const requestContracts = (await verifiedContracts(tx, db, uid, account)).contracts;
       const effective = evaluateEntitlement(account, now, requestLimits, requestContracts);
       let paymentConfirmed = false;
       if (orderId !== undefined) {

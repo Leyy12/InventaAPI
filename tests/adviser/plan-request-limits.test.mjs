@@ -12,7 +12,7 @@ import { fulfillPayment } from '../../services/payment-webhook.js';
 const now = new Date('2026-10-14T12:00:00Z');
 const account = (plan = 'Pro') => ({ uid: 'customer', role: 'Developer', businessSegment: 'Grocery', selectedSegment: 'Grocery',
   plan, apiRequestLimit: plan === 'Pro Max' ? null : 50, subscription_status: 'active',
-  subscriptionStartedAt: '2026-10-01T00:00:00Z', subscriptionExpiresAt: '2026-11-01T00:00:00Z' });
+  subscriptionStartedAt: plan === 'Free' ? null : '2026-10-01T00:00:00Z', subscriptionExpiresAt: plan === 'Free' ? null : '2026-11-01T00:00:00Z' });
 function quotaFixture({ plan = 'Pro', limits = DEFAULT_REQUEST_LIMITS, used = 0, contracts, profileExtra = {}, trial = false } = {}) {
   let at = now;
   const keys = [issueCredential(), issueCredential()];
@@ -118,7 +118,7 @@ test('missing finite Trial counter is unavailable in metadata and cannot admit o
 });
 
 const orderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-function paymentFixture(limits, initialAccount = { ...account('Free') }) {
+function paymentFixture(limits, initialAccount = { ...account('Free'), subscriptionStartedAt: null, subscriptionExpiresAt: null }) {
   const db = memoryFirestore({ 'users/customer': initialAccount, 'system/settings': { planRequestLimits: limits } });
   let providerCalls = 0;
   const handlers = createPaymentHandlers({ getDb: () => db, verifyIdToken: async () => ({ uid: 'customer' }), clock: () => now,
@@ -142,7 +142,7 @@ test('already-paid fulfillment honors frozen request promise despite later confi
   f.db.seed('system/settings', { maintenanceMode: true, planRequestLimits: { pro: 'unavailable' } });
   assert.deepEqual(await f.fulfill(149900), { duplicate: false });
   assert.equal(f.db.read('account_request_contracts/customer').plans.pro.limit, 1000);
-  assert.equal(f.db.read('users/customer').subscriptionExpiresAt, '2026-12-01T00:00:00.000Z');
+  assert.equal(f.db.read('users/customer').subscriptionExpiresAt, '2026-11-13T12:00:00.000Z');
   assert.deepEqual(await f.fulfill(149900), { duplicate: true });
 });
 test('finite Pro Max purchases preserve price and capture finite terms for new customers', async () => {
