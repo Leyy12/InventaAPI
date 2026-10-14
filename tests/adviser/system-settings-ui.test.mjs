@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hooks, load, nodes, flush } from './workspace-refresh/harness.mjs';
 import { MAINTENANCE_MESSAGE } from '../../services/system-settings-contract.mjs';
+import { TRIAL_MAX_PRODUCTS } from '../../functions/entitlement-limits.mjs';
 const icons = new Proxy({}, { get: (_, name) => String(name) });
 const text = value => Array.isArray(value) ? value.map(text).join(' ') : value && typeof value === 'object'
   ? text(value.props?.children) : String(value ?? '');
@@ -11,7 +12,7 @@ const button = (h, name) => find(h, node => node.type === 'button' && text(node)
 async function settingsFixture(options = {}) {
   const h = hooks(), calls = [];
   const user = { uid: 'synthetic-admin', getIdToken: async () => 'synthetic-token' };
-  let stored = { settings: { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null } },
+  let stored = { settings: { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: options.freeTrialLimit ?? null, pro: 500, pro_max: options.maxLimit ?? null } },
     version: 'v1', source: options.missing ? 'defaults' : 'stored', warnings: [], planLimitPeriod: 'UTC daily. Existing paid promises protected.' };
   let getError = options.getError;
   const fakeFetch = async (url, request) => {
@@ -33,6 +34,7 @@ async function settingsFixture(options = {}) {
   };
   const component = load('admin-panel/src/app/settings/page.tsx', 'SettingsPage', h, {
     'next/link': 'Link', 'lucide-react': icons, '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS },
   }, { fetch: fakeFetch, process: { env: { NEXT_PUBLIC_API_URL: 'https://synthetic.invalid', NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT: options.environment || 'Production' } } });
   h.mount(component);
   const dialog = find(h, node => node.type === 'dialog'), dialogState = { open: false };
@@ -50,10 +52,37 @@ test('actual settings page loads authoritative state and replaces unsupported co
   const f = await settingsFixture(), copy = text(f.h.output);
   assert.equal(button(f.h, 'Save Settings').props.disabled, true);
   assert.match(copy, /Production/); assert.match(copy, /v1\.0\.0/); assert.match(copy, /Connected/); assert.match(copy, /single probe/);
-  assert.match(copy, /Not tracked/); assert.match(copy, /Plan Request Limits/);
+  assert.match(copy, /Not tracked/); assert.match(copy, /Plan Limits/);
   assert.doesNotMatch(copy, /Restart Server|Clear Cache|Strict API Validation|Max Requests Per Minute/);
-  assert.equal(nodes(f.h.output, node => node.type === 'select').length, 2);
+  assert.equal(nodes(f.h.output, node => node.type === 'select').length, 1);
   assert.equal(find(f.h, node => node.type === 'Link').props.href, '/audit'); f.stop();
+});
+
+test('Trial capacity is read-only linked products, independent of stored request policy and paid-plan edits', async () => {
+  const f = await settingsFixture({ freeTrialLimit: 123 });
+  const trial = find(f.h, node => node.props?.['aria-label'] === 'Free Trial linked products');
+  assert.equal(trial.props.value, 50);
+  assert.equal(trial.props.readOnly, true);
+  assert.equal(trial.props.onChange, undefined);
+  assert.match(text(f.h.output), /Linked products/);
+  assert.doesNotMatch(text(f.h.output), /Plan Request Limits|Unlimited requests|UTC daily limit/);
+  assert.equal(nodes(f.h.output, node => node.props?.['aria-label'] === 'Free Trial request mode').length, 0);
+  assert.equal(button(f.h, 'Save Settings').props.disabled, true);
+  await f.change('pro-request-limit', 1000); await f.submit();
+  assert.deepEqual(f.patches()[0].body.changes, { planRequestLimits: { pro: 1000 } });
+  assert.equal(find(f.h, node => node.props?.['aria-label'] === 'Free Trial linked products').props.value, 50);
+  f.stop();
+});
+
+test('Pro Max retains finite editing and switching back to Unlimited without mutating Trial policy', async () => {
+  const f = await settingsFixture({ freeTrialLimit: 123 });
+  await f.change('Pro Max request mode', 'finite');
+  await f.change('pro_max-request-limit', 2000); await f.submit();
+  assert.deepEqual(f.patches()[0].body.changes, { planRequestLimits: { pro_max: 2000 } });
+  button(f.h, '∞').props.onClick(); await flush(); await f.submit();
+  assert.deepEqual(f.patches()[1].body.changes, { planRequestLimits: { pro_max: null } });
+  assert.equal(find(f.h, node => node.props?.['aria-label'] === 'Pro Max request mode').props.value, 'unlimited');
+  f.stop();
 });
 for (const environment of ['Production', 'Staging', 'Development', 'Unknown']) test(`actual settings environment renders ${environment}`, async () => {
   const f = await settingsFixture({ environment }); assert.ok(text(f.h.output).includes(environment)); f.stop();

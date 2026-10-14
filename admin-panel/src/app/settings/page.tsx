@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Settings, Save, Server, Shield } from 'lucide-react';
 import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { TRIAL_MAX_PRODUCTS } from '../../../../functions/entitlement-limits.mjs';
 
 type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
 type Configuration = { maintenanceMode: boolean; allowNewRegistrations: boolean; planRequestLimits: PlanLimits };
@@ -13,11 +14,11 @@ type Phase = 'loading' | 'ready' | 'missing' | 'unauthorized' | 'unavailable' | 
 const initial: Configuration = { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null } };
 const editableFields = ['maintenanceMode', 'allowNewRegistrations'] as const;
 const planFields = ['free_trial', 'pro', 'pro_max'] as const;
-const planLabels = { free_trial: 'Free Trial', pro: 'Pro', pro_max: 'Pro Max' };
+const editablePlanFields = ['pro', 'pro_max'] as const;
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5002' : '');
 const deployment = process.env.NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT;
 const environment = ['Production', 'Staging', 'Development'].includes(deployment || '') ? deployment : 'Unknown';
-const controlClass = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50';
+const controlClass = 'h-10 w-full min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50';
 const quickClass = 'w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors text-left flex items-center justify-between border border-slate-700 disabled:opacity-50';
 
 function verifiedSnapshot(body: Snapshot & { success?: boolean }): Snapshot {
@@ -44,8 +45,8 @@ export default function SettingsPage() {
   const generation = useRef(0);
   const ready = phase === 'ready' || phase === 'missing';
   const dirty = !!snapshot && (editableFields.some(field => draft[field] !== snapshot.settings[field])
-    || planFields.some(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]));
-  const changePlan = (plan: keyof PlanLimits, limit: number | null) => setDraft(current => ({ ...current, planRequestLimits: { ...current.planRequestLimits, [plan]: limit } }));
+    || editablePlanFields.some(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]));
+  const changePlan = (plan: typeof editablePlanFields[number], limit: number | null) => setDraft(current => ({ ...current, planRequestLimits: { ...current.planRequestLimits, [plan]: limit } }));
 
   const request = useCallback(async (path: string, method = 'GET', body?: unknown) => {
     if (!user) throw Object.assign(new Error('Admin session required'), { status: 401 });
@@ -92,7 +93,7 @@ export default function SettingsPage() {
     const current = generation.current;
     try {
       const changes: Record<string, unknown> = Object.fromEntries(editableFields.filter(field => draft[field] !== snapshot.settings[field]).map(field => [field, draft[field]]));
-      const changedPlans = planFields.filter(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]);
+      const changedPlans = editablePlanFields.filter(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]);
       if (changedPlans.length) changes.planRequestLimits = Object.fromEntries(changedPlans.map(plan => [plan, draft.planRequestLimits[plan]]));
       const payload = await request('settings', 'PATCH', { version: snapshot.version, changes });
       if (current !== generation.current) return;
@@ -161,17 +162,31 @@ export default function SettingsPage() {
                 </label>
               </div>
               <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Shield className="w-4 h-4 text-indigo-400" />Plan Request Limits</h3>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Shield className="w-4 h-4 text-indigo-400" />Plan Limits</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {planFields.map(plan => <div key={plan} className="space-y-2">
-                    <label htmlFor={`${plan}-request-limit`} className="text-sm font-medium text-slate-300">{planLabels[plan]}</label>
-                    {plan === 'pro' ? <p className="text-xs text-slate-400">UTC daily limit</p> : <select aria-label={`${planLabels[plan]} request mode`} value={draft.planRequestLimits[plan] === null ? 'unlimited' : 'finite'}
-                      onChange={event => changePlan(plan, event.target.value === 'unlimited' ? null : 500)} className={controlClass}>
-                      <option value="unlimited">Unlimited</option><option value="finite">UTC daily limit</option>
-                    </select>}
-                    {draft.planRequestLimits[plan] === null ? <p className="text-sm text-slate-200">Unlimited requests</p> : <input id={`${plan}-request-limit`} aria-label={`${planLabels[plan]} daily request allowance`} type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required
-                      value={draft.planRequestLimits[plan] ?? ''} onChange={event => changePlan(plan, Number(event.target.value))} className={controlClass} />}
-                  </div>)}
+                  <div className="space-y-2">
+                    <label htmlFor="free-trial-linked-products" className="block text-sm font-medium leading-5 text-slate-300">Free Trial</label>
+                    <input id="free-trial-linked-products" aria-label="Free Trial linked products" type="text" value={TRIAL_MAX_PRODUCTS} readOnly className={controlClass} />
+                    <p className="text-xs leading-4 text-slate-400">Linked products</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="pro-request-limit" className="block text-sm font-medium leading-5 text-slate-300">Pro</label>
+                    <input id="pro-request-limit" aria-label="Pro daily request allowance" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required
+                      value={draft.planRequestLimits.pro} onChange={event => changePlan('pro', Number(event.target.value))} className={controlClass} />
+                    <p className="text-xs leading-4 text-slate-400">Requests/day</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor={draft.planRequestLimits.pro_max === null ? 'pro-max-request-mode' : 'pro_max-request-limit'} className="block text-sm font-medium leading-5 text-slate-300">Pro Max</label>
+                    {draft.planRequestLimits.pro_max === null ? <select id="pro-max-request-mode" aria-label="Pro Max request mode" value="unlimited"
+                      onChange={() => changePlan('pro_max', 500)} className={controlClass}>
+                      <option value="unlimited">Unlimited</option><option value="finite">Set request limit</option>
+                    </select> : <div className="flex h-10 gap-2">
+                      <input id="pro_max-request-limit" aria-label="Pro Max daily request allowance" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required
+                        value={draft.planRequestLimits.pro_max} onChange={event => changePlan('pro_max', Number(event.target.value))} className={controlClass} />
+                      <button type="button" aria-label="Set Pro Max to Unlimited" onClick={() => changePlan('pro_max', null)} className="h-10 shrink-0 rounded-lg border border-slate-700 px-3 text-sm text-slate-200 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400">∞</button>
+                    </div>}
+                    <p className="text-xs leading-4 text-slate-400">Requests/day</p>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-400 mt-3">{snapshot?.planLimitPeriod || 'Finite allowances are shared across all active API keys and reset at midnight UTC.'}</p>
                 <p className="text-xs text-slate-400 mt-2">Increases apply immediately. Lower allowances apply to new contracts; existing paid promises and existing Unlimited Trials remain protected. Saving never resets request usage.</p>
