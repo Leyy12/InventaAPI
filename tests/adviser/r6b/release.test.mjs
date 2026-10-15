@@ -21,12 +21,12 @@ const frontend = {
   NEXT_PUBLIC_ADMIN_APP_ORIGIN: 'https://admin.r6b-fixture.net',
   NEXT_PUBLIC_FIREBASE_API_KEY: 'synthetic-public-web-key-for-build',
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'demo-r6b-validation.firebaseapp.com',
-  NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'demo-r6b-validation',
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'inventaapi-staging',
   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-r6b-validation.firebasestorage.app',
   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '1234567890', NEXT_PUBLIC_FIREBASE_APP_ID: '1:1234567890:web:abcdef123456',
 };
 const backend = { NODE_ENV: 'production', FIREBASE_AUTH_MODE: 'service_account_env',
-  FIREBASE_PROJECT_ID: 'demo-r6b-validation', FIREBASE_CLIENT_EMAIL: 'synthetic@demo-r6b-validation.iam.gserviceaccount.com',
+  FIREBASE_PROJECT_ID: 'inventaapi-staging', FIREBASE_CLIENT_EMAIL: 'synthetic@inventaapi-staging.iam.gserviceaccount.com',
   FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_NOT_A_KEY\n-----END PRIVATE KEY-----',
   PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
   DASHBOARD_URL: 'https://customer.r6b-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.r6b-fixture.net' };

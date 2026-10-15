@@ -1,5 +1,5 @@
 import { PRO_DAILY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
-import { matchesPurchase, providerId, requirePayment } from './payment-contract.js';
+import { matchesPurchase, providerId, requirePayment, GLOBAL_LIVE_TEST_PROFILE } from './payment-contract.js';
 
 export function samePaymentMethods(left, right) {
   return Array.isArray(left) && left.length > 0 && Array.isArray(right)
@@ -23,9 +23,11 @@ export function checkoutPayload(order, dashboardUrl) {
   success.searchParams.set('order', order.id);
   const cancel = new URL('/?payment=cancelled', base);
   if (order.planId === 'pro_max') cancel.searchParams.set('pendingPlan', 'pro_max');
+  const demonstration = order.billingProfile === GLOBAL_LIVE_TEST_PROFILE;
   return { data: { attributes: {
     line_items: [{ amount: order.amount, currency: order.currency, quantity: 1,
-      name: `InventaAPI ${order.plan} Plan`, description: order.planId === 'pro_max'
+      name: demonstration ? `InventaAPI ${order.plan} — Capstone Demonstration` : `InventaAPI ${order.plan} Plan`,
+      description: demonstration ? '₱5 demonstration payment for the InventaAPI capstone project. One-time charge; no automatic renewal.' : order.planId === 'pro_max'
         ? '1 Month Subscription — Unlimited account API quota' : `1 Month Subscription — ${PRO_DAILY_REQUEST_LIMIT} API requests/day` }],
     payment_method_types: ['qrph'], success_url: success.href,
     cancel_url: cancel.href,

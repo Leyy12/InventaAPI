@@ -5,6 +5,12 @@ import { firebaseCredentialMode } from '../database/firebase-credentials.js';
 const NODE_MAJOR = 22;
 const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin', 'functions']);
 const MODES = new Set(['production', 'test']);
+const DEPLOYMENT_FIREBASE_PROJECTS = new Set(['inventaapi-db', 'inventaapi-staging']);
+
+const loopbackEmulator = value => {
+  const match = /^(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]+)$/u.exec(value || '');
+  return !!match && Number(match[1]) > 0 && Number(match[1]) <= 65535;
+};
 
 const isPresent = value => typeof value === 'string' && value.trim().length > 0;
 const noWhitespace = value => isPresent(value) && !/\s/u.test(value);
@@ -68,6 +74,23 @@ export function validateReleaseConfig(env, {
   const backend = scope === 'all' || scope === 'backend';
   const dashboard = scope === 'all' || scope === 'dashboard';
   const admin = scope === 'all' || scope === 'admin';
+  // Deployment checks never trust an escape flag. demo-* is confined to the
+  // explicit local test mode with BOTH emulators bound to loopback and no LIVE payments.
+  const isolatedLocal = mode === 'test' && env.PAYMONGO_MODE !== 'live'
+    && loopbackEmulator(env.FIRESTORE_EMULATOR_HOST) && loopbackEmulator(env.FIREBASE_AUTH_EMULATOR_HOST);
+  const authorizedProject = value => DEPLOYMENT_FIREBASE_PROJECTS.has(value)
+    || isolatedLocal && /^demo-[a-z0-9-]{1,24}[a-z0-9]$/u.test(value);
+  if (backend || dashboard || admin) {
+    const primary = backend ? 'FIREBASE_PROJECT_ID' : 'NEXT_PUBLIC_FIREBASE_PROJECT_ID';
+    for (const name of ['FIREBASE_PROJECT_ID', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'GCLOUD_PROJECT', 'GOOGLE_CLOUD_PROJECT']) {
+      if (name !== primary && isPresent(env[name]) && isPresent(env[primary]) && env[name] !== env[primary]) {
+        add(errors, 'FIREBASE_PROJECT_CONFLICT', name, 'must match the explicitly selected Firebase project');
+      }
+    }
+    if (mode === 'production' && [env.FIRESTORE_EMULATOR_HOST, env.FIREBASE_AUTH_EMULATOR_HOST].some(isPresent)) {
+      add(errors, 'EMULATOR_DEPLOYMENT_CONFLICT', 'FIREBASE_PROJECT_ID', 'deployment validation does not permit Firebase emulator routing');
+    }
+  }
 
   if (scope === 'functions') {
     required('TRIAL_WARNING_FROM_EMAIL', {
@@ -91,8 +114,8 @@ export function validateReleaseConfig(env, {
     });
     if (credentialMode === 'legacy' && env.FIREBASE_AUTH_MODE === 'service_account_env') {
       required('FIREBASE_PROJECT_ID', {
-        valid: value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u.test(value) && notPlaceholder(value),
-        expectation: 'a non-placeholder Firebase project ID',
+        valid: authorizedProject,
+        expectation: 'the authorized Production or staging Firebase project (or an isolated local test project)',
       });
       required('FIREBASE_CLIENT_EMAIL', {
         valid: value => /^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/u.test(value),
@@ -192,8 +215,8 @@ export function validateReleaseConfig(env, {
       valid: value => /^[A-Za-z0-9.-]+$/u.test(value) && value.includes('.'), expectation: 'a hostname without a URL path',
     });
     required('NEXT_PUBLIC_FIREBASE_PROJECT_ID', {
-      valid: value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u.test(value) && notPlaceholder(value),
-      expectation: 'a non-placeholder Firebase project ID',
+      valid: authorizedProject,
+      expectation: 'the authorized Production or staging Firebase project (or an isolated local test project)',
     });
     // URL-only product images do not require Storage. Validate an optional value
     // without making bucket configuration or uploads a release prerequisite.

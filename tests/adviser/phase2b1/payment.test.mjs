@@ -124,6 +124,20 @@ test('temporary billing is explicit, exactly 500, Live-only and defaults off', (
   }
 });
 
+for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) test(`historical ${purchase.plan} provider replay keeps its exact pre-disclosure body`, async () => {
+  const body = JSON.stringify({ data: { attributes: { line_items: [{ name: `InventaAPI ${purchase.plan} Plan`,
+    description: 'Original historical checkout text', amount: 500, currency: 'PHP', quantity: 1 }], payment_method_types: ['qrph'] } } });
+  const order = Object.freeze({ id: orderId, ...purchase, mode: 'live', amount: 500, listAmount: purchase.amount,
+    billingProfile: 'global_live_test_v1', idempotencyKey: `checkout-live-${orderId}`, providerRequestBody: body });
+  let sent;
+  await createPaymongoCheckout({ config: liveBilling(), order, request: async (_url, init) => {
+    sent = init.body; return { ok: true, json: async () => ({ data: { id: 'cs_history', type: 'checkout_session', attributes: {
+      livemode: true, status: 'active', payment_intent: { id: 'pi_history' }, payment_method_types: ['qrph'], checkout_url: 'https://checkout.paymongo.com/history',
+    } } }) };
+  } });
+  assert.equal(sent, body); assert.equal(order.providerRequestBody, body); assert.equal(order.amount, 500);
+});
+
 for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
   test(`global Live billing ${purchase.plan}: canonical display terms unchanged; saved/provider charge 500`, async () => {
     assert.equal(purchase.amount, purchase.planId === 'pro' ? 149900 : 499900);
@@ -140,7 +154,11 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
     assert.equal(payload.line_items[0].amount, 500); assert.equal(payload.line_items[0].currency, 'PHP');
     assert.deepEqual(payload.payment_method_types, ['qrph']);
     assert.equal(payload.metadata.planId, purchase.planId);
-    assert.equal(payload.line_items[0].name, `InventaAPI ${purchase.plan} Plan`);
+    assert.equal(payload.line_items[0].name, `InventaAPI ${purchase.plan} — Capstone Demonstration`);
+    assert.match(payload.line_items[0].description, /₱5 demonstration payment.*capstone project/u);
+    assert.match(payload.line_items[0].description, /One-time charge; no automatic renewal/u);
+    assert.doesNotMatch(payload.line_items[0].description, /1,499|4,999|1499|4999/u);
+    assert.equal(payload.show_description, true); assert.equal(payload.show_line_items, true);
     for (const mutate of [o => {o.amount = 501;}, o => {o.listAmount = 500;}, o => {o.mode = 'test';},
       o => {delete o.billingProfile;}, o => {delete o.planId;}, o => {o.billingProfile = 'arbitrary_discount';},
       o => {o.apiRequestLimit = -1;}]) {

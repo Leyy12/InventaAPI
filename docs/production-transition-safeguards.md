@@ -9,6 +9,9 @@ Checkout and fulfillment inspect `projectId` on the Firestore instance actually
 used for transactions. Only `inventaapi-db` and `inventaapi-staging` are supported.
 Unresolved identities, configuration conflicts, missing modes and key/mode
 conflicts fail closed. Production requires LIVE; staging permits matching TEST.
+Release validation admits only these deployment projects. Explicit local test
+validation permits demo-* projects only with both Firebase emulators on loopback
+and no LIVE payments; that exception never applies to deployment validation.
 The exported completion helper enforces the same database/mode boundary.
 Production completion also requires the exact payment object privately marked
 by the signature-verifying handler, including orders with structured terms.
@@ -63,11 +66,13 @@ Standard catalog prices remain Pro PHP 1,499 and Pro Max PHP 4,999 per 30-day
 term. The demonstration override defaults OFF. Existing LIVE PHP 5 receipts and
 their saved list-price/offer evidence remain valid with the override OFF.
 
-The prior read-only Production configuration observation has
-`PAYMONGO_GLOBAL_TEST_BILLING=true` and amount `500` centavos. That makes new
-checkouts use demonstration pricing, including Pro Max. This remains a standard
-pricing release blocker until the owner separately authorizes its disposition.
-Do not change historical amounts or silently alter the Production flags.
+The owner explicitly authorizes retaining `PAYMONGO_GLOBAL_TEST_BILLING=true`
+and `PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS=500` for both Pro and Pro Max LIVE
+capstone demonstrations. This is accepted pricing, not a release blocker.
+New demo checkout line items disclose "Capstone Demonstration", the actual PHP 5
+payment and its one-time nature without automatic renewal. Future list prices
+remain separate. Replay sends the exact saved historical request body, never
+rebuilding it with the new disclosure. Do not alter historical records or flags.
 
 ## Prepared Maintenance OFF procedure (not executed)
 
@@ -106,7 +111,7 @@ correction. Coordinate the previously required corrected expiration Function
 before any eventual enforcing API release.
 
 Production still requires provider status verification, historical Pro
-reconciliation authorization, a pricing decision, Maintenance OFF/ON approval,
+reconciliation authorization, Maintenance OFF/ON approval,
 approved hold/drain controls and fresh release-time checks. Preserve all terms,
 receipts and counters. After new promises are captured, verify compatibility
 before rolling back an older backend/normalizer; prefer a reviewed forward fix

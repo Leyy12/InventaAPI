@@ -21,6 +21,8 @@ function fixture(limit = 500, { demo = false, project = 'inventaapi-db', mode = 
     sessionId: 'cs_synthetic', paymentIntentId: 'pi_synthetic', apiRequestLimit: limit,
     ...(demo ? { amount: 500, listAmount: 149900, billingProfile: 'global_live_test_v1' } : {}) };
   const payload = checkoutPayload(order, cfg.dashboardUrl);
+  // Frozen pre-disclosure checkout naming, not the new-session builder's demo label.
+  payload.data.attributes.line_items[0].name = 'InventaAPI Pro Plan';
   payload.data.attributes.line_items[0].description = limit === 5000
     ? '1 Month Subscription — 5,000 API requests/day' : '1 Month Subscription — 500 API requests/day';
   order.providerRequestBody = JSON.stringify(payload);
