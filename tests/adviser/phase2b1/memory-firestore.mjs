@@ -2,7 +2,7 @@
 // No SDK/configuration/network. Failed commits publish no staged writes.
 export function memoryFirestore(initial = {}) {
   const records = new Map(Object.entries(initial).map(([path, data]) => [path, { version: 1, data: structuredClone(data) }]));
-  const db = { retries: 0, commits: 0, failRead: null, failWrite: null, failCommit: false, userWrites: 0 };
+  const db = { projectId: 'inventaapi-staging', retries: 0, commits: 0, failRead: null, failWrite: null, failCommit: false, userWrites: 0 };
   const snapshot = path => ({ id: path.split('/').at(-1), exists: records.has(path), data: () => structuredClone(records.get(path)?.data) });
   const document = path => ({ path, id: path.split('/').at(-1), get: async () => snapshot(path) });
   const collection = (name, filters = [], maximum = Infinity, ordering = null) => ({

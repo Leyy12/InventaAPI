@@ -82,6 +82,26 @@ test('settings commit preserves compatible fields, reloads persisted state, and 
   assert.ok(f.verified.every(([, revoked]) => revoked === true));
 });
 
+test('prepared Maintenance OFF save is versioned, independently readable and audits only that policy change', async () => {
+  const pricing = { pro: 149900, pro_max: 499900 };
+  const f = fixture({ ...DEFAULT_SYSTEM_SETTINGS, maintenanceMode: true, allowNewRegistrations: false, pricing });
+  const before = await f.read(); assert.equal(before.body.settings.maintenanceMode, true);
+  const result = await invoke(f.handlers.save, { token: 'admin', body: {
+    version: before.body.version, changes: { maintenanceMode: false },
+  } });
+  assert.equal(result.statusCode, 200);
+  const after = await f.read(); assert.equal(after.body.settings.maintenanceMode, false);
+  assert.equal(after.body.settings.allowNewRegistrations, false);
+  assert.deepEqual(after.body.settings.planRequestLimits, before.body.settings.planRequestLimits);
+  assert.deepEqual(f.db.read('system/settings').pricing, pricing);
+  assert.deepEqual(f.logs()[0].metadata.changes, [{ field: 'maintenanceMode', before: true, after: false }]);
+  assert.equal(f.logs()[0].userId, 'admin'); assert.equal(f.logs().length, 1);
+  assert.equal((await invoke(f.handlers.save, { token: 'admin', body: {
+    version: before.body.version, changes: { maintenanceMode: true },
+  } })).statusCode, 409);
+  assert.equal((await f.read()).body.settings.maintenanceMode, false);
+});
+
 for (const changes of [{ strictApiValidation: false }, { role: 'admin' }, { maxRequestsPerMinute: 61 }, { maxRequestsPerMinute: 0 },
   { maxRequestsPerMinute: 2.5 }, { maxRequestsPerMinute: '20' }, { maintenanceMode: 'true' },
   { planRequestLimits: { pro: null } }, { planRequestLimits: { pro: 0 } }, { planRequestLimits: { pro: 1.5 } },

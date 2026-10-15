@@ -118,6 +118,12 @@ export function validateReleaseConfig(env, {
     required('PAYMONGO_MODE', {
       valid: value => ['test', 'live'].includes(value), expectation: 'test or live',
     });
+    if (env.FIREBASE_PROJECT_ID === 'inventaapi-db' && env.PAYMONGO_MODE !== 'live') {
+      add(errors, 'PAYMENT_MODE_ISOLATION', 'PAYMONGO_MODE', 'Production Firebase requires LIVE payments.');
+    }
+    if (env.PAYMENT_CHECKOUT_INITIATION_HOLD !== undefined && !['true', 'false'].includes(env.PAYMENT_CHECKOUT_INITIATION_HOLD)) {
+      add(errors, 'INVALID_CHECKOUT_HOLD', 'PAYMENT_CHECKOUT_INITIATION_HOLD', 'must be absent, true, or false');
+    }
     try {
       if (globalTestBillingConfiguration({ mode: env.PAYMONGO_MODE,
         globalTestBilling: env.PAYMONGO_GLOBAL_TEST_BILLING,

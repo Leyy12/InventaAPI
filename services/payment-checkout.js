@@ -3,6 +3,8 @@ import { checkoutPayload, samePaymentMethods, savedPaymentMethods } from './paym
 import { evaluateEntitlement, planKind } from '../functions/subscription-lifecycle.mjs';
 import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, requestPolicyVersion, purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
+import { requirePaymentRuntime } from './payment-isolation.js';
+import { legacySavedRequestAllowance } from './legacy-payment-offer.js';
 import { purchaseForIntent, settlementForPurchase, authenticatedPayment, refFor, modeKey, matchesPurchase, orderIdValid,
   requirePayment, requireCustomer, requirePurchasable } from './payment-contract.js';
 
@@ -32,6 +34,9 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
     }
   };
   const checkout = authenticate(async (req, res, uid, db) => {
+    const config = requirePaymentRuntime(db, getConfig());
+    requirePayment(config.checkoutInitiationHold !== true, 'CHECKOUT_INITIATION_HELD',
+      'New checkout initiation is temporarily paused. Existing payments can still complete.', 503);
     const body = req.body || {};
     const purchase = purchaseForIntent(body.plan === undefined ? 'pro' : body.plan);
     requirePayment(purchase, 'UNSUPPORTED_PLAN', 'Unsupported purchase plan.', 400);
@@ -42,7 +47,6 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
     for (const field of ['amount', 'currency', 'durationDays', 'apiRequestLimit']) {
       requirePayment(body[field] === undefined || body[field] === purchase[field], 'PURCHASE_MISMATCH', 'Purchase terms are server-controlled.', 400);
     }
-    const config = getConfig();
     const settlement = settlementForPurchase(purchase, config);
     const id = newOrderId();
     const attemptId = randomUUID();
@@ -85,7 +89,8 @@ export function createPaymentHandlers({ getDb, verifyIdToken, getConfig, createS
           && (previous.state === 'processed' || previous.mode === config.mode
             && (previous.planId ?? 'pro') === purchase.planId),
           'CHECKOUT_REVIEW', 'Existing checkout requires support review.');
-        if (previous.state !== 'processed') requirePayment((previous.requestAllowance?.limit ?? DEFAULT_REQUEST_LIMITS[purchase.planId]) === acceptedRequestAllowance.limit,
+        if (previous.state !== 'processed') requirePayment((previous.requestAllowance === undefined
+          ? legacySavedRequestAllowance(previous) : previous.requestAllowance).limit === acceptedRequestAllowance.limit,
           'PENDING_ORDER_TERMS', 'Your existing checkout retains its original request terms. Complete or resolve that checkout before starting a new purchase.', 409);
         if (previous.state === 'pending') {
           const binding = (await tx.get(refFor(db, 'sessions', modeKey(previous.mode, previous.sessionId)))).data();

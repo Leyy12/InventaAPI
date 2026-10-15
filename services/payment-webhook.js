@@ -2,12 +2,17 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountBlocked, dateMillis, renewalPeriod } from '../functions/subscription-lifecycle.mjs';
 import { purchaseRequestContracts } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts } from '../functions/request-contract-evidence.mjs';
+import { requirePaymentProject, requirePaymentRuntime } from './payment-isolation.js';
+import { legacyPaidRequestAllowance } from './legacy-payment-offer.js';
 import { purchaseForIntent, providerId, orderIdValid, refFor, modeKey, matchesPurchase,
   requirePayment, paymentError, requireCustomer, requirePurchasable } from './payment-contract.js';
 
 // Existing five-minute policy retained. PayMongo recommends a freshness check,
 // but does not mandate this particular tolerance in its current documentation.
 export const SIGNATURE_TOLERANCE_MS = 300000;
+// Only the signature-verifying handler can supply legacy offer proof. Callers
+// cannot smuggle it through a request field or the exported fulfillment helper.
+const signedCheckoutOffers = new WeakMap();
 export function verifyPaymentSignature(rawBody, header, config, now) {
   if (!(typeof rawBody === 'string' || Buffer.isBuffer(rawBody)) || !rawBody.length || typeof header !== 'string') return false;
   const parts = {};
@@ -62,6 +67,9 @@ export function paymentFromEvent(event, mode) {
 }
 
 export async function fulfillPayment(db, payment, time) {
+  const project = requirePaymentProject(db, payment.mode);
+  requirePayment(project !== 'inventaapi-db' || signedCheckoutOffers.has(payment),
+    'PAYMENT_VERIFICATION_REQUIRED', 'Production fulfillment requires verified provider evidence.', 503);
   return db.runTransaction(async tx => {
     const now = typeof time === 'function' ? time() : time;
     const binding = (await tx.get(refFor(db, 'sessions', modeKey(payment.mode, payment.sessionId)))).data();
@@ -124,24 +132,26 @@ export async function fulfillPayment(db, payment, time) {
     }
     requireCustomer(account, order.userId);
     requirePurchasable(account, now, { planId: order.planId ?? 'pro' });
-    requirePayment(order.requestAllowance !== undefined, 'REQUEST_CONTRACT_EVIDENCE_UNAVAILABLE',
-      'Accepted purchase request terms require reconciliation.', 503);
+    const legacy = order.requestAllowance === undefined;
+    const acceptedTerms = legacy ? legacyPaidRequestAllowance(order, signedCheckoutOffers.get(payment)) : order.requestAllowance;
     const contractsRef = db.collection('account_request_contracts').doc(order.userId);
     const requestContracts = (await resolveRequestContracts(tx, db, order.userId, account, { recoverHistorical: true })).contracts;
     const processedAt = now.toISOString();
     const { start, end: expiresAt } = renewalPeriod(account, now, order.durationDays);
     const requestPlan = order.planId ?? 'pro';
     const contracts = purchaseRequestContracts(account, requestContracts, requestPlan,
-      order.requestAllowance.limit);
+      acceptedTerms.limit);
     tx.set(paymentRef, { ...evidence, userEmail: typeof account.email === 'string' ? account.email : '',
       amount: order.amount, currency: order.currency,
       paymentMethod: payment.paymentMethod ?? 'gcash', paymongoReferenceId: payment.paymentId,
       paymongoPaymentIntentId: payment.paymentIntentId, paymongoCheckoutSessionId: payment.sessionId,
       plan: order.plan, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt,
-      status: 'paid', entitlementGranted: true, createdAt: processedAt, webhookEventId: payment.eventId });
+      status: 'paid', entitlementGranted: true, createdAt: processedAt, webhookEventId: payment.eventId,
+      ...(legacy ? { requestAllowance: acceptedTerms, requestAllowanceEvidence: 'signed_checkout_offer' } : {}) });
     tx.set(eventRef, { ...evidence, processedAt });
     tx.update(orderRef, { state: 'processed', paymentId: payment.paymentId, webhookEventId: payment.eventId,
-      processedAt, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt });
+      processedAt, subscriptionPeriodStart: start, subscriptionPeriodEnd: expiresAt,
+      ...(legacy ? { requestAllowance: acceptedTerms, requestAllowanceEvidence: 'signed_checkout_offer' } : {}) });
     tx.update(userRef, { plan: order.plan, apiRequestLimit: purchaseForIntent(order.planId ?? 'pro').apiRequestLimit, subscription_status: 'active',
       subscriptionExpiresAt: expiresAt, lastSubscribedAt: processedAt,
       subscriptionStartedAt: dateMillis(account.subscriptionExpiresAt) > now.getTime()
@@ -165,7 +175,10 @@ export function createPaymentWebhook({ getDb, getConfig, clock = () => new Date(
       verifiedPayment = payment;
       if (!payment) return res.json({ received: true, processed: false, ignored: true,
         ...(['payment.failed', 'checkout_session.payment.failed'].includes(event.data.attributes.type) ? { reason: 'failed' } : {}) });
-      const result = await fulfillPayment(getDb(), payment, clock);
+      const db = getDb();
+      requirePaymentRuntime(db, config);
+      signedCheckoutOffers.set(payment, structuredClone(event.data.attributes.data.attributes));
+      const result = await fulfillPayment(db, payment, clock);
       if (result.reviewRequired) report({ code: 'PAYMENT_RECONCILIATION_REQUIRED', orderPaymentId: payment.paymentId, eventId: payment.eventId });
       // Acknowledge fulfillment only after its durable atomic commit.
       return res.json({ received: true, processed: !result.duplicate && !result.reviewRequired, ...result,

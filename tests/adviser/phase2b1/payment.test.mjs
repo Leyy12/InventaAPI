@@ -319,7 +319,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
     env.db.seed(orderPath, { ...env.db.read(orderPath), mode });
     env.db.seed(`payment_sessions/${mode}_cs_abc123`, { ...env.db.read('payment_sessions/test_cs_abc123'), mode });
     env.db.seed('payment_checkout_locks/owner', { orderId, sessionId: 'cs_abc123', mode });
-    const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode }), clock: () => now });
+    const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode, secretKey: `sk_${mode}_syntheticOnly` }), clock: () => now });
     const input = signed(event);
     if (mode === 'live') input.headers['paymongo-signature'] = input.headers['paymongo-signature'].replace(',li=', '').replace(',te=', ',te=,li=');
     assert.equal((await invoke(handler, input)).body.processed, true);
@@ -413,6 +413,8 @@ test('status: redirect/order before fulfillment is not payment proof', async () 
 });
 test('status: Phase 2B2 reports effective Free without mutating the account', async () => {
   const env = setup(); env.db.seed('users/owner', { ...customer, plan: 'Pro', subscriptionExpiresAt: '2020-01-01T00:00:00.000Z' });
+  // Expiry projection requires the private paid promise accepted by the current resolver.
+  env.db.seed('account_request_contracts/owner', { version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } });
   assert.equal((await invoke(env.status)).body.expired, true);
   assert.equal(env.db.read('users/owner').plan, 'Pro');
   assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2020-01-01T00:00:00.000Z');
@@ -578,7 +580,7 @@ test('signature: valid live fixture requires live header and all matching resour
   env.db.seed(orderPath, { ...env.db.read(orderPath), mode: 'live' });
   env.db.seed('payment_sessions/live_cs_abc123', { ...env.db.read('payment_sessions/test_cs_abc123'), mode: 'live' });
   env.db.seed('payment_checkout_locks/owner', { orderId, sessionId: 'cs_abc123', mode: 'live' });
-  const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode: 'live' }), clock: () => now });
+  const handler = createPaymentWebhook({ getDb: () => env.db, getConfig: () => ({ ...config, mode: 'live', secretKey: 'sk_live_syntheticOnly' }), clock: () => now });
   const input = signed(event); input.headers['paymongo-signature'] = input.headers['paymongo-signature'].replace(',li=', '').replace(',te=', ',te=,li=');
   assert.equal((await invoke(handler, input)).statusCode, 200); assert.equal(env.db.userWrites, 1);
 });
