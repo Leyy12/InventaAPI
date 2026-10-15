@@ -7,6 +7,7 @@ const sources = ["functions/entitlement-limits.mjs","functions/subscription-life
 sources.push('functions/trial-warning.mjs', 'functions/trial-warning-email.mjs', 'admin-panel/src/lib/linked-product-names.ts', 'dashboard/src/lib/linked-product-selection.ts', 'tests/adviser/free-trial/phase2.test.mjs');
 sources.push('functions/request-limit-policy.mjs');
 sources.push('functions/request-contract-evidence.mjs');
+sources.push('functions/legacy-pro-compatibility.mjs');
 sources.push('dashboard/src/lib/trial-display.mjs', 'dashboard/src/lib/trial-catalog-selection.ts', 'dashboard/src/lib/account-usage-events.ts',
   'dashboard/src/lib/quota-refresh.ts', 'tests/adviser/free-trial/trial-catalog-add-only.test.mjs');
 for (const file of sources) {

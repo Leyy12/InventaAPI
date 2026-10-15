@@ -1,5 +1,6 @@
 import { REQUEST_LIMIT_PLANS, newRequestContract,
   promisedRequestAllowance, validOrderRequestAllowance } from './request-limit-policy.mjs';
+import { readLegacyProCompatibility, verifyLegacyProDemonstration } from './legacy-pro-compatibility.mjs';
 
 const paidPlan = name => String(name).toLowerCase() === 'pro max' ? 'pro_max'
   : ['pro', 'professional'].includes(String(name).toLowerCase()) ? 'pro' : null;
@@ -49,6 +50,12 @@ export async function resolveRequestContracts(tx, db, uid, account, { recoverHis
   // Bound recovery. No skipped/truncated history can silently remove a promise.
   const history = await tx.get(db.collection('payment_orders').where('userId', '==', uid).limit(101));
   if (history.docs.length > 100) unavailable();
+  // The owner's pre-release Pro exception never reconstructs/persists a private
+  // contract. Existing structured contracts retain their original strict path.
+  if (stored === undefined && kind === 'pro' && history.docs.some(doc =>
+    doc.data().state === 'processed' && doc.data().requestAllowance === undefined)) {
+    return { ref, contracts: await readLegacyProCompatibility(tx, db, uid, account, history), changed: false };
+  }
   const evidence = { pro: [], pro_max: [] };
   // An intact private promise for the current paid tier already verifies that
   // tier. A normalized profile requires a receipt covering its retained end.
@@ -85,6 +92,12 @@ export async function resolveRequestContracts(tx, db, uid, account, { recoverHis
       || order.subscriptionPeriodEnd == null || instant(order.subscriptionPeriodEnd) !== end) unavailable();
     if (end === accountEnd && start >= accountStart && (!kind || kind === plan)) applicable = true;
     if (stored?.plans?.[plan]) continue; // Never replace an authoritative private promise.
+    if (order.requestAllowance === undefined && plan === 'pro' && intactPromise) {
+      // A later trusted purchase may supersede the finite legacy period. Verify
+      // that old exception again, but never turn it into a permanent Pro floor.
+      await verifyLegacyProDemonstration(tx, db, uid, doc);
+      continue;
+    }
     // The legacy storage envelope and today's policy do not establish terms.
     // Only the server-owned accepted order snapshot is used here. Records
     // without it require reconciliation; no historical policy is invented.

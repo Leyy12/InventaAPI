@@ -5,6 +5,7 @@ const modules = new Set(["functions/entitlement-limits.mjs","functions/subscript
 for (const file of ['functions/trial-warning.mjs', 'functions/trial-warning-email.mjs', 'admin-panel/src/lib/linked-product-names.ts', 'dashboard/src/lib/linked-product-selection.ts', 'tests/adviser/free-trial/phase2.test.mjs']) modules.add(resolvePath(root, file));
 modules.add(resolvePath(root, 'functions/request-limit-policy.mjs'));
 modules.add(resolvePath(root, 'functions/request-contract-evidence.mjs'));
+modules.add(resolvePath(root, 'functions/legacy-pro-compatibility.mjs'));
 for (const file of ['dashboard/src/lib/trial-display.mjs', 'dashboard/src/lib/trial-catalog-selection.ts', 'dashboard/src/lib/account-usage-events.ts',
   'dashboard/src/lib/quota-refresh.ts', 'tests/adviser/free-trial/trial-catalog-add-only.test.mjs']) modules.add(resolvePath(root, file));
 export async function resolve(specifier, context, nextResolve) {

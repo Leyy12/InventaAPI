@@ -1,5 +1,6 @@
 import { DEFAULT_REQUEST_LIMITS, effectiveRequestAllowance } from './request-limit-policy.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from './request-contract-evidence.mjs';
+import { hasLegacyProCompatibility, legacyProRequestLimit } from './legacy-pro-compatibility.mjs';
 export { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from './entitlement-limits.mjs';
 
 // Shared by Express and the existing deployable Functions package. No SDK/I/O.
@@ -97,10 +98,10 @@ export function evaluateEntitlement(account, now = new Date(), requestLimits = D
     if (!activePro) {
       const trial = trialState(account, now);
       return upgradeRequired(trial, { expired, expiresAt, startedAt,
-        normalization: { ...FREE_ENTITLEMENT } });
+        normalization: hasLegacyProCompatibility(requestContracts) ? null : { ...FREE_ENTITLEMENT } });
     }
     return { plan: kind === 'pro_max' ? 'Pro Max' : 'Pro', level,
-      limit: effectiveRequestAllowance(requestContracts, kind, requestLimits),
+      limit: legacyProRequestLimit(requestContracts, account, now) ?? effectiveRequestAllowance(requestContracts, kind, requestLimits),
       status: 'active', activePro, expired, expiresAt, startedAt, normalization: null };
   }
   const limit = account.apiRequestLimit;
