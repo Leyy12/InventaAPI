@@ -151,13 +151,14 @@ test('reader fails closed on HTTP errors and incomplete payloads; pending token 
   const delayed = client(); let finish; delayed.setUser({ uid: 'admin', getIdToken: () => new Promise(resolve => { finish = resolve; }) });
   delayed.h.mount(delayed.component); delayed.h.stop(); finish('synthetic'); await flush(); assert.equal(delayed.calls.length, 0);
 });
-test('both pages use the same safe reader; existing entitlement authority and Customer/rules paths remain intact', () => {
+test('inventory uses the safe reader and the removed Security Center redirects to it', () => {
   const source = file => readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
-  for (const view of ['consumers', 'security']) {
+  for (const view of ['consumers']) {
     const page = source(`admin-panel/src/app/${view}/page.tsx`);
     assert.match(page, /useAdminKeyInventory/); assert.match(page, /useAccountEntitlements/);
     assert.doesNotMatch(page, /collection\(db, ["']api_keys["']\)|k\.key\b/);
   }
+  assert.match(source('admin-panel/src/app/security/page.tsx'), /redirect\(['"]\/consumers['"]\)/u);
   assert.match(source('routes/admin.js'), /router\.get\('\/api-keys\/inventory'/);
   assert.match(source('services/api-key-management.js'), /where\('userId', '==', actor\.uid\)/);
   assert.match(source('firestore.rules'), /match \/api_keys\/\{keyId\}[\s\S]*?allow read: if isAdmin\(\)/);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { hooks, load, nodes, flush } from './workspace-refresh/harness.mjs';
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '../../dashboard/src/lib/trial-display.mjs';
 import { TRIAL_MAX_PRODUCTS, trialCatalogChangeAllowed } from '../../functions/entitlement-limits.mjs';
+import { requestAllowanceLabel } from '../../dashboard/src/config/plans.ts';
 
 const warning = 'Free Trial product limit reached — 50 of 50 products.';
 for (const productsIncluded of [0, 10, 50]) {
@@ -13,6 +14,8 @@ for (const productsIncluded of [0, 10, 50]) {
         'next/link': 'a', '@/lib/firebase/auth-context': {},
         '@/lib/api-keys': { apiKeyRequest() { throw Error('External I/O prohibited'); } },
         '@/lib/reports': { quotaSummary: () => null },
+        '@/config/plans': { requestAllowanceLabel },
+        '@/lib/plan-request-policy': { useAccountRequestAllowance: () => null },
         '@/lib/trial-display.mjs': { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots },
         '@/lib/account-usage-events': { subscribeAccountUsage: () => () => {} },
         '@/lib/quota-refresh': { createQuotaRefresh: ({ onState }) => ({

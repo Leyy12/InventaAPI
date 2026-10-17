@@ -22,10 +22,11 @@ test('Pro is 500/day, renewal is offered, redirects still require backend proof'
   assert.match(modal, /Renew securely/); assert.doesNotMatch(modal, /new Date\(expiresAt\)/);
 });
 test('Admin plan/usage comes from authenticated backend, not per-key snapshots', () => {
-  for (const view of ['consumers', 'security']) {
+  for (const view of ['consumers']) {
     const page = source(`admin-panel/src/app/${view}/page.tsx`);
     assert.match(page, /useAccountEntitlements/); assert.doesNotMatch(page, /k\.(plan|requestLimit|requestsUsed)/);
   }
+  assert.match(source('admin-panel/src/app/security/page.tsx'), /redirect\(['"]\/consumers['"]\)/u);
 });
 test('privacy action is server finalized; schedule uses shared transactional normalizer', () => {
   const page = source('dashboard/src/app/dashboard/privacy/page.tsx');

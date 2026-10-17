@@ -14,13 +14,21 @@ const account = { plan: 'Free', apiRequestLimit: 3, selectedSegment: 'Grocery', 
 const trialAccount = { ...account, hasUsedFreeTrial: true, trialVersion: 1,
   trialStartedAt: NOW.toISOString(), trialExpiresAt: '2026-09-24T12:00:00.000Z' };
 const paidAccount = { ...account, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 'active',
+  subscriptionStartedAt: NOW.toISOString(),
   subscriptionExpiresAt: '2026-10-17T12:00:00.000Z' };
 const trialCounter = { used: 0, startedAt: NOW.toISOString(), expiresAt: '2026-09-24T12:00:00.000Z' };
 const product = { name: 'Rice', segment: 'Grocery', category: 'Grains', status: 'Active' };
 const trialIds = Array.from({ length: 50 }, (_, i) => `rice-${i}`);
 const trialProducts = Object.fromEntries(trialIds.map(id => [`products/${id}`, product]));
+// Synthetic private purchase promises, separate from the untrusted legacy
+// profile snapshot. Both owners have the 500/day contract these tests exercise.
+function paidFixtures(uid) {
+  return { [`users/${uid}`]: paidAccount,
+    [`account_request_contracts/${uid}`]: { version: 1,
+      plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } } };
+}
 function setup(extra = {}, metadata = {}) {
-  const db = memoryFirestore({ 'users/owner': paidAccount, 'users/other': paidAccount,
+  const db = memoryFirestore({ ...paidFixtures('owner'), ...paidFixtures('other'),
     'api_keys/key-a': legacy, 'products/rice': product, ...extra }, metadata);
   const handlers = createApiKeyHandlers({ getDb: () => db, clock, verifyIdToken: async (token, checkRevoked) => {
     assert.equal(checkRevoked, true);
@@ -32,6 +40,25 @@ function setup(extra = {}, metadata = {}) {
 }
 const consume = (db, keyId = 'key-a', credential = legacy.key, extra = {}) => consumeAccountQuota(db, {
   keyId, userId: 'owner', credential, clock, ...extra,
+});
+
+test('paid profile claims without valid private evidence cannot grant key access or quota', async () => {
+  for (const contracts of [undefined, { version: 1, plans: {} },
+    { version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 0 } } }]) {
+    const { db, handlers } = setup({ 'account_request_contracts/owner': contracts });
+    const profile = db.read('users/owner');
+    for (const operation of ['create', 'list', 'view', 'products']) {
+      const response = await invoke(handlers[operation], { body: { keyName: 'Denied', linkedProductIds: ['rice'] } });
+      assert.equal(response.statusCode, 503);
+      assert.equal(response.body.error, 'SERVICE_UNAVAILABLE');
+    }
+    await assert.rejects(consume(db), error => error.status === 503
+      && /^REQUEST_CONTRACT_(EVIDENCE_)?UNAVAILABLE$/u.test(error.code));
+    assert.deepEqual(db.read('users/owner'), profile);
+    assert.deepEqual(db.read('api_keys/key-a'), legacy);
+    assert.equal(db.read('account_api_usage/owner'), undefined);
+    assert.deepEqual(db.read('account_request_contracts/owner'), contracts);
+  }
 });
 
 // Existing quota tests start with an already-authoritative zero balance. Tests

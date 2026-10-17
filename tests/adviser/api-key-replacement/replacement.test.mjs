@@ -9,6 +9,7 @@ const free = { plan: 'Free', apiRequestLimit: 50, selectedSegment: 'Grocery', bu
 const trial = { ...free, hasUsedFreeTrial: true, trialVersion: 1,
   trialStartedAt: NOW.toISOString(), trialExpiresAt: '2026-09-24T12:00:00.000Z' };
 const paid = { ...free, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 'active',
+  subscriptionStartedAt: NOW.toISOString(),
   subscriptionExpiresAt: '2026-10-17T12:00:00.000Z' };
 const counter = { used: 2, startedAt: NOW.toISOString(), expiresAt: trial.trialExpiresAt };
 
@@ -19,6 +20,11 @@ function fixture(account = trial, oldKey = null) {
     linkedVariantSelections: {}, productAvailability: { rice: { availableSince: NOW } }, createdAt: NOW };
   const db = memoryFirestore({
     'users/owner': account, 'users/other': free, [`api_keys/${issued.id}`]: old,
+    'account_request_contracts/owner': { version: 1, plans: {
+      pro: { version: 1, period: 'utc_daily', limit: 500 },
+      pro_max: { version: 1, period: 'utc_daily', limit: null },
+    } },
+    'products/rice': { name: 'Synthetic Rice', category: 'Grains', segment: 'Grocery', status: 'Active' },
     'account_trial_usage/owner': counter,
     'account_free_monthly_usage/owner': { window: '2026-09', used: 12 },
     'api_key_generation_days/marker': { userId: 'owner', window: '2026-09-17', keyId: issued.id },
@@ -51,7 +57,7 @@ test('owned active Trial key rotates atomically; old fails, new authenticates un
   assert.deepEqual(next.linkedProductIds, ['rice']);
   assert.deepEqual(next.productAvailability, f.old.productAvailability);
   assert.equal(next.userId, 'owner');
-  assert.equal(next.plan, 'Pro Trial');
+  assert.equal(next.plan, 'Free Trial');
   assert.equal((await active(f.db)).length, 1);
   await assert.rejects(authenticateCredential(f.db, f.oldSecret, NOW), error => error.status === 401);
   assert.equal((await authenticateCredential(f.db, result.body.key, NOW)).id, result.body.id);
@@ -97,8 +103,8 @@ test('failed transaction keeps the original secret active and creates no success
   assert.equal((await authenticateCredential(f.db, f.oldSecret, NOW)).id, f.oldId);
 });
 
-test('paid Pro, Pro Max and legacy Free active keys rotate without consuming generation or request quotas', async () => {
-  for (const account of [paid, { ...paid, plan: 'Pro Max', apiRequestLimit: null }, free]) {
+test('paid Pro and Pro Max active keys rotate without consuming generation or request quotas', async () => {
+  for (const account of [paid, { ...paid, plan: 'Pro Max', apiRequestLimit: null }]) {
     const f = fixture(account);
     const result = await invoke(f.handlers.replace, { id: f.oldId });
     assert.equal(result.statusCode, 200);
@@ -116,10 +122,11 @@ test('paid Pro, Pro Max and legacy Free active keys rotate without consuming gen
 test('Free zero-key cannot replace or generate; Upgrade Required cannot replace', async () => {
   const zero = fixture(free);
   await zero.db.collection('api_keys').doc(zero.oldId).delete();
-  assert.equal((await invoke(zero.handlers.replace, { id: zero.oldId })).statusCode, 404);
+  assert.equal((await invoke(zero.handlers.replace, { id: zero.oldId })).statusCode, 403);
+  assert.equal((await invoke(zero.handlers.replace, { id: zero.oldId })).body.error, 'UPGRADE_REQUIRED');
   const create = await invoke(zero.handlers.create, { body: { keyName: 'New key' } });
   assert.equal(create.statusCode, 403);
-  assert.equal(create.body.error, 'TRIAL_REQUIRED');
+  assert.equal(create.body.error, 'UPGRADE_REQUIRED');
   assert.equal((await active(zero.db)).length, 0);
   const ended = fixture({ ...trial, trialExhaustedAt: NOW.toISOString() });
   const response = await invoke(ended.handlers.replace, { id: ended.oldId });
@@ -129,7 +136,7 @@ test('Free zero-key cannot replace or generate; Upgrade Required cannot replace'
 });
 
 test('legacy plaintext secret is never copied into replacement storage or audit', async () => {
-  const f = fixture(free, { key: 'daas_legacy_secret', name: 'Legacy', userId: 'owner',
+  const f = fixture(paid, { key: 'daas_legacy_secret', name: 'Legacy', userId: 'owner',
     status: 'active', linkedProducts: [{ id: 'rice', name: 'Untrusted label' }] });
   const result = await invoke(f.handlers.replace, { id: f.oldId });
   assert.equal(result.statusCode, 200);

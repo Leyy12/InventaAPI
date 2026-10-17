@@ -74,6 +74,7 @@ test('real signup retains every input, consent and both footer/submit actions', 
     'next/navigation': { useRouter: () => ({}), useSearchParams: () => new URLSearchParams() },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,
+    '../../../../services/customer-registration.mjs': {},
   });
   h.mount(component);
   try {
@@ -92,9 +93,11 @@ test('real signup retains every input, consent and both footer/submit actions', 
 
 test('signup still validates consent, provisions, signs out, then returns to the single root', () => {
   assert.match(signup, /if \(!formData\.privacyConsent\)/);
-  assert.ok(signup.indexOf('await setDoc') > signup.indexOf('await createUserWithEmailAndPassword'));
-  assert.ok(signup.indexOf('await signOut(auth)') > signup.indexOf('await setDoc'));
-  assert.ok(signup.indexOf('router.push(redirectUrl)') > signup.indexOf('await signOut(auth)'));
+  assert.match(signup, /await completeCustomerSignup\(\{/u);
+  assert.match(signup, /canRegister: readRegistrationPolicy/u);
+  assert.match(signup, /writeProfile: \(user: User\) => setDoc/u);
+  assert.match(signup, /signOut: \(\) => signOut\(auth\)/u);
+  assert.ok(signup.indexOf('router.push(redirectUrl)') > signup.indexOf('if (!result.ok)'));
   assert.match(signup, /customerLoginEntryDestination\(intent\)/);
 });
 

@@ -37,7 +37,7 @@ test('new Free account and direct forged-plan request are denied without any iss
   for (const body of [{}, { plan: 'Pro', hasUsedFreeTrial: true, apiRequestLimit: null }]) {
     const response = await f.create(body);
     assert.equal(response.statusCode, 403);
-    assert.equal(response.body.error, 'TRIAL_REQUIRED');
+    assert.equal(response.body.error, 'UPGRADE_REQUIRED');
     assert.equal(Object.hasOwn(response.body, 'key'), false);
     await assertNoIssuance(f.db);
     assert.deepEqual(f.db.read('users/owner'), free);
@@ -49,7 +49,7 @@ test('legacy Free key remains listed, authenticatable and manageable while addit
   const f = fixture(free, { 'api_keys/old': old });
   assert.equal((await authenticateCredential(f.db, old.key)).id, 'old');
   assert.equal((await invoke(f.keys.list)).body.keys.length, 1);
-  assert.equal((await f.create()).body.error, 'TRIAL_REQUIRED');
+  assert.equal((await f.create()).body.error, 'UPGRADE_REQUIRED');
   assert.equal((await invoke(f.keys.rename, { id: 'old', body: { name: 'Renamed' } })).statusCode, 200);
   assert.equal(f.db.read('api_keys/old').status, 'active');
   assert.equal((await docs(f.db, 'api_key_generation_days')).length, 0);
@@ -57,10 +57,10 @@ test('legacy Free key remains listed, authenticatable and manageable while addit
 
 test('Trial activation unlocks issuance, but an existing same-day marker is never reset', async () => {
   const f = fixture();
-  assert.equal((await f.create()).body.error, 'TRIAL_REQUIRED');
+  assert.equal((await f.create()).body.error, 'UPGRADE_REQUIRED');
   assert.equal((await invoke(f.trial.activate)).statusCode, 200);
   assert.equal((await f.create()).statusCode, 200);
-  assert.equal((await f.create()).body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
+  assert.equal((await f.create()).body.error, 'TRIAL_KEY_LIMIT');
 
   const markerId = `${createHash('sha256').update('owner').digest('hex')}_2026-09-22`;
   const g = fixture(free, { [`api_key_generation_days/${markerId}`]: { userId: 'owner', window: '2026-09-22' } });
@@ -72,10 +72,12 @@ test('Trial activation unlocks issuance, but an existing same-day marker is neve
 
 test('active Trial and Pro may issue; used Trial remains UPGRADE_REQUIRED', async () => {
   const paid = (plan, limit) => ({ ...free, plan, apiRequestLimit: limit,
+    subscriptionStartedAt: now.toISOString(),
     subscription_status: 'active', subscriptionExpiresAt: '2026-10-22T12:00:00.000Z' });
   for (const [account, extra] of [
     [activeTrial, { 'account_trial_usage/owner': counter }],
-    [paid('Pro', 5000), {}],
+    [paid('Pro', 5000), { 'account_request_contracts/owner': { version: 1,
+      plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } } }],
   ]) {
     const f = fixture(account, extra);
     assert.equal((await f.create()).statusCode, 200, account.plan);
@@ -101,21 +103,20 @@ test('navigation, legacy route and locked onboarding UI retain the authoritative
   assert.match(navigation, /name: 'Plan & Billing'/);
   assert.doesNotMatch(navigation, /name: '7-Day Pro Trial'/);
   assert.match(sidebar, /href="\/dashboard\/plan-billing" aria-label/);
-  assert.match(sidebar, /planLower === "pro trial"/);
+  assert.match(sidebar, /planLower === "free trial"/);
   assert.match(sidebar, /planLower === "upgrade required"/);
   assert.match(navbar, /customer-mobile-navigation/);
   assert.match(navbar, /aria-current=/);
   assert.match(config, /source: '\/dashboard\/free-trial', destination: '\/dashboard\/plan-billing'/);
   assert.match(billing, /<FreeTrialContent embedded \/>/);
-  assert.match(overview, /trialOnboarding\?\.eligible === true/);
-  assert.match(overview, /entitlement\?\.plan === 'Free' && entitlement\?\.subscription_status === 'inactive'/);
-  assert.match(overview, /Unlock API access/);
-  assert.match(keys, /API Access Locked/);
+  assert.match(source('dashboard/src/lib/firebase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\)/u);
+  assert.match(overview, /<CustomerUsageSummary\s*\/>/u);
+  assert.match(keys, /Free Trial Ended\. Existing keys remain visible and revocable/);
   // The released management-only page has no generation request/error state.
   // Retain the locked notice and verify server denial is surfaced by Products.
-  assert.match(keys, /trialRequired && <section role="status"/);
+  assert.match(keys, /upgradeRequired && <div role="status"/);
   assert.doesNotMatch(keys, /api\/v1\/api-keys\/generate|serverTrialRequired/);
   assert.match(source('dashboard/src/app/dashboard/products/page.tsx'), /throw new Error\(generationErrorMessage\(data\)\)/);
   assert.match(source('dashboard/src/lib/api-key-generation.ts'), /data\.error === 'TRIAL_REQUIRED'/);
-  assert.match(keys, /Start 7-Day Pro Trial/);
+  assert.match(keys, /href="\/dashboard\/plan-billing#upgrade"/);
 });

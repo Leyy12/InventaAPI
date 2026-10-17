@@ -251,7 +251,11 @@ test('frontend build configs invoke release guard and preserve repository resolu
     assert.ok(config.includes(`}, '${scope}')`));
     assert.match(config, /phase === PHASE_DEVELOPMENT_SERVER \? 'development' : 'production'/);
     assert.match(config, /root: resolve\(process.cwd\(\), '\.\.'\)/);
-    assert.doesNotMatch(config, /destination: 'http:\/\/localhost|\benv\s*:/);
+    assert.doesNotMatch(config, /destination: 'http:\/\/localhost|FIREBASE_PRIVATE_KEY|PAYMONGO_SECRET_KEY/);
+    if (/\benv\s*:/u.test(config)) {
+      assert.match(config, /env: \{ NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT:/u);
+      assert.match(config, /deploymentEnvironment\(\{/u);
+    }
   }
 });
 test('shared browser dependency closure exists and contains only pure shared source', () => {

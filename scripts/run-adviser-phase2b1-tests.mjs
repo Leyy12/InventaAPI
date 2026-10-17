@@ -5,8 +5,8 @@ import { resolve } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const tests = ['tests/adviser/phase2b1/payment.test.mjs', 'tests/adviser/phase2b1/wiring.test.mjs'];
-const sources = [...tests, 'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs', 'tests/adviser/phase2b1/memory-firestore.mjs', 'services/api-key-security.js',
-  'services/payment-contract.js', 'services/paymongo-checkout.js', 'services/payment-checkout.js', 'services/payment-webhook.js'];
+const sources = [...tests, 'functions/entitlement-limits.mjs','functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs', 'functions/subscription-lifecycle.mjs', 'tests/adviser/phase2b1/memory-firestore.mjs', 'services/api-key-security.js',
+  'services/payment-isolation.js', 'services/legacy-payment-offer.js', 'services/payment-contract.js', 'services/paymongo-checkout.js', 'services/payment-checkout.js', 'services/payment-webhook.js'];
 for (const file of sources) {
   const source = readFileSync(resolve(root, file), 'utf8');
   if (/\b(?:fetch|require)\s*\(|\bprocess\.(?:env|binding|getBuiltinModule)\b|\beval\s*\(|new\s+Function\b/u.test(source)) {

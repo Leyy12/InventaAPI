@@ -15,9 +15,15 @@ const sale = (id = 'sale-1', productId = 'bread', quantity = 2, unitPrice = 12.5
   externalTransactionId: id, occurredAt, currency: 'PHP', items: [{ productId, quantity, unitPrice }],
 });
 const account = (uid, plan = 'Pro') => ({ uid, role: 'Developer', plan, selectedSegment: 'Grocery', businessSegment: 'Grocery',
-  subscription_status: 'active', subscriptionExpiresAt: expires, apiRequestLimit: plan === 'Pro Max' ? null : 5000 });
+  subscription_status: 'active', subscriptionStartedAt: NOW.toISOString(), subscriptionExpiresAt: expires,
+  apiRequestLimit: plan === 'Pro Max' ? null : 5000 });
+const paidContracts = () => ({ version: 1, plans: {
+  pro: { version: 1, period: 'utc_daily', limit: 500 },
+  pro_max: { version: 1, period: 'utc_daily', limit: null },
+} });
 const seed = () => memoryFirestore({
   'users/a': account('a'), 'users/b': account('b'),
+  'account_request_contracts/a': paidContracts(), 'account_request_contracts/b': paidContracts(),
   'products/bread': { name: 'Bread', category: 'Food', segment: 'Grocery', status: 'active', price: 12.5 },
   'products/medicine': { name: 'Medicine', category: 'Health', segment: 'Pharmacy', status: 'active', price: 20 },
 });

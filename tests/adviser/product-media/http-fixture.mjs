@@ -11,6 +11,7 @@ import { createIpRateLimiter, trustedRateLimitIp } from '../../../services/rate-
 import { createProductMediaHandlers } from '../../../services/product-media.js';
 import { processProductImage, MAX_IMAGE_BYTES } from '../../../services/product-media-processing.js';
 import { mediaDigest } from '../../../services/product-media-binding.js';
+import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from '../../../services/system-settings.js';
 import { memoryFirestore } from '../r2a/memory-firestore.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -50,7 +51,8 @@ export async function mediaHttpFixture({ enabled = true, vercel = false } = {}) 
     .map(([, name]) => [name, express.Router()]));
   runInNewContext(executable(serverSource).replaceAll('import.meta.url', 'sourceUrl') + '\nresult.app = app;', { ...routers,
     customerSubmissionsRouter: express.Router(), adminSubmissionsRouter: express.Router(), productMediaRouter: result.router,
-    express, helmet, cors, compression,
+    express, helmet, cors, compression, getFirestore: () => db,
+    createSystemPolicyMiddleware, createSystemSettingsHandlers,
     createIpRateLimiter: options => createIpRateLimiter({ ...options, vercel }),
     trustedRateLimitIp: req => trustedRateLimitIp(req, { vercel }), path,
     fileURLToPath, sourceUrl: new URL('../../../server.js', import.meta.url).href,

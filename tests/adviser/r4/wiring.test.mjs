@@ -37,7 +37,9 @@ test('account-owned report state survives transient scope; dataset has one stabl
 test('Admin settings no longer reports unmeasured database health', () => {
   const settings = read('admin-panel/src/app/settings/page.tsx');
   assert.doesNotMatch(settings, />Connected<|>Operational<|99\.9/);
-  assert.match(settings, /Database monitoring/); assert.match(settings, /Not configured/); assert.match(settings, /Not tracked/);
+  assert.match(settings, /request\('information'\)/);
+  assert.match(settings, /information\?\.databaseStatus/);
+  assert.match(settings, /Not configured/);
 });
 test('Admin restores distinct key holders without duplicating catalog reads or retaining credential payloads', () => {
   const admin = read('admin-panel/src/components/admin/AdminDashboardClient.tsx');

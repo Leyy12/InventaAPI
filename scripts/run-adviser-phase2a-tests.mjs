@@ -7,6 +7,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const tests = ['tests/adviser/phase2a/api-key-security.test.mjs', 'tests/adviser/phase2a/rules-and-wiring.test.mjs'];
 const sources = [
   'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs',
+  'functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs',
+  'functions/legacy-pro-compatibility.mjs',
   ...tests, 'tests/adviser/phase2a/memory-firestore.mjs',
   'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
   'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js', 'services/customer-segment.js',

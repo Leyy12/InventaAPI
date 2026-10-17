@@ -14,7 +14,7 @@ import { PRO_DAILY_REQUEST_LIMIT, TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, trialC
 
 const now = new Date('2026-09-27T12:00:00.000Z');
 const owner = { uid: 'owner', role: 'Developer', plan: 'Pro Max', apiRequestLimit: null,
-  subscription_status: 'active', subscriptionExpiresAt: '2026-10-27T12:00:00.000Z',
+  subscription_status: 'active', subscriptionStartedAt: now.toISOString(), subscriptionExpiresAt: '2026-10-27T12:00:00.000Z',
   businessSegment: 'Grocery', selectedSegment: 'Grocery' };
 const raw = (name, segment) => ({ name, segment, category: 'Products', status: 'active', price: 10 });
 const source = relative => readFileSync(fileURLToPath(new URL(`../../../${relative}`, import.meta.url)), 'utf8');
@@ -99,6 +99,9 @@ test('Pro Max has paid multi-segment behavior; Free/Trial remain in authoritativ
 
 test('Pro Max can manage two active keys without a one-key ceiling or credential disclosure', async () => {
   const db = memoryFirestore({ 'users/owner': owner,
+    'account_request_contracts/owner': { version: 1, plans: {
+      pro_max: { version: 1, period: 'utc_daily', limit: null },
+    } },
     'account_api_usage/owner': { window: '2026-09-27', used: 7 },
     'api_keys/one': { userId: 'owner', status: 'active', key: 'daas_one', name: 'POS A' },
     'api_keys/two': { userId: 'owner', status: 'active', key: 'daas_two', name: 'POS B' },

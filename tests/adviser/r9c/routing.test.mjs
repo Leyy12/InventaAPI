@@ -17,14 +17,17 @@ process.env.PAYMONGO_SECRET_KEY = 'sk_test_r9c_synthetic_only';
 process.env.PAYMONGO_WEBHOOK_SECRET = 'r9c_synthetic_signing_secret';
 
 const fixtures = new Map([
-  ['firebase-admin/app', 'export const getApps = () => [{}]; export const initializeApp = () => { throw Error("Unexpected initialization"); }; export const cert = initializeApp;'],
+  ['firebase-admin/app', 'export const getApps = () => [{}]; export const initializeApp = () => { throw Error("Unexpected initialization"); }; export const cert = initializeApp; export const applicationDefault = initializeApp;'],
+  ['firebase-admin/storage', 'export const getStorage = () => { throw Error("Storage access prohibited in routing test"); };'],
   ['firebase-admin/auth', 'export const getAuth = () => ({ verifyIdToken: async () => { throw Error("Synthetic auth rejects credentials"); } });'],
   ['firebase-admin/firestore', `
     export const FieldPath = { documentId: () => '__name__' };
     export const FieldValue = { serverTimestamp: () => { throw Error('Writes prohibited'); } };
     export const getFirestore = () => ({ collection(name) {
+      if (name === 'system') return { doc: id => { if (id !== 'settings') throw Error('Unexpected system document');
+        return { get: async () => ({ data: () => ({ maintenanceMode: false }) }) }; } };
       if (name !== 'products') throw Error('Unexpected collection');
-      return { get: async () => ({ forEach: callback => callback({ id: 'r9c-fixture', data: () => ({ name: 'Synthetic product' }) }) }) };
+      return { get: async () => ({ docs: [{ id: 'r9c-fixture', data: () => ({ name: 'Synthetic product', category: 'Fixture', segment: 'Grocery', status: 'Active' }) }] }) };
     } });`],
   ['dotenv/config', 'export {};'],
   ['dotenv', 'export default { config: () => ({ parsed: {} }) };'],
@@ -80,7 +83,10 @@ test('production health route succeeds', async () => {
 test('products reach the real router and return synthetic catalog data', async () => {
   const response = await get('/api/v1/products');
   assert.equal(response.status, 200);
-  assert.deepEqual(JSON.parse(response.body), { products: [{ id: 'r9c-fixture', name: 'Synthetic product' }] });
+  const body = JSON.parse(response.body);
+  assert.deepEqual(body.products, [{ id: 'r9c-fixture', name: 'Synthetic product', category: 'Fixture', segment: 'Grocery', status: 'Active' }]);
+  assert.deepEqual(body.availability, { segment: null, total: 1 });
+  assert.deepEqual(body.pagination, { total: 1, offset: 0, limit: 1, returned: 1 });
 });
 test('subscription status remains authenticated, not missing', async () => {
   const response = await get('/api/v1/checkout/subscription-status');

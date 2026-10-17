@@ -20,6 +20,9 @@ const key = { userId: 'owner', status: 'active', key: 'daas_one', plan: 'Pro', r
 const verifyIdToken = async (token, revoked) => { assert.equal(revoked, true); if (token !== 'owner-token') throw Error('invalid'); return { uid: 'owner' }; };
 function setup(account = owner) {
   const db = memoryFirestore({ 'users/owner': account, 'users/stranger': { ...free, uid: 'stranger' },
+    ...Object.fromEntries([['owner', account], ['stranger', free]].map(([uid, profile]) =>
+      [`account_request_contracts/${uid}`, { version: 1, historyVerifiedThrough: profile.subscriptionExpiresAt,
+        plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } }])),
     'api_keys/one': key, 'api_keys/two': { ...key, key: 'daas_two' },
     'account_api_usage/owner': { window: '2026-09-20', used: 0 },
     'account_free_monthly_usage/owner': { window: '2026-09', used: 0 } });
@@ -28,13 +31,14 @@ function setup(account = owner) {
 const consume = (db, now = NOW, keyId = 'one', extra = {}) => consumeAccountQuota(db, {
   keyId, userId: 'owner', credential: keyId === 'one' ? 'daas_one' : 'daas_two', clock: () => now, ...extra });
 const handlers = (db, clock = () => NOW) => createPaymentHandlers({ getDb: () => db, verifyIdToken, clock,
-  getConfig: () => ({ mode: 'test', secretKey: 'synthetic', dashboardUrl: 'https://example.test' }),
+  getConfig: () => ({ mode: 'test', secretKey: 'sk_test_syntheticOnly', dashboardUrl: 'https://example.test' }),
   createSession: async () => ({ sessionId: 'cs_new', paymentIntentId: 'pi_new', checkoutUrl: 'https://checkout.paymongo.com/new' }) });
 function payment(db, label = 'a') {
   const id = `${label.repeat(8)}-${label.repeat(4)}-4${label.repeat(3)}-8${label.repeat(3)}-${label.repeat(12)}`;
   const value = { mode: 'test', eventId: `evt_${label}`, sessionId: `cs_${label}`, paymentId: `pay_${label}`,
     paymentIntentId: `pi_${label}`, amount: PRO_PURCHASE.amount, currency: PRO_PURCHASE.currency };
-  db.seed(`payment_orders/${id}`, { id, userId: 'owner', state: 'pending', ...PRO_PURCHASE, ...value });
+  db.seed(`payment_orders/${id}`, { id, userId: 'owner', state: 'pending', ...PRO_PURCHASE, ...value,
+    requestAllowance: { planId: 'pro', period: 'utc_daily', limit: 500, policyVersion: 'requests-v1:unlimited:500:unlimited' } });
   db.seed(`payment_sessions/test_cs_${label}`, { orderId: id, userId: 'owner', mode: 'test', sessionId: value.sessionId });
   db.seed('payment_checkout_locks/owner', { orderId: id, sessionId: value.sessionId, mode: 'test' });
   return { value, id };

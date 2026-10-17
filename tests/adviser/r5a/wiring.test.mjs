@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import { completeCustomerSignup } from '../../../services/customer-registration.mjs';
 import { createAuthSession, createLogoutAction, completeLanding, landingSeen, navigationDecision, profileRole, authScreen,
   beginCustomerLogout, cancelCustomerLogout, customerLogoutDestination, markPostLogoutLogin, consumePostLogoutLogin,
   consumePostLogoutLoginEntry, rememberCustomerLoginEntry, CUSTOMER_LOGIN_ENTRY_KEY,
@@ -17,7 +18,7 @@ test('Landing permanently embeds login while registration remains pricing-first'
   assert.doesNotMatch(source, /showLoginModal|<LoginModal/);
   const header = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
   assert.doesNotMatch(header, />\s*Sign Up\s*</);
-  assert.match(read('dashboard/src/components/auth/LoginForm.tsx'), /href="#pricing"[\s\S]*Register/);
+  assert.match(read('dashboard/src/components/auth/LoginForm.tsx'), /href="#pricing-plans"[\s\S]*Register/u);
   assert.match(read('dashboard/src/app/signup/page.tsx'), /Create Account/);
   assert.match(source, /router\.push\(customerSignupDestination\("free"\)\)/);
   assert.doesNotMatch(source, /completeLanding|browserStorage/);
@@ -220,16 +221,19 @@ test('review: actual signup provisions profile before subsequent protected acces
     rejected: () => new Function('window', 'endSession', 'router', 'customerLogoutDestination', 'customerLoginEntryDestination', rejectedBody)({ location: { pathname: '/signup' } }, async () => { unexpectedLogout++; }, { replace() { unexpectedLogout++; } }, customerLogoutDestination, customerLoginEntryDestination),
     schedule: () => 1, cancel: () => {} });
   const body = bodyBetween('dashboard/src/app/signup/page.tsx', 'const handleSignup = async (e: React.FormEvent) => {', '\n  };')
-    .replace('catch (err: any)', 'catch (err)'); // Remove the sole TypeScript annotation in this callback body.
+    .replaceAll('(user: User)', '(user)'); // Execute the actual callback with synthetic SDK boundaries.
   const form = { fullName: 'Synthetic User', email: 'demo@example.invalid', password: 'demo-password', confirmPassword: 'demo-password',
     businessName: 'Synthetic Store', businessSegment: 'Grocery', privacyConsent: true };
   const handler = new AsyncFunction('e', 'setLoading', 'setError', 'formData', 'completeLanding', 'browserStorage',
-    'createUserWithEmailAndPassword', 'auth', 'setDoc', 'doc', 'db', 'serverTimestamp', 'signOut', 'pendingPlan', 'router', 'console', 'customerLoginEntryDestination', body);
+    'createUserWithEmailAndPassword', 'auth', 'setDoc', 'doc', 'db', 'serverTimestamp', 'signOut', 'pendingPlan', 'router', 'console', 'customerLoginEntryDestination',
+    'completeCustomerSignup', 'readRegistrationPolicy', 'getDocFromServer', 'deleteUser', body);
   await handler({ preventDefault() {} }, () => {}, message => { if (message) throw Error(message); }, form,
     completeLanding, () => storage,
     async () => { events.push('create'); auth.currentUser = user; await gate.accept(user); assert.equal(current.profile, null); assert.equal(current.status, 'denied'); return { user }; },
     auth, async (uid, profile) => { profiles.set(uid, profile); events.push('profile'); }, (_db, _collection, uid) => uid, {}, () => 'server-time',
-    async () => { events.push('signout'); auth.currentUser = null; await gate.accept(null); }, 'pro', { push: path => routes.push(path) }, quietConsole, customerLoginEntryDestination);
+    async () => { events.push('signout'); auth.currentUser = null; await gate.accept(null); }, 'pro', { push: path => routes.push(path) }, quietConsole, customerLoginEntryDestination,
+    completeCustomerSignup, async () => true, async uid => ({ exists: () => profiles.has(uid) }),
+    async () => { throw Error('Successful signup must not delete the user'); });
   assert.deepEqual(events, ['create', 'profile', 'signout']); assert.equal(unexpectedLogout, 0);
   assert.equal(profiles.get(user.uid).role, 'Developer'); assert.equal(profiles.get(user.uid).plan, 'Free');
   assert.equal(profiles.get(user.uid).apiRequestLimit, 50); assert.equal(profiles.get(user.uid).businessSegment, 'Grocery');

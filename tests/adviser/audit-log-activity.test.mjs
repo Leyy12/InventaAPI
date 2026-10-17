@@ -242,7 +242,9 @@ test('CSV audit outage preserves imported/skipped rows and never appends again o
 
 test('existing key lifecycle writer emits once per operation and already covers persisted Customer scope', async () => {
   const db = keyFirestore({ 'users/owner': { plan: 'Pro', apiRequestLimit: 500, subscription_status: 'active',
+    subscriptionStartedAt: at,
     subscriptionExpiresAt: '2027-01-01T00:00:00.000Z', selectedSegment: 'Grocery' },
+    'account_request_contracts/owner': { version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } },
     'products/rice': { segment: 'Grocery' } });
   const events = []; const collection = db.collection;
   db.collection = name => {

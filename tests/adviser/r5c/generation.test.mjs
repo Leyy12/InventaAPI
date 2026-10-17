@@ -8,12 +8,16 @@ import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
 // Generation-policy tests use a paid account so the clarified pre-Trial Free
 // issuance gate does not obscure the independent UTC daily-marker behavior.
 const account = { role: 'Developer', plan: 'Pro', subscription_status: 'active',
+  subscriptionStartedAt: '2026-09-01T00:00:00.000Z',
   subscriptionExpiresAt: '2035-01-01T00:00:00.000Z', apiRequestLimit: 5000,
   selectedSegment: 'Grocery', businessSegment: 'Grocery' };
 const legacy = { key: 'daas_existing_legacy', name: 'Historical key', status: 'active', userId: 'owner' };
 function setup(extra = {}) {
   let now = new Date('2026-09-22T12:00:00.000Z');
-  const db = memoryFirestore({ 'users/owner': account, 'users/other': account, ...extra });
+  const paidFixtures = uid => ({ [`users/${uid}`]: account,
+    [`account_request_contracts/${uid}`]: { version: 1,
+      plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } } });
+  const db = memoryFirestore({ ...paidFixtures('owner'), ...paidFixtures('other'), ...extra });
   const clock = () => new Date(now);
   const handlers = createApiKeyHandlers({ getDb: () => db, clock, verifyIdToken: async (token, revoked) => {
     assert.equal(revoked, true);
@@ -249,7 +253,7 @@ test('response failure after durable commit is sanitized and retry cannot create
 
 test('selector collision aborts without marker; fresh retry succeeds', async () => {
   const { db, create } = setup(); const run = db.runTransaction;
-  db.runTransaction = cb => run(tx => cb({ ...tx, get: async ref => ref.path.startsWith('api_keys/')
+  db.runTransaction = cb => run(tx => cb({ ...tx, get: async ref => ref.path?.startsWith('api_keys/')
     ? { exists: true } : tx.get(ref) }));
   const failed = await create(); assert.equal(failed.body.error, 'KEY_COLLISION');
   assert.equal(Object.hasOwn(failed.body, 'key'), false); assert.deepEqual(await counts(db), [0, 0]);
@@ -291,7 +295,9 @@ for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5
   test(`generation and shared request quota independent: ${plan}/${cap}`, async () => {
     const usage = { window: plan === 'Free' ? '2026-09' : '2026-09-22', used: 2 };
     const counter = plan === 'Free' ? 'account_free_monthly_usage/owner' : 'account_api_usage/owner';
-    const profile = { ...account, plan, apiRequestLimit: cap, subscription_status: 'active', subscriptionExpiresAt: '2027-01-01T00:00:00.000Z' };
+    const profile = { ...account, plan, apiRequestLimit: cap, subscription_status: 'active',
+      subscriptionStartedAt: plan === 'Free' ? null : account.subscriptionStartedAt,
+      subscriptionExpiresAt: plan === 'Free' ? null : '2027-01-01T00:00:00.000Z' };
     const { db, create, clock } = setup({ 'users/owner': profile, [counter]: usage, 'api_keys/old': legacy });
     const made = await create();
     if (plan === 'Free') {

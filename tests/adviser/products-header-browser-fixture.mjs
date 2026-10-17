@@ -16,6 +16,7 @@ for (const id of [
   'dashboard/src/lib/trial-display.mjs', 'dashboard/src/lib/linked-product-selection.ts',
   'services/customer-segment.js', 'services/product-contract.js', 'services/auth-navigation.ts',
   'functions/entitlement-limits.mjs', 'functions/subscription-lifecycle.mjs',
+  'functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs',
 ]) source(id, readFileSync(new URL('../../'+id, import.meta.url),'utf8'));
 for (const [id, path] of [
   ['react','react/cjs/react.production.js'], ['react/jsx-runtime','react/cjs/react-jsx-runtime.production.js'],
@@ -71,7 +72,7 @@ window.fetch=async(url,init)=>{
 };
 window.fixture.configure(window.fixtureOptions||{});
 `);
-source('next/navigation', `import {useFixture} from 'fixture';export const usePathname=()=>useFixture().pathname;export const useRouter=()=>({push:useFixture().navigate,replace:useFixture().navigate});`);
+source('next/navigation', `import {useFixture} from 'fixture';export const usePathname=()=>useFixture().pathname;export const useSearchParams=()=>new URLSearchParams();export const useRouter=()=>({push:useFixture().navigate,replace:useFixture().navigate});`);
 source('next/link', `import React from 'react';import {useFixture} from 'fixture';export default function Link({href,onClick,children,...props}){const f=useFixture();return <a {...props} href={href} onClick={e=>{e.preventDefault();onClick?.(e);f.navigate(href);}}>{children}</a>;}`);
 source('@/lib/firebase/auth-context', `import {useFixture} from 'fixture';export const useAuth=()=>useFixture().auth;`);
 source('@/lib/api-keys', `export {transport as apiKeyRequest} from 'fixture';`);
@@ -79,6 +80,7 @@ source('@/lib/firebase/config', `import {runtime} from 'fixture';export const au
 source('@/components/shared/NotificationBell', `import React from 'react';export default function Bell(){return <button aria-label="Notifications" className="p-2 rounded-full text-slate-400"><svg className="h-5 w-5"/></button>;}`);
 source('dashboard/src/components/layout/Sidebar.tsx', `import React from 'react';export default function Sidebar(){return <aside className="w-64 shrink-0 hidden md:flex"/>;}`);
 source('@/components/shared/SubscriptionExpiryBanner', `export default ()=>null;`);
+source('@/components/shared/CustomerMaintenanceBoundary', `export default ({children})=>children;`);
 source('@/components/auth/SessionLoadingScreen', `export default ()=>null;export const SessionRecoveryState=()=>null;`);
 source('@/components/product-request/ProductNotFound', `import React from 'react';export default ()=> <div>Empty catalog</div>;`);
 source('@/components/products/AddProductModal', `export default ()=>null;`);

@@ -47,7 +47,7 @@ test('same key catalog sync accurately documented without guarantee of push upda
   assert.match(doc,/not a push or real-time/);assert.match(doc,/x-api-key: YOUR_API_KEY/);assert.match(doc,/meta.pagination/);
 });
 test('Admin key inventory labels account usage and stored key status accurately',()=>{
-  const page=source('admin-panel/src/app/consumers/page.tsx');assert.match(page,/API Key Inventory/);assert.match(page,/Shared account usage/);
+  const page=source('admin-panel/src/app/consumers/page.tsx');assert.match(page,/API Key Inventory/);assert.match(page,/Account usage is shared/);
   assert.match(page,/not proof of current account authorization/);assert.doesNotMatch(page,/API Consumers|Loading consumers|k\.(requestsUsed|requestLimit|plan)/);
   assert.doesNotMatch(source('admin-panel/src/components/layout/AdminSidebar.tsx'),/API Consumers/);
 });

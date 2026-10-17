@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hooks, load, browser, flush, nodes } from './workspace-refresh/harness.mjs';
+import { requestAllowanceLabel } from '../../dashboard/src/config/plans.ts';
 
 const read = path => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
 const keysPath = 'dashboard/src/app/dashboard/api-keys/page.tsx';
@@ -19,6 +20,8 @@ function fixture({ status = 'trial', response = { success: true, keys: [key] }, 
     'next/link': { __esModule: true, default: 'a' }, 'lucide-react': new Proxy({}, { get: () => stub }),
     '@/lib/firebase/auth-context': { useAuth: () => ({ user }) },
     '@/lib/api-key-generation': { REVOCATION_WARNING: 'Fixture revocation warning' },
+    '@/config/plans': { requestAllowanceLabel },
+    '@/lib/plan-request-policy': { useAccountRequestAllowance: () => 500 },
     '@/components/api/RequestHistory': { __esModule: true, default: History },
     '@/components/shared/CodeSnippet': { __esModule: true, default: Examples },
     // Deliberately no CustomerUsageSummary dependency: importing it must fail.
