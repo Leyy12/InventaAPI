@@ -40,17 +40,19 @@ test('login exists without popup lifecycle, overlay, dismissal or duplicated Fir
   assert.equal(existsSync(new URL('../../dashboard/src/components/auth/LoginModal.tsx', import.meta.url)), false);
   assert.equal((form.match(/await signInWithEmailAndPassword/g) || []).length, 1);
 });
-test('form remains accessible, required-segment and ordinary Free presentation', () => {
+test('form remains accessible, segment-free and ordinary Free presentation', () => {
   assert.match(form, /aria-labelledby="login-form-title"/);
   assert.match(form, /role="alert"/); assert.match(form, /role="status"/);
-  assert.match(form, /id="segment"\s+required/);
-  for (const value of ['Email Address', 'Password', 'Business Segment', 'Forgot password?', 'Login to InventaAPI']) assert.ok(form.includes(value));
+  for (const value of ['Email Address', 'Password', 'Forgot password?', 'Login to InventaAPI']) assert.ok(form.includes(value));
+  // The business segment is chosen once at signup, never at login.
+  assert.doesNotMatch(form, /id="segment"|Business Segment|selectedSegment|loginSegmentAllowed|updateDoc/);
   assert.doesNotMatch(form, /Welcome to InventaAPI/);
-  assert.match(form, /href="#pricing-plans"[\s\S]*Register/);
+  assert.match(form, /href=\{customerSignupDestination\(pendingPlan \?\? ""\)\}[\s\S]*Register/);
+  assert.doesNotMatch(form, /#pricing-plans/);
 });
 for (const plan of ['free', 'pro', 'pro_max']) test('pricing intent registers without granting entitlement: ' + plan, () => {
   assert.equal(customerSignupDestination(plan), '/signup?pendingPlan=' + plan);
-  assert.ok(entry.includes('router.push(customerSignupDestination("' + plan + '"))'));
+  assert.ok(entry.includes('onSelect={plan => router.push(customerSignupDestination(plan))}'));
 });
 test('unknown signup destinations cannot become external navigation', () => {
   for (const intent of ['//evil.example', 'javascript:alert(1)', 'https://evil.example']) assert.equal(customerSignupDestination(intent), '/signup');

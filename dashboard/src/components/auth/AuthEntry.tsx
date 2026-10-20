@@ -7,6 +7,7 @@ import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-rea
 import LoginForm from "@/components/auth/LoginForm";
 import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
+import PlanCards from "@/components/subscription/PlanCards";
 import { useAuth } from "@/lib/firebase/auth-context";
 import type { PlanId } from "@/config/plans";
 import { usePlanCatalog } from '@/lib/plan-request-policy';
@@ -351,110 +352,9 @@ export default function AuthEntry() {
             <p className="text-slate-400 max-w-2xl mx-auto">All plans include an API key, documentation access, and DPA compliance. No hidden fees.</p>
           </div>
 
-          <div id="pricing-plans" className="scroll-mt-24 grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {/* Free Plan */}
-            <div className="glass-card p-8 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all">
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.free.displayName.toUpperCase()}</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-sm text-slate-400">₱</span>
-                  <span className="text-5xl font-extrabold">{SUBSCRIPTION_PLANS.free.price}</span>
-                  <span className="text-slate-400 text-sm">{SUBSCRIPTION_PLANS.free.billingCycle}</span>
-                </div>
-                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.free.tagline}</p>
-              </div>
-
-              <div className="space-y-3 mb-8">
-                {SUBSCRIPTION_PLANS.free.features.map((feature) => (
-                  <div key={feature} className="flex items-start gap-2 text-sm">
-                    <span className="text-emerald-400 mt-0.5">✓</span>
-                    <span className="text-slate-300">{feature}</span>
-                  </div>
-                ))}
-                {SUBSCRIPTION_PLANS.free.exclusions.map((feature) => (
-                  <div key={feature} className="flex items-start gap-2 text-sm">
-                    <span className="text-slate-600 mt-0.5">✗</span>
-                    <span className="text-slate-500">{feature}</span>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                disabled={planPolicyStatus !== 'ready'} onClick={() => router.push(customerSignupDestination("free"))}
-                className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
-                {SUBSCRIPTION_PLANS.free.ctaText} →
-              </button>
-            </div>
-
-            {/* Pro Plan - Most Popular */}
-            <div className="glass-card p-8 rounded-2xl border-2 border-indigo-500/50 hover:border-indigo-500 transition-all relative shadow-lg shadow-indigo-500/20">
-              {SUBSCRIPTION_PLANS.pro.badge && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                  <span className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">{SUBSCRIPTION_PLANS.pro.badge}</span>
-                </div>
-              )}
-
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.pro.displayName.toUpperCase()}</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-sm text-slate-400">₱</span>
-                  <span className="text-5xl font-extrabold">{SUBSCRIPTION_PLANS.pro.price?.toLocaleString()}</span>
-                  <span className="text-slate-400 text-sm">{SUBSCRIPTION_PLANS.pro.billingCycle}</span>
-                </div>
-                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.pro.tagline}</p>
-              </div>
-
-              <div className="space-y-3 mb-8">
-                <p className="text-xs font-semibold text-indigo-400 mb-2">Everything in Free, and:</p>
-                {SUBSCRIPTION_PLANS.pro.incrementalFeatures.map((feature) => (
-                  <div key={feature} className="flex items-start gap-2 text-sm">
-                    <span className="text-emerald-400 mt-0.5">✓</span>
-                    <span className="text-slate-300">{feature}</span>
-                  </div>
-                ))}
-                {SUBSCRIPTION_PLANS.pro.exclusions.map((feature) => (
-                  <div key={feature} className="flex items-start gap-2 text-sm">
-                    <span className="text-slate-600 mt-0.5">✗</span>
-                    <span className="text-slate-500">{feature}</span>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                disabled={planPolicyStatus !== 'ready'} onClick={() => router.push(customerSignupDestination("pro"))}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25">
-                {SUBSCRIPTION_PLANS.pro.ctaText} →
-              </button>
-            </div>
-
-            {/* Pro Max Plan */}
-            <div className="glass-card p-8 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all">
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-300 mb-2">{SUBSCRIPTION_PLANS.pro_max.displayName.toUpperCase()}</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold">{SUBSCRIPTION_PLANS.pro_max.priceDisplay}</span>
-                  <span className="text-slate-400 text-sm">{SUBSCRIPTION_PLANS.pro_max.billingCycle}</span>
-                </div>
-                <p className="text-sm text-slate-400 mt-3">{SUBSCRIPTION_PLANS.pro_max.tagline}</p>
-              </div>
-
-              <div className="space-y-3 mb-8">
-                <p className="text-xs font-semibold text-emerald-400 mb-2">Everything in Pro, and:</p>
-                {SUBSCRIPTION_PLANS.pro_max.incrementalFeatures.map((feature) => (
-                  <div key={feature} className="flex items-start gap-2 text-sm">
-                    <span className="text-emerald-400 mt-0.5">✓</span>
-                    <span className="text-slate-300">{feature}</span>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                disabled={planPolicyStatus !== 'ready'} onClick={() => router.push(customerSignupDestination("pro_max"))}
-                className="w-full bg-white/5 hover:bg-white/10 text-white font-medium py-3 rounded-xl transition-all border border-white/10">
-                {SUBSCRIPTION_PLANS.pro_max.ctaText} →
-              </button>
-              <p className="mt-4 text-xs text-slate-500">Standard security, abuse-prevention, and IP rate limits apply to every plan.</p>
-            </div>
+          <div id="pricing-plans" className="scroll-mt-24">
+            <PlanCards plans={SUBSCRIPTION_PLANS} isDisabled={() => planPolicyStatus !== 'ready'}
+              onSelect={plan => router.push(customerSignupDestination(plan))} />
           </div>
         </div>
       </section>

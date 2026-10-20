@@ -77,7 +77,9 @@ test('Free, Pro, Pro Max public plans retain truthful inherited capabilities and
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One Business Segment'));
   assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('Real Sales Analytics Feed'));
   assert.ok(!JSON.stringify(SUBSCRIPTION_PLANS).match(/\bSLA\b|Custom Endpoints|Priority Support|AI-powered|confidence score/iu));
-  assert.match(source('dashboard/src/components/auth/AuthEntry.tsx'), /customerSignupDestination\("pro_max"\)/u);
+  // The shared plan cards route each plan, Pro Max included, to its signup entry.
+  assert.match(source('dashboard/src/components/auth/AuthEntry.tsx'), /onSelect=\{plan => router\.push\(customerSignupDestination\(plan\)\)\}/u);
+  assert.match(source('dashboard/src/components/subscription/PlanCards.tsx'), /button\("pro_max",/u);
   assert.match(source('dashboard/src/components/subscription/SubscriptionModal.tsx'), /JSON\.stringify\(\{ plan: selectedPlan, requestPolicyVersion \}\)/u);
 });
 

@@ -15,15 +15,22 @@ flowchart TD
   Init -->|Unauthenticated root; fresh browser/profile| Landing[Landing]
   Init -->|Unauthenticated root; returning browser/profile| Login[Login]
   Landing -->|Deliberate continuation| Login
-  Landing --> Signup[Signup details; accept Terms of Service/AUP and Privacy Policy]
+  Landing --> Signup[Signup details and business segment; accept Terms of Service/AUP and Privacy Policy]
+  Login -->|Register| Signup
   Signup --> Code[Backend emails a 6-digit code to the address]
   Code --> CodeCheck[Enter code; backend verifies it]
   CodeCheck -->|Incorrect, expired or locked| Code
   CodeCheck -->|Verified| Profile[Create Auth identity; backend marks its email verified; create authoritative Customer profile]
-  Profile --> Registered[Sign out; Login with registration result]
+  Profile --> SignIn[Sign out, then sign in again with the same password]
+  SignIn -->|Verified Customer| Plans[Choose a plan: Free Trial, Pro or Pro Max]
+  SignIn -->|Sign-in fails| Registered[Login with registration result]
   Registered --> Login
+  Plans -->|Free Trial| Dashboard
+  Plans -->|Pro or Pro Max| Checkout[Existing PayMongo checkout]
+  Login -->|Forgot password| Reset[Backend emails a reset code; code and new password change it]
+  Reset --> Login
   Login --> Verify[Firebase authentication and server profile verification]
-  Verify -->|Valid Customer; complete existing segment/setup handoff| Dashboard
+  Verify -->|Valid Customer; segment comes from the stored profile| Dashboard
   Verify -->|Valid Admin| AdminLogin[Configured separate Admin app Login]
   Dashboard --> Logout[Firebase sign-out succeeds]
   Logout --> Login
@@ -44,7 +51,9 @@ production configuration gate.
 
 Signup proves email ownership before any Customer profile exists; Firestore
 rules accept a profile only from a verified identity that records that exact
-address and both acceptances. See [signup email verification](email-verification-signup.md).
+address and both acceptances. The business segment is chosen there once; Login
+asks only for email and password. Password reset uses an emailed code. See
+[signup email verification and password reset](email-verification-signup.md).
 
 ## Product submission and canonical catalog
 

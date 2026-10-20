@@ -1,4 +1,4 @@
-# Signup email verification and Terms acceptance
+# Signup email verification, password reset and Terms acceptance
 
 New Customer accounts are created only after the person proves they control the
 email address they register with, by entering a 6-digit code that the backend
@@ -16,9 +16,10 @@ owner cannot change `email`, `termsAccepted`, `termsAcceptedAt`, `termsVersion`,
 
 ## Flow
 
-1. **Details (step 1 of 2).** The page validates the form and both acceptances,
-   normalizes the address (trimmed, lowercase, as Firebase Auth stores it) and calls
-   `send`. The backend refuses when registration is disabled in System Settings or
+1. **Details (step 1 of 2).** *Send Verification Code* stays disabled, with a hint,
+   until every field is filled in and both agreements are checked. The page validates
+   the form, normalizes the address (trimmed, lowercase, as Firebase Auth stores it)
+   and calls `send`. The backend refuses when registration is disabled in System Settings or
    when the address already belongs to a Firebase Auth identity, then emails a code.
 2. **Code (step 2 of 2).** The page shows the address, a numeric one-time-code field,
    a resend countdown and *Edit details*. `verify` exchanges a correct code for a
@@ -29,8 +30,13 @@ owner cannot change `email`, `termsAccepted`, `termsAcceptedAt`, `termsVersion`,
    the new identity's ID token. The backend sets `emailVerified` with the Admin SDK;
    the browser refreshes its ID token and requires the `email_verified` claim before
    it writes the profile. The profile also records `termsVersion`,
-   `termsAcceptedAt` and `privacyConsentTimestamp`. The user is signed out and sent
-   to the landing Login, exactly as before.
+   `termsAcceptedAt` and `privacyConsentTimestamp`. The user is signed out as before.
+4. **Plans.** The page signs the new account in again with the same password, as an
+   ordinary login that the session gate verifies against the stored profile, and
+   shows every plan before the dashboard. *Continue with Free Trial* opens the
+   dashboard; Pro and Pro Max open the existing checkout modal. A paid plan picked on
+   the landing page before signup opens its checkout straight away. If that sign-in
+   fails, the page falls back to the landing Login (`?registered=true`) as before.
 
 If confirmation fails, the new identity is deleted (it has no profile) and the page
 asks for a new code. A retry after any other later failure reuses the verification
@@ -49,10 +55,41 @@ VERIFICATION_UNAVAILABLE`.
 | `POST /api/v1/auth/email-verification/send` | `{ email }` | `expiresInSeconds` (600), `resendAvailableInSeconds` (60) | 400 `INVALID_EMAIL`; 403 `REGISTRATION_CLOSED`; 409 `EMAIL_ALREADY_REGISTERED`; 429 `VERIFICATION_RESEND_COOLDOWN` / `VERIFICATION_SEND_LIMIT` with `Retry-After`; 503 `EMAIL_DELIVERY_FAILED` |
 | `POST /api/v1/auth/email-verification/verify` | `{ email, code }` | `verificationToken`, `expiresInSeconds` (1800) | 400 `INVALID_CODE`, `VERIFICATION_CODE_MISSING`, `VERIFICATION_CODE_EXPIRED`, `VERIFICATION_CODE_INCORRECT` (with remaining attempts); 429 `VERIFICATION_ATTEMPTS_EXCEEDED` |
 | `POST /api/v1/auth/email-verification/confirm` | `{ verificationToken }` + `Authorization: Bearer <ID token>` | `{ success: true }` | 401 `UNAUTHENTICATED`; 400 `VERIFICATION_TOKEN_INVALID` |
+| `POST /api/v1/auth/password-reset/send` | `{ email }` | `expiresInSeconds` (600), `resendAvailableInSeconds` (60), for every valid address | 400 `INVALID_EMAIL`; 429 `VERIFICATION_RESEND_COOLDOWN` / `VERIFICATION_SEND_LIMIT` with `Retry-After`; 503 `EMAIL_DELIVERY_FAILED` |
+| `POST /api/v1/auth/password-reset/confirm` | `{ email, code, password }` | `{ success: true }` | 400 `INVALID_CODE`, `INVALID_PASSWORD`, `VERIFICATION_CODE_MISSING`, `VERIFICATION_CODE_EXPIRED`, `VERIFICATION_CODE_INCORRECT`, `PASSWORD_REJECTED`; 429 `VERIFICATION_ATTEMPTS_EXCEEDED` |
 
 `confirm` looks up the record by the identity's own email, so a token can only
 verify the inbox it was issued for. Maintenance mode does not apply to these
-routes; the registration switch does.
+routes; the registration switch applies to signup codes only. Unexpected
+password-reset failures are `503 PASSWORD_RESET_UNAVAILABLE`.
+
+## Password reset
+
+Login's *Forgot password?* asks for the address and emails a 6-digit code through
+the same provider, then takes the code together with a new password (at least 6
+characters, Firebase Auth's minimum).
+
+- `send` gives an address without an account the same reply as one with an account,
+  and emails only an enabled Firebase Auth identity. Its resend cooldown and response
+  time can still reveal that an address is registered, as signup's
+  `EMAIL_ALREADY_REGISTERED` already does, so this avoids an obvious lookup rather
+  than hiding registration.
+- `confirm` checks the code and deletes it in one transaction, so a code works once.
+  It then sets the password with the Admin SDK, marks the address `emailVerified`
+  (the person just proved they control it) and revokes refresh tokens, so other
+  signed-in sessions must log in again. It never creates a Customer profile.
+- Codes, attempts and per-address limits are the same as for signup codes, and the
+  per-IP limit is one budget shared by both kinds of email. A signup code cannot
+  reset a password, and a reset code cannot verify a signup.
+- The dashboard no longer sends Firebase's own password reset link email.
+
+## Login
+
+Login asks only for the email address and password. The business segment is chosen
+once, at signup. Catalog scope always comes from the stored profile on the server:
+Free and Trial accounts are limited to their `businessSegment`, and paid plans are
+not segment-restricted. Login no longer writes `selectedSegment`. *Register* opens
+Create Account directly, keeping any paid-plan intent.
 
 ## Limits and storage
 
@@ -72,6 +109,11 @@ routes; the registration switch does.
   Unfinished records carry `expireAt` (24 hours after their last change) for an
   optional Firestore TTL policy, which this repository does not deploy:
   `gcloud firestore fields ttls update expireAt --collection-group=email_verifications --enable-ttl --project=<project>`.
+- **Reset records:** `password_resets/{sha256(address)}` stores the same hashed code,
+  counters and `expireAt`, and is deleted when its code is used. Browsers cannot read
+  or write it: no rule allows it, so the final default-deny rule applies, and no
+  rules change or deployment is needed. Its optional TTL policy uses
+  `--collection-group=password_resets`.
 
 ## Configuration (backend only)
 
@@ -108,6 +150,9 @@ dashboard, then `firestore.rules`. The new page needs the new endpoints, and the
 new rule rejects profiles from the previous signup page, which never verifies the
 address. The previous rules already accept the profiles the new page writes.
 
+Password reset, the plan chooser and the segment-free Login change no rules: deploy
+the backend and the dashboard only.
+
 ## Existing accounts and limitations
 
 - Existing profiles keep working: only profile creation and changes to the address
@@ -129,7 +174,8 @@ commercial launch.
 ## Tests
 
 ```text
-npm run test:adviser:email-verification
+npm run test:adviser:email-verification         # includes password reset and plan chooser
+node --test tests/adviser/unified-customer-login.test.mjs   # Login, reset UI, signup handoff
 npm run test:adviser:email-verification:rules   # cached Firestore emulator
 node --test tests/adviser/r9c/routing.test.mjs  # routes, limiter, real server.js
 ```

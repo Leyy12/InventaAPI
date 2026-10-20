@@ -82,39 +82,36 @@ test('Inline login has no popup or dismissal and preserves existing form paths',
   assert.doesNotMatch(source, /aria-modal|fixed inset-0|zoom-in|backdrop-blur/);
   assert.doesNotMatch(source, /onClose|Escape/);
   assert.match(source, /aria-labelledby="login-form-title"/);
-  for (const token of ['Forgot password?', 'Register', 'Business Segment']) assert.ok(source.includes(token), token);
+  for (const token of ['Forgot password?', 'Register', 'Reset Code', 'New Password']) assert.ok(source.includes(token), token);
 });
 
-test('Customer Login always requires the canonical business segment before Firebase auth', () => {
+test('Customer Login asks only for email and password; the segment is chosen once at signup', () => {
   const source = read('dashboard/src/components/auth/LoginForm.tsx');
-  assert.match(source, /PRODUCT_SEGMENTS.*product-contract\.js/);
-  assert.match(source, /setShowSegment\(true\)/);
-  assert.match(source, /id="segment"/);
-  assert.match(source, /required/);
-  assert.match(source, /Select your business segment/);
-  const passwordOffset = source.indexOf('id="password"');
-  const segmentOffset = source.indexOf('id="segment"');
-  assert.ok(passwordOffset >= 0 && segmentOffset > passwordOffset, 'segment follows password');
-  const missingSegment = source.indexOf('if (!requestedSegment)');
-  const firebaseSignIn = source.indexOf('await signInWithEmailAndPassword');
-  assert.ok(missingSegment >= 0 && firebaseSignIn > missingSegment, 'missing segment blocks sign-in');
+  assert.match(source, /id="email"/);
+  assert.match(source, /id="password"/);
+  assert.doesNotMatch(source, /id="segment"|Business Segment|Select your business segment|PRODUCT_SEGMENTS|setShowSegment|requestedSegment/);
+  assert.match(read('dashboard/src/app/signup/page.tsx'), /name="businessSegment"/);
 });
 
-test('Segment selection is profile/plan-authorized and cannot grant access client-side', () => {
+test('Login never changes the stored segment; scope stays profile/plan-authorized on the server', () => {
   const source = read('dashboard/src/components/auth/LoginForm.tsx');
-  assert.match(source, /normalizeSegment\(userData\?\.selectedSegment\)/);
-  assert.match(source, /normalizeSegment\(userData\?\.businessSegment\)/);
   assert.match(source, /await readSubscription\(user\)/);
-  assert.match(source, /loginSegmentAllowed\(\{ \.\.\.userData, plan \}, chosenSegment\)/);
   assert.match(source, /await signOut\(auth\)/);
-  assert.match(source, /That business segment is not available for this account/);
-  assert.match(source, /updateDoc\(doc\(db, "users", user\.uid\), \{ selectedSegment: chosenSegment \}\)/);
-  assert.doesNotMatch(source, /setSegment\([^)]*\);\s*router\.push\("\/dashboard"/s);
+  assert.doesNotMatch(source, /updateDoc|selectedSegment|loginSegmentAllowed|normalizeSegment/);
+  assert.match(read('services/daas-catalog.js'), /activeCustomerSegment\(userData\)/);
+  assert.match(read('services/customer-segment.js'), /restrictedSegmentAccount\(account\) \? account\?\.businessSegment : account\?\.selectedSegment/);
 });
 
-test('Selector reset and existing Admin authentication boundary remain intact', () => {
+test('Password reset uses an emailed code, never a Firebase reset link', () => {
   const source = read('dashboard/src/components/auth/LoginForm.tsx');
-  assert.match(source, /useState<SegmentId \| "">\(""\)/);
+  assert.doesNotMatch(source, /sendPasswordResetEmail/);
+  assert.match(source, /sendPasswordResetCode\(\{ base: API_BASE, email: target \}\)/);
+  assert.match(source, /resetPasswordWithCode\(\{ base: API_BASE, email: resetSentTo, code: resetCode, password: newPassword \}\)/);
+  assert.match(source, /autoComplete="one-time-code"/);
+});
+
+test('Existing Admin authentication boundary remains intact', () => {
+  const source = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.match(source, /if \(role === "admin"\)/);
   assert.match(source, /adminLoginDestination\(/);
   assert.match(read('services/product-contract.js'), /PRODUCT_SEGMENTS = Object\.freeze\(\['Grocery', 'Pharmacy', 'Hardware'\]\)/);

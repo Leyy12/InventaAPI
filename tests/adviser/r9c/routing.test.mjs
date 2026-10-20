@@ -115,6 +115,29 @@ test('code emails have a stricter per-IP limit than the shared API limiter', asy
   assert.equal((await get('/api/v1/auth/email-verification/verify', { method: 'POST', ip: '203.0.113.81', body: {} })).status, 400);
   assert.equal((await get('/api/v1/auth/email-verification/send', { method: 'POST', ip: '203.0.113.82', body: {} })).status, 400);
 });
+test('password reset routes are mounted and validate before any Firebase access', async () => {
+  const send = await get('/api/v1/auth/password-reset/send', { method: 'POST', ip: '203.0.113.83', body: { email: 'not-an-email' } });
+  assert.equal(send.status, 400); assert.equal(JSON.parse(send.body).code, 'INVALID_EMAIL');
+  const code = await get('/api/v1/auth/password-reset/confirm', { method: 'POST', ip: '203.0.113.83',
+    body: { email: 'juan@gmail.com', code: 'abc', password: 'new-synthetic-password' } });
+  assert.equal(code.status, 400); assert.equal(JSON.parse(code.body).code, 'INVALID_CODE');
+  const password = await get('/api/v1/auth/password-reset/confirm', { method: 'POST', ip: '203.0.113.83',
+    body: { email: 'juan@gmail.com', code: '482913', password: 'short' } });
+  assert.equal(password.status, 400); assert.equal(JSON.parse(password.body).code, 'INVALID_PASSWORD');
+  assert.equal((await get('/api/v1/auth/password-reset/send')).status, 404);
+});
+test('signup and password reset emails share one per-IP budget', async () => {
+  for (let request = 1; request <= 10; request++) {
+    const path = request % 2 ? '/api/v1/auth/password-reset/send' : '/api/v1/auth/email-verification/send';
+    assert.equal((await get(path, { method: 'POST', ip: '203.0.113.84', body: {} })).status, 400);
+  }
+  for (const path of ['/api/v1/auth/password-reset/send', '/api/v1/auth/email-verification/send']) {
+    const limited = await get(path, { method: 'POST', ip: '203.0.113.84', body: {} });
+    assert.equal(limited.status, 429); assert.match(JSON.parse(limited.body).error, /Too many verification emails/);
+  }
+  // Confirming a code is not an email send.
+  assert.equal((await get('/api/v1/auth/password-reset/confirm', { method: 'POST', ip: '203.0.113.84', body: {} })).status, 400);
+});
 test('unknown routes still return Express 404', async () => {
   for (const path of ['/r9c-unknown', '/api/v1/r9c-unknown']) {
     const response = await get(path);

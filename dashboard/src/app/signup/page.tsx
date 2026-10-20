@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef, Suspense } from "react";
-import { createUserWithEmailAndPassword, deleteUser, signOut, type User } from "firebase/auth";
+import { createUserWithEmailAndPassword, deleteUser, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { doc, getDocFromServer, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, ArrowLeft, User as UserIcon, Building, Briefcase, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { customerLoginEntryDestination } from '../../../../services/auth-navigation';
+import PostSignupPlans from "@/components/subscription/PostSignupPlans";
+import { customerLoginEntryDestination, rememberCustomerLoginEntry } from '../../../../services/auth-navigation';
 import { completeCustomerSignup, readRegistrationPolicy, sendSignupCode, verifySignupCode, confirmSignupEmail,
   normalizeSignupEmail, validSignupEmail, TERMS_VERSION, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
 
@@ -32,7 +33,7 @@ function SignupPageInner() {
     termsAccepted: false,
     privacyConsent: false
   });
-  const [step, setStep] = useState<"details" | "verify">("details");
+  const [step, setStep] = useState<"details" | "verify" | "plans">("details");
   // The account is created only for the address a code was sent to and verified for.
   const [codeSentTo, setCodeSentTo] = useState("");
   const [code, setCode] = useState("");
@@ -49,6 +50,10 @@ function SignupPageInner() {
   // Preserve any pending plan intent from the landing page (e.g. pendingPlan=pro)
   // so after signup the user is immediately taken to the plan chooser.
   const pendingPlan = searchParams.get("pendingPlan");
+  // Codes are only sent once every field is filled in and both agreements are accepted.
+  const detailsComplete = [formData.fullName, formData.email, formData.password, formData.confirmPassword, formData.businessName]
+    .every(value => value.trim() !== "");
+  const agreementsAccepted = formData.termsAccepted && formData.privacyConsent;
 
   useEffect(() => {
     if (resendSeconds <= 0) return;
@@ -161,8 +166,16 @@ function SignupPageInner() {
         }),
       });
       if (!result.ok) { setError(result.message); return; }
-      // Return to the single landing login after authoritative profile creation
-      // and explicit sign-out. Only a valid paid CTA keeps its upgrade intent.
+      // The committed account signs in again as an ordinary login, so the session is
+      // verified against the stored profile. It then chooses a plan before the dashboard.
+      try {
+        await signInWithEmailAndPassword(auth, codeSentTo, formData.password);
+        rememberCustomerLoginEntry('free');
+        setStep("plans");
+        return;
+      } catch {
+        // Fall back to the landing login. Only a valid paid CTA keeps its upgrade intent.
+      }
       const intent = new URLSearchParams({ registered: 'true' });
       if (pendingPlan === 'pro' || pendingPlan === 'pro_max') {
         intent.set('choosePlan', 'true'); intent.set('pendingPlan', pendingPlan);
@@ -189,6 +202,16 @@ function SignupPageInner() {
   const spinner = (
     <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
   );
+
+  if (step === "plans") {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-10">
+        <div className="blob blob-1" />
+        <div className="blob blob-2" />
+        <PostSignupPlans initialPlan={pendingPlan === "pro" || pendingPlan === "pro_max" ? pendingPlan : null} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-6">
@@ -384,10 +407,11 @@ function SignupPageInner() {
             </label>
           </div>
 
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-70 disabled:cursor-not-allowed"
+          <button
+            type="submit"
+            disabled={loading || !detailsComplete || !agreementsAccepted}
+            aria-describedby={!detailsComplete || !agreementsAccepted ? "send-code-hint" : undefined}
+            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:hover:bg-indigo-500 disabled:cursor-not-allowed"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -401,6 +425,13 @@ function SignupPageInner() {
               </>
             )}
           </button>
+          {(!detailsComplete || !agreementsAccepted) && (
+            <p id="send-code-hint" className="text-center text-xs text-slate-400">
+              {!detailsComplete
+                ? "Fill in every field above to continue."
+                : "Agree to the Terms of Service and the Privacy Policy to continue."}
+            </p>
+          )}
             </>
           ) : (
             <>

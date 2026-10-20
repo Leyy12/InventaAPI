@@ -41,7 +41,7 @@ does not initialize Firebase or call PayMongo, and it never prints secret values
 | `PAYMONGO_MODE` | Yes | No | Exactly `test` or `live`, independent of `NODE_ENV`. Missing/invalid fails closed. Current capstone: `test`; live deferred until commercial launch. |
 | `PAYMONGO_SECRET_KEY` | Yes | Yes | Must match `PAYMONGO_MODE`: `sk_test_...` for `test`, `sk_live_...` for `live`. Backend only; never infer mode from the key or runtime. |
 | `PAYMONGO_WEBHOOK_SECRET` | Yes | Yes | Opaque, non-placeholder signing secret for the webhook endpoint in the matching PayMongo mode. No undocumented prefix is assumed. Backend only. |
-| `EMAIL_DELIVERY_PROVIDER` | Yes | No | `smtp` or `resend`. Delivers the 6-digit signup verification codes; without it new Customer registration fails closed. `console` (codes in the API log) works only with `NODE_ENV=development` and never passes validation. |
+| `EMAIL_DELIVERY_PROVIDER` | Yes | No | `smtp` or `resend`. Delivers the 6-digit signup verification and password reset codes; without it new Customer registration and password reset fail closed. `console` (codes in the API log) works only with `NODE_ENV=development` and never passes validation. |
 | `EMAIL_FROM` | Yes | No | Non-placeholder sender, `Name <address>` or an address, that the provider may send from (Gmail: the authenticated address; Resend: an address on a verified domain). |
 | `SMTP_HOST` / `SMTP_USER` | Conditional | No | Required with `smtp`, e.g. `smtp.gmail.com` and the Gmail address. |
 | `SMTP_PORT` | No | No | Default `465` (implicit TLS). Other ports must support STARTTLS, which is then mandatory (e.g. `587`). |
@@ -79,9 +79,11 @@ Configure one provider from the table above in the backend secret store, confirm
 the sender is authorized (Gmail App Password or Resend-verified domain), and send
 one sandbox signup to a real inbox before release. Deploy the backend first, then
 the Customer dashboard, then `firestore.rules`: the new rule rejects profiles from
-the previous signup page. An optional TTL policy on `email_verifications.expireAt`
-removes unfinished verification records. Details, limits and Gmail steps:
-[signup email verification](email-verification-signup.md).
+the previous signup page. Login's *Forgot password?* emails a reset code through
+the same provider; send one sandbox reset before release too. Optional TTL
+policies on `email_verifications.expireAt` and `password_resets.expireAt` remove
+unfinished records. Details, limits and Gmail steps:
+[signup email verification and password reset](email-verification-signup.md).
 
 ## Free Trial warning Function configuration — release gate
 
