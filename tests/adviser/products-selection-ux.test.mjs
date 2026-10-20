@@ -95,7 +95,7 @@ test('paid selection composes with verified current segment; full segment availa
   await f.search(''); await f.segment('Hardware'); await f.filter('selected');
   assert.deepEqual(ids(f), ['hardware-0']);
   await f.click(f.button('Clear All')); assert.equal(f.cards().length, 0);
-  assert.equal(f.calls.length, 3); assert.equal(f.keyCalls.length, 0);
+  assert.equal(f.calls.length, 3); assert.equal(f.keyCalls.length, 1); // One read labels products already in a key.
 }));
 
 test('full Trial: disabled but unselected products remain in Not Selected; Select All cannot bypass capacity', () => using({ included: 50 }, async f => {
@@ -165,4 +165,31 @@ test('full-width catalog has no empty selection area; compact upper summary and 
   assert.equal(nodes(listAfter, n => n.props['aria-label'] === 'Product selection summary').length, 0);
   await f.click(f.button('Clear New Selections'));
   assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
+}));
+
+test('products already in a key are hidden by default and reachable through a filter named after the key', () => using({ included: 5, keyFilter: 'unused' }, async f => {
+  const control = f.find(n => n.props.id === 'key-usage-filter');
+  assert.equal(control.props.value, 'unused');
+  assert.match(text(control), /Not in an API key/); assert.match(text(control), /In key:\s+Fixture POS/);
+  assert.equal(f.cards().length, 55); assert.ok(!ids(f).includes('grocery-0'));
+  await f.keyFilter('key:fixture-key');
+  assert.deepEqual(ids(f), ['grocery-0', 'grocery-1', 'grocery-2', 'grocery-3', 'grocery-4']);
+  assert.match(text(f.card('grocery-0')), /In key:\s+Fixture POS/);
+  await f.keyFilter('all'); assert.equal(f.cards().length, 60);
+  assert.doesNotMatch(text(f.card('grocery-5')), /In key:/);
+}));
+
+test('product category filter lists the categories in view and composes with search and selection', () => using({ trial: false }, async f => {
+  await f.segment('Grocery');
+  const control = f.find(n => n.props.id === 'product-category-filter');
+  assert.deepEqual(nodes(control, n => n.type === 'option').map(n => n.props.value), ['All', 'Dairy', 'Rice']);
+  await f.category('Rice');
+  assert.equal(f.cards().length, 30); assert.ok(ids(f).every(id => Number(id.split('-')[1]) % 2 === 1));
+  await f.search('Rice 1'); assert.ok(ids(f).every(id => id.startsWith('grocery-1')));
+  await f.search(''); await f.category('Dairy'); await f.filter('selected');
+  assert.equal(f.cards().length, 0);
+  assert.match(text(f.h.output), /No selected products\./);
+  await f.click(f.button('View All Products'));
+  assert.equal(f.find(n => n.props.id === 'product-category-filter').props.value, 'All');
+  assert.equal(f.cards().length, 60);
 }));

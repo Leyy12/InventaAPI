@@ -4,6 +4,7 @@ import { hooks, load, clock, browser, flush, nodes } from './workspace-refresh/h
 import * as catalog from '../../dashboard/src/lib/segment-catalog.ts';
 import * as selection from '../../dashboard/src/lib/trial-catalog-selection.ts';
 import * as linked from '../../dashboard/src/lib/linked-product-selection.ts';
+import * as productFilters from '../../dashboard/src/lib/product-filters.ts';
 import * as display from '../../dashboard/src/lib/trial-display.mjs';
 import * as segment from '../../services/customer-segment.js';
 
@@ -36,7 +37,7 @@ function fixture(owned, { count = 55, evidence = { keys: [], trialCatalog: measu
     '@/lib/firebase/auth-context': { useAuth: () => state },
     '@/lib/firebase/config': { auth: { currentUser: user } },
     '@/lib/firebase/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
-    '@/lib/linked-product-selection': linked,
+    '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       keyCalls.push({ path, init });
       if (init?.method === 'PATCH') {
@@ -62,6 +63,8 @@ function fixture(owned, { count = 55, evidence = { keys: [], trialCatalog: measu
       pagination: { total: scoped.length, offset: 0, limit: 200, returned: scoped.length } }) };
   } });
   h.mount(Component);
+  // These flows assert locked Included cards, so view every product rather than the default unused-only view.
+  nodes(h.output, n => n.props.id === 'key-usage-filter')[0].props.onChange({ target: { value: 'all' } });
   const cards = () => nodes(h.output, n => n.props.onClick && n.props.className?.includes('glass-card rounded-xl transition'));
   const button = label => nodes(h.output, n => n.type === 'button' && text(n).trim().startsWith(label))[0];
   const card = id => cards().find(n => n.key === id);
