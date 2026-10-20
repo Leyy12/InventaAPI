@@ -124,7 +124,10 @@ function redeemCode(db, ref, at, code, matched) {
   });
 }
 
-export function createEmailVerificationHandlers({ getDb, emailRegistered, verifyIdToken, markEmailVerified, sendEmail,
+// `emailRegistered` is true only for a completed account (an Auth identity with a profile).
+// `removeIncompleteAccount` deletes an Auth identity left without a profile by an
+// interrupted signup, and resolves to false when the address has a completed account.
+export function createEmailVerificationHandlers({ getDb, emailRegistered, removeIncompleteAccount, verifyIdToken, markEmailVerified, sendEmail,
   now = () => new Date(), createCode = sixDigitCode,
   createToken = () => randomBytes(32).toString('base64url'),
   report = reportDeliveryFailure }) {
@@ -172,7 +175,21 @@ export function createEmailVerificationHandlers({ getDb, emailRegistered, verify
     return res.json({ success: true });
   });
 
-  return { send, verify, confirm };
+  // An interrupted signup can leave an Auth identity with no profile, which blocks
+  // creating the account again. The verified inbox owner may remove that identity.
+  // The token is not redeemed here: confirm still needs it for the new identity.
+  const reclaim = respond(async (req, res) => {
+    const email = requestedEmail(req.body), token = req.body?.verificationToken;
+    if (typeof token !== 'string' || token.length > 128) throw new VerificationError(400, 'VERIFICATION_TOKEN_INVALID', TOKEN_INVALID);
+    const record = (await recordRef(getDb(), email).get()).data();
+    if (!same(sha256(token), record?.tokenHash) || !(millis(record.tokenExpiresAt) > now().getTime())) {
+      throw new VerificationError(400, 'VERIFICATION_TOKEN_INVALID', TOKEN_INVALID);
+    }
+    if (!await removeIncompleteAccount(email)) throw new VerificationError(409, 'EMAIL_ALREADY_REGISTERED', 'This email is already registered. Please sign in.');
+    return res.json({ success: true });
+  });
+
+  return { send, verify, confirm, reclaim };
 }
 
 // Password recovery by emailed code. An unknown or disabled address gets the same reply and

@@ -20,9 +20,22 @@ const accountByEmail = email => getAuth().getUserByEmail(email).catch(error => {
   if (error?.code === 'auth/user-not-found') return null;
   throw error;
 });
+// An Auth identity without a users/{uid} profile is a signup that never finished
+// (every completed account, admins included, has a profile).
+const profileExists = async uid => (await getFirestore().collection('users').doc(uid).get()).exists;
 const verification = createEmailVerificationHandlers({
   getDb: () => getFirestore(),
-  emailRegistered: async email => !!await accountByEmail(email),
+  emailRegistered: async email => {
+    const account = await accountByEmail(email);
+    return !!account && await profileExists(account.uid);
+  },
+  removeIncompleteAccount: async email => {
+    const account = await accountByEmail(email);
+    if (!account) return true;
+    if (await profileExists(account.uid)) return false;
+    await getAuth().deleteUser(account.uid).catch(error => { if (error?.code !== 'auth/user-not-found') throw error; });
+    return true;
+  },
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked),
   markEmailVerified: uid => getAuth().updateUser(uid, { emailVerified: true }),
   sendEmail,
@@ -45,6 +58,7 @@ const { verifyClientIp, limiter } = createIpRateLimiter({ windowMs: 15 * 60 * 10
 router.post('/email-verification/send', verifyClientIp, limiter, verification.send);
 router.post('/email-verification/verify', verification.verify);
 router.post('/email-verification/confirm', verification.confirm);
+router.post('/email-verification/reclaim', verification.reclaim);
 router.post('/password-reset/send', verifyClientIp, limiter, passwordReset.send);
 router.post('/password-reset/confirm', passwordReset.confirm);
 

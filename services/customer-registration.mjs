@@ -54,6 +54,13 @@ export async function verifySignupCode({ base, email, code, request = globalThis
   return { ok: !!verificationToken, message: result.ok && !verificationToken ? VERIFICATION_UNAVAILABLE : result.message, verificationToken };
 }
 
+// Removes an Auth identity an interrupted signup left behind for this verified address,
+// so the account can be created. Refused when the address has a completed account.
+export async function reclaimSignupEmail({ base, email, verificationToken, request = globalThis.fetch }) {
+  const result = await verificationCall(request, `${base}/api/v1/auth/email-verification/reclaim`, { email, verificationToken });
+  return { ok: result.ok, message: result.message };
+}
+
 // The backend marks the new identity email_verified. Firestore evaluates the ID token,
 // so the profile write must wait for a refreshed token that carries that claim.
 export async function confirmSignupEmail({ base, user, verificationToken, request = globalThis.fetch }) {
@@ -65,13 +72,19 @@ export async function confirmSignupEmail({ base, user, verificationToken, reques
 
 // Firebase Auth creation is not a completed InventaAPI registration. The
 // authoritative Firestore rule evaluates server-owned settings at profile commit.
-export async function completeCustomerSignup({ canRegister, createUser, confirmEmail, writeProfile, profileExists, deleteUser, signOut }) {
+// `reclaimEmail` (optional) clears an identity an interrupted signup left for this
+// address; creation is then retried once.
+export async function completeCustomerSignup({ canRegister, createUser, confirmEmail, writeProfile, profileExists, deleteUser, signOut, reclaimEmail }) {
   try { if (!await canRegister()) return { ok: false, message: REGISTRATION_MESSAGE }; }
   catch { return { ok: false, message: 'Registration availability could not be verified. Please try again later.' }; }
+  const failedCreate = error => ({ ok: false, message: error?.code === 'auth/email-already-in-use'
+    ? 'This email is already registered. Please sign in.' : 'Unable to create your account. Please try again later.' });
   let user;
   try { user = await createUser(); } catch (error) {
-    return { ok: false, message: error?.code === 'auth/email-already-in-use'
-      ? 'This email is already registered. Please sign in.' : 'Unable to create your account. Please try again later.' };
+    if (error?.code !== 'auth/email-already-in-use' || !reclaimEmail) return failedCreate(error);
+    const reclaimed = await reclaimEmail();
+    if (!reclaimed.ok) return { ok: false, message: reclaimed.message };
+    try { user = await createUser(); } catch (retryError) { return failedCreate(retryError); }
   }
   let committed = false, unavailable = false, cleanupVerified = true, confirmed = !confirmEmail;
   try {
@@ -92,6 +105,6 @@ export async function completeCustomerSignup({ canRegister, createUser, confirmE
   }
   if (committed) return { ok: true, message: '' };
   return { ok: false, message: !cleanupVerified
-    ? 'Account setup could not be verified. Please contact support before trying again.'
+    ? 'Account setup did not finish. Request a new code and try again, or sign in if your account was created.'
     : unavailable ? REGISTRATION_MESSAGE : !confirmed ? EMAIL_UNCONFIRMED_MESSAGE : 'Account setup could not be completed. Please try again later.' };
 }

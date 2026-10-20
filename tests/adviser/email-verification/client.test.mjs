@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { sendSignupCode, verifySignupCode, confirmSignupEmail, completeCustomerSignup, TERMS_VERSION,
+import { sendSignupCode, verifySignupCode, confirmSignupEmail, reclaimSignupEmail, completeCustomerSignup, TERMS_VERSION,
   normalizeSignupEmail, validSignupEmail, sendPasswordResetCode, resetPasswordWithCode, validNewPassword,
   PASSWORD_MIN_LENGTH } from '../../../services/customer-registration.mjs';
 
@@ -73,6 +73,27 @@ test('registration confirms the email before the profile and removes an unconfir
   const failed = await completeCustomerSignup({ ...flow, confirmEmail: async () => { events.push('confirm'); throw Error('expired'); } });
   assert.equal(failed.ok, false); assert.match(failed.message, /could not confirm your verified email address/u);
   assert.deepEqual(events, ['create', 'confirm', 'delete', 'signout']);
+});
+test('an identity left by an unfinished signup is reclaimed once, then the account is created', async () => {
+  const events = [], inUse = Object.assign(Error('in use'), { code: 'auth/email-already-in-use' });
+  let taken = true;
+  const flow = { canRegister: async () => true, confirmEmail: async () => { events.push('confirm'); },
+    createUser: async () => { events.push('create'); if (taken) throw inUse; return { uid: 'fresh' }; },
+    writeProfile: async () => { events.push('profile'); }, profileExists: async () => false,
+    deleteUser: async () => { events.push('delete'); }, signOut: async () => { events.push('signout'); } };
+  assert.deepEqual(await completeCustomerSignup({ ...flow, reclaimEmail: async () => { events.push('reclaim'); taken = false; return { ok: true, message: '' }; } }),
+    { ok: true, message: '' });
+  assert.deepEqual(events, ['create', 'reclaim', 'create', 'confirm', 'profile', 'signout']);
+  events.length = 0; taken = true;
+  assert.deepEqual(await completeCustomerSignup({ ...flow, reclaimEmail: async () => { events.push('reclaim'); return { ok: false, message: 'This email is already registered. Please sign in.' }; } }),
+    { ok: false, message: 'This email is already registered. Please sign in.' });
+  assert.deepEqual(events, ['create', 'reclaim']);
+  events.length = 0;
+  assert.match((await completeCustomerSignup(flow)).message, /already registered/u); assert.deepEqual(events, ['create']);
+  const requests = [];
+  assert.deepEqual(await reclaimSignupEmail({ base: 'https://api', email: 'juan@gmail.com', verificationToken: 'token-1',
+    request: async (url, init) => { requests.push([url, JSON.parse(init.body)]); return response(200, { success: true }); } }), { ok: true, message: '' });
+  assert.deepEqual(requests, [['https://api/api/v1/auth/email-verification/reclaim', { email: 'juan@gmail.com', verificationToken: 'token-1' }]]);
 });
 test('the Terms page displays the version every new profile records', () => {
   assert.match(TERMS_VERSION, /^\d{4}-\d{2}-\d{2}$/u);
