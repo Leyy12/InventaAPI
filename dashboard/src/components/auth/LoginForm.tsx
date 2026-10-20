@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
-import { doc, getDocFromServer, updateDoc } from "firebase/firestore";
+import Link from "next/link";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDocFromServer } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/firebase/auth-context";
-import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Sparkles, Building2 } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";
 import type { PlanId } from "@/config/plans";
-import { profileRole, adminLoginDestination, rememberCustomerLoginEntry } from '../../../../services/auth-navigation';
-import { PRODUCT_SEGMENTS, normalizeSegment } from '../../../../services/product-contract.js';
-import { loginSegmentAllowed } from '../../../../services/customer-segment.js';
+import { profileRole, adminLoginDestination, rememberCustomerLoginEntry, customerSignupDestination } from '../../../../services/auth-navigation';
 import { readSubscription } from '@/lib/subscription';
+import { sendPasswordResetCode, resetPasswordWithCode, normalizeSignupEmail, validSignupEmail, validNewPassword,
+  PASSWORD_MIN_LENGTH, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
 
 interface LoginFormProps {
   onComplete: () => void;
@@ -22,44 +22,46 @@ interface LoginFormProps {
   initialError?: string;
 }
 
-const SEGMENT_OPTIONS = PRODUCT_SEGMENTS.map(id => ({ id, label: id }));
-type SegmentId = (typeof PRODUCT_SEGMENTS)[number];
+// Reset codes go to the API origin itself so its per-IP limits see the real client.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
 
 export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubscription, initialError }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [segment, setSegment] = useState<SegmentId | "">("");
-  const [showSegment, setShowSegment] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [segmentBlocked, setSegmentBlocked] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
+  // Password reset: the address a code was requested for ("" while choosing it).
+  const [resetSentTo, setResetSentTo] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
   const [resetLoading, setResetLoading] = useState(false);
+  const resetCodeInput = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const { refreshUserDoc } = useAuth();
 
   // Login presentation is plan-neutral. Paid continuation remains internal to
   // the existing validated handleLogin flow, never account entitlement.
   const loginTitle = "Login to InventaAPI";
   const loginSubtitle = "Log in to access your dashboard and manage your account.";
-  const segmentHint = "Choose your required business segment. Catalog access is verified against your account.";
+
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = setTimeout(() => setResendSeconds(value => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendSeconds]);
+
+  useEffect(() => {
+    if (resetSentTo) resetCodeInput.current?.focus();
+  }, [resetSentTo]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     onStart?.();
-
-    // Do not authenticate a request that has not supplied the required context.
-    // This is UX validation only; authorization is still profile/plan based below.
-    const requestedSegment = SEGMENT_OPTIONS.some(option => option.id === segment) ? segment : null;
-    if (!requestedSegment) {
-      setSegmentBlocked(true);
-      setShowSegment(true);
-      setError("Please select your business segment to continue.");
-      return;
-    }
 
     setLoading(true);
     setError("");
@@ -95,7 +97,8 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
         return;
       }
 
-      // Normal customer login
+      // Normal customer login. The business segment is chosen once at signup; catalog
+      // scope always comes from the stored profile on the server, never from this form.
       const effective = await readSubscription(user);
       if (auth.currentUser !== user) throw new Error('Session ended during login.');
       const plan = effective.plan;
@@ -109,48 +112,16 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
       //   Subscription Plan:   "Free" / "Pro" / etc. — changed only by PayMongo webhook.
       //
       // Upgrading to Pro ONLY changes the subscription plan. It does NOT change the
-      // account type and must NOT trigger Business Segment validation.
+      // account type.
       const paidPlans = ["pro", "pro max", "enterprise", "professional", "unlimited"];
       const isPaidPlan = paidPlans.includes(normalizedPlan);
-      const chosenSegment = requestedSegment;
 
-      // Free/Trial ownership comes only from businessSegment, never a mutable
-      // context preference. Paid accounts keep their existing segment choice.
-      const normalizedSelectedSegment = normalizeSegment(userData?.selectedSegment);
-      const existingSegment = isPaidPlan ? normalizedSelectedSegment : normalizeSegment(userData?.businessSegment);
+      console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "isPaidPlan:", isPaidPlan);
 
-      console.log("[LOGIN] ✅ Customer login successful, plan:", plan, "existingSegment:", existingSegment, "isPaidPlan:", isPaidPlan);
-
-      // Free/Basic/Starter accounts are restricted to their authoritative
-      // profile segment. Paid accounts may choose any canonical segment, but
-      // the chosen value is still stored only after server profile validation.
-      if (!loginSegmentAllowed({ ...userData, plan }, chosenSegment)) {
-        await signOut(auth);
-        setSegmentBlocked(true);
-        setShowSegment(true);
-        setError("That business segment is not available for this account.");
-        setLoading(false);
-        return;
-      }
-
-      if (chosenSegment !== normalizedSelectedSegment) {
-        try {
-          await updateDoc(doc(db, "users", user.uid), { selectedSegment: chosenSegment });
-          await refreshUserDoc();
-          console.log("[LOGIN] Saved selectedSegment:", chosenSegment);
-        } catch (writeErr) {
-          console.error("[LOGIN] Failed to save segment:", writeErr);
-          setError("Failed to save your business segment. Please try again.");
-          setLoading(false);
-          return;
-        }
-      }
-
-      if (auth.currentUser !== user) throw new Error('Session ended during login.');
       rememberCustomerLoginEntry('free');
 
       // The inline form completes as part of the successful route transition; retaining
-      // the selector state until then avoids a flash of an unvalidated session.
+      // the form state until then avoids a flash of an unvalidated session.
 
       // ── Explicit paid registration intent preserved through signup ──
       // IMPORTANT: only fire if pendingPlan is STRICTLY a paid plan ("pro" or
@@ -184,9 +155,8 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
 
       // Plain login path (no paid upgrade intent, or Free plan CTA).
       // Always redirect straight to the dashboard. The dashboard's own route
-      // guards will handle any further onboarding (e.g. /dashboard/welcome for
-      // Free users who haven't selected a segment yet, or access-denied for truly
-      // unpaid accounts). Never open the SubscriptionModal here — that modal is
+      // guards handle any further onboarding or access-denied state.
+      // Never open the SubscriptionModal here — that modal is
       // only for explicit Pro upgrade flows triggered by a Pro CTA.
       setSuccess("Login successful!");
       setTimeout(() => {
@@ -238,26 +208,74 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!email.trim()) {
-      setError("Please enter your email address first so we know where to send the reset link.");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError("Please enter a valid email address to receive the reset link.");
-      return;
-    }
-    setError("");
-    setSuccess("");
+  const sendResetCode = async (target: string) => {
     setResetLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email.trim());
-      setResetSent(true);
+      const result = await sendPasswordResetCode({ base: API_BASE, email: target });
+      if (!result.ok) {
+        setError(result.message);
+        if (result.retryAfterSeconds && target === resetSentTo) setResendSeconds(result.retryAfterSeconds);
+        return false;
+      }
+      setResetSentTo(target); setResetCode("");
+      setResendSeconds(result.resendAvailableInSeconds);
+      return true;
+    } finally {
       setResetLoading(false);
-      setSuccess("Reset link sent! Check your inbox. Click the link to set a new password, then log in.");
-    } catch (err: unknown) {
+    }
+  };
+
+  // Step 1: email a reset code to the address typed into the Login form.
+  const handleSendResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    const target = normalizeSignupEmail(email);
+    if (!validSignupEmail(target)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    await sendResetCode(target);
+  };
+
+  const handleResendResetCode = async () => {
+    setError("");
+    setSuccess("");
+    if (await sendResetCode(resetSentTo)) setSuccess(`We sent a new code to ${resetSentTo}.`);
+  };
+
+  const leaveForgotMode = () => {
+    setForgotMode(false); setResetSentTo(""); setResetCode("");
+    setNewPassword(""); setConfirmNewPassword(""); setShowNewPassword(false);
+    setError(""); setSuccess("");
+  };
+
+  // Step 2: the emailed code and the new password together change the password.
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (!validNewPassword(newPassword)) {
+      setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long.`);
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const result = await resetPasswordWithCode({ base: API_BASE, email: resetSentTo, code: resetCode, password: newPassword });
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      const address = resetSentTo;
+      leaveForgotMode();
+      setEmail(address); setPassword("");
+      setSuccess("Your password has been reset. Log in with your new password.");
+    } finally {
       setResetLoading(false);
-      setError("Failed to send reset email. " + (err as Error).message);
     }
   };
 
@@ -265,9 +283,10 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
     setForgotMode(true);
     setError("");
     setSuccess("");
-    setResetSent(false);
-    // Pre-fill the email if already typed
   };
+
+  const inputClass = "w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600";
+  const primaryButtonClass = "w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center";
 
   return (
     <section aria-labelledby="login-form-title" className="w-full glass-card rounded-2xl p-5 sm:p-6 shadow-2xl border border-white/10 bg-slate-900/60">
@@ -282,8 +301,8 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
               priority
             />
           </div>
-          <h2 id="login-form-title" className="text-2xl font-bold text-white tracking-tight">{loginTitle}</h2>
-          <p className="text-slate-400 text-sm mt-1">{loginSubtitle}</p>
+          <h2 id="login-form-title" className="text-2xl font-bold text-white tracking-tight">{forgotMode ? "Reset your password" : loginTitle}</h2>
+          <p className="text-slate-400 text-sm mt-1">{forgotMode ? "We'll email you a 6-digit code to choose a new password." : loginSubtitle}</p>
         </div>
 
         {(error || initialError) && (
@@ -312,7 +331,8 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                autoComplete="email"
+                className={inputClass}
                 placeholder="name@company.com"
               />
             </div>
@@ -333,12 +353,14 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                autoComplete="current-password"
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-11 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none"
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -346,68 +368,21 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
             </div>
           </div>
 
-          {/* Required UX context only; server/profile checks below remain authoritative. */}
-          {showSegment && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between ml-1">
-              <label htmlFor="segment" className="text-sm font-medium text-slate-300">Business Segment</label>
-              <span className="text-[11px] text-indigo-400 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Required
-              </span>
-            </div>
-            <div className="relative">
-              <Building2 className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <select
-                id="segment"
-                required
-                value={segment}
-                onChange={(e) => {
-                  setSegment(e.target.value as SegmentId | "");
-                  if (segmentBlocked && e.target.value) {
-                    setSegmentBlocked(false);
-                    setError("");
-                  }
-                }}
-                className={`w-full appearance-none bg-slate-900/50 border rounded-xl pl-11 pr-10 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 transition-all placeholder:text-slate-600 cursor-pointer ${
-                  segmentBlocked
-                    ? "border-red-500/70 focus:border-red-500/70 focus:ring-red-500/30"
-                    : "border-slate-700 focus:border-indigo-500/50 focus:ring-indigo-500/50"
-                }`}
-              >
-                <option value="">Select your business segment</option>
-                {SEGMENT_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id}>{opt.label}</option>
-                ))}
-              </select>
-              <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-            <p className="text-xs text-slate-400 ml-1">{segmentHint}</p>
-          </div>
-          )}
-
           <button
             type="submit"
-            disabled={loading || segmentBlocked}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center mt-2"
+            disabled={loading}
+            className={`${primaryButtonClass} mt-2`}
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Login"}
           </button>
-
-          {segmentBlocked && (
-            <p className="text-center text-xs text-slate-400 mt-2 animate-in fade-in duration-200">
-              Select your business segment above to enable the Login button.
-            </p>
-          )}
         </form>
         )}
 
-        {/* Forgot Password Panel */}
+        {/* Forgot Password Panel: email a code, then set a new password with it. */}
         {forgotMode && (
-          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            {!resetSent ? (
-              <>
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            {!resetSentTo ? (
+              <form onSubmit={handleSendResetCode} className="space-y-4">
                 <div className="space-y-1.5">
                   <label htmlFor="reset-email" className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
                   <div className="relative">
@@ -417,37 +392,128 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                      required
+                      autoComplete="email"
+                      className={inputClass}
                       placeholder="name@company.com"
                     />
                   </div>
                 </div>
-                <p className="text-xs text-slate-400 ml-1">
-                  We'll email you a secure link to reset your password.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={resetLoading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center"
-                >
-                  {resetLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Send Reset Link"}
+                <button type="submit" disabled={resetLoading} className={primaryButtonClass}>
+                  {resetLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Send Reset Code"}
                 </button>
-              </>
+              </form>
             ) : (
-              <div className="text-center py-2">
-                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <p className="text-sm text-slate-200 font-medium">Reset link sent!</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Check your inbox for an email from InventaAPI. Click the link to set a new password, then come back
-                  and log in.
-                </p>
-              </div>
+              <form onSubmit={handleResetPassword} className="space-y-3">
+                <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-start gap-3 text-slate-300 text-sm">
+                  <MailCheck className="w-5 h-5 flex-shrink-0 mt-0.5 text-indigo-400" />
+                  <p>
+                    If <span className="font-medium text-white break-all">{resetSentTo}</span> has an InventaAPI account, we sent it a 6-digit code.{" "}
+                    {/* One literal: the production build drops the space after a constant-folded expression. */}
+                    {`It expires in ${VERIFICATION_CODE_TTL_SECONDS / 60} minutes. If you don't see it, check your Spam or Promotions folder.`}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="reset-code" className="text-sm font-medium text-slate-300 ml-1">Reset Code</label>
+                  <div className="relative">
+                    <ShieldCheck className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      ref={resetCodeInput}
+                      id="reset-code"
+                      type="text"
+                      name="resetCode"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      required
+                      className={`${inputClass} tracking-[0.4em]`}
+                      placeholder="000000"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="new-password" className="text-sm font-medium text-slate-300 ml-1">New Password</label>
+                  <div className="relative">
+                    <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="new-password"
+                      type={showNewPassword ? "text" : "password"}
+                      name="newPassword"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      minLength={PASSWORD_MIN_LENGTH}
+                      autoComplete="new-password"
+                      className="w-full bg-slate-900/50 border border-slate-700 rounded-xl pl-11 pr-11 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none"
+                    >
+                      {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="confirm-new-password" className="text-sm font-medium text-slate-300 ml-1">Confirm New Password</label>
+                  <div className="relative">
+                    <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="confirm-new-password"
+                      type={showNewPassword ? "text" : "password"}
+                      name="confirmNewPassword"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      required
+                      minLength={PASSWORD_MIN_LENGTH}
+                      autoComplete="new-password"
+                      className={inputClass}
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={resetLoading || resetCode.length !== 6 || !newPassword || !confirmNewPassword}
+                  className={primaryButtonClass}
+                >
+                  {resetLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Reset Password"}
+                </button>
+
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => { setResetSentTo(""); setResetCode(""); setError(""); setSuccess(""); }}
+                    disabled={resetLoading}
+                    className="text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    Use a different email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendResetCode}
+                    disabled={resetLoading || resendSeconds > 0}
+                    className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors disabled:text-slate-500 disabled:cursor-not-allowed"
+                  >
+                    {resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : "Resend code"}
+                  </button>
+                </div>
+              </form>
             )}
 
             <button
               type="button"
-              onClick={() => { setForgotMode(false); setResetSent(false); setError(""); setSuccess(""); }}
+              onClick={leaveForgotMode}
               className="w-full text-sm text-indigo-400 hover:text-indigo-300 transition-colors py-2"
             >
               ← Back to Login
@@ -458,16 +524,15 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
         {/* Create Account Link */}
         <div className="mt-4 text-center">
           <p className="text-sm text-slate-400">
-            Don't have an account?{" "}
-            <a
-              href="#pricing-plans"
+            Don&apos;t have an account?{" "}
+            <Link
+              href={customerSignupDestination(pendingPlan ?? "")}
               className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
             >
               Register
-            </a>
+            </Link>
           </p>
         </div>
     </section>
   );
 }
-

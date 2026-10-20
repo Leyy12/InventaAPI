@@ -13,9 +13,10 @@ const silent = { log() {}, error() {}, warn() {} };
 const details = { fullName: 'Synthetic Fixture', email: ' Fixture@Example.Invalid ', password: 'synthetic-password',
   confirmPassword: 'synthetic-password', businessName: 'Synthetic', businessSegment: 'Grocery', termsAccepted: true, privacyConsent: true };
 const sent = { ok: true, message: '', retryAfterSeconds: 0, resendAvailableInSeconds: 60 };
-const success = ['account', 'confirm', 'profile', 'signout', 'navigation'];
+// The committed account signs out, then signs in again to choose a plan; no navigation yet.
+const success = ['account', 'confirm', 'profile', 'signout', 'signin'];
 
-function page({ send = () => sent, canRegister = async () => true,
+function page({ send = () => sent, canRegister = async () => true, query = '',
   verify = ({ code }) => code === '123456' ? { ok: true, message: '', verificationToken: 'synthetic-token' }
     : { ok: false, message: 'Incorrect code. 4 attempts remaining.', verificationToken: '' } } = {}) {
   const h = hooks(), time = clock(), events = [], calls = [];
@@ -24,10 +25,13 @@ function page({ send = () => sent, canRegister = async () => true,
       createUserWithEmailAndPassword: async (_, email, password) => { events.push('account'); calls.push(['account', email, password]);
         return { user: { uid: 'synthetic', email } }; },
       signOut: async () => { events.push('signout'); }, deleteUser: async () => { events.push('delete'); },
+      signInWithEmailAndPassword: async (_, email, password) => { events.push('signin'); calls.push(['signin', email, password]);
+        return { user: { uid: 'synthetic', email } }; },
     },
+    '@/components/subscription/PostSignupPlans': 'PostSignupPlans',
     'firebase/firestore': { doc: (...args) => args, serverTimestamp: () => 'server-time', setDoc: async () => { events.push('profile'); } },
     '@/lib/firebase/config': { auth: {}, db: {} },
-    'next/navigation': { useRouter: () => ({ push: () => { events.push('navigation'); } }), useSearchParams: () => new URLSearchParams() },
+    'next/navigation': { useRouter: () => ({ push: () => { events.push('navigation'); } }), useSearchParams: () => new URLSearchParams(query) },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,
     '../../../../services/customer-registration.mjs': { ...registration, readRegistrationPolicy: canRegister,
@@ -40,7 +44,8 @@ function page({ send = () => sent, canRegister = async () => true,
   const find = predicate => { const matches = nodes(h.output, predicate); assert.equal(matches.length, 1); return matches[0]; };
   const button = label => find(node => node.type === 'button' && text(node).includes(label));
   return { h, time, events, calls, find, button, copy: () => text(h.output),
-    step: () => nodes(h.output, node => node.props?.name === 'verificationCode').length ? 'verify' : 'details',
+    step: () => nodes(h.output, node => node.type === 'PostSignupPlans').length ? 'plans'
+      : nodes(h.output, node => node.props?.name === 'verificationCode').length ? 'verify' : 'details',
     async fill(values = details) {
       for (const [name, value] of Object.entries(values)) {
         find(node => node.props?.name === name).props.onChange({ target: { name, value,
@@ -59,6 +64,29 @@ test('Terms of Service acceptance is required before any code is emailed', async
   assert.deepEqual(fixture.events, []); assert.equal(fixture.step(), 'details');
   assert.match(fixture.copy(), /must agree to the Terms of Service and Acceptable Use Policy/);
   fixture.h.stop();
+});
+test('Send Verification Code stays disabled until every field is filled and both boxes are checked', async () => {
+  const fixture = page();
+  const send = () => fixture.find(node => node.props?.type === 'submit');
+  const hint = () => nodes(fixture.h.output, node => node.props?.id === 'send-code-hint').map(node => text(node).trim());
+  assert.equal(send().props.disabled, true); assert.deepEqual(hint(), ['Fill in every field above to continue.']);
+  await fixture.fill({ ...details, termsAccepted: false, privacyConsent: false });
+  assert.equal(send().props.disabled, true);
+  assert.deepEqual(hint(), ['Agree to the Terms of Service and the Privacy Policy to continue.']);
+  assert.equal(send().props['aria-describedby'], 'send-code-hint');
+  await fixture.fill({ termsAccepted: true });
+  assert.equal(send().props.disabled, true);
+  await fixture.fill({ privacyConsent: true });
+  assert.equal(send().props.disabled, false); assert.deepEqual(hint(), []);
+  assert.equal(send().props['aria-describedby'], undefined);
+  for (const field of ['fullName', 'email', 'password', 'confirmPassword', 'businessName']) {
+    await fixture.fill({ [field]: '   ' });
+    assert.equal(send().props.disabled, true, field);
+    await fixture.fill({ [field]: details[field] });
+  }
+  await fixture.fill({ privacyConsent: false });
+  assert.equal(send().props.disabled, true);
+  assert.deepEqual(fixture.events, []); fixture.h.stop();
 });
 test('an address that cannot receive a code is rejected without calling the backend', async () => {
   const fixture = page(); await fixture.fill({ ...details, email: 'juan@gmail' }); await fixture.submit();
@@ -93,9 +121,20 @@ test('the code field keeps six digits only and a wrong code creates no account',
   await fixture.enter('123456'); await fixture.submit();
   assert.deepEqual(fixture.events, ['code', 'verify', 'verify', ...success]);
   assert.deepEqual(fixture.calls.filter(call => call[0] !== 'verify').slice(1),
-    [['account', 'fixture@example.invalid', 'synthetic-password'], ['confirm', 'fixture@example.invalid', 'synthetic-token']]);
+    [['account', 'fixture@example.invalid', 'synthetic-password'], ['confirm', 'fixture@example.invalid', 'synthetic-token'],
+      ['signin', 'fixture@example.invalid', 'synthetic-password']]);
   fixture.h.stop();
 });
+for (const [query, initialPlan] of [['', null], ['pendingPlan=free', null], ['pendingPlan=pro', 'pro'], ['pendingPlan=pro_max', 'pro_max'], ['pendingPlan=evil', null]]) {
+  test(`a created account sees every plan before the dashboard: ${query || 'no intent'}`, async () => {
+    const fixture = page({ query }); await fixture.fill(); await fixture.submit(); await fixture.enter('123456'); await fixture.submit();
+    assert.equal(fixture.step(), 'plans');
+    assert.equal(fixture.find(node => node.type === 'PostSignupPlans').props.initialPlan, initialPlan);
+    assert.equal(nodes(fixture.h.output, node => node.type === 'form').length, 0);
+    assert.ok(!fixture.events.includes('navigation'));
+    fixture.h.stop();
+  });
+}
 test('resend waits for the cooldown, then sends a fresh code and says so', async () => {
   const fixture = page(); await fixture.fill(); await fixture.submit();
   assert.equal(fixture.button('Resend code').props.disabled, true);

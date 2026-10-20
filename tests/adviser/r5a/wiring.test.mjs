@@ -12,15 +12,15 @@ test('root always renders Landing and does not consult browser visit state', () 
   assert.match(source, /<AuthEntry \/>/);
   assert.doesNotMatch(source, /landingSeen|useSyncExternalStore|completeLanding|setItem/);
 });
-test('Landing permanently embeds login while registration remains pricing-first', () => {
+test('Landing permanently embeds login; Register opens Create Account directly', () => {
   const source = read('dashboard/src/components/auth/AuthEntry.tsx');
   assert.match(source, /<LoginForm/);
   assert.doesNotMatch(source, /showLoginModal|<LoginModal/);
   const header = source.slice(source.indexOf('{/* Navigation */}'), source.indexOf('{/* Hero Section */}'));
   assert.doesNotMatch(header, />\s*Sign Up\s*</);
-  assert.match(read('dashboard/src/components/auth/LoginForm.tsx'), /href="#pricing-plans"[\s\S]*Register/u);
+  assert.match(read('dashboard/src/components/auth/LoginForm.tsx'), /href=\{customerSignupDestination\(pendingPlan \?\? ""\)\}[\s\S]*Register/u);
   assert.match(read('dashboard/src/app/signup/page.tsx'), /Create Account/);
-  assert.match(source, /router\.push\(customerSignupDestination\("free"\)\)/);
+  assert.match(source, /onSelect=\{plan => router\.push\(customerSignupDestination\(plan\)\)\}/);
   assert.doesNotMatch(source, /completeLanding|browserStorage/);
 });
 test('legacy Login is redirect-only; signup and footer use the central landing entry', () => {
@@ -89,10 +89,10 @@ test('Admin handoff is configured origin only; no token bridge or visitor return
   assert.match(modal, /profileRole\(userData \?\? null\)/);
   assert.match(modal, /auth.currentUser !== user/);
 });
-test('landing Login is dismissible and still verifies the selected account segment', () => {
+test('landing Login is dismissible and leaves segment scope to the stored profile', () => {
   assert.doesNotMatch(read('dashboard/src/components/auth/AuthEntry.tsx'), /loginOnly|standalone=|Continue to Login/);
   const modal = read('dashboard/src/components/auth/LoginForm.tsx');
-  assert.match(modal, /loginSegmentAllowed\(\{ \.\.\.userData, plan \}, chosenSegment\)/);
+  assert.doesNotMatch(modal, /loginSegmentAllowed|selectedSegment|updateDoc/);
   assert.match(modal, /auth.currentUser !== user/);
 });
 test('restored authenticated plan intent waits for existing authoritative verification', () => {
@@ -210,8 +210,8 @@ test('review: denied first-visit persistence cannot prevent actual Customer sign
   h = providerLogout('customer', false, storage); await h.run();
   assert.equal(h.auth.currentUser, null); assert.deepEqual(h.routes, ['/']);
 });
-test('review: actual signup provisions profile before subsequent protected access without auto-heal', async () => {
-  const values = new Map(), profiles = new Map(), routes = [], events = [];
+test('review: actual signup provisions profile, then signs the verified account in to choose a plan', async () => {
+  const values = new Map(), profiles = new Map(), routes = [], events = [], steps = [], entries = [];
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
   const auth = { currentUser: null }, user = { uid: 'new-customer', email: 'demo@example.invalid' };
   let current, unexpectedLogout = 0;
@@ -227,7 +227,8 @@ test('review: actual signup provisions profile before subsequent protected acces
   const handler = new AsyncFunction('e', 'setLoading', 'setError', 'formData', 'completeLanding', 'browserStorage',
     'createUserWithEmailAndPassword', 'auth', 'setDoc', 'doc', 'db', 'serverTimestamp', 'signOut', 'pendingPlan', 'router', 'console', 'customerLoginEntryDestination',
     'completeCustomerSignup', 'readRegistrationPolicy', 'getDocFromServer', 'deleteUser',
-    'setNotice', 'codeSentTo', 'code', 'verified', 'setVerified', 'verifySignupCode', 'confirmSignupEmail', 'API_BASE', 'TERMS_VERSION', body);
+    'setNotice', 'codeSentTo', 'code', 'verified', 'setVerified', 'verifySignupCode', 'confirmSignupEmail', 'API_BASE', 'TERMS_VERSION',
+    'signInWithEmailAndPassword', 'rememberCustomerLoginEntry', 'setStep', body);
   await handler({ preventDefault() {} }, () => {}, message => { if (message) throw Error(message); }, form,
     completeLanding, () => storage,
     async () => { events.push('create'); auth.currentUser = user; await gate.accept(user); assert.equal(current.profile, null); assert.equal(current.status, 'denied'); return { user }; },
@@ -239,14 +240,21 @@ test('review: actual signup provisions profile before subsequent protected acces
     async ({ email, code }) => { events.push('verify'); assert.deepEqual([email, code], ['demo@example.invalid', '123456']);
       return { ok: true, message: '', verificationToken: 'synthetic-token' }; },
     async ({ user: identity, verificationToken }) => { events.push('confirm'); assert.equal(identity, user); assert.equal(verificationToken, 'synthetic-token'); },
-    'https://synthetic.invalid', '2026-10-20');
-  assert.deepEqual(events, ['verify', 'create', 'confirm', 'profile', 'signout']); assert.equal(unexpectedLogout, 0);
+    'https://synthetic.invalid', '2026-10-20',
+    // The sign-in is an ordinary login: the session gate re-verifies the committed profile.
+    async (_auth, email, password) => { events.push('signin'); assert.deepEqual([email, password], ['demo@example.invalid', 'demo-password']);
+      auth.currentUser = user; await gate.accept(user); assert.equal(current.status, 'verified'); return { user }; },
+    entry => entries.push(entry), step => steps.push(step));
+  assert.deepEqual(events, ['verify', 'create', 'confirm', 'profile', 'signout', 'signin']); assert.equal(unexpectedLogout, 0);
   assert.equal(profiles.get(user.uid).role, 'Developer'); assert.equal(profiles.get(user.uid).plan, 'Free');
   assert.equal(profiles.get(user.uid).apiRequestLimit, 50); assert.equal(profiles.get(user.uid).businessSegment, 'Grocery');
   assert.equal(profiles.get(user.uid).email, 'demo@example.invalid'); assert.equal(profiles.get(user.uid).termsVersion, '2026-10-20');
-  assert.equal(landingSeen(storage), false); assert.deepEqual(routes, [customerLoginEntryDestination(new URLSearchParams({ registered: 'true', choosePlan: 'true', pendingPlan: 'pro' }))]);
-  auth.currentUser = user; await gate.accept(user);
-  assert.equal(navigationDecision({ path: '/', initializing: current.loading, role: profileRole(current.profile) }), '/dashboard');
+  // Plans come before the dashboard: no navigation until the account chooses one.
+  assert.equal(landingSeen(storage), false); assert.deepEqual(routes, []);
+  assert.deepEqual(steps, ['plans']); assert.deepEqual(entries, ['free']);
+  assert.equal(profileRole(current.profile), 'customer');
+  assert.equal(navigationDecision({ path: '/signup', initializing: current.loading, role: profileRole(current.profile) }), null);
+  assert.equal(navigationDecision({ path: '/dashboard', initializing: current.loading, role: profileRole(current.profile) }), null);
   gate.stop();
 });
 
@@ -527,19 +535,13 @@ async function exerciseLoginEntry({ pendingPlan = null, failure = null } = {}) {
     signOut: async () => { auth.currentUser = null; },
     readSubscription: async () => {
       if (failure === 'subscription') throw Error('synthetic verification failure');
-      return effective;
-    }, requestedSegment: 'Grocery',
-    normalizeSegment: value => value,
-    loginSegmentAllowed: () => failure !== 'segment',
-    updateDoc: async () => {
-      if (failure === 'write') throw Error('synthetic write failure');
       if (failure === 'switch') auth.currentUser = { uid: 'another-customer' };
-    }, refreshUserDoc: async () => profile,
+      return effective;
+    },
     rememberCustomerLoginEntry: entry => { events.push(entry); rememberCustomerLoginEntry(entry); },
-    pendingPlan, setError() {}, setLoading() {}, setSegmentBlocked() {}, setShowSegment() {},
+    pendingPlan, setError() {}, setLoading() {},
     console: { log() {}, error() {} },
   };
-  if (failure === 'write' || failure === 'switch') profile.selectedSegment = 'Hardware';
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     await new AsyncFunction(...Object.keys(bindings), body)(...Object.values(bindings));
@@ -556,7 +558,7 @@ for (const [pendingPlan, expected] of [['free', 'free'], [null, 'free'], ['pro',
     assert.deepEqual(result.events, [expected]); assert.equal(result.stored, expected);
   });
 }
-for (const failure of ['firebase', 'profile', 'missing', 'subscription', 'segment', 'write', 'switch']) {
+for (const failure of ['firebase', 'profile', 'missing', 'subscription', 'switch']) {
   test(`free entry: actual ${failure} failure cannot commit Free login context`, async () => {
     const result = await exerciseLoginEntry({ pendingPlan: 'free', failure });
     assert.deepEqual(result.events, []); assert.equal(result.stored, undefined);
@@ -565,12 +567,16 @@ for (const failure of ['firebase', 'profile', 'missing', 'subscription', 'segmen
 
 test('free entry: registration CTA never commits an authenticated-session entry', () => {
   const entry = read('dashboard/src/components/auth/AuthEntry.tsx');
-  assert.match(entry, /customerSignupDestination\("free"\)/);
+  assert.match(entry, /onSelect=\{plan => router\.push\(customerSignupDestination\(plan\)\)\}/);
   assert.doesNotMatch(entry, /rememberCustomerLoginEntry/);
+  // Signup commits the entry only once its own sign-in has authenticated the new account.
+  const signup = read('dashboard/src/app/signup/page.tsx');
+  assert.equal((signup.match(/rememberCustomerLoginEntry\(/g) ?? []).length, 1);
+  assert.ok(signup.indexOf("rememberCustomerLoginEntry('free')") > signup.indexOf('await signInWithEmailAndPassword(auth, codeSentTo, formData.password)'));
   const modal = read('dashboard/src/components/auth/LoginForm.tsx');
   assert.equal((modal.match(/rememberCustomerLoginEntry\(/g) ?? []).length, 1);
-  assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('loginSegmentAllowed('));
-  assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('await refreshUserDoc();'));
+  assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.indexOf('await readSubscription(user);'));
+  assert.ok(modal.indexOf('rememberCustomerLoginEntry(') > modal.lastIndexOf("if (auth.currentUser !== user) throw new Error('Session ended during login.');"));
   assert.match(modal, /Login to InventaAPI/);
   assert.match(modal, /Log in to access your dashboard and manage your account\./);
   assert.doesNotMatch(modal, /InventaAPI Free|Free plan dashboard/);

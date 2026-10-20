@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as navigation from '../../services/auth-navigation.ts';
 import { hooks, load, nodes, clock, browser, flush } from './workspace-refresh/harness.mjs';
-import { PRODUCT_SEGMENTS, normalizeSegment } from '../../services/product-contract.js';
-import { loginSegmentAllowed } from '../../services/customer-segment.js';
 import * as registration from '../../services/customer-registration.mjs';
 
 // Real components/handlers, synthetic SDK only. The loader forbids external I/O.
@@ -25,8 +23,11 @@ function signup(query = '', failure = '') {
     'firebase/auth': {
       createUserWithEmailAndPassword: async (_, email) => { events.push('account'); return { user: { uid: 'synthetic', email } }; },
       signOut: async () => { events.push('signout'); if (failure === 'signout') throw Error('synthetic signout failure'); },
+      signInWithEmailAndPassword: async (_, email, password) => { events.push('signin'); verification.push(['signin', email, password]);
+        if (failure === 'signin') throw Error('synthetic signin failure'); return { user: { uid: 'synthetic', email } }; },
       deleteUser: async () => { events.push('delete'); },
     },
+    '@/components/subscription/PostSignupPlans': 'PostSignupPlans',
     'firebase/firestore': {
       doc: (...args) => args, serverTimestamp: () => 'server-time',
       setDoc: async (_, profile) => { events.push('profile'); profiles.push(profile); if (failure === 'profile') throw Error('synthetic profile failure'); },
@@ -81,7 +82,7 @@ function landing(query = '') {
     'next/image': 'Image', 'lucide-react': icons,
     'next/navigation': { useRouter: () => router, useSearchParams: () => params },
     '@/components/auth/LoginForm': 'LoginForm', '@/components/auth/SessionLoadingScreen': 'Loading',
-    '@/components/subscription/SubscriptionModal': 'SubscriptionModal',
+    '@/components/subscription/SubscriptionModal': 'SubscriptionModal', '@/components/subscription/PlanCards': 'PlanCards',
     '@/lib/firebase/auth-context': { useAuth: () => authState }, '@/config/plans': { SUBSCRIPTION_PLANS: plans },
     '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans, status: 'ready' }) },
     '../../../../services/auth-navigation': navigation,
@@ -91,34 +92,38 @@ function landing(query = '') {
     consumeQuery() { params = new URLSearchParams(); h.render(); }, stop() { h.stop(); } };
 }
 
-function modal(pendingPlan = null, plan = 'Free', blocked = false, resetFailure = false) {
+function modal(pendingPlan = null, plan = 'Free', blocked = false, resetFailure = '') {
   const h = hooks(), time = clock(), b = browser(), routes = [], upgrades = [], writes = [], resets = [];
   let signins = 0, signouts = 0;
   const user = { uid: 'synthetic', email: 'fixture@example.invalid' }, auth = { currentUser: null };
   const profile = { role: 'Developer', businessSegment: 'Grocery', selectedSegment: 'Grocery', plan, disabled: blocked };
   const component = load('dashboard/src/components/auth/LoginForm.tsx', 'LoginForm', h, {
-    'next/image': 'Image', 'lucide-react': icons,
+    'next/image': 'Image', 'next/link': 'Link', 'lucide-react': icons,
     'firebase/auth': {
       signInWithEmailAndPassword: async () => { signins++; auth.currentUser = user; return { user }; },
       signOut: async () => { signouts++; auth.currentUser = null; },
-      sendPasswordResetEmail: async (_, email) => { resets.push(email); if (resetFailure) throw Error('synthetic reset failure'); },
     },
     'firebase/firestore': { doc: (...args) => args, getDocFromServer: async () => ({ data: () => profile }),
       updateDoc: async (_, fields) => writes.push(fields) },
     '@/lib/firebase/config': { auth, db: {} },
     'next/navigation': { useRouter: () => ({ push: route => routes.push(route) }) },
-    '@/lib/firebase/auth-context': { useAuth: () => ({ refreshUserDoc: async () => {} }) },
     '../../../../services/auth-navigation': navigation,
-    '../../../../services/product-contract.js': { PRODUCT_SEGMENTS, normalizeSegment },
-    '../../../../services/customer-segment.js': { loginSegmentAllowed },
     '@/lib/subscription': { readSubscription: async () => ({ plan, canPurchaseProMax: plan === 'Pro' }) },
+    // Real validation; only the backend reset endpoints are synthetic.
+    '../../../../services/customer-registration.mjs': { ...registration,
+      sendPasswordResetCode: async ({ base, email }) => { resets.push(['send', base, email]);
+        return resetFailure === 'send' ? { ok: false, message: 'Please wait 42 seconds before requesting another code.', retryAfterSeconds: 42, resendAvailableInSeconds: 60 }
+          : { ok: true, message: '', retryAfterSeconds: 0, resendAvailableInSeconds: 60 }; },
+      resetPasswordWithCode: async ({ base, email, code, password }) => { resets.push(['reset', base, email, code, password]);
+        return resetFailure === 'reset' ? { ok: false, message: 'Incorrect code. 4 attempts remaining.' } : { ok: true, message: '' }; },
+    },
   }, { window: b.window, setTimeout: time.schedule, clearTimeout: time.cancel, console: silent });
   h.mount(component, { pendingPlan, onComplete() {}, onOpenSubscription: value => upgrades.push(value) });
   return { h, time, routes, upgrades, writes, resets, profile,
     get signins() { return signins; }, get signouts() { return signouts; },
-    async login(segment = 'Grocery') {
+    async login() {
       await flush();
-      for (const [id, value] of [['email', user.email], ['password', 'synthetic-password'], ['segment', segment]]) {
+      for (const [id, value] of [['email', user.email], ['password', 'synthetic-password']]) {
         find(h, node => node.props?.id === id).props.onChange({ target: { value } }); await flush();
       }
       await find(h, node => node.type === 'form').props.onSubmit({ preventDefault() {} });
@@ -127,18 +132,32 @@ function modal(pendingPlan = null, plan = 'Free', blocked = false, resetFailure 
 }
 
 for (const intent of ['', 'free', 'pro', 'pro_max', 'https://evil.example']) {
-  test(`real signup creates profile then signs out before landing handoff: ${intent || 'default'}`, async () => {
+  test(`real signup creates profile, signs out, then signs the account in to choose a plan: ${intent || 'default'}`, async () => {
     const fixture = signup(new URLSearchParams({ pendingPlan: intent }).toString());
     await fixture.submit();
-    assert.deepEqual(fixture.events, ['code', 'verify', 'account', 'confirm', 'profile', 'signout', 'navigation']);
+    assert.deepEqual(fixture.events, ['code', 'verify', 'account', 'confirm', 'profile', 'signout', 'signin']);
     assert.deepEqual(fixture.verification, [['send', 'fixture@example.invalid'], ['verify', 'fixture@example.invalid', '123456'],
-      ['confirm', 'fixture@example.invalid', 'synthetic-token']]);
+      ['confirm', 'fixture@example.invalid', 'synthetic-token'], ['signin', 'fixture@example.invalid', 'synthetic-password']]);
     assert.equal(fixture.profiles[0].role, 'Developer');
     assert.equal(fixture.profiles[0].businessSegment, 'Grocery');
     assert.equal(fixture.profiles[0].email, 'fixture@example.invalid');
     assert.equal(fixture.profiles[0].termsAccepted, true);
     assert.equal(fixture.profiles[0].termsVersion, registration.TERMS_VERSION);
     assert.equal(fixture.profiles[0].privacyConsent, true);
+    // Plans come before the dashboard; only a valid paid CTA preselects its checkout.
+    assert.deepEqual(fixture.routes, []);
+    const plans = find(fixture.h, node => node.type === 'PostSignupPlans');
+    assert.equal(plans.props.initialPlan, ['pro', 'pro_max'].includes(intent) ? intent : null);
+    assert.equal(nodes(fixture.h.output, node => node.type === 'form').length, 0);
+    fixture.h.stop();
+  });
+}
+for (const intent of ['', 'pro', 'https://evil.example']) {
+  test(`a failed sign-in after signup falls back to the landing login handoff: ${intent || 'default'}`, async () => {
+    const fixture = signup(new URLSearchParams({ pendingPlan: intent }).toString(), 'signin');
+    await fixture.submit();
+    assert.deepEqual(fixture.events, ['code', 'verify', 'account', 'confirm', 'profile', 'signout', 'signin', 'navigation']);
+    assert.equal(nodes(fixture.h.output, node => node.type === 'PostSignupPlans').length, 0);
     const route = new URL(fixture.routes[0], 'https://synthetic.invalid');
     assert.equal(route.pathname, '/');
     assert.equal(route.searchParams.get('registered'), 'true');
@@ -195,19 +214,21 @@ for (const query of [{}, { registered: 'true' }, { pendingPlan: 'pro' }, { pendi
   });
 }
 
-for (const intent of [null, 'free', 'pro', 'pro_max']) test(`actual inline presentation and pricing-first Register link: ${intent}`, async () => {
+for (const intent of [null, 'free', 'pro', 'pro_max']) test(`actual inline presentation and Register link to Create Account: ${intent}`, async () => {
   const fixture = modal(intent); await flush();
   const copy = text(fixture.h.output);
   assert.ok(copy.includes(loginTitle));
   assert.ok(copy.includes(loginSubtitle));
   assert.ok(!copy.includes('InventaAPI Free') && !copy.includes('Free plan dashboard'));
   assert.ok(!copy.includes('Welcome to InventaAPI'));
-  const segment = find(fixture.h, node => node.props?.id === 'segment');
-  assert.deepEqual(nodes(segment, node => node.type === 'option').map(node => node.props.value).filter(Boolean), [...PRODUCT_SEGMENTS]);
-  const signupLink = find(fixture.h, node => node.type === 'a' && node.props?.href === '#pricing-plans');
-  assert.equal(signupLink.props.href, '#pricing-plans');
-  assert.equal(text(signupLink).trim(), 'Register');
-  assert.equal(segment.props.required, true);
+  // The business segment is chosen once at signup, never at login.
+  assert.equal(nodes(fixture.h.output, node => node.props?.id === 'segment' || node.type === 'select').length, 0);
+  assert.ok(!copy.includes('Business Segment'));
+  for (const id of ['email', 'password']) assert.equal(find(fixture.h, node => node.props?.id === id).props.required, true);
+  const signupLink = find(fixture.h, node => node.type === 'Link' && text(node).trim() === 'Register');
+  assert.equal(signupLink.props.href, navigation.customerSignupDestination(intent ?? ''));
+  assert.equal(signupLink.props.href, intent ? `/signup?pendingPlan=${intent}` : '/signup');
+  assert.equal(nodes(fixture.h.output, node => node.props?.href === '#pricing-plans').length, 0);
   assert.equal(nodes(fixture.h.output, node => node.props?.role === 'dialog').length, 0);
   assert.equal(nodes(fixture.h.output, node => node.props?.['aria-label'] === 'Close login').length, 0);
   fixture.stop();
@@ -222,11 +243,13 @@ for (const [intent, plan, upgrade] of [[null, 'Free', null], [null, 'Pro', null]
     assert.deepEqual(fixture.routes, upgrade ? [] : ['/dashboard']); fixture.stop();
   });
 }
-test('missing Business Segment blocks Firebase login; unauthorized segment signs out', async () => {
-  const missing = modal(); await missing.login(''); assert.equal(missing.signins, 0); missing.stop();
-  const foreign = modal(); await foreign.login('Pharmacy');
-  assert.equal(foreign.signouts, 1); assert.deepEqual(foreign.routes, []); assert.deepEqual(foreign.writes, []); foreign.stop();
-});
+for (const [businessSegment, selectedSegment] of [['Pharmacy', 'Pharmacy'], ['Hardware', undefined], ['Grocery', 'Hardware']]) {
+  test(`login needs no segment choice and writes no profile field: ${businessSegment}/${selectedSegment}`, async () => {
+    const fixture = modal(); Object.assign(fixture.profile, { businessSegment, selectedSegment }); await fixture.login();
+    assert.equal(fixture.signins, 1); assert.equal(fixture.signouts, 0);
+    assert.deepEqual(fixture.writes, []); assert.deepEqual(fixture.routes, ['/dashboard']); fixture.stop();
+  });
+}
 test('disabled Customer cannot proceed through ordinary Free presentation', async () => {
   const fixture = modal(null, 'Free', true); await fixture.login();
   assert.equal(fixture.signouts, 1); assert.deepEqual(fixture.routes, []); fixture.stop();
@@ -243,28 +266,80 @@ test('Admin navigation and configured destination are unchanged', () => {
   assert.equal(navigation.adminLoginDestination('https://synthetic-admin.company', 'synthetic-customer.company'), 'https://synthetic-admin.company/login');
 });
 
-for (const failure of [false, true]) test(`landing password reset preserves validation, ${failure ? 'error' : 'success'}, and return`, async () => {
-  const fixture = modal(null, 'Free', false, failure); await flush();
-  find(fixture.h, node => node.type === 'button' && /Forgot Password/i.test(text(node))).props.onClick(); await flush();
-  await find(fixture.h, node => node.type === 'button' && text(node) === 'Send Reset Link').props.onClick(); await flush();
-  assert.equal(fixture.resets.length, 0); assert.match(text(fixture.h.output), /enter your email/);
-  find(fixture.h, node => node.props?.id === 'reset-email').props.onChange({ target: { value: 'fixture@example.invalid' } }); await flush();
-  await find(fixture.h, node => node.type === 'button' && text(node) === 'Send Reset Link').props.onClick(); await flush();
-  assert.deepEqual(fixture.resets, ['fixture@example.invalid']);
-  assert.match(text(fixture.h.output), failure ? /synthetic reset failure/ : /Reset link sent/);
+const resetForm = fixture => find(fixture.h, node => node.type === 'form');
+const typeInto = async (fixture, id, value) => {
+  find(fixture.h, node => node.props?.id === id).props.onChange({ target: { value } }); await flush();
+};
+test('forgot password emails a code to the normalized address, then the code sets a new password', async () => {
+  const fixture = modal(); await flush();
+  find(fixture.h, node => node.type === 'button' && /Forgot password/i.test(text(node))).props.onClick(); await flush();
+  assert.match(text(fixture.h.output), /Reset your password/);
+  await typeInto(fixture, 'reset-email', 'fixture@example'); await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.deepEqual(fixture.resets, []); assert.match(text(fixture.h.output), /valid email address/);
+  await typeInto(fixture, 'reset-email', ' Fixture@Example.Invalid '); await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.deepEqual(fixture.resets, [['send', 'https://synthetic.invalid', 'fixture@example.invalid']]);
+  // The reply is the same whether or not the address has an account.
+  assert.match(text(fixture.h.output), /If\s+fixture@example\.invalid\s+has an InventaAPI account, we sent it a 6-digit code\./);
+  const hint = find(fixture.h, node => node.type === 'p' && text(node).includes('has an InventaAPI account'));
+  assert.ok(hint.props.children.includes('It expires in 10 minutes. If you don\'t see it, check your Spam or Promotions folder.'));
+  const code = find(fixture.h, node => node.props?.id === 'reset-code');
+  assert.equal(code.props.inputMode, 'numeric'); assert.equal(code.props.autoComplete, 'one-time-code'); assert.equal(code.props.maxLength, 6);
+  await typeInto(fixture, 'reset-code', '12a-34 56');
+  assert.equal(find(fixture.h, node => node.props?.id === 'reset-code').props.value, '123456');
+  await typeInto(fixture, 'new-password', 'new-synthetic-password'); await typeInto(fixture, 'confirm-new-password', 'different-password');
+  await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.equal(fixture.resets.length, 1); assert.match(text(fixture.h.output), /Passwords do not match/);
+  await typeInto(fixture, 'new-password', 'short'); await typeInto(fixture, 'confirm-new-password', 'short');
+  await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.equal(fixture.resets.length, 1); assert.match(text(fixture.h.output), /at least 6 characters/);
+  await typeInto(fixture, 'new-password', 'new-synthetic-password'); await typeInto(fixture, 'confirm-new-password', 'new-synthetic-password');
+  await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.deepEqual(fixture.resets[1], ['reset', 'https://synthetic.invalid', 'fixture@example.invalid', '123456', 'new-synthetic-password']);
+  // Back on Login with the address filled in and no password carried over.
+  assert.ok(text(fixture.h.output).includes(loginTitle));
+  assert.match(text(fixture.h.output), /Your password has been reset\. Log in with your new password\./);
+  assert.equal(find(fixture.h, node => node.props?.id === 'email').props.value, 'fixture@example.invalid');
+  assert.equal(find(fixture.h, node => node.props?.id === 'password').props.value, '');
+  assert.equal(fixture.signins, 0); assert.deepEqual(fixture.routes, []); fixture.stop();
+});
+test('a rejected reset code keeps the code step and shows the reason', async () => {
+  const fixture = modal(null, 'Free', false, 'reset'); await flush();
+  find(fixture.h, node => node.type === 'button' && /Forgot password/i.test(text(node))).props.onClick(); await flush();
+  await typeInto(fixture, 'reset-email', 'fixture@example.invalid'); await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  await typeInto(fixture, 'reset-code', '000000');
+  await typeInto(fixture, 'new-password', 'new-synthetic-password'); await typeInto(fixture, 'confirm-new-password', 'new-synthetic-password');
+  await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.match(text(fixture.h.output), /Incorrect code\. 4 attempts remaining\./);
+  assert.equal(nodes(fixture.h.output, node => node.props?.id === 'reset-code').length, 1);
   find(fixture.h, node => node.type === 'button' && /Back to Login/.test(text(node))).props.onClick(); await flush();
   assert.ok(text(fixture.h.output).includes(loginTitle));
-  assert.equal(nodes(fixture.h.output, node => node.type === 'form').length, 1);
-  assert.deepEqual(fixture.routes, []); fixture.stop();
+  assert.equal(nodes(fixture.h.output, node => node.type === 'form').length, 1); fixture.stop();
+});
+test('reset resend waits for its cooldown; a refused send stays on the email step', async () => {
+  const fixture = modal(); await flush();
+  find(fixture.h, node => node.type === 'button' && /Forgot password/i.test(text(node))).props.onClick(); await flush();
+  await typeInto(fixture, 'reset-email', 'fixture@example.invalid'); await resetForm(fixture).props.onSubmit({ preventDefault() {} }); await flush();
+  const resend = () => find(fixture.h, node => node.type === 'button' && /Resend code/.test(text(node)));
+  assert.equal(resend().props.disabled, true); assert.match(text(resend()), /Resend code in 60s/);
+  await fixture.time.advance(60_000);
+  assert.equal(resend().props.disabled, false);
+  await resend().props.onClick(); await flush();
+  assert.equal(fixture.resets.filter(call => call[0] === 'send').length, 2);
+  assert.match(text(fixture.h.output), /We sent a new code to fixture@example\.invalid\./); fixture.stop();
+  const refused = modal(null, 'Free', false, 'send'); await flush();
+  find(refused.h, node => node.type === 'button' && /Forgot password/i.test(text(node))).props.onClick(); await flush();
+  await typeInto(refused, 'reset-email', 'fixture@example.invalid'); await resetForm(refused).props.onSubmit({ preventDefault() {} }); await flush();
+  assert.match(text(refused.h.output), /Please wait 42 seconds/);
+  assert.equal(nodes(refused.h.output, node => node.props?.id === 'reset-email').length, 1); refused.stop();
 });
 
 test('plain root needs no query to render inline form; pricing CTAs only register', async () => {
   const entry = landing(); await flush();
   assert.ok(entry.modal()); assert.equal(entry.modal().pendingPlan, null);
-  for (const [label, plan] of [['Get Started Free', 'free'], ['Subscribe Now', 'pro'], ['Get Pro Max', 'pro_max']]) {
-    const buttons = nodes(entry.h.output, node => node.type === 'button' && text(node).trim().replace(/\s*→$/, '').trim() === label);
-    assert.equal(buttons.length, 1, label);
-    buttons[0].props.onClick();
+  const cards = find(entry.h, node => node.type === 'PlanCards');
+  for (const plan of ['free', 'pro', 'pro_max']) {
+    assert.equal(cards.props.isDisabled(plan), false);
+    cards.props.onSelect(plan);
     assert.equal(entry.routes.at(-1), navigation.customerSignupDestination(plan));
   }
   assert.equal(find(entry.h, node => node.type === 'SubscriptionModal').props.isOpen, false);

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { sendSignupCode, verifySignupCode, confirmSignupEmail, completeCustomerSignup, TERMS_VERSION,
-  normalizeSignupEmail, validSignupEmail } from '../../../services/customer-registration.mjs';
+  normalizeSignupEmail, validSignupEmail, sendPasswordResetCode, resetPasswordWithCode, validNewPassword,
+  PASSWORD_MIN_LENGTH } from '../../../services/customer-registration.mjs';
 
 // Browser-side registration helpers with a synthetic fetch; nothing leaves the process.
 const response = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -78,4 +79,37 @@ test('the Terms page displays the version every new profile records', () => {
   const page = readFileSync(new URL('../../../dashboard/src/app/terms-of-service/page.tsx', import.meta.url), 'utf8');
   assert.ok(page.includes(`Version ${TERMS_VERSION}`));
   assert.match(page, /Acceptable Use Policy/u); assert.match(page, /6-digit verification code/u);
+});
+test('password reset calls the API origin and surfaces only short server messages', async () => {
+  const requests = [];
+  const request = async (url, init) => { requests.push([url, JSON.parse(init.body), init]);
+    return response(200, { success: true, expiresInSeconds: 600, resendAvailableInSeconds: 60 }); };
+  assert.deepEqual(await sendPasswordResetCode({ base: 'https://api.inventa-release.com', email: 'juan@gmail.com', request }),
+    { ok: true, message: '', retryAfterSeconds: 0, resendAvailableInSeconds: 60 });
+  assert.deepEqual(await resetPasswordWithCode({ base: 'https://api.inventa-release.com', email: 'juan@gmail.com', code: '482913',
+    password: 'new-synthetic-password', request: async (url, init) => { requests.push([url, JSON.parse(init.body), init]); return response(200, { success: true }); } }),
+    { ok: true, message: '' });
+  assert.deepEqual(requests.map(([url, body]) => [url, body]), [
+    ['https://api.inventa-release.com/api/v1/auth/password-reset/send', { email: 'juan@gmail.com' }],
+    ['https://api.inventa-release.com/api/v1/auth/password-reset/confirm', { email: 'juan@gmail.com', code: '482913', password: 'new-synthetic-password' }]]);
+  for (const [, , init] of requests) {
+    assert.equal(init.method, 'POST'); assert.equal(init.cache, 'no-store'); assert.ok(init.signal instanceof AbortSignal);
+    assert.equal(init.headers.Authorization, undefined);
+  }
+  const incorrect = await resetPasswordWithCode({ base: 'https://api', email: 'juan@gmail.com', code: '000000', password: 'new-synthetic-password',
+    request: async () => response(400, { success: false, code: 'VERIFICATION_CODE_INCORRECT', error: 'Incorrect code. 4 attempts remaining.' }) });
+  assert.deepEqual(incorrect, { ok: false, message: 'Incorrect code. 4 attempts remaining.' });
+  const cooldown = await sendPasswordResetCode({ base: 'https://api', email: 'juan@gmail.com', request: async () => response(429,
+    { success: false, error: 'Please wait 42 seconds before requesting another code.', retryAfterSeconds: 42 }) });
+  assert.deepEqual(cooldown, { ok: false, message: 'Please wait 42 seconds before requesting another code.', retryAfterSeconds: 42, resendAvailableInSeconds: 60 });
+  for (const failing of [async () => { throw TypeError('offline'); }, async () => response(500, { success: false, error: 'x'.repeat(201) })]) {
+    assert.match((await sendPasswordResetCode({ base: 'https://api', email: 'juan@gmail.com', request: failing })).message, /Password reset is unavailable right now/u);
+    assert.match((await resetPasswordWithCode({ base: 'https://api', email: 'juan@gmail.com', code: '482913', password: 'x'.repeat(8), request: failing })).message,
+      /Password reset is unavailable right now/u);
+  }
+});
+test('new passwords follow Firebase Auth\'s minimum and reject absurd input', () => {
+  assert.equal(PASSWORD_MIN_LENGTH, 6);
+  for (const value of ['secret', 'x'.repeat(256), 'pass word']) assert.equal(validNewPassword(value), true, value.slice(0, 12));
+  for (const value of ['', 'short', 'x'.repeat(257), 123456, null, undefined]) assert.equal(validNewPassword(value), false, String(value).slice(0, 12));
 });
