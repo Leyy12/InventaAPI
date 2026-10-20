@@ -5,6 +5,7 @@ import { createAuthSession } from '../../../services/auth-navigation.ts';
 import * as catalog from '../../../dashboard/src/lib/segment-catalog.ts';
 import * as selection from '../../../dashboard/src/lib/trial-catalog-selection.ts';
 import * as linked from '../../../dashboard/src/lib/linked-product-selection.ts';
+import * as productFilters from '../../../dashboard/src/lib/product-filters.ts';
 import * as segment from '../../../services/customer-segment.js';
 import * as traffic from '../../../admin-panel/src/lib/admin-traffic.ts';
 import * as reporting from '../../../services/reporting.js';
@@ -35,7 +36,7 @@ function customer() {
     '@/lib/product-image-url': { productImageSource: () => '', showProductImageFallback: stub },
     '@/lib/firebase/auth-context': { useAuth: () => state },
     '@/lib/firebase/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
-    '@/lib/linked-product-selection': linked, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } },
+    '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } },
     '@/lib/segment-catalog': { ...catalog, createCatalogRefresh: options => catalog.createCatalogRefresh({ ...options, schedule: c.schedule, cancel: c.cancel }) },
   }, { ...b, fetch: async url => {
     calls.push(url);

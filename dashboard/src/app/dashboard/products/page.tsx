@@ -21,6 +21,7 @@ import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/fi
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
+import { ALL_CATEGORIES, keyNamesByProduct, keyProductUsage, matchesCategory, matchesKeyUsage, productCategories, type KeyProductUsage, type KeyUsageFilter } from '@/lib/product-filters';
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -86,6 +87,11 @@ function CustomerCatalogSession() {
   const productAvailable = currentCatalog?.status === 'ready' ? currentCatalog.total : null;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'not-selected'>('all');
+  const [productCategory, setProductCategory] = useState(ALL_CATEGORIES);
+  // Products already linked to a key are hidden by default; each key's name is its own filter.
+  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('unused');
+  const [keyUsage, setKeyUsage] = useState<KeyProductUsage[]>([]);
+  const keyNames = useMemo(() => keyNamesByProduct(keyUsage), [keyUsage]);
   
   // API Key Generation State
   const [showGenModal, setShowGenModal] = useState(false);
@@ -94,6 +100,7 @@ function CustomerCatalogSession() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [generatedKeyName, setGeneratedKeyName] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   // Add Product (to existing API key) Modal State
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -121,6 +128,7 @@ function CustomerCatalogSession() {
   }, [hasPendingSelection, headerSlot, summaryElement]);
 
   const receiveTrialCatalog = useCallback((data: { keys: TrialCatalogKey[]; trialCatalog?: TrialCatalog }, uid: string) => {
+    setKeyUsage(keyProductUsage(data.keys));
     if (!data.trialCatalog || !Array.isArray(data.keys)) {
       setTrialSelection(null);
       throw new Error('Trial catalog verification unavailable.');
@@ -169,6 +177,22 @@ function CustomerCatalogSession() {
     };
   }, [activeSegment, user]);
 
+  const refreshKeyUsage = useCallback(async (signal?: AbortSignal) => {
+    if (!user) return;
+    try {
+      const data = await apiKeyRequest(user, '', { signal });
+      if (!signal?.aborted) setKeyUsage(keyProductUsage(data.keys));
+    } catch { /* usage labels are presentation-only; keep the last verified list */ }
+  }, [user]);
+
+  useEffect(() => {
+    // Trial accounts receive the same key list through the verified trial-catalog read below.
+    if (activeTrial || !user) return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => refreshKeyUsage(controller.signal));
+    return () => controller.abort();
+  }, [activeTrial, user, refreshKeyUsage]);
+
   useEffect(() => {
     if (!activeTrial || !user) return;
     const controller = new AbortController();
@@ -188,10 +212,18 @@ function CustomerCatalogSession() {
   }, [products, currentCatalog, searchQuery, appUser]);
 
   const searchedProducts = useMemo(() => getFilteredProducts(), [getFilteredProducts]);
+  const categoryOptions = useMemo(() => productCategories(searchedProducts), [searchedProducts]);
+  const activeCategory = productCategory === ALL_CATEGORIES || categoryOptions.includes(productCategory) ? productCategory : ALL_CATEGORIES;
+  const activeKeyUsageFilter: KeyUsageFilter = keyUsageFilter.startsWith('key:')
+    && !keyUsage.some(key => `key:${key.id}` === keyUsageFilter) ? 'all' : keyUsageFilter;
   const filteredProducts = searchedProducts.filter(product => {
     const isSelected = selectedProducts.has(product.id!) || (activeTrial && trialState.included.has(product.id!));
-    return selectionFilter === 'all' || (selectionFilter === 'selected' ? isSelected : !isSelected);
+    return (selectionFilter === 'all' || (selectionFilter === 'selected' ? isSelected : !isSelected))
+      && matchesCategory(product, activeCategory)
+      && matchesKeyUsage(product.id!, activeKeyUsageFilter, keyUsage, keyNames);
   });
+  const presentationFiltered = selectionFilter !== 'all' || activeCategory !== ALL_CATEGORIES || activeKeyUsageFilter !== 'all';
+  const resetPresentationFilters = () => { setSelectionFilter('all'); setProductCategory(ALL_CATEGORIES); setKeyUsageFilter('all'); };
   // Search/segment emptiness is evaluated before the presentation-only selection filter.
   const catalogView = catalogPresentationState(currentCatalog, searchedProducts.length, searchQuery);
   const selectableIds = catalogSelectableIds(filteredProducts, selectedProducts, activeTrial ? {
@@ -387,7 +419,7 @@ function CustomerCatalogSession() {
       if (activeTrial && user) {
         invalidateAccountUsage(user.uid);
         receiveTrialCatalog(await apiKeyRequest(user), user.uid);
-      }
+      } else void refreshKeyUsage();
     } catch (error) {
       console.error("Error generating API key:", error);
       const message = error instanceof TypeError && error.message === "Failed to fetch"
@@ -437,6 +469,15 @@ function CustomerCatalogSession() {
       }, COPY_REDIRECT_DELAY);
     }
   }, [generatedKey, router]);
+
+  // Copies the one-time secret while keeping it on screen, unlike handleCopyAndClose.
+  const copyGeneratedKey = useCallback(async () => {
+    if (!generatedKey) return;
+    try { await navigator.clipboard.writeText(generatedKey); }
+    catch { alert("Copy failed. Select the displayed API key and copy it manually."); return; }
+    setKeyCopied(true);
+    setTimeout(() => setKeyCopied(false), COPY_REDIRECT_DELAY);
+  }, [generatedKey]);
 
   const handleDownloadEnv = useCallback(() => {
     if (!generatedKey) return;
@@ -497,6 +538,7 @@ DAAS_API_KEY=${generatedKey}
     setGeneratedKeyName(null);
     setKeyName("");
     setCopied(false);
+    setKeyCopied(false);
   };
   const addSelectionDisabled = !canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0;
   const generateSelectionDisabled = !canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey);
@@ -648,6 +690,29 @@ DAAS_API_KEY=${generatedKey}
           </select>
         </div>
 
+        <div className="min-w-0">
+          <label htmlFor="product-category-filter" className="sr-only">Filter products by product category</label>
+          <select id="product-category-filter" value={activeCategory}
+            onChange={event => setProductCategory(event.target.value)}
+            disabled={categoryOptions.length === 0}
+            className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50">
+            <option value={ALL_CATEGORIES}>All Product Categories</option>
+            {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </div>
+
+        <div className="min-w-0">
+          <label htmlFor="key-usage-filter" className="sr-only">Filter products by API key</label>
+          <select id="key-usage-filter" value={activeKeyUsageFilter}
+            onChange={event => setKeyUsageFilter(event.target.value as KeyUsageFilter)}
+            className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+            <option value="unused">Not in an API key</option>
+            <option value="all">All products</option>
+            {keyUsage.length > 0 && <option value="used">In any API key</option>}
+            {keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>In key: {key.name}</option>)}
+          </select>
+        </div>
+
         {/* Select All button */}
         {filteredProducts.length > 0 && (
           <button
@@ -738,11 +803,13 @@ DAAS_API_KEY=${generatedKey}
           searchQuery={searchQuery}
           onClearSearch={() => setSearchQuery("")}
         />
-      ) : filteredProducts.length === 0 && selectionFilter !== 'all' ? (
+      ) : filteredProducts.length === 0 && presentationFiltered ? (
         <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-8 text-center">
-          <h2 className="text-lg font-semibold text-white">{selectionFilter === 'selected' ? 'No selected products.' : 'No unselected products.'}</h2>
+          <h2 className="text-lg font-semibold text-white">{selectionFilter === 'selected' ? 'No selected products.'
+            : selectionFilter === 'not-selected' ? 'No unselected products.'
+              : activeKeyUsageFilter === 'unused' ? 'Every product here is already in an API key.' : 'No products match these filters.'}</h2>
           <p className="mt-2 text-sm text-slate-400">{searchQuery.trim() ? 'Within your current search and business segment.' : 'Within your current business segment.'}</p>
-          <button type="button" onClick={() => setSelectionFilter('all')} className="mt-3 text-sm text-indigo-300">View All Products</button>
+          <button type="button" onClick={resetPresentationFilters} className="mt-3 text-sm text-indigo-300">View All Products</button>
         </div>
       ) : (
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
@@ -810,6 +877,10 @@ DAAS_API_KEY=${generatedKey}
                 <div className="p-4">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-indigo-300 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
+                  {keyNames.has(product.id!) && <p className="flex items-center gap-1 text-xs text-emerald-300 mb-1 min-w-0">
+                    <Key className="w-3 h-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">In key: {keyNames.get(product.id!)!.join(', ')}</span>
+                  </p>}
                   <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{product.description}</p>
 
                   {/* Variant chips */}
@@ -962,8 +1033,13 @@ DAAS_API_KEY=${generatedKey}
                 </div>
                 <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
                   <p className="text-xs font-medium text-emerald-400 mb-2">API Key — shown once</p>
-                  <div className="bg-slate-900 rounded-lg p-3 mb-3 break-all font-mono text-sm text-emerald-300 select-all">
-                    {generatedKey}
+                  <div className="flex items-start gap-2 bg-slate-900 rounded-lg p-3 mb-3">
+                    <span className="min-w-0 flex-1 break-all font-mono text-sm text-emerald-300 select-all">{generatedKey}</span>
+                    <button type="button" onClick={() => void copyGeneratedKey()}
+                      aria-label={keyCopied ? 'API key copied' : 'Copy API key'} title="Copy API key"
+                      className="shrink-0 rounded-md border border-emerald-500/30 p-1.5 text-emerald-300 hover:bg-emerald-500/10">
+                      {keyCopied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+                    </button>
                   </div>
                 </div>
                 <button
