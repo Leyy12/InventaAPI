@@ -8,6 +8,8 @@ import {
 import { useSearchParams } from "next/navigation";
 import Link from 'next/link';
 import CodeSnippet from "@/components/shared/CodeSnippet";
+import { useAuth } from "@/lib/firebase/auth-context";
+import { previewScopeFromQuery } from "@/lib/product-filters";
 
 interface ApiResponse {
   success: boolean;
@@ -19,8 +21,14 @@ interface ApiResponse {
 export default function ApiPlaygroundPage() {
   const searchParams = useSearchParams();
   const preselectedProducts = searchParams.get('products');
+  const previewScope = previewScopeFromQuery(preselectedProducts, searchParams.get('variants'));
+  const previewCount = previewScope.linkedProductIds.length + Object.keys(previewScope.linkedVariantSelections).length;
+  const { user } = useAuth();
 
   // State Management
+  // Selected products can be previewed with the signed-in session before any key exists.
+  const [mode, setMode] = useState<'preview' | 'key'>(previewCount > 0 ? 'preview' : 'key');
+  const previewMode = mode === 'preview' && previewCount > 0;
   const [apiKey, setApiKey] = useState("");
   const [endpoint, setEndpoint] = useState("/daas/v1/catalog");
   const method = "GET";
@@ -50,8 +58,41 @@ export default function ApiPlaygroundPage() {
     return url.toString();
   };
 
+  // Preview selected products through the dashboard session: no key, no allowance used.
+  const executePreview = async () => {
+    if (!user) {
+      alert("Sign in again to preview your selected products.");
+      return;
+    }
+    setLoading(true);
+    setResponseTime(null);
+    const startTime = performance.now();
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
+      const res = await fetch(`${baseUrl}/api/v1/playground/preview`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...previewScope, search: queryParams.q }),
+        cache: 'no-store',
+      });
+      setResponseTime(Math.round(performance.now() - startTime));
+      const data = await res.json();
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid response');
+      setResponse({ ...data, success: res.ok, httpStatus: res.status });
+    } catch {
+      setResponse({
+        success: false,
+        error: "Network Error",
+        message: "Failed to retrieve a valid preview from the API server"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Execute API Request
   const executeRequest = async () => {
+    if (previewMode) return executePreview();
     if (!apiKey.trim()) {
       alert("Please enter an API key");
       return;
@@ -123,7 +164,7 @@ export default function ApiPlaygroundPage() {
           <div>
             <h3 className="text-sm font-bold text-white mb-1">Products Pre-selected</h3>
             <p className="text-xs text-slate-400">
-              You selected {preselectedProducts.split(',').length} products. Use a key with the appropriate product scope. This navigation hint does not authorize access.
+              You selected {previewCount} products. Preview them below without an API key, or switch to API key mode to test a real key&apos;s scope.
             </p>
           </div>
         </div>
@@ -138,6 +179,18 @@ export default function ApiPlaygroundPage() {
               Request Configuration
             </h2>
 
+            {previewCount > 0 && <div role="radiogroup" aria-label="Request mode" className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-900/50 p-1 border border-slate-700">
+              {([['preview', `Selected products (${previewCount})`], ['key', 'Use an API key']] as const).map(([value, label]) =>
+                <button key={value} type="button" role="radio" aria-checked={mode === value} onClick={() => { setMode(value); setResponse(null); }}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium ${mode === value ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+                  {label}
+                </button>)}
+            </div>}
+
+            {previewMode ? <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+              <p className="font-semibold">No API key needed</p>
+              <p className="mt-1 text-xs text-emerald-200/80">Returns your {previewCount} selected products in the same format as <code>/daas/v1/catalog</code>, using your signed-in session. It does not create a key or use your request allowance.</p>
+            </div> : <>
             {/* API Key Input */}
             <div className="mb-4">
               <label className="text-sm font-medium text-slate-300 mb-2 block">API KEY</label>
@@ -172,7 +225,13 @@ export default function ApiPlaygroundPage() {
               </p>
             </div>
 
-            {endpoint === "/daas/v1/catalog" && <div className="space-y-3">
+            </>}
+
+            {previewMode ? <label className="block text-sm text-slate-300">
+              Search product text
+              <input type="text" value={queryParams.q} onChange={e => setQueryParams({ ...queryParams, q: e.target.value })}
+                className="block w-full bg-slate-900 border border-slate-700 rounded-lg p-2" />
+            </label> : endpoint === "/daas/v1/catalog" && <div className="space-y-3">
               {(['q', 'page', 'perPage'] as const).map(field => <label key={field} className="block text-sm text-slate-300">
                 {field === 'q' ? 'Search product text' : field === 'page' ? 'Page number' : 'Products per page (not request quota)'}
                 <input type={field === 'q' ? 'text' : 'number'} min={field === 'q' ? undefined : 1} value={queryParams[field]}
@@ -195,7 +254,7 @@ export default function ApiPlaygroundPage() {
               ) : (
                 <>
                   <Play className="w-5 h-5" />
-                  Execute Request
+                  {previewMode ? 'Preview Selected Products' : 'Execute Request'}
                 </>
               )}
             </button>

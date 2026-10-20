@@ -21,7 +21,7 @@ import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/fi
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
-import { ALL_CATEGORIES, keyNamesByProduct, keyProductUsage, matchesCategory, matchesKeyUsage, productCategories, type KeyProductUsage, type KeyUsageFilter } from '@/lib/product-filters';
+import { ALL_CATEGORIES, keyNamesByProduct, keyProductUsage, matchesCategory, matchesKeyUsage, playgroundHref, productCategories, type KeyProductUsage, type KeyUsageFilter } from '@/lib/product-filters';
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -88,8 +88,8 @@ function CustomerCatalogSession() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'not-selected'>('all');
   const [productCategory, setProductCategory] = useState(ALL_CATEGORIES);
-  // Products already linked to a key are hidden by default; each key's name is its own filter.
-  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('unused');
+  // Products already linked to a key stay selectable for another key; each key's name is its own filter.
+  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('all');
   const [keyUsage, setKeyUsage] = useState<KeyProductUsage[]>([]);
   const keyNames = useMemo(() => keyNamesByProduct(keyUsage), [keyUsage]);
   
@@ -222,6 +222,7 @@ function CustomerCatalogSession() {
       && matchesCategory(product, activeCategory)
       && matchesKeyUsage(product.id!, activeKeyUsageFilter, keyUsage, keyNames);
   });
+  const selectionPlaygroundHref = playgroundHref(products, selectedProducts, selectedVariants);
   const presentationFiltered = selectionFilter !== 'all' || activeCategory !== ALL_CATEGORIES || activeKeyUsageFilter !== 'all';
   const resetPresentationFilters = () => { setSelectionFilter('all'); setProductCategory(ALL_CATEGORIES); setKeyUsageFilter('all'); };
   // Search/segment emptiness is evaluated before the presentation-only selection filter.
@@ -563,7 +564,7 @@ DAAS_API_KEY=${generatedKey}
             <button type="button" onClick={clearSelection} disabled={generating}
               aria-label={activeTrial ? 'Clear new selections' : 'Clear all selected products'}
               className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 disabled:opacity-50">Clear</button>
-            <Link href={`/dashboard/api-playground?products=${Array.from(selectedProducts).join(',')}`}
+            <Link href={selectionPlaygroundHref}
               className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700">Playground</Link>
           </div>
         </div>, headerSlot)}
@@ -706,8 +707,8 @@ DAAS_API_KEY=${generatedKey}
           <select id="key-usage-filter" value={activeKeyUsageFilter}
             onChange={event => setKeyUsageFilter(event.target.value as KeyUsageFilter)}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
-            <option value="unused">Not in an API key</option>
             <option value="all">All products</option>
+            <option value="unused">Not in an API key</option>
             {keyUsage.length > 0 && <option value="used">In any API key</option>}
             {keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>In key: {key.name}</option>)}
           </select>
@@ -764,7 +765,7 @@ DAAS_API_KEY=${generatedKey}
                 {activeTrial ? 'Clear New Selections' : 'Clear All'}
               </button>
               <Link
-                href={`/dashboard/api-playground?products=${Array.from(selectedProducts).join(',')}`}
+                href={selectionPlaygroundHref}
                 className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-colors flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
