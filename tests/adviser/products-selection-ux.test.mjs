@@ -167,10 +167,16 @@ test('full-width catalog has no empty selection area; compact upper summary and 
   assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
 }));
 
-test('products already in a key are hidden by default and reachable through a filter named after the key', () => using({ included: 5, keyFilter: 'unused' }, async f => {
+test('products already in a key stay listed and labelled; filters show unused or one key by name', () => using({ trial: false, included: 5 }, async f => {
+  await f.segment('Grocery');
   const control = f.find(n => n.props.id === 'key-usage-filter');
-  assert.equal(control.props.value, 'unused');
+  assert.equal(control.props.value, 'all');
   assert.match(text(control), /Not in an API key/); assert.match(text(control), /In key:\s+Fixture POS/);
+  assert.equal(f.cards().length, 60);
+  // Paid accounts can reuse a product already in a key for another key.
+  await f.click(f.card('grocery-0')); highlighted(f.card('grocery-0'));
+  await f.click(f.card('grocery-0'));
+  await f.keyFilter('unused');
   assert.equal(f.cards().length, 55); assert.ok(!ids(f).includes('grocery-0'));
   await f.keyFilter('key:fixture-key');
   assert.deepEqual(ids(f), ['grocery-0', 'grocery-1', 'grocery-2', 'grocery-3', 'grocery-4']);

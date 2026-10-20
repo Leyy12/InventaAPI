@@ -25,7 +25,7 @@ function fixture(owned, { count = 55, evidence = { keys: [], trialCatalog: measu
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
     'react-dom': { createPortal: stub },
     '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => null },
-    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
+    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
     '@/lib/trial-display.mjs': display, '@/lib/trial-catalog-selection': selection,
     '@/lib/account-usage-events': { invalidateAccountUsage: uid => invalidations.push(uid) },
     '@/lib/api-key-generation': { GENERATION_POLICY: 'synthetic policy', generationErrorMessage: data => data.error },
@@ -165,6 +165,47 @@ test('real existing-key mode locks persisted products, toggles only pending addi
     assert.equal(f.evidence().keys[0].scopeVersion, 8);
     assert.equal(f.evidence().trialCatalog.productsIncluded, 50);
     assert.equal(f.catalogCalls().length, 1);
+  } finally { f.h.stop(); }
+});
+
+test('Trial "Create another API key" reuses included products without using slots and caps new ones', async () => {
+  const evidence = { trialCatalog: measured(48, 1), keys: [{ id: 'existing', name: 'POS', scopeVersion: 2,
+    linkedProductIds: Array.from({ length: 48 }, (_, i) => 'hardware-' + i), linkedVariantSelections: {} }] };
+  const f = fixture('Hardware', { evidence }); await flush();
+  try {
+    assert.equal(f.card('hardware-0').props['aria-disabled'], true);
+    f.button('Create another API key').props.onClick(); await flush();
+    assert.equal(f.card('hardware-0').props['aria-disabled'], undefined);
+    assert.doesNotMatch(f.card('hardware-0').props.className, /border-2/);
+    for (const id of ['hardware-0', 'hardware-1', 'hardware-48', 'hardware-49']) { f.card(id).props.onClick(); await flush(); }
+    for (const id of ['hardware-0', 'hardware-48']) assert.match(f.card(id).props.className, /border-2 border-indigo-500/);
+    // Two reused products plus two new ones fill the two remaining slots; a third new product is blocked.
+    assert.equal(f.card('hardware-50').props['aria-disabled'], true);
+    assert.equal(f.card('hardware-2').props['aria-disabled'], undefined);
+    assert.match(text(f.h.output), /New API Key Selections/);
+    assert.equal(f.button('Generate API Key').props.disabled, false);
+    f.button('Generate API Key').props.onClick(); await flush();
+    nodes(f.h.output, n => n.type === 'input' && n.props.placeholder?.includes('Production POS'))[0].props.onChange({ target: { value: 'Second key' } });
+    await flush(); await f.button('Generate Key').props.onClick(); await flush();
+    const body = JSON.parse(f.calls.find(call => call.init?.method === 'POST').init.body);
+    assert.deepEqual([...body.linkedProductIds].sort(), ['hardware-0', 'hardware-1', 'hardware-48', 'hardware-49']);
+    assert.match(text(nodes(f.h.output, n => n.type === 'ul')[0]), /Hardware synthetic 48/);
+    assert.deepEqual(f.alerts, []);
+  } finally { f.h.stop(); }
+});
+
+test('Trial with several keys builds new keys only; Add Selected Products is not offered', async () => {
+  const evidence = { trialCatalog: measured(3, 2), keys: [
+    { id: 'a', name: 'A', scopeVersion: 0, linkedProductIds: ['hardware-0', 'hardware-1'], linkedVariantSelections: {} },
+    { id: 'b', name: 'B', scopeVersion: 0, linkedProductIds: ['hardware-1', 'hardware-2'], linkedVariantSelections: {} }] };
+  const f = fixture('Hardware', { evidence }); await flush();
+  try {
+    assert.equal(f.button('Add Selected Products'), undefined);
+    assert.equal(f.button('Create another API key'), undefined);
+    f.card('hardware-1').props.onClick(); await flush();
+    assert.match(f.card('hardware-1').props.className, /border-2/);
+    assert.equal(f.button('Generate API Key').props.disabled, false);
+    assert.match(text(f.h.output), /Active keys:\s+2\s*\/\s*5/);
   } finally { f.h.stop(); }
 });
 

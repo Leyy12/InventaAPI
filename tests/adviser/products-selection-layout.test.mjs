@@ -78,7 +78,7 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
             border:style && ['Top','Right','Bottom','Left'].map(side=>[style['border'+side+'Width'],style['border'+side+'Color']])};
         });
         assert.equal(result.overflow, false, `${width}/${state}: horizontal overflow`);
-        assert.equal(result.trialStatusText, 'Free Trial · 7 days · Included: 2/50 · Slots left: 48 · Active keys: 1/1');
+        assert.equal(result.trialStatusText, 'Free Trial · 7 days · Included: 2/50 · Slots left: 48 · Active keys: 1/5');
         assert.equal(result.availabilityCount, 1);
         if (width >= 1024) {
           assert.ok(result.trialStatusHeight <= 24, `${width}/${state}: compact single Trial status row`);
@@ -176,7 +176,7 @@ test('full-width catalog uses only the outer page scroll with no/one/many select
         assert.equal(header.availability.length,1,`${width}/${name}: availability shown once`);
         if (name==='paid-all') { assert.equal(header.status,undefined); assert.equal(header.availability[0],'Product Available: 180'); }
         else if (width>=1024) assert.ok(header.statusHeight<=24,`${width}/${name}: one compact Trial status row`);
-        if (name==='first-key') assert.equal(header.status,'Free Trial · 7 days · Included: 0/50 · Slots left: 50 · Active keys: 0/1');
+        if (name==='first-key') assert.equal(header.status,'Free Trial · 7 days · Included: 0/50 · Slots left: 50 · Active keys: 0/5');
         if (name==='full-trial'||name==='verification-error') assert.equal(header.warningVisible,true,`${width}/${name}: important warning visible above controls`);
       }
     }

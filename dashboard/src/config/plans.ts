@@ -3,7 +3,7 @@
  * Used by both pricing page and upgrade modal
  */
 
-import { PRO_DAILY_REQUEST_LIMIT, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
+import { PRO_DAILY_REQUEST_LIMIT, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
 import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
@@ -34,7 +34,7 @@ export const SUBSCRIPTION_PLANS = {
     // Features (base features only)
     features: [
       `Up to ${TRIAL_MAX_PRODUCTS} products`,
-      "One API key",
+      `Up to ${TRIAL_MAX_ACTIVE_KEYS} API keys`,
       "One Business Segment",
       "Product Catalog endpoint",
       "API Key Management",

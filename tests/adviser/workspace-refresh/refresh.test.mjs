@@ -25,7 +25,7 @@ function customer() {
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
     'react-dom': { createPortal: stub },
     '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => null },
-    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
+    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
     '@/lib/trial-display.mjs': { trialCapacityMessage: () => '', trialRemainingSlots: () => 50 },
     '@/lib/trial-catalog-selection': selection, '@/lib/account-usage-events': { invalidateAccountUsage },
     '@/lib/api-key-generation': { GENERATION_POLICY: {}, generationErrorMessage: () => '' },
@@ -172,7 +172,7 @@ test('quota errors stop retrying; actual account mutation invalidation and expli
 test('timestamp-only verification cannot remount the actual Customer Usage boundary', () => {
   const h = hooks(); let entitlement = { plan: 'Pro', subscription_status: 'active', apiRequestLimit: 500, serverTime: 'first' };
   const Component = load('dashboard/src/components/reports/CustomerUsageSummary.tsx', 'CustomerUsageSummary', h, {
-    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 }, '@/lib/trial-display.mjs': {},
+    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 }, '@/lib/trial-display.mjs': {},
     'next/link': { default: stub }, '@/lib/api-keys': {}, '@/lib/firebase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement }) },
     '@/lib/reports': reporting, '@/lib/quota-refresh': {}, '@/lib/account-usage-events': {},
     '@/config/plans': {}, '@/lib/plan-request-policy': { useAccountRequestAllowance: () => entitlement.apiRequestLimit },
@@ -209,7 +209,7 @@ test(`Customer actual ${embedded ? 'embedded' : 'standalone'} Trial panel reads 
     'next/link': { default: stub }, 'lucide-react': icons, '@/lib/firebase/auth-context': {},
     '@/lib/account-usage-events': { subscribeAccountUsage },
     '@/lib/trial-display.mjs': { formatTrialExpiry: () => 'fixture-date', trialCapacityMessage: () => '', trialRemainingSlots: () => 50 },
-    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
+    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
   }, { ...b, performance: { now: c.now }, setInterval: () => 999, clearInterval: stub,
     setTimeout: c.schedule, clearTimeout: c.cancel,
     fetch: async () => { reads++; return { ok: true, json: async () => ({ active: reads < 3, secondsRemaining: 360, productsIncluded: 0, activeKeys: 0 }) }; },

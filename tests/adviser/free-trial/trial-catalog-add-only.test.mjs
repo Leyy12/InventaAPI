@@ -269,10 +269,17 @@ test('legacy over-cap preserves reads and idempotent scope, forbids removals/add
   assert.deepEqual(f.db.read('api_keys/key-a').linkedProductIds, ids(51));
 });
 
-test('multiple active keys cannot multiply capacity or permit scope updates', async () => {
-  const f = await fixture(ids(45), null, { 'api_keys/key-b': { userId: 'owner', status: 'active', linkedProductIds: ids(3) } });
-  assert.equal((await f.update(ids(48))).body.error, 'TRIAL_KEY_LIMIT');
+test('multiple active keys share one 50-product Trial catalog; reused products cost no extra slot', async () => {
+  const f = await fixture(ids(45), null, { 'api_keys/key-b': { userId: 'owner', status: 'active',
+    linkedProductIds: ['product-0', 'product-55', 'product-56', 'product-57'] } });
+  assert.equal((await invoke(f.handlers.list)).body.trialCatalog.productsIncluded, 48);
+  assert.equal((await f.update(ids(48))).body.error, 'TRIAL_PRODUCT_MAXIMUM');
   assert.deepEqual(f.db.read('api_keys/key-a').linkedProductIds, ids(45));
+  assert.equal((await f.update(ids(47))).statusCode, 200);
+  assert.equal((await invoke(f.handlers.list)).body.trialCatalog.productsIncluded, 50);
+  // Products already in another key can be added without exceeding the shared cap.
+  assert.equal((await f.update(['product-0', 'product-55'], 0, 'key-b')).body.error, 'TRIAL_PRODUCT_REMOVAL_NOT_ALLOWED');
+  assert.equal((await f.update(['product-0', 'product-55', 'product-56', 'product-57', 'product-1'], 0, 'key-b')).statusCode, 200);
 });
 
 for (const plan of ['Pro', 'Pro Max']) test(`${plan} preserves existing removal and replacement semantics`, async () => {

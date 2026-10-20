@@ -5,7 +5,7 @@ import {
   ApiSecurityError, accountEntitlement, issueCredential, publicKeyMetadata, sendSecurityError,
   usageForToday, validDocumentId, upgradeRequiredError, assertActiveKey, trialUsage,
 } from './api-key-security.js';
-import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, trialCatalogChangeAllowed } from '../functions/entitlement-limits.mjs';
+import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS, trialCatalogChangeAllowed } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
 import { normalizeSegment } from './product-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
@@ -130,29 +130,34 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     await db.collection('audit_logs').add({ action, userId: actor.uid, keyId: id, timestamp: clock() }).catch(() => {});
   }
 
-  function trialProductCount(scope, previous = null) {
+  // The Trial catalog is the union of product IDs across active keys, so
+  // reusing a product in another key never consumes another product slot.
+  function trialProductCount(scope, previous, otherKeys) {
     const ids = authorizedProductIds(scope);
     const requested = new Set(ids);
     if (previous && authorizedProductIds(previous).some(id => !requested.has(id))) {
       throw new ApiSecurityError(400, 'TRIAL_PRODUCT_REMOVAL_NOT_ALLOWED',
         'Products already included in a Free Trial cannot be removed.');
     }
-    if (!trialCatalogChangeAllowed(previous ? authorizedProductIds(previous) : [], ids)) {
+    const others = otherKeys.flatMap(key => authorizedProductIds(key));
+    const before = [...others, ...(previous ? authorizedProductIds(previous) : [])];
+    if (!trialCatalogChangeAllowed(before, [...others, ...ids])) {
       throw new ApiSecurityError(400, 'TRIAL_PRODUCT_MAXIMUM',
-        `Free Trial permits up to ${TRIAL_MAX_PRODUCTS} products. Existing over-cap catalogs cannot add products.`);
+        `Free Trial permits up to ${TRIAL_MAX_PRODUCTS} products across all keys. Existing over-cap catalogs cannot add products.`);
     }
     return ids.length;
   }
 
   async function trialKeys(tx, db, uid, entitlement, { scope = null, existingId = null, previous = null } = {}) {
     if (!entitlement.activeTrial) return;
-    if (scope) trialProductCount(scope, previous);
     const keys = await tx.get(db.collection('api_keys').where('userId', '==', uid));
     const active = keys.docs.filter(doc => doc.data().status === 'active');
-    if (existingId ? active.length !== 1 || active[0].id !== existingId : active.length > 0) {
+    if (existingId ? active.length > TRIAL_MAX_ACTIVE_KEYS || !active.some(doc => doc.id === existingId)
+      : active.length >= TRIAL_MAX_ACTIVE_KEYS) {
       throw new ApiSecurityError(409, 'TRIAL_KEY_LIMIT',
-        'Free Trial permits one active API key. Manage or replace your existing key instead.');
+        `Free Trial permits up to ${TRIAL_MAX_ACTIVE_KEYS} active API keys. Manage or revoke an existing key instead.`);
     }
+    if (scope) trialProductCount(scope, previous, active.filter(doc => doc.id !== existingId).map(doc => doc.data()));
   }
 
   function serializeTrialMutation(tx, db, uid, entitlement) {
@@ -177,7 +182,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         .map(doc => publicKeyMetadata(doc.id, doc.data(), context.entitlement, context.usage)),
       usage: { ...context.usage, limit: context.entitlement.limit, scope: 'account' },
       ...(context.entitlement.activeTrial ? { trialCatalog: { productsIncluded, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS,
-        productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: 1,
+        productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: TRIAL_MAX_ACTIVE_KEYS,
         expiresAt: context.entitlement.expiresAt } } : {}) });
     }),
     view: authenticated(async (req, res, actor, db) => {

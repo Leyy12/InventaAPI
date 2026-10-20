@@ -13,7 +13,7 @@ async function using(options, run) {
 
 for (const included of [0, 17, 48, 50, 51]) {
   test(`compact Trial status shows persisted ${included} products and keeps pending selections separate`, () => using({ included }, async f => {
-    const expected = `Free Trial · 7 days · Included: ${included}/50 · Slots left: ${Math.max(50-included, 0)} · Active keys: ${included ? 1 : 0}/1`;
+    const expected = `Free Trial · 7 days · Included: ${included}/50 · Slots left: ${Math.max(50-included, 0)} · Active keys: ${included ? 1 : 0}/5`;
     assert.equal(normalized(status(f)), expected);
     assert.match(status(f).props.className, /text-xs leading-5/);
     const header = f.h.output.props.children.find(node => node?.type === 'div');

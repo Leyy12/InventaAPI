@@ -1,4 +1,4 @@
-import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
+import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '../functions/entitlement-limits.mjs';
 import { evaluateEntitlement, trialState, accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { normalizeSegment } from './product-contract.js';
 import { ApiSecurityError, validDocumentId, sendSecurityError, trialUsage, usageForToday } from './api-key-security.js';
@@ -103,7 +103,7 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
           tx.set(contractsRef, { version: 1, plans: { ...contracts?.plans, free_trial: newRequestContract(requestLimits.free_trial) } });
           if (requestLimits.free_trial !== null && !daily.exists) tx.set(dailyRef, { ...usageForToday(null, now), updatedAt: startedAt });
           tx.set(usageRef, { startedAt, expiresAt, used: 0, updatedAt: startedAt });
-          return { success: true, startedAt, expiresAt, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS, maximumActiveKeys: 1,
+          return { success: true, startedAt, expiresAt, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS, maximumActiveKeys: TRIAL_MAX_ACTIVE_KEYS,
             serverTime: startedAt, reauthenticationRequired: true };
         });
       } catch (error) {
@@ -143,7 +143,7 @@ export function createFreeTrialHandlers({ getDb, verifyIdToken, revokeRefreshTok
         startedAt: trial.startedAt, expiresAt: trial.expiresAt, serverTime: now.toISOString(),
         secondsRemaining: active ? Math.max(0, (Date.parse(trial.expiresAt) - now.getTime()) / 1000) : 0,
         productsIncluded: productCount, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS,
-        productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productCount), activeKeys: activeKeys.length, maximumActiveKeys: 1 };
+        productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productCount), activeKeys: activeKeys.length, maximumActiveKeys: TRIAL_MAX_ACTIVE_KEYS };
     })),
   };
 }

@@ -45,3 +45,32 @@ export function matchesKeyUsage(productId: string, filter: KeyUsageFilter, usage
   const key = usage.find(entry => `key:${entry.id}` === filter);
   return key ? key.productIds.has(productId) : true;
 }
+
+/** Playground link carrying the current selection, including partial variant choices. */
+export function playgroundHref(products: { id?: string; variants?: unknown[] }[], selectedIds: Set<string>,
+  selectedVariants: Record<string, Set<string>>): string {
+  const query = new URLSearchParams({ products: [...selectedIds].join(',') });
+  const partial: Record<string, string[]> = {};
+  for (const product of products) {
+    const chosen = product.id && selectedIds.has(product.id) ? selectedVariants[product.id] : undefined;
+    if (chosen?.size && product.variants?.length && chosen.size < product.variants.length) partial[product.id!] = [...chosen];
+  }
+  if (Object.keys(partial).length) query.set('variants', JSON.stringify(partial));
+  return `/dashboard/api-playground?${query}`;
+}
+
+/** Reads the Products → Playground handoff back into a preview scope. */
+export function previewScopeFromQuery(products: string | null, variants: string | null) {
+  const ids = (products ?? '').split(',').map(id => id.trim()).filter(Boolean);
+  let parsed: unknown = null;
+  try { parsed = variants ? JSON.parse(variants) : null; } catch { parsed = null; }
+  const linkedVariantSelections: Record<string, string[]> = {};
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    for (const [id, values] of Object.entries(parsed)) {
+      if (ids.includes(id) && Array.isArray(values) && values.length && values.every(value => typeof value === 'string')) {
+        linkedVariantSelections[id] = values;
+      }
+    }
+  }
+  return { linkedProductIds: ids.filter(id => !Object.hasOwn(linkedVariantSelections, id)), linkedVariantSelections };
+}
