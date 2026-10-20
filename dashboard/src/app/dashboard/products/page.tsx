@@ -1,5 +1,5 @@
 "use client";
-import { TRIAL_MAX_PRODUCTS } from "../../../../../functions/entitlement-limits.mjs";
+import { TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../../../functions/entitlement-limits.mjs";
 import { trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
 import { trialSelectionState, toggleTrialPending, trialAdditionScope, type TrialCatalogKey } from '@/lib/trial-catalog-selection';
 import { invalidateAccountUsage } from '@/lib/account-usage-events';
@@ -68,9 +68,12 @@ function CustomerCatalogSession() {
   const headerSlot = useWorkspaceHeaderSlot()?.target ?? null;
   const [summaryElement, setSummaryElement] = useState<HTMLElement | null>(null);
   const [summaryViewport, setSummaryViewport] = useState<{ target: HTMLElement; above: boolean } | null>(null);
-  const [trialSelection, setTrialSelection] = useState<{ uid: string; key: TrialCatalogKey | null; catalog: TrialCatalog } | null>(null);
+  const [trialSelection, setTrialSelection] = useState<{ uid: string; keys: TrialCatalogKey[]; catalog: TrialCatalog } | null>(null);
   const [selectionError, setSelectionError] = useState('');
-  const trialKey = trialSelection && trialSelection.uid === user?.uid ? trialSelection.key : null;
+  const trialKeys = useMemo(() => trialSelection && trialSelection.uid === user?.uid ? trialSelection.keys : [], [trialSelection, user?.uid]);
+  // "Add Selected Products" extends the only key; with several keys, selections always form a new key.
+  const trialKey = trialKeys.length === 1 ? trialKeys[0] : null;
+  const [trialNewKeyChoice, setTrialNewKey] = useState(false);
   const trialCatalog = trialSelection?.uid === user?.uid ? trialSelection?.catalog ?? null : null;
   
   // Core State
@@ -101,12 +104,26 @@ function CustomerCatalogSession() {
   const [generatedKeyName, setGeneratedKeyName] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
+  const [generatedLinkedProducts, setGeneratedLinkedProducts] = useState<CartSummary['linkedProducts']>([]);
 
   // Add Product (to existing API key) Modal State
   const [showAddProductModal, setShowAddProductModal] = useState(false);
-  const trialState = trialSelectionState(trialCatalog, trialKey, selectedProducts);
+  const trialState = trialSelectionState(trialCatalog, trialKeys, selectedProducts);
   const trialReady = !activeTrial || trialState.mode !== 'blocked';
-  const hasPendingSelection = activeTrial ? trialState.pending.size > 0 : selectedProducts.size > 0;
+  // Another Trial key may reuse included products, so they become selectable like paid catalogs.
+  const trialNewKey = activeTrial && trialState.mode === 'existing-key' && (trialNewKeyChoice || trialKeys.length > 1);
+  const trialCanGenerate = trialNewKey ? trialState.canGenerateAnotherKey : trialState.canGenerateFirstKey;
+  const trialAddMode = activeTrial && trialState.mode === 'existing-key' && !trialNewKey;
+  const trialPendingCount = activeTrial && !trialNewKey ? trialState.pending.size : null;
+  const hasPendingSelection = activeTrial && !trialNewKey ? trialState.pending.size > 0 : selectedProducts.size > 0;
+  const includedVariants = useMemo(() => {
+    const variants: Record<string, string[] | null> = {};
+    for (const key of trialKeys) for (const id of key.productIds) {
+      const partial = key.linkedVariantSelections[id];
+      variants[id] = !partial || variants[id] === null ? null : [...new Set([...(variants[id] ?? []), ...partial])];
+    }
+    return variants;
+  }, [trialKeys]);
 
   useEffect(() => {
     const summary = summaryElement;
@@ -133,18 +150,18 @@ function CustomerCatalogSession() {
       setTrialSelection(null);
       throw new Error('Trial catalog verification unavailable.');
     }
-    if (data.keys.length > 1) {
+    if (data.keys.length > TRIAL_MAX_ACTIVE_KEYS) {
       setTrialSelection(null);
-      throw new Error('Free Trial permits one active key. Revoke additional legacy keys in API Keys first.');
+      throw new Error(`Free Trial permits up to ${TRIAL_MAX_ACTIVE_KEYS} active keys. Revoke additional keys in API Keys first.`);
     }
-    const key = data.keys[0];
-    const productIds = key ? [...new Set([...key.linkedProductIds, ...Object.keys(key.linkedVariantSelections)])] : [];
-    const verifiedKey = key ? { ...key, productIds } : null;
-    if (trialSelectionState(data.trialCatalog, verifiedKey, new Set()).mode === 'blocked') {
+    const verifiedKeys = data.keys.map(key => ({ ...key,
+      productIds: [...new Set([...key.linkedProductIds, ...Object.keys(key.linkedVariantSelections)])] }));
+    const productIds = verifiedKeys.flatMap(key => key.productIds);
+    if (trialSelectionState(data.trialCatalog, verifiedKeys, new Set()).mode === 'blocked') {
       setTrialSelection(null);
       throw new Error('Trial catalog and API key state could not be verified. Reload Products to retry.');
     }
-    setTrialSelection({ uid, catalog: data.trialCatalog, key: verifiedKey });
+    setTrialSelection({ uid, catalog: data.trialCatalog, keys: verifiedKeys });
     setSelectedProducts(previous => new Set([...previous].filter(id => !productIds.includes(id))));
     setSelectedVariants(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => !productIds.includes(id))));
   }, []);
@@ -217,7 +234,7 @@ function CustomerCatalogSession() {
   const activeKeyUsageFilter: KeyUsageFilter = keyUsageFilter.startsWith('key:')
     && !keyUsage.some(key => `key:${key.id}` === keyUsageFilter) ? 'all' : keyUsageFilter;
   const filteredProducts = searchedProducts.filter(product => {
-    const isSelected = selectedProducts.has(product.id!) || (activeTrial && trialState.included.has(product.id!));
+    const isSelected = selectedProducts.has(product.id!) || (activeTrial && !trialNewKey && trialState.included.has(product.id!));
     return (selectionFilter === 'all' || (selectionFilter === 'selected' ? isSelected : !isSelected))
       && matchesCategory(product, activeCategory)
       && matchesKeyUsage(product.id!, activeKeyUsageFilter, keyUsage, keyNames);
@@ -227,10 +244,17 @@ function CustomerCatalogSession() {
   const resetPresentationFilters = () => { setSelectionFilter('all'); setProductCategory(ALL_CATEGORIES); setKeyUsageFilter('all'); };
   // Search/segment emptiness is evaluated before the presentation-only selection filter.
   const catalogView = catalogPresentationState(currentCatalog, searchedProducts.length, searchQuery);
-  const selectableIds = catalogSelectableIds(filteredProducts, selectedProducts, activeTrial ? {
-    included: trialState.included, remaining: trialState.remaining,
-    allowed: trialState.canToggle && trialReady && !upgradeRequired && !generating,
-  } : null);
+  const trialSelectionAllowed = trialState.canToggle && trialReady && !upgradeRequired && !generating;
+  const selectableIds = useMemo(() => [
+    // A new Trial key may reuse included products without consuming slots.
+    ...(trialNewKey && trialSelectionAllowed ? filteredProducts.map(product => product.id!)
+      .filter(id => trialState.included.has(id) && !selectedProducts.has(id)) : []),
+    ...catalogSelectableIds(filteredProducts, selectedProducts, activeTrial ? {
+      // Only products outside the shared Trial catalog consume remaining slots.
+      included: trialState.included, remaining: trialState.remaining - trialState.pending.size + selectedProducts.size,
+      allowed: trialSelectionAllowed,
+    } : null),
+  ], [trialNewKey, trialSelectionAllowed, filteredProducts, trialState, selectedProducts, activeTrial]);
 
   const cartSummary = useMemo((): CartSummary => {
     const selectedItems = selectedLinkedProducts(products, appUser, selectedProducts);
@@ -253,9 +277,18 @@ function CustomerCatalogSession() {
     if (upgradeRequired || !trialReady || generating) return;
     const productId = product.id!;
     if (activeTrial) {
-      if (trialState.included.has(productId) || !trialState.canToggle) return;
-      const next = toggleTrialPending(trialState.pending, productId, trialState.included, trialState.remaining, trialState.canToggle);
-      if (next.has(productId) === trialState.pending.has(productId)) return;
+      if (!trialState.canToggle) return;
+      const reused = [...selectedProducts].filter(id => trialState.included.has(id));
+      let next: Set<string>;
+      if (trialState.included.has(productId)) {
+        if (!trialNewKey) return;
+        next = new Set(selectedProducts);
+        if (!next.delete(productId)) next.add(productId);
+      } else {
+        const pending = toggleTrialPending(trialState.pending, productId, trialState.included, trialState.remaining, trialState.canToggle);
+        if (pending.has(productId) === trialState.pending.has(productId)) return;
+        next = new Set([...reused, ...pending]);
+      }
       setSelectedProducts(next);
       setSelectedVariants(previous => {
         const variants = { ...previous };
@@ -287,13 +320,13 @@ function CustomerCatalogSession() {
       
       return newProds;
     });
-  }, [activeTrial, trialReady, upgradeRequired, generating, trialState]);
+  }, [activeTrial, trialReady, upgradeRequired, generating, trialState, trialNewKey, selectedProducts]);
 
   const toggleVariant = useCallback((e: React.MouseEvent, productId: string, variantId: string) => {
     e.stopPropagation();
     if (upgradeRequired || !trialReady || generating) return;
-    if (activeTrial && (trialState.included.has(productId) || !trialState.canToggle
-      || (!trialState.pending.has(productId) && !trialState.canSelect))) return;
+    if (activeTrial && (!trialState.canToggle || (trialState.included.has(productId)
+      ? !trialNewKey : !trialState.pending.has(productId) && !trialState.canSelect))) return;
     
     setSelectedVariants((prevVars) => {
       const newMap = { ...prevVars };
@@ -322,7 +355,7 @@ function CustomerCatalogSession() {
       
       return newMap;
     });
-  }, [activeTrial, trialReady, upgradeRequired, generating, trialState]);
+  }, [activeTrial, trialReady, upgradeRequired, generating, trialState, trialNewKey]);
 
   const selectAllInView = useCallback(() => {
     if (upgradeRequired || !trialReady || generating || (activeTrial && !trialState.canToggle)) return;
@@ -352,7 +385,7 @@ function CustomerCatalogSession() {
   // ==================== API KEY GENERATION ====================
 
   const handleGenerateApiKey = async () => {
-    if (!canGenerate || !trialReady || (activeTrial && !trialState.canGenerateFirstKey)) return;
+    if (!canGenerate || !trialReady || (activeTrial && !trialCanGenerate)) return;
     if (!keyName.trim()) {
       alert("Please enter a name for your API key");
       return;
@@ -417,6 +450,9 @@ function CustomerCatalogSession() {
 
       setGeneratedKeyName(typeof data.name === 'string' && data.name.trim() ? data.name : keyName.trim());
       setGeneratedKey(data.key);
+      // Trial refresh clears selections that are now included; keep the success view's list.
+      setGeneratedLinkedProducts(selectedItems.map(product => ({ id: product.id!, name: product.name || 'Product unavailable' })));
+      setTrialNewKey(false);
       if (activeTrial && user) {
         invalidateAccountUsage(user.uid);
         receiveTrialCatalog(await apiKeyRequest(user), user.uid);
@@ -542,7 +578,7 @@ DAAS_API_KEY=${generatedKey}
     setKeyCopied(false);
   };
   const addSelectionDisabled = !canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0;
-  const generateSelectionDisabled = !canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey);
+  const generateSelectionDisabled = !canGenerate || !trialReady || generating || (activeTrial && !trialCanGenerate);
   const returnToSummary = () => summaryElement?.scrollIntoView({ block: 'center' });
 
   return (
@@ -550,13 +586,13 @@ DAAS_API_KEY=${generatedKey}
       {hasPendingSelection && summaryViewport?.target === summaryElement && summaryViewport?.above && headerSlot && createPortal(
         <div role="group" aria-label="Docked product selections" className="flex min-w-0 items-center gap-2">
           <button type="button" onClick={returnToSummary}
-            aria-label={`Return to product selections, ${activeTrial ? trialState.pending.size : cartSummary.totalProducts} selected${activeTrial ? ' to add' : ''}`}
+            aria-label={`Return to product selections, ${trialPendingCount ?? cartSummary.totalProducts} selected${trialPendingCount !== null ? ' to add' : ''}`}
             className="flex shrink-0 items-center gap-2 rounded-lg bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/25">
             <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-            {activeTrial ? trialState.pending.size : cartSummary.totalProducts} selected
+            {trialPendingCount ?? cartSummary.totalProducts} selected
           </button>
           <div className="hidden xl:flex items-center gap-2">
-            {activeTrial && trialState.mode === 'existing-key' ? <button type="button" onClick={addTrialProducts}
+            {trialAddMode ? <button type="button" onClick={addTrialProducts}
               disabled={addSelectionDisabled}
               className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Add Selected Products</button>
               : !upgradeRequired && <button type="button" onClick={openGenerationModal} disabled={generateSelectionDisabled}
@@ -574,16 +610,16 @@ DAAS_API_KEY=${generatedKey}
           <h1 className="text-3xl font-bold tracking-tight text-white">Product Catalog</h1>
           <p className="text-sm text-slate-400">Select products to include in your custom API endpoint</p>
           {activeTrial && <p role="status" aria-label="Free Trial status" className="text-xs leading-5 text-slate-400">
-            {trialCatalog ? <>Free Trial · 7 days · Included: {trialCatalog.productsIncluded}/{TRIAL_MAX_PRODUCTS} · Slots left: {trialRemainingSlots(trialCatalog.productsIncluded)} · Active keys: {trialCatalog.activeKeys}/1</>
+            {trialCatalog ? <>Free Trial · 7 days · Included: {trialCatalog.productsIncluded}/{TRIAL_MAX_PRODUCTS} · Slots left: {trialRemainingSlots(trialCatalog.productsIncluded)} · Active keys: {trialCatalog.activeKeys}/{TRIAL_MAX_ACTIVE_KEYS}</>
               : 'Verifying persisted Trial catalog…'}
           </p>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {trialState.mode === 'existing-key' && activeTrial ? <button onClick={addTrialProducts}
+          {trialAddMode ? <button onClick={addTrialProducts}
             disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
             className="px-6 py-3 rounded-xl bg-indigo-500 text-white disabled:opacity-50">Add Selected Products</button> : !upgradeRequired && (selectedProducts.size > 0 || activeTrial) && (
             <button
-              disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialState.canGenerateFirstKey)}
+              disabled={!canGenerate || !trialReady || generating || (activeTrial && !trialCanGenerate)}
               onClick={openGenerationModal}
               className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
               aria-label={`Generate API Key for ${selectedProducts.size} selected products`}
@@ -592,6 +628,12 @@ DAAS_API_KEY=${generatedKey}
               Generate API Key ({selectedProducts.size} products)
             </button>
           )}
+          {activeTrial && trialState.mode === 'existing-key' && trialKeys.length === 1 && !upgradeRequired && <button type="button"
+            onClick={() => { setTrialNewKey(!trialNewKey); setSelectedProducts(new Set()); setSelectedVariants({}); }}
+            disabled={generating || (!trialNewKey && trialKeys.length >= TRIAL_MAX_ACTIVE_KEYS)}
+            className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium text-slate-200 disabled:opacity-50">
+            {trialNewKey ? 'Add to existing key instead' : 'Create another API key'}
+          </button>}
           {upgradeRequired && <Link href="/dashboard/settings#subscription" className="text-sm font-semibold text-cyan-300">Free Trial Ended — Upgrade to Pro to generate a key</Link>}
           <button
             onClick={() => setShowAddProductModal(true)}
@@ -735,8 +777,8 @@ DAAS_API_KEY=${generatedKey}
                 <ShoppingCart className="w-4 h-4 text-indigo-400" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-white">{activeTrial ? 'New Product Selections' : 'Selected Products'}</h3>
-                <p className="text-xs text-slate-400 mt-0.5">{activeTrial ? `${trialState.pending.size} selected to add` : `${cartSummary.totalProducts} selected`}</p>
+                <h3 className="text-sm font-semibold text-white">{trialNewKey ? 'New API Key Selections' : activeTrial ? 'New Product Selections' : 'Selected Products'}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{trialPendingCount !== null ? `${trialPendingCount} selected to add` : `${cartSummary.totalProducts} selected`}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(cartSummary.bySegment).map(([segment, count]) => (
@@ -750,7 +792,7 @@ DAAS_API_KEY=${generatedKey}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {activeTrial && trialState.mode === 'existing-key' ? <button onClick={addTrialProducts}
+              {trialAddMode ? <button onClick={addTrialProducts}
                 disabled={addSelectionDisabled}
                 className="px-3 py-2 rounded-lg bg-indigo-500 text-sm font-medium text-white disabled:opacity-50">Add Selected Products</button>
                 : !upgradeRequired && <button onClick={openGenerationModal}
@@ -816,11 +858,12 @@ DAAS_API_KEY=${generatedKey}
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
           {filteredProducts.map((product) => {
             const isIncluded = activeTrial && trialState.included.has(product.id!);
-            const selectionDisabled = upgradeRequired || !trialReady || generating || (activeTrial && (isIncluded
-              || !trialState.canToggle || (!trialState.pending.has(product.id!) && !trialState.canSelect)));
-            const isSelected = isIncluded || selectedProducts.has(product.id!);
-            const includedVariants = trialKey?.linkedVariantSelections[product.id!];
-            const productVars = isIncluded ? new Set(includedVariants ?? product.variants?.map(v => `${v.flavor || ''}|${v.size || ''}`)) : selectedVariants[product.id!] || new Set();
+            // A new Trial key may reuse included products; only new products need a free slot.
+            const selectionDisabled = upgradeRequired || !trialReady || generating || (activeTrial && (!trialState.canToggle
+              || (isIncluded ? !trialNewKey : !trialState.pending.has(product.id!) && !trialState.canSelect)));
+            const isSelected = selectedProducts.has(product.id!) || (isIncluded && !trialNewKey);
+            const showIncludedScope = isIncluded && !selectedProducts.has(product.id!);
+            const productVars = showIncludedScope ? new Set(includedVariants[product.id!] ?? product.variants?.map(v => `${v.flavor || ''}|${v.size || ''}`)) : selectedVariants[product.id!] || new Set();
             const totalVars = product.variants ? product.variants.length : 0;
             const isPartial = isSelected && totalVars > 0 && productVars.size > 0 && productVars.size < totalVars;
             
@@ -998,7 +1041,7 @@ DAAS_API_KEY=${generatedKey}
                   </button>
                   <button
                     onClick={handleGenerateApiKey}
-                    disabled={!keyName.trim() || generating || !trialReady || (activeTrial && !trialState.canGenerateFirstKey)}
+                    disabled={!keyName.trim() || generating || !trialReady || (activeTrial && !trialCanGenerate)}
                     className="flex-[2] px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {generating ? (
@@ -1024,11 +1067,11 @@ DAAS_API_KEY=${generatedKey}
                 </p>
                 <div className="bg-slate-900/60 border border-slate-700 rounded-xl p-4 mb-4">
                   <p className="text-xs text-slate-400 mb-2 font-medium">LINKED PRODUCTS</p>
-                  {cartSummary.linkedProducts.length === 0 ? (
+                  {generatedLinkedProducts.length === 0 ? (
                     <p className="text-sm text-slate-500">No products selected.</p>
                   ) : (
                     <ul className="max-h-28 overflow-y-auto space-y-1 text-sm text-slate-200">
-                      {cartSummary.linkedProducts.map(product => <li key={product.id} className="truncate">{product.name}</li>)}
+                      {generatedLinkedProducts.map(product => <li key={product.id} className="truncate">{product.name}</li>)}
                     </ul>
                   )}
                 </div>

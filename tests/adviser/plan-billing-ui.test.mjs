@@ -290,11 +290,11 @@ for (const productsIncluded of [0, 10, 50]) {
       const warnings = nodes(tree, node => node.props.role === 'status');
       assert.deepEqual(warnings.map(visibleText), productsIncluded === 50
         ? ['Free Trial product limit reached — 50 of 50 products.'] : []);
-      assert.match(visibleText(tree).replace(/\s+/g, ' '), /includes up to 50 account-level products and 1 active API key/);
+      assert.match(visibleText(tree).replace(/\s+/g, ' '), /includes up to 50 account-level products shared by up to 5 active API keys/);
       const standalone = await renderTrial({ embedded: false, state });
       const standaloneText = visibleText(standalone).replace(/\s+/g, ' ');
       assert.match(standaloneText, new RegExp(`Products: ${productsIncluded} of 50`));
-      assert.match(standaloneText, new RegExp(`Active API keys: ${activeKeys} of 1`));
+      assert.match(standaloneText, new RegExp(`Active API keys: ${activeKeys} of 5`));
       assert.match(standaloneText, /121 hours remaining\./);
       assert.equal(nodes(standalone, node => node.type === 'time')[0].props.dateTime, fixture.expiresAt);
     });

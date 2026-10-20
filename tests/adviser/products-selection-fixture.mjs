@@ -27,7 +27,7 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
     'react-dom': { createPortal: (children, target) => ({ type: 'fixture-header-portal', props: { children, target } }) },
     '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => ({target:headerTarget}) },
-    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50 },
+    '../../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
     '@/lib/trial-display.mjs': display, '@/lib/trial-catalog-selection': selection,
     '@/lib/account-usage-events': { invalidateAccountUsage: stub },
     '@/lib/api-key-generation': { GENERATION_POLICY: 'fixture policy', generationErrorMessage: stub },

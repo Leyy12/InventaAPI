@@ -7,7 +7,7 @@ import { Zap } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { subscribeAccountUsage } from '@/lib/account-usage-events';
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
-import { TRIAL_MAX_PRODUCTS } from '../../../../functions/entitlement-limits.mjs';
+import { TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from '../../../../functions/entitlement-limits.mjs';
 
 type Trial = { eligible: boolean; active: boolean; exhausted: boolean; expired: boolean;
   hasUsedFreeTrial: boolean; upgradeRequired: boolean; endReason: 'expired' | 'exhausted' | null;
@@ -133,13 +133,13 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
       </div>
 
       {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="mt-4 text-sm text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
-      <p className="mt-3 text-xs leading-5 text-slate-400">Your one-time 7-day Free Trial includes up to {TRIAL_MAX_PRODUCTS} account-level products and 1 active API key. API requests do not reduce your product allowance, and unused product slots do not increase the API-key limit.</p>
+      <p className="mt-3 text-xs leading-5 text-slate-400">Your one-time 7-day Free Trial includes up to {TRIAL_MAX_PRODUCTS} account-level products shared by up to {TRIAL_MAX_ACTIVE_KEYS} active API keys. API requests do not reduce your product allowance, and unused product slots do not increase the API-key limit.</p>
     </section>;
   }
 
   return <div className="max-w-3xl mx-auto space-y-6">
     {!embedded && <h1 className="text-3xl font-bold text-white flex items-center gap-2"><Zap className="text-amber-400" />Free Trial</h1>}
-    <p className="text-slate-400">Your one-time Free Trial starts automatically when your Customer session is verified. It lasts 7 days, includes up to 50 currently selected products and one active API key in your owned business segment. API calls do not consume this product allowance.</p>
+    <p className="text-slate-400">Your one-time Free Trial starts automatically when your Customer session is verified. It lasts 7 days, includes up to 50 currently selected products, shared by up to {TRIAL_MAX_ACTIVE_KEYS} active API keys, in your owned business segment. API calls do not consume this product allowance.</p>
     {error && <p role="alert" className="text-rose-300">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry status</button></p>}
     {!trial ? <p role="status">Checking trial eligibility and usage…</p> :
       <section className="glass-card rounded-2xl border border-amber-500/30 p-8 space-y-4">
@@ -150,7 +150,7 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
         {trial.expiresAt && <p>Trial expires: <time dateTime={trial.expiresAt}>{formatTrialExpiry(trial.expiresAt)}</time></p>}
         {trial.active && <>
           <p>Products: {trial.productsIncluded.toLocaleString()} of {TRIAL_MAX_PRODUCTS} · Remaining slots: {trialRemainingSlots(trial.productsIncluded).toLocaleString()}</p>
-          <p>Active API keys: {trial.activeKeys} of 1</p>
+          <p>Active API keys: {trial.activeKeys} of {TRIAL_MAX_ACTIVE_KEYS}</p>
           <p>{Math.ceil(trial.secondsRemaining / 3600)} hours remaining.</p>
           {trialCapacityMessage(trial.productsIncluded) && <p role="status">{trialCapacityMessage(trial.productsIncluded)}</p>}
           <p className="text-sm text-slate-400">No daily or monthly reset. When the Trial ends, protected API access pauses until you upgrade to Pro or Pro Max.</p>

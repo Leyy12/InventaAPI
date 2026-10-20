@@ -25,7 +25,7 @@ test('shared effective limits and rendered pricing contract are 0–50, 500/day 
   assert.equal(SUBSCRIPTION_PLANS.free.requestLimit, null);
   assert.equal(SUBSCRIPTION_PLANS.free.requestLimitDisplay, 'Up to 50 products');
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('Up to 50 products'));
-  assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One API key'));
+  assert.ok(SUBSCRIPTION_PLANS.free.features.includes('Up to 5 API keys'));
   assert.doesNotMatch(JSON.stringify(SUBSCRIPTION_PLANS.free), /minimum|500 products|50–500/i);
   assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, PRO_DAILY_REQUEST_LIMIT);
   assert.equal(SUBSCRIPTION_PLANS.pro.requestLimitDisplay, '500 requests/day');

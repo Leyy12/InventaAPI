@@ -2,7 +2,7 @@ import {
   ApiSecurityError, PLAN_LEVELS, accountEntitlement, assertActiveKey, credentialMatches, usageForToday, trialUsage,
   upgradeRequiredError,
 } from './api-key-security.js';
-import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from '../functions/entitlement-limits.mjs';
+import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
 import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
@@ -62,8 +62,8 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
         return { denied: upgradeRequiredError() };
       }
       const active = trialKeys.docs.filter(doc => doc.data().status === 'active');
-      if (active.length !== 1 || active[0].id !== keyId) return { denied: new ApiSecurityError(403,
-        'TRIAL_KEY_LIMIT', 'Free Trial permits one active API key. Revoke additional legacy keys.') };
+      if (active.length > TRIAL_MAX_ACTIVE_KEYS || !active.some(doc => doc.id === keyId)) return { denied: new ApiSecurityError(403,
+        'TRIAL_KEY_LIMIT', `Free Trial permits up to ${TRIAL_MAX_ACTIVE_KEYS} active API keys. Revoke additional keys.`) };
       const products = authorizedProductIds(key).length;
       // Preserve legacy over-cap reads; every catalog mutation forbids additions.
       // Zero products is also a valid Trial catalog (no product data authorized).

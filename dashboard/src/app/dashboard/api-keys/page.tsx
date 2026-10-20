@@ -114,7 +114,7 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
         <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2"><Shield className="w-5 h-5 text-amber-400" /> Keep Your Keys Secure</h2>
         <p className="text-sm text-slate-300">Secrets are shown only once. Store them securely and never put them in public repositories or client-side code. Revoking a key immediately disables that credential; revocation does not create another key.</p>
       </div>
-      <p className="text-sm text-slate-400">Free Trial permits one active API key with up to 50 currently linked products for 7 days. API calls do not consume products. Manage the catalog and create keys in Products. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
+      <p className="text-sm text-slate-400">Free Trial permits up to 5 active API keys sharing up to 50 linked products for 7 days; reusing a product in another key does not use another slot. API calls do not consume products. Manage the catalog and create keys in Products. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
       <RequestHistory />
 
       <section className="glass-card rounded-xl border border-slate-700">
