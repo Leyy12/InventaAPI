@@ -11,11 +11,13 @@ const record = address => `${VERIFICATION_COLLECTION}/${createHash('sha256').upd
 const identities = { juan: { uid: 'juan-uid', email }, other: { uid: 'other-uid', email: 'someone@gmail.com' }, phone: { uid: 'phone-uid' } };
 const codes = ['482913', '105377', '660021', '930412', '771845', '204816'];
 
-function fixture({ settings, registered = [], deliver, markVerified } = {}) {
+function fixture({ settings, registered = [], incomplete = [], deliver, markVerified } = {}) {
   const db = memoryFirestore(settings ? { 'system/settings': settings } : {});
-  const state = { now: Date.parse('2026-10-20T08:00:00.000Z'), generated: 0, tokens: 0, mail: [], verified: [], reports: [] };
+  const state = { now: Date.parse('2026-10-20T08:00:00.000Z'), generated: 0, tokens: 0, mail: [], verified: [], reports: [], removed: [] };
   const handlers = createEmailVerificationHandlers({ getDb: () => db,
     emailRegistered: async address => { if (address === 'lookup-outage@gmail.com') throw Error('synthetic Auth outage'); return registered.includes(address); },
+    removeIncompleteAccount: async address => { if (registered.includes(address)) return false;
+      if (incomplete.includes(address)) state.removed.push(address); return true; },
     verifyIdToken: async (token, revoked) => { assert.equal(revoked, true); if (!identities[token]) throw Error('invalid'); return identities[token]; },
     markEmailVerified: async uid => { if (markVerified) await markVerified(uid); state.verified.push(uid); },
     sendEmail: async message => { if (deliver) await deliver(message); state.mail.push(message); },
@@ -170,4 +172,29 @@ test('the email states the code and expiry with no recipient-controlled content'
   assert.equal(message.to, email); assert.equal(message.subject, 'Your InventaAPI verification code');
   assert.match(message.text, /verification code is 482913\./); assert.match(message.text, /expires in 10 minutes/);
   assert.match(message.html, />482913</); assert.doesNotMatch(message.html, /juan|<script|javascript:/iu);
+});
+test('an identity left by an unfinished signup does not block a new code, and only the verified inbox can clear it', async () => {
+  const f = fixture({ incomplete: [email] });
+  assert.equal((await f.call('send', { email })).statusCode, 200);
+  for (const token of ['synthetic-token-1', 'x'.repeat(129), 42]) {
+    const refused = await f.call('reclaim', { email, verificationToken: token });
+    assert.equal(refused.statusCode, 400); assert.equal(refused.body.code, 'VERIFICATION_TOKEN_INVALID');
+  }
+  const { verificationToken } = (await f.call('verify', { email, code: '482913' })).body;
+  assert.equal((await f.call('reclaim', { email: 'someone@gmail.com', verificationToken })).statusCode, 400);
+  assert.deepEqual(f.state.removed, []);
+  const reclaimed = await f.call('reclaim', { email: 'Juan.DelaCruz@gmail.com', verificationToken });
+  assert.equal(reclaimed.statusCode, 200); assert.deepEqual(f.state.removed, [email]);
+  // The token stays valid for confirming the new identity.
+  assert.equal((await f.call('confirm', { verificationToken }, 'juan')).statusCode, 200);
+  f.advance(31 * 60 * 1000);
+  assert.equal((await f.call('reclaim', { email, verificationToken })).statusCode, 400);
+});
+test('reclaim never removes a completed account', async () => {
+  const registered = [], f = fixture({ registered, incomplete: [email] });
+  await f.call('send', { email }); const { verificationToken } = (await f.call('verify', { email, code: '482913' })).body;
+  registered.push(email); // the account was completed after the code was verified
+  const refused = await f.call('reclaim', { email, verificationToken });
+  assert.equal(refused.statusCode, 409); assert.equal(refused.body.code, 'EMAIL_ALREADY_REGISTERED');
+  assert.deepEqual(f.state.removed, []);
 });

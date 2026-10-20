@@ -187,3 +187,9 @@ test('a new code discards the earlier verification', async () => {
   assert.deepEqual(fixture.events, ['code', 'verify', 'code', 'verify', ...success]);
   fixture.h.stop();
 });
+test('mismatched passwords are rejected before any code is sent or account is created', async () => {
+  const fixture = page(); await fixture.fill({ ...details, confirmPassword: 'different-password' }); await fixture.submit();
+  assert.deepEqual(fixture.events, []); assert.equal(fixture.step(), 'details');
+  assert.match(fixture.copy(), /Passwords do not match/);
+  fixture.h.stop();
+});

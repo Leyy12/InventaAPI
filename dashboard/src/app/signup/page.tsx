@@ -10,8 +10,8 @@ import Link from "next/link";
 import Image from "next/image";
 import PostSignupPlans from "@/components/subscription/PostSignupPlans";
 import { customerLoginEntryDestination, rememberCustomerLoginEntry } from '../../../../services/auth-navigation';
-import { completeCustomerSignup, readRegistrationPolicy, sendSignupCode, verifySignupCode, confirmSignupEmail,
-  normalizeSignupEmail, validSignupEmail, TERMS_VERSION, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
+import { completeCustomerSignup, readRegistrationPolicy, sendSignupCode, verifySignupCode, confirmSignupEmail, reclaimSignupEmail,
+  normalizeSignupEmail, validSignupEmail, PASSWORD_MIN_LENGTH, TERMS_VERSION, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
 
 const BUSINESS_SEGMENTS = [
   "Grocery",
@@ -82,37 +82,27 @@ function SignupPageInner() {
     }
   };
 
+  // Every detail is checked before a code is sent and again before the account is created,
+  // so a rejected form never leaves a Firebase identity behind.
+  const detailsError = () => {
+    if (!detailsComplete) return "Please fill in every field.";
+    if (!validSignupEmail(normalizeSignupEmail(formData.email))) return "Please enter a valid email address.";
+    if (formData.password.length < PASSWORD_MIN_LENGTH) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters long.`;
+    if (formData.password !== formData.confirmPassword) return "Passwords do not match.";
+    if (!BUSINESS_SEGMENTS.includes(formData.businessSegment)) return "Please choose a business segment.";
+    if (!formData.termsAccepted) return "You must agree to the Terms of Service and Acceptable Use Policy to create an account.";
+    if (!formData.privacyConsent) return "You must agree to the Privacy Policy to create an account.";
+    return "";
+  };
+
   // Step 1: validate the details, then email a code unless one is already pending for this address.
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setNotice("");
     const email = normalizeSignupEmail(formData.email);
-
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
-    if (!formData.termsAccepted) {
-      setError("You must agree to the Terms of Service and Acceptable Use Policy to create an account.");
-      return;
-    }
-
-    if (!formData.privacyConsent) {
-      setError("You must agree to the Privacy Policy to create an account.");
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters long.");
-      return;
-    }
-
-    if (!validSignupEmail(email)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
+    const invalid = detailsError();
+    if (invalid) { setError(invalid); return; }
 
     if (email === codeSentTo || await sendCode(email)) setStep("verify");
   };
@@ -129,6 +119,12 @@ function SignupPageInner() {
     setLoading(true);
     setError("");
     setNotice("");
+    const invalid = detailsError();
+    if (invalid || normalizeSignupEmail(formData.email) !== codeSentTo) {
+      setError(invalid || "Your email changed. Go back and request a new code.");
+      setLoading(false);
+      return;
+    }
 
     try {
       // Codes are single-use; a retry after a later failure reuses this address's token.
@@ -143,6 +139,8 @@ function SignupPageInner() {
         canRegister: readRegistrationPolicy,
         createUser: async () => (await createUserWithEmailAndPassword(auth, codeSentTo, formData.password)).user,
         confirmEmail: (user: User) => confirmSignupEmail({ base: API_BASE, user, verificationToken }),
+        // A previous attempt that stopped after creating the identity is cleared, then retried.
+        reclaimEmail: () => reclaimSignupEmail({ base: API_BASE, email: codeSentTo, verificationToken }),
         profileExists: async (user: User) => (await getDocFromServer(doc(db, 'users', user.uid))).exists(),
         deleteUser,
         signOut: () => signOut(auth),
