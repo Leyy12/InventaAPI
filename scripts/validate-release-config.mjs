@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { globalTestBillingConfiguration } from '../services/payment-contract.js';
 import { firebaseCredentialMode } from '../database/firebase-credentials.js';
+import { EMAIL_DELIVERY_PROVIDERS, senderAddress, validSmtpHost, validSmtpPort } from '../services/email-delivery.js';
 
 const NODE_MAJOR = 22;
 const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin', 'functions']);
@@ -15,6 +16,7 @@ const loopbackEmulator = value => {
 const isPresent = value => typeof value === 'string' && value.trim().length > 0;
 const noWhitespace = value => isPresent(value) && !/\s/u.test(value);
 const notPlaceholder = value => !/(?:replace|placeholder|your[-_ ]?project)/iu.test(value);
+const reservedMailDomain = address => /@(?:[^@]*\.)?(?:example\.(?:com|net|org)|[^@]+\.(?:example|invalid|test|localhost))$/iu.test(address);
 const canonicalUtc = value => {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value || '')) return false;
   const parsed = new Date(value);
@@ -170,6 +172,30 @@ export function validateReleaseConfig(env, {
       valid: value => notPlaceholder(value),
       expectation: 'the non-placeholder signing secret for the matching webhook endpoint',
     });
+    // New Customer accounts are created only after an emailed signup code is verified.
+    required('EMAIL_DELIVERY_PROVIDER', {
+      valid: value => EMAIL_DELIVERY_PROVIDERS.includes(value), expectation: 'resend or smtp',
+    });
+    required('EMAIL_FROM', {
+      valid: value => !!senderAddress(value) && notPlaceholder(value) && !reservedMailDomain(senderAddress(value)),
+      expectation: 'a non-placeholder sender ("Name <address>" or an address) the provider may send from',
+    });
+    if (env.EMAIL_DELIVERY_PROVIDER === 'resend') required('RESEND_API_KEY', {
+      secret: true, valid: value => /^re_\S+$/u.test(value) && notPlaceholder(value),
+      expectation: 'a non-placeholder Resend API key for the sender domain',
+    });
+    if (env.EMAIL_DELIVERY_PROVIDER === 'smtp') {
+      required('SMTP_HOST', { valid: validSmtpHost, expectation: 'an SMTP server hostname' });
+      if (isPresent(env.SMTP_PORT) && !validSmtpPort(env.SMTP_PORT)) {
+        add(errors, 'MALFORMED_PUBLIC', 'SMTP_PORT', 'public configuration must be a TCP port number (465 for implicit TLS, or 587 with STARTTLS)');
+      }
+      required('SMTP_USER', {
+        valid: value => noWhitespace(value) && notPlaceholder(value), expectation: 'the SMTP account user name',
+      });
+      required('SMTP_PASS', {
+        secret: true, valid: value => notPlaceholder(value), expectation: 'a non-placeholder SMTP password or app password',
+      });
+    }
     for (const name of ['DASHBOARD_URL', 'NEXT_PUBLIC_APP_URL']) {
       required(name, { valid: value => validReleaseOrigin(value, mode), expectation: `a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} origin without path, trailing slash, query or fragment` });
     }

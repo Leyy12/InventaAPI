@@ -52,12 +52,12 @@ after(async () => {
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   hooks.deregister();
 });
-function get(path) {
+function get(path, { method = 'GET', ip = '203.0.113.77', body } = {}) {
   return new Promise((resolve, reject) => {
     const req = request({
-      hostname: '127.0.0.1', port: server.address().port, path, method: 'GET', agent: false,
+      hostname: '127.0.0.1', port: server.address().port, path, method, agent: false,
       // The fixture sets VERCEL=1, so model the platform-overwritten IP headers.
-      headers: { 'x-forwarded-for': '203.0.113.77', 'x-vercel-forwarded-for': '203.0.113.77' },
+      headers: { 'x-forwarded-for': ip, 'x-vercel-forwarded-for': ip, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     }, res => {
       let body = '';
       res.setEncoding('utf8');
@@ -66,7 +66,7 @@ function get(path) {
     });
     req.on('error', reject);
     req.setTimeout(5000, () => req.destroy(Error('Local routing timeout')));
-    req.end();
+    req.end(body ? JSON.stringify(body) : undefined);
   });
 }
 
@@ -96,6 +96,24 @@ test('subscription status remains authenticated, not missing', async () => {
 test('Admin traffic remains authenticated, not missing', async () => {
   const response = await get('/api/v1/admin/traffic');
   assert.equal(response.status, 401);
+});
+test('signup email verification routes are mounted and validate before any Firebase access', async () => {
+  const send = await get('/api/v1/auth/email-verification/send', { method: 'POST', ip: '203.0.113.80', body: { email: 'not-an-email' } });
+  assert.equal(send.status, 400); assert.equal(JSON.parse(send.body).code, 'INVALID_EMAIL');
+  const verify = await get('/api/v1/auth/email-verification/verify', { method: 'POST', ip: '203.0.113.80', body: { email: 'juan@gmail.com', code: 'abc' } });
+  assert.equal(verify.status, 400); assert.equal(JSON.parse(verify.body).code, 'INVALID_CODE');
+  const confirm = await get('/api/v1/auth/email-verification/confirm', { method: 'POST', ip: '203.0.113.80', body: { verificationToken: 'x' } });
+  assert.equal(confirm.status, 401); assert.equal(JSON.parse(confirm.body).code, 'UNAUTHENTICATED');
+  assert.equal((await get('/api/v1/auth/email-verification/send')).status, 404);
+});
+test('code emails have a stricter per-IP limit than the shared API limiter', async () => {
+  for (let request = 1; request <= 10; request++) {
+    assert.equal((await get('/api/v1/auth/email-verification/send', { method: 'POST', ip: '203.0.113.81', body: {} })).status, 400);
+  }
+  const limited = await get('/api/v1/auth/email-verification/send', { method: 'POST', ip: '203.0.113.81', body: {} });
+  assert.equal(limited.status, 429); assert.match(JSON.parse(limited.body).error, /Too many verification emails/);
+  assert.equal((await get('/api/v1/auth/email-verification/verify', { method: 'POST', ip: '203.0.113.81', body: {} })).status, 400);
+  assert.equal((await get('/api/v1/auth/email-verification/send', { method: 'POST', ip: '203.0.113.82', body: {} })).status, 400);
 });
 test('unknown routes still return Express 404', async () => {
   for (const path of ['/r9c-unknown', '/api/v1/r9c-unknown']) {

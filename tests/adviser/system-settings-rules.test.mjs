@@ -15,10 +15,12 @@ const rules = fileURLToPath(new URL('../../firestore.rules', import.meta.url));
 let emulator, scratch, port, startup = '', startupError;
 const field = value => typeof value === 'boolean' ? { booleanValue: value }
   : typeof value === 'number' ? { integerValue: String(value) } : { stringValue: value };
+// Signup-code verified password identities, as the Customer signup flow produces.
 const token = uid => {
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url'), now = Math.floor(Date.now() / 1000);
   return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ sub: uid, user_id: uid, aud: project,
     iss: `https://securetoken.google.com/${project}`, iat: now, exp: now + 3600, auth_time: now,
+    email: `${uid}@signup.invalid`, email_verified: true,
     firebase: { sign_in_provider: 'password', identities: {} } })}.`;
 };
 const call = (method, path, identity, data) => new Promise((resolve, reject) => {
@@ -54,7 +56,8 @@ after(async () => {
   if (emulator?.exitCode === null) await new Promise(resolve => { emulator.once('exit', resolve); emulator.kill(); });
   if (scratch) { try { rmdirSync(scratch); } catch { /* retain any emulator diagnostic files */ } }
 });
-const profile = uid => ({ uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' });
+const profile = uid => ({ uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery',
+  email: `${uid}@signup.invalid`, termsAccepted: true, privacyConsent: true });
 
 test('missing settings preserves legitimate signup defaults', async () => {
   assert.equal(await call('PATCH', 'users/defaults-new', 'defaults-new', profile('defaults-new')), 200);

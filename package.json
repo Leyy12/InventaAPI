@@ -9,6 +9,8 @@
     "test:rate-limit": "node --test --test-reporter=spec tests/rate-limit/client-ip.test.mjs",
     "test:adviser:free-trial": "node scripts/run-adviser-free-trial-tests.mjs",
     "test:adviser:pro-max": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/pro-max/*.test.mjs",
+    "test:adviser:email-verification": "node --test --test-reporter=spec tests/adviser/email-verification/service.test.mjs tests/adviser/email-verification/delivery.test.mjs tests/adviser/email-verification/client.test.mjs tests/adviser/email-verification/signup-ui.test.mjs",
+    "test:adviser:email-verification:rules": "node --test --test-reporter=spec tests/adviser/email-verification/rules.test.mjs",
     "start": "node server.js",
     "dev": "node server.js",
     "validate:release-config": "node scripts/validate-release-config.mjs",
@@ -49,6 +51,7 @@
     "helmet": "^8.0.0",
     "ipaddr.js": "1.9.1",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^10.0.15",
     "sharp": "^0.35.4"
   },
   "devDependencies": {

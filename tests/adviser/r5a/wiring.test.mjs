@@ -213,7 +213,7 @@ test('review: denied first-visit persistence cannot prevent actual Customer sign
 test('review: actual signup provisions profile before subsequent protected access without auto-heal', async () => {
   const values = new Map(), profiles = new Map(), routes = [], events = [];
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
-  const auth = { currentUser: null }, user = { uid: 'new-customer' };
+  const auth = { currentUser: null }, user = { uid: 'new-customer', email: 'demo@example.invalid' };
   let current, unexpectedLogout = 0;
   const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
   const gate = createAuthSession({ readProfile: async identity => profiles.get(identity.uid) ?? null,
@@ -223,20 +223,27 @@ test('review: actual signup provisions profile before subsequent protected acces
   const body = bodyBetween('dashboard/src/app/signup/page.tsx', 'const handleSignup = async (e: React.FormEvent) => {', '\n  };')
     .replaceAll('(user: User)', '(user)'); // Execute the actual callback with synthetic SDK boundaries.
   const form = { fullName: 'Synthetic User', email: 'demo@example.invalid', password: 'demo-password', confirmPassword: 'demo-password',
-    businessName: 'Synthetic Store', businessSegment: 'Grocery', privacyConsent: true };
+    businessName: 'Synthetic Store', businessSegment: 'Grocery', termsAccepted: true, privacyConsent: true };
   const handler = new AsyncFunction('e', 'setLoading', 'setError', 'formData', 'completeLanding', 'browserStorage',
     'createUserWithEmailAndPassword', 'auth', 'setDoc', 'doc', 'db', 'serverTimestamp', 'signOut', 'pendingPlan', 'router', 'console', 'customerLoginEntryDestination',
-    'completeCustomerSignup', 'readRegistrationPolicy', 'getDocFromServer', 'deleteUser', body);
+    'completeCustomerSignup', 'readRegistrationPolicy', 'getDocFromServer', 'deleteUser',
+    'setNotice', 'codeSentTo', 'code', 'verified', 'setVerified', 'verifySignupCode', 'confirmSignupEmail', 'API_BASE', 'TERMS_VERSION', body);
   await handler({ preventDefault() {} }, () => {}, message => { if (message) throw Error(message); }, form,
     completeLanding, () => storage,
     async () => { events.push('create'); auth.currentUser = user; await gate.accept(user); assert.equal(current.profile, null); assert.equal(current.status, 'denied'); return { user }; },
     auth, async (uid, profile) => { profiles.set(uid, profile); events.push('profile'); }, (_db, _collection, uid) => uid, {}, () => 'server-time',
     async () => { events.push('signout'); auth.currentUser = null; await gate.accept(null); }, 'pro', { push: path => routes.push(path) }, quietConsole, customerLoginEntryDestination,
     completeCustomerSignup, async () => true, async uid => ({ exists: () => profiles.has(uid) }),
-    async () => { throw Error('Successful signup must not delete the user'); });
-  assert.deepEqual(events, ['create', 'profile', 'signout']); assert.equal(unexpectedLogout, 0);
+    async () => { throw Error('Successful signup must not delete the user'); },
+    () => {}, 'demo@example.invalid', '123456', null, () => {},
+    async ({ email, code }) => { events.push('verify'); assert.deepEqual([email, code], ['demo@example.invalid', '123456']);
+      return { ok: true, message: '', verificationToken: 'synthetic-token' }; },
+    async ({ user: identity, verificationToken }) => { events.push('confirm'); assert.equal(identity, user); assert.equal(verificationToken, 'synthetic-token'); },
+    'https://synthetic.invalid', '2026-10-20');
+  assert.deepEqual(events, ['verify', 'create', 'confirm', 'profile', 'signout']); assert.equal(unexpectedLogout, 0);
   assert.equal(profiles.get(user.uid).role, 'Developer'); assert.equal(profiles.get(user.uid).plan, 'Free');
   assert.equal(profiles.get(user.uid).apiRequestLimit, 50); assert.equal(profiles.get(user.uid).businessSegment, 'Grocery');
+  assert.equal(profiles.get(user.uid).email, 'demo@example.invalid'); assert.equal(profiles.get(user.uid).termsVersion, '2026-10-20');
   assert.equal(landingSeen(storage), false); assert.deepEqual(routes, [customerLoginEntryDestination(new URLSearchParams({ registered: 'true', choosePlan: 'true', pendingPlan: 'pro' }))]);
   auth.currentUser = user; await gate.accept(user);
   assert.equal(navigationDecision({ path: '/', initializing: current.loading, role: profileRole(current.profile) }), '/dashboard');

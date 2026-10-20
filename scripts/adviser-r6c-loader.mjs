@@ -6,7 +6,7 @@ const modules = new Set(['functions/entitlement-limits.mjs','functions/subscript
   'functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs', 'database/firebase-credentials.js',
   'services/payment-isolation.js', 'services/legacy-payment-offer.js', 'tests/adviser/production-transition.test.mjs',
   'services/payment-contract.js', 'services/paymongo-checkout.js', 'services/payment-checkout.js',
-  'services/payment-webhook.js', 'scripts/validate-release-config.mjs',
+  'services/payment-webhook.js', 'scripts/validate-release-config.mjs', 'services/email-delivery.js',
   'tests/adviser/phase2b1/memory-firestore.mjs', 'tests/adviser/r6c/payment-mode.test.mjs',
   'tests/adviser/r6c/wiring.test.mjs'].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {

@@ -54,9 +54,12 @@ function mockToken(uid) {
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ sub: uid, user_id: uid,
     aud: project, iss: `https://securetoken.google.com/${project}`, iat, exp: iat + 3600, auth_time: iat,
+    email: `${uid}@signup.invalid`, email_verified: true,
     firebase: { sign_in_provider: 'custom', identities: {} },
   })}.`;
 }
+// Signup creates require the verified address and explicit Terms/Privacy acceptance.
+const verifiedSignup = uid => ({ email: `${uid}@signup.invalid`, termsAccepted: true, privacyConsent: true });
 
 const tokens = { customer: mockToken('customer-a'), stranger: mockToken('customer-b'), anonymous: null, admin: mockToken('administrator') };
 
@@ -121,7 +124,7 @@ for (const field of fields) {
   test(`signup cannot assert ${field}`, async () => {
     const uid = 'signup-' + field.toLowerCase().replaceAll('_', '-');
     assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid),
-      { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', [field]: 'forged' })).status, 403);
+      { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', ...verifiedSignup(uid), [field]: 'forged' })).status, 403);
   });
 }
 for (const state of ['deleting', 'deleted']) test(`${state} tombstone cannot be changed/deleted/recreated`, async () => {
@@ -134,7 +137,7 @@ for (const state of ['deleting', 'deleted']) test(`${state} tombstone cannot be 
 });
 test('ordinary Free signup and profile changes remain supported', async () => {
   const uid = 'valid-lifecycle';
-  assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' })).status, 200);
+  assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', ...verifiedSignup(uid) })).status, 200);
   assert.equal((await call('PATCH', 'users/' + uid, mockToken(uid), { fullName: 'Safe' }, 'fullName')).status, 200);
 });
 

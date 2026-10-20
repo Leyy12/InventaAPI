@@ -12,6 +12,8 @@ const complete = {
   FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nnot-a-real-key\\n-----END PRIVATE KEY-----',
   PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_not-a-real-secret',
   PAYMONGO_WEBHOOK_SECRET: 'whsec_not-a-real-webhook-secret',
+  EMAIL_DELIVERY_PROVIDER: 'resend', EMAIL_FROM: 'InventaAPI <no-reply@inventa-release.com>',
+  RESEND_API_KEY: 're_not-a-real-resend-key',
   DASHBOARD_URL: 'https://dashboard.inventa-release.com',
   NEXT_PUBLIC_APP_URL: 'https://dashboard.inventa-release.com',
   API_QUOTA_CUTOVER_AT: '2026-01-01T00:00:00.000Z',

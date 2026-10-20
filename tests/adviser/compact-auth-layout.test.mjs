@@ -83,8 +83,10 @@ test('real signup retains every input, consent and both footer/submit actions', 
       assert.equal(input.length, 1); assert.equal(input[0].props.required, true);
     }
     assert.equal(nodes(h.output, node => node.props?.name === 'privacyConsent')[0].props.checked, false);
+    assert.equal(nodes(h.output, node => node.props?.name === 'termsAccepted')[0].props.checked, false);
     assert.ok(text(h.output).includes('RA 10173'));
     assert.equal(nodes(h.output, node => node.props?.href === '/privacy-policy').length, 1);
+    assert.equal(nodes(h.output, node => node.props?.href === '/terms-of-service').length, 1);
     assert.equal(nodes(h.output, node => node.props?.type === 'submit').length, 1);
     assert.equal(nodes(h.output, node => node.type === 'Link' && node.props.href === '/').length, 1);
     assert.equal(nodes(h.output, node => node.type === 'Image')[0].props.width, 64);
@@ -93,8 +95,11 @@ test('real signup retains every input, consent and both footer/submit actions', 
 
 test('signup still validates consent, provisions, signs out, then returns to the single root', () => {
   assert.match(signup, /if \(!formData\.privacyConsent\)/);
+  assert.match(signup, /if \(!formData\.termsAccepted\)/);
   assert.match(signup, /await completeCustomerSignup\(\{/u);
   assert.match(signup, /canRegister: readRegistrationPolicy/u);
+  assert.match(signup, /confirmEmail: \(user: User\) => confirmSignupEmail/u);
+  assert.match(signup, /createUserWithEmailAndPassword\(auth, codeSentTo,/u);
   assert.match(signup, /writeProfile: \(user: User\) => setDoc/u);
   assert.match(signup, /signOut: \(\) => signOut\(auth\)/u);
   assert.ok(signup.indexOf('router.push(redirectUrl)') > signup.indexOf('if (!result.ok)'));
