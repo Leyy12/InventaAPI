@@ -75,9 +75,16 @@ service cloud.firestore {
       // Signup: Must provide exact Developer/Starter/50 values.
       // Prevents privilege escalation at registration.
       // No bootstrap-via-email branch exists here.
+      // Email ownership: only the backend signup-code flow marks a password identity
+      // email_verified. The profile records that exact address plus explicit
+      // Terms of Service and Privacy Policy acceptance.
       allow create: if isAuthenticated()
                     && registrationsAllowed()
                     && request.auth.uid == userId
+                    && request.auth.token.email_verified == true
+                    && request.resource.data.email == request.auth.token.email
+                    && request.resource.data.termsAccepted == true
+                    && request.resource.data.privacyConsent == true
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.role == 'Developer'
                     && request.resource.data.plan == 'Free'
@@ -97,6 +104,7 @@ service cloud.firestore {
       //   - plan        (subscription tier — managed by webhook via Admin SDK)
       //   - apiRequestLimit (quota — managed by webhook via Admin SDK)
       //   - subscriptionExpiresAt (expiry date — managed by webhook via Admin SDK)
+      //   - email and signup consent evidence (verified address, Terms/Privacy acceptance)
       //
       // Using .get() ensures this rule doesn't crash if the field is missing.
       // Admin SDK writes (webhook, scheduled downgrade) bypass these rules entirely.
@@ -112,7 +120,8 @@ service cloud.firestore {
                       'subscriptionStartedAt', 'paymentReference', 'accountState', 'disabled', 'deleted', 'deletedAt',
                       'deletionRequested', 'deletionRequestedAt', 'status', 'downgradedAt', 'renewalState',
                       'businessSegment', 'hasUsedFreeTrial', 'trialVersion', 'trialStartedAt', 'trialExpiresAt',
-                      'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt', 'trialConsumed', 'trialKeyMutationAt'])
+                      'trialExpiredAt', 'trialUsed', 'trialQuota', 'effectivePlan', 'trialExhaustedAt', 'trialConsumed', 'trialKeyMutationAt',
+                      'email', 'termsAccepted', 'termsAcceptedAt', 'termsVersion', 'privacyConsent', 'privacyConsentTimestamp'])
                     && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['selectedSegment'])
                       || (request.resource.data.selectedSegment in ['Grocery', 'Pharmacy', 'Hardware']
                         && (resource.data.plan in ['Pro', 'pro', 'Professional', 'professional', 'Pro Max', 'Enterprise', 'enterprise', 'Unlimited', 'unlimited']
@@ -170,6 +179,8 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /catalog_control/{id} { allow read, write: if false; }
+    // Signup verification codes/tokens (hashed) are read and written only by the backend.
+    match /email_verifications/{id} { allow read, write: if false; }
     match /account_trial_usage/{id} { allow read, write: if false; }
     match /account_free_monthly_usage/{id} { allow read, write: if false; }
     // Completed sales are written and queried only by authenticated backend

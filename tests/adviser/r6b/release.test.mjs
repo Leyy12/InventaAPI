@@ -29,7 +29,9 @@ const backend = { NODE_ENV: 'production', FIREBASE_AUTH_MODE: 'service_account_e
   FIREBASE_PROJECT_ID: 'inventaapi-staging', FIREBASE_CLIENT_EMAIL: 'synthetic@inventaapi-staging.iam.gserviceaccount.com',
   FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_NOT_A_KEY\n-----END PRIVATE KEY-----',
   PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
-  DASHBOARD_URL: 'https://customer.r6b-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.r6b-fixture.net' };
+  DASHBOARD_URL: 'https://customer.r6b-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.r6b-fixture.net',
+  EMAIL_DELIVERY_PROVIDER: 'smtp', EMAIL_FROM: 'InventaAPI <signup@r6b-fixture.net>', SMTP_HOST: 'smtp.r6b-fixture.net',
+  SMTP_PORT: '465', SMTP_USER: 'signup@r6b-fixture.net', SMTP_PASS: 'SYNTHETIC_NOT_A_SECRET' };
 const options = { scope: 'backend', nodeVersion: 'v22.20.0' };
 
 test('monthly quota cutover is optional fail-closed configuration and validated independently', () => {

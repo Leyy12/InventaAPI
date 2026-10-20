@@ -4,7 +4,7 @@ import * as navigation from '../../services/auth-navigation.ts';
 import { hooks, load, nodes, clock, browser, flush } from './workspace-refresh/harness.mjs';
 import { PRODUCT_SEGMENTS, normalizeSegment } from '../../services/product-contract.js';
 import { loginSegmentAllowed } from '../../services/customer-segment.js';
-import { completeCustomerSignup } from '../../services/customer-registration.mjs';
+import * as registration from '../../services/customer-registration.mjs';
 
 // Real components/handlers, synthetic SDK only. The loader forbids external I/O.
 const icons = new Proxy({}, { get: (_, name) => String(name) });
@@ -20,34 +20,48 @@ const loginTitle = 'Login to InventaAPI';
 const loginSubtitle = 'Log in to access your dashboard and manage your account.';
 
 function signup(query = '', failure = '') {
-  const h = hooks(), events = [], routes = [], profiles = [];
+  const h = hooks(), time = clock(), events = [], routes = [], profiles = [], verification = [];
   const component = load('dashboard/src/app/signup/page.tsx', 'SignupPageInner', h, {
     'firebase/auth': {
-      createUserWithEmailAndPassword: async () => { events.push('account'); return { user: { uid: 'synthetic' } }; },
+      createUserWithEmailAndPassword: async (_, email) => { events.push('account'); return { user: { uid: 'synthetic', email } }; },
       signOut: async () => { events.push('signout'); if (failure === 'signout') throw Error('synthetic signout failure'); },
+      deleteUser: async () => { events.push('delete'); },
     },
     'firebase/firestore': {
       doc: (...args) => args, serverTimestamp: () => 'server-time',
       setDoc: async (_, profile) => { events.push('profile'); profiles.push(profile); if (failure === 'profile') throw Error('synthetic profile failure'); },
+      ...(failure === 'confirm' ? { getDocFromServer: async () => ({ exists: () => false }) } : {}),
     },
     '@/lib/firebase/config': { auth: {}, db: {} },
     'next/navigation': { useRouter: () => ({ push: route => { events.push('navigation'); routes.push(route); } }),
       useSearchParams: () => new URLSearchParams(query) },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,
-    '../../../../services/customer-registration.mjs': { completeCustomerSignup, readRegistrationPolicy: async () => true },
-  }, { console: silent });
+    // Real registration flow; only the backend verification endpoints are synthetic.
+    '../../../../services/customer-registration.mjs': { ...registration, readRegistrationPolicy: async () => true,
+      sendSignupCode: async ({ email }) => { events.push('code'); verification.push(['send', email]);
+        return { ok: true, message: '', retryAfterSeconds: 0, resendAvailableInSeconds: 60 }; },
+      verifySignupCode: async ({ email, code }) => { events.push('verify'); verification.push(['verify', email, code]);
+        return { ok: true, message: '', verificationToken: 'synthetic-token' }; },
+      confirmSignupEmail: async ({ user, verificationToken }) => { events.push('confirm'); verification.push(['confirm', user.email, verificationToken]);
+        if (failure === 'confirm') throw Error('synthetic confirm failure'); },
+    },
+  }, { console: silent, setTimeout: time.schedule, clearTimeout: time.cancel });
   h.mount(component);
-  return { h, events, routes, profiles, async submit() {
-    const data = { fullName: 'Synthetic Fixture', email: 'fixture@example.invalid',
+  return { h, events, routes, profiles, verification, async submit() {
+    const data = { fullName: 'Synthetic Fixture', email: ' Fixture@Example.Invalid ',
       password: 'synthetic-password', confirmPassword: 'synthetic-password',
-      businessName: 'Synthetic', businessSegment: 'Grocery', privacyConsent: true };
+      businessName: 'Synthetic', businessSegment: 'Grocery', termsAccepted: true, privacyConsent: true };
     for (const [name, value] of Object.entries(data)) {
       find(h, node => node.props?.name === name).props.onChange({ target: {
-        name, value, type: name === 'privacyConsent' ? 'checkbox' : 'text', checked: value,
+        name, value, type: typeof value === 'boolean' ? 'checkbox' : 'text', checked: value,
       } });
       await flush();
     }
+    await find(h, node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    await flush();
+    find(h, node => node.props?.name === 'verificationCode').props.onChange({ target: { value: '123456' } });
+    await flush();
     await find(h, node => node.type === 'form').props.onSubmit({ preventDefault() {} });
     await flush();
   } };
@@ -116,9 +130,15 @@ for (const intent of ['', 'free', 'pro', 'pro_max', 'https://evil.example']) {
   test(`real signup creates profile then signs out before landing handoff: ${intent || 'default'}`, async () => {
     const fixture = signup(new URLSearchParams({ pendingPlan: intent }).toString());
     await fixture.submit();
-    assert.deepEqual(fixture.events, ['account', 'profile', 'signout', 'navigation']);
+    assert.deepEqual(fixture.events, ['code', 'verify', 'account', 'confirm', 'profile', 'signout', 'navigation']);
+    assert.deepEqual(fixture.verification, [['send', 'fixture@example.invalid'], ['verify', 'fixture@example.invalid', '123456'],
+      ['confirm', 'fixture@example.invalid', 'synthetic-token']]);
     assert.equal(fixture.profiles[0].role, 'Developer');
     assert.equal(fixture.profiles[0].businessSegment, 'Grocery');
+    assert.equal(fixture.profiles[0].email, 'fixture@example.invalid');
+    assert.equal(fixture.profiles[0].termsAccepted, true);
+    assert.equal(fixture.profiles[0].termsVersion, registration.TERMS_VERSION);
+    assert.equal(fixture.profiles[0].privacyConsent, true);
     const route = new URL(fixture.routes[0], 'https://synthetic.invalid');
     assert.equal(route.pathname, '/');
     assert.equal(route.searchParams.get('registered'), 'true');
@@ -131,10 +151,13 @@ for (const intent of ['', 'free', 'pro', 'pro_max', 'https://evil.example']) {
     entry.stop(); fixture.h.stop();
   });
 }
-for (const failure of ['profile', 'signout']) test(`signup ${failure} failure cannot claim successful handoff`, async () => {
+for (const failure of ['profile', 'signout', 'confirm']) test(`signup ${failure} failure cannot claim successful handoff`, async () => {
   const fixture = signup('', failure); await fixture.submit();
   assert.equal(fixture.routes.length, 0);
-  assert.match(text(fixture.h.output), failure === 'signout' ? /session could not be closed/ : /Account setup could not be verified/);
+  assert.match(text(fixture.h.output), { signout: /session could not be closed/, profile: /Account setup could not be verified/,
+    confirm: /could not confirm your verified email address/ }[failure]);
+  // An identity whose email was never confirmed gets no profile and is removed.
+  if (failure === 'confirm') assert.deepEqual(fixture.events.slice(2), ['account', 'confirm', 'delete', 'signout']);
   fixture.h.stop();
 });
 test('signup footer preserves paid intent in the inline landing entry', () => {

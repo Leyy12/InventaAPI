@@ -16,7 +16,7 @@ export default function PrivacyPolicyPage() {
             <Shield className="w-6 h-6 text-indigo-400" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-          <p className="text-slate-400">Last updated: August 2026</p>
+          <p className="text-slate-400">Last updated: October 2026</p>
         </div>
 
         <div className="prose prose-invert prose-indigo max-w-none">
@@ -35,6 +35,8 @@ export default function PrivacyPolicyPage() {
               <p>We only collect the minimal amount of information necessary to provide our API services to you:</p>
               <ul className="list-disc pl-5 space-y-2 mt-4 text-slate-400">
                 <li><strong className="text-slate-300">Account Information:</strong> Your full name, email address, and encrypted password.</li>
+                <li><strong className="text-slate-300">Email Verification:</strong> A one-time 6-digit code we send to the email address you register with. We keep the code and your address only in hashed form, the code expires after 10 minutes, and the verification record is deleted once your account is created. Records of unfinished sign-ups hold only these hashed values, timestamps, and request counts used to prevent abuse.</li>
+                <li><strong className="text-slate-300">Consent Records:</strong> The version of the Terms of Service you accepted, and when you accepted it and this Privacy Policy.</li>
                 <li><strong className="text-slate-300">Business Profile:</strong> Your business name and business segment (e.g., Grocery, Hardware).</li>
                 <li><strong className="text-slate-300">Usage Data:</strong> API request logs, API keys generated, and timestamps of your logins and logouts for security auditing.</li>
                 <li><strong className="text-slate-300">Crowdsourced Data:</strong> Any product requests you submit to our catalog.</li>
@@ -49,6 +51,7 @@ export default function PrivacyPolicyPage() {
               <p>The information we collect is used strictly for the following purposes:</p>
               <ul className="list-disc pl-5 space-y-2 mt-4 text-slate-400">
                 <li>To authenticate your access to the InventaAPI Dashboard and API services.</li>
+                <li>To confirm that you own the email address you register with and to prevent automated or abusive sign-ups.</li>
                 <li>To enforce API security limits and the up to 50 product catalog in your one-time 7-Day Free Trial.</li>
                 <li>To notify you about changes to your account, subscription status, or product requests.</li>
                 <li>To maintain an audit trail of system access for security purposes.</li>

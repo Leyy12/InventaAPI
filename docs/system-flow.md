@@ -15,8 +15,11 @@ flowchart TD
   Init -->|Unauthenticated root; fresh browser/profile| Landing[Landing]
   Init -->|Unauthenticated root; returning browser/profile| Login[Login]
   Landing -->|Deliberate continuation| Login
-  Landing --> Signup[Signup]
-  Signup --> Profile[Create existing authoritative Customer profile]
+  Landing --> Signup[Signup details; accept Terms of Service/AUP and Privacy Policy]
+  Signup --> Code[Backend emails a 6-digit code to the address]
+  Code --> CodeCheck[Enter code; backend verifies it]
+  CodeCheck -->|Incorrect, expired or locked| Code
+  CodeCheck -->|Verified| Profile[Create Auth identity; backend marks its email verified; create authoritative Customer profile]
   Profile --> Registered[Sign out; Login with registration result]
   Registered --> Login
   Login --> Verify[Firebase authentication and server profile verification]
@@ -38,6 +41,10 @@ Admin has separate role-verified Login and protected layout; its successful
 logout goes to Admin Login. Cross-origin navigation makes no SSO claim and
 never passes credentials in URLs. `NEXT_PUBLIC_ADMIN_APP_ORIGIN` is an operator
 production configuration gate.
+
+Signup proves email ownership before any Customer profile exists; Firestore
+rules accept a profile only from a verified identity that records that exact
+address and both acceptances. See [signup email verification](email-verification-signup.md).
 
 ## Product submission and canonical catalog
 

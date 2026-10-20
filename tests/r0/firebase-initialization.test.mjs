@@ -138,7 +138,9 @@ for (const kind of ['Production app', 'named app', 'certificate app', 'multiple 
 });
 
 const release = { NODE_ENV: 'production', PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic',
-  PAYMONGO_WEBHOOK_SECRET: 'synthetic-webhook', DASHBOARD_URL: 'https://192.0.2.1', NEXT_PUBLIC_APP_URL: 'https://192.0.2.1' };
+  PAYMONGO_WEBHOOK_SECRET: 'synthetic-webhook', DASHBOARD_URL: 'https://192.0.2.1', NEXT_PUBLIC_APP_URL: 'https://192.0.2.1',
+  EMAIL_DELIVERY_PROVIDER: 'smtp', EMAIL_FROM: 'signup@inventa-staging.net', SMTP_HOST: 'smtp.inventa-staging.net',
+  SMTP_USER: 'signup@inventa-staging.net', SMTP_PASS: 'synthetic-app-password' };
 test('release preflight accepts explicit staging ADC without certificate variables or old selector', () => {
   for (const selector of [undefined, 'application_default']) {
     const result = validateReleaseConfig({ ...release, ...adcEnv, FIREBASE_AUTH_MODE: selector }, { scope: 'backend', nodeVersion: 'v22.20.0' });

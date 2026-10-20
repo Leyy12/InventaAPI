@@ -34,6 +34,7 @@ export function createIpRateLimiter({
     windowMs = 60 * 1000,
     max = 60,
     publicImages = false,
+    message = 'Too many requests. Please try again after 1 minute to maintain system security. Maximum 60 requests per minute.',
 } = {}) {
     const verifiedIp = Symbol('verified rate-limit client IP');
     const verifyClientIp = (req, res, next) => {
@@ -54,7 +55,7 @@ export function createIpRateLimiter({
             return req[verifiedIp];
         },
     });
-    const ordinary = createLimiter(max, 'Too many requests. Please try again after 1 minute to maintain system security. Maximum 60 requests per minute.');
+    const ordinary = createLimiter(max, message);
     // Four office users can each scroll a 200-image catalog batch in a minute.
     // Browser cache hits need no request; revalidations and failures still count.
     // Separate MemoryStores are process-local bounds, not distributed/edge limits.

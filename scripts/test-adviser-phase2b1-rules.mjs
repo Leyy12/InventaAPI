@@ -18,6 +18,7 @@ let emulator, port, scratch, startup = '', processError;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function valueField(value) {
+  if (typeof value === 'boolean') return { booleanValue: value };
   if (typeof value === 'number') return { integerValue: String(value) };
   if (Array.isArray(value)) return { arrayValue: { values: value.map(valueField) } };
   if (value && typeof value === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, val]) => [key, valueField(val)])) } };
@@ -52,9 +53,12 @@ function mockToken(uid) {
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ sub: uid, user_id: uid,
     aud: project, iss: `https://securetoken.google.com/${project}`, iat, exp: iat + 3600, auth_time: iat,
+    email: `${uid}@signup.invalid`, email_verified: true,
     firebase: { sign_in_provider: 'custom', identities: {} },
   })}.`;
 }
+// Signup creates require the verified address and explicit Terms/Privacy acceptance.
+const verifiedSignup = uid => ({ email: `${uid}@signup.invalid`, termsAccepted: true, privacyConsent: true });
 
 const tokens = { customer: mockToken('customer-a'), stranger: mockToken('customer-b'), anonymous: null, admin: mockToken('administrator') };
 
@@ -134,14 +138,14 @@ for (const field of protectedFields) {
   });
   test(`signup cannot forge entitlement ${field}`, async () => {
     const uid = `signup-${field.toLowerCase().replaceAll('_', '-')}`;
-    const profile = { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware' };
+    const profile = { uid, role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', ...verifiedSignup(uid) };
     assert.equal((await call('PATCH', `users/${uid}`, mockToken(uid), { ...profile, [field]: 'forged' })).status, 403);
   });
 }
 test('valid Free signup and ordinary profile updates remain allowed', async () => {
   const uid = 'signup-valid';
   assert.equal((await call('PATCH', `users/${uid}`, mockToken(uid), { uid, role: 'Developer', plan: 'Free',
-    apiRequestLimit: 50, businessSegment: 'Hardware', subscription_status: 'inactive' })).status, 200);
+    apiRequestLimit: 50, businessSegment: 'Hardware', subscription_status: 'inactive', ...verifiedSignup(uid) })).status, 200);
   assert.equal((await call('PATCH', `users/${uid}`, mockToken(uid), { fullName: 'Example' }, 'fullName')).status, 200);
 });
 test('transaction history is private to owner/Admin; never another Customer', async () => {
