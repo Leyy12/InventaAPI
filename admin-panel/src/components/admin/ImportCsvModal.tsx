@@ -38,6 +38,12 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
       // Header:false retains duplicate columns for the authoritative alias checks.
       const parsed = Papa.parse<string[]>(await file.text(), { header: false, skipEmptyLines: 'greedy' });
       if (parsed.errors.length) throw new Error(parsed.errors.map(e => 'CSV row ' + ((e.row ?? 0) + 1) + ': ' + e.message).join('; '));
+      const columns = parsed.data[0]?.length ?? 0;
+      if (columns > 64) throw new Error(`This file has ${columns} columns; Import CSV takes up to 64. Use the Template columns (name, brand, segment, category, size, price, sku…).`);
+      // Vercel rejects request bodies over 4.5 MB before the API sees them.
+      if (new Blob([JSON.stringify({ rows: parsed.data })]).size > 4 * 1024 * 1024) {
+        throw new Error('This file is too large to preview in one go (over about 4 MB of data). Remove unused columns or split it into smaller files.');
+      }
       const next = await catalogRequest<Preview>('/import/preview', 'POST', { rows: parsed.data });
       setPreview(next); setSelected(next.rows.filter(row => row.status === 'NEW' || row.status === 'UPDATE').map(row => row.row));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to preview CSV.'); }
