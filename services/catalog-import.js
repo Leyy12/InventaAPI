@@ -1,5 +1,5 @@
 import { comparisonText, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
-import { brandNameKey, catalogDigest, catalogError, possibleDuplicates, strictPrice, validateCatalogProduct } from './catalog-contract.js';
+import { brandNameKey, catalogDigest, catalogError, strictPrice, validateCatalogProduct } from './catalog-contract.js';
 
 // Preserve recognized legacy aliases. No filename/semantic guessing or manual map existed.
 const aliases = {
@@ -68,6 +68,15 @@ export function previewCatalogImport(matrix, records) {
   });
   const missing = ['name', 'category', 'segment', 'price'].filter(field => !seen.has(field));
   if (missing.length) throw catalogError(400, `Missing required columns: ${missing.join(', ')}.`);
+  // Index the catalog once so each row looks up matches instead of rescanning
+  // every product (thousands of rows x thousands of products otherwise).
+  const byKey = new Map(), byBrandName = new Map();
+  const add = (map, key, value) => { if (map.has(key)) map.get(key).push(value); else map.set(key, [value]); };
+  for (const record of records) {
+    const keys = productIdentityKeys(record.data), group = brandNameKey(record.data);
+    for (const key of keys) add(byKey, key, record.id);
+    if (group) add(byBrandName, group, { id: record.id, keys });
+  }
   const rows = matrix.slice(1).map((values, index) => {
     const row = { row: index + 2, status: 'INVALID', reason: '', product: null, matches: [], possibleDuplicates: [] };
     try {
@@ -79,8 +88,10 @@ export function previewCatalogImport(matrix, records) {
         variants: [{ size, flavor, sku, expirationDate, price: strictPrice(fields.price) }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
       const keys = new Set(productIdentityKeys(row.product));
-      row.matches = records.filter(record => productIdentityKeys(record.data).some(key => keys.has(key))).map(record => record.id).sort();
-      row.possibleDuplicates = possibleDuplicates(row.product, records);
+      row.matches = [...new Set([...keys].flatMap(key => byKey.get(key) || []))].sort();
+      // Same result as possibleDuplicates(row.product, records), from the index.
+      row.possibleDuplicates = (byBrandName.get(brandNameKey(row.product)) || [])
+        .filter(record => !record.keys.some(key => keys.has(key))).map(record => record.id).sort();
       row.status = row.matches.length > 1 ? 'CONFLICT' : row.matches.length ? 'EXACT_EXISTING_MATCH'
         : row.possibleDuplicates.length ? 'POSSIBLE_DUPLICATE' : 'NEW';
       row.reason = row.matches.length > 1 ? 'Matches more than one existing product; skipped.'
@@ -98,19 +109,26 @@ export function previewCatalogImport(matrix, records) {
     } catch (error) { row.status = 'INVALID'; row.reason = error.message; row.product = null; }
     return row;
   });
+  // Only earlier rows sharing an identity key or Brand + Name can affect a row,
+  // so look those up by index and visit them in file order.
+  const rowKeys = rows.map(row => row.product ? productIdentityKeys(row.product) : []);
+  const rowGroups = rows.map(row => row.product ? brandNameKey(row.product) : null);
+  const earlierByKey = new Map(), earlierByGroup = new Map();
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]; if (!row.product) continue;
-    const keys = new Set(productIdentityKeys(row.product));
-    for (let j = 0; j < i; j++) {
-      const earlier = rows[j]; if (!earlier.product) continue;
-      if (productIdentityKeys(earlier.product).some(key => keys.has(key))) {
+    const keys = new Set(rowKeys[i]);
+    const candidates = new Set(rowKeys[i].flatMap(key => earlierByKey.get(key) || []));
+    for (const j of (rowGroups[i] && earlierByGroup.get(rowGroups[i])) || []) candidates.add(j);
+    for (const j of [...candidates].sort((a, b) => a - b)) {
+      const earlier = rows[j];
+      if (rowKeys[j].some(key => keys.has(key))) {
         if (catalogDigest(earlier.product) === catalogDigest(row.product) && earlier.status !== 'CONFLICT') {
           row.status = 'EXACT_EXISTING_MATCH'; row.reason = `Repeated canonical row ${earlier.row}; skipped.`;
         } else {
           row.status = earlier.status = 'CONFLICT';
           row.reason = earlier.reason = `Conflicting within-file canonical rows ${earlier.row} and ${row.row}; neither will be written.`;
         }
-      } else if (brandNameKey(row.product) && brandNameKey(row.product) === brandNameKey(earlier.product)) {
+      } else if (rowGroups[i] && rowGroups[i] === rowGroups[j]) {
         for (const [target, other] of [[row, earlier], [earlier, row]]) {
           if (['NEW', 'POSSIBLE_DUPLICATE'].includes(target.status)) {
             target.status = 'POSSIBLE_DUPLICATE'; target.reason = `Brand + Product Name also matches CSV row ${other.row}; distinct canonical variant, no automatic merge.`;
@@ -118,6 +136,8 @@ export function previewCatalogImport(matrix, records) {
         }
       }
     }
+    for (const key of rowKeys[i]) add(earlierByKey, key, i);
+    if (rowGroups[i]) add(earlierByGroup, rowGroups[i], i);
   }
   const counts = Object.fromEntries(['NEW', 'UPDATE', 'EXACT_EXISTING_MATCH', 'POSSIBLE_DUPLICATE', 'INVALID', 'CONFLICT']
     .map(status => [status, rows.filter(row => row.status === status).length]));
