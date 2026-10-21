@@ -1,6 +1,6 @@
 import express from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { createIpRateLimiter } from '../services/rate-limit-client-ip.js';
 import { createEmailSender } from '../services/email-delivery.js';
 import { createEmailVerificationHandlers, createPasswordResetHandlers } from '../services/email-verification.js';

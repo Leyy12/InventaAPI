@@ -65,7 +65,7 @@ function adminForm(name, h, request, upload) {
     '@/lib/product-image-url':{normalizeProductImageUrl,productImageSource,showProductImageFallback},
     '@/lib/catalog-csv':{catalogCsv(){}},'@/components/products/ProductImageField':'image-field',
     '@/lib/product-media-client':{uploadProductImage:upload},
-    'lucide-react':new Proxy({},{get:()=> 'svg'}),'firebase/firestore':{},
+    'lucide-react':new Proxy({},{get:()=> 'svg'}),'@/lib/data/firestore-client':{},
     '@/lib/catalog-client':{catalogRequest:request,catalogPrice,brandNameWarning},
     '@/lib/firebase/config':{db:{},auth:{currentUser:{uid:'admin',getIdToken:async()=> 'token'}}},
     '@/components/admin/ImportCsvModal':{__esModule:true,default:'csv-modal'},

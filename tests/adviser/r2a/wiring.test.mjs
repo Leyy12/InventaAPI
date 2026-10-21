@@ -34,7 +34,7 @@ test('Admin review navigation and endpoints are wired with revocation-aware SDK 
   for (const value of ['approve', 'reject', 'image_url', 'userId', 'createdAt']) assert.ok(ui.includes(value));
   const route = read('routes/product-submissions.js');
   assert.match(route, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);
-  assert.match(route, /firebase-admin\/auth/u); assert.match(route, /firebase-admin\/firestore/u);
+  assert.match(route, /firebase-admin\/auth/u); assert.match(route, /database\/firestore\.js/u);
   const server = read('server.js');
   assert.match(server, /app.use\('\/api\/v1\/product-submissions', customerSubmissionsRouter\)/u);
   assert.match(server, /app.use\('\/api\/v1\/admin\/product-submissions', adminSubmissionsRouter\)/u);

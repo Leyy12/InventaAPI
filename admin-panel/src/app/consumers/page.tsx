@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Users, Search, CheckCircle2, AlertTriangle } from "lucide-react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot } from "@/lib/data/firestore-client";
 import { db } from "@/lib/firebase/config";
 import { useAccountEntitlements } from "@/lib/use-account-entitlements";
 import { useAdminKeyInventory } from "@/lib/use-admin-key-inventory";

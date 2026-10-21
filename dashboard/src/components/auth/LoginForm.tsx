@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, getDocFromServer } from "firebase/firestore";
+import { doc, getDocFromServer } from "@/lib/data/firestore-client";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";

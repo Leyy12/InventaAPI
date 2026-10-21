@@ -125,7 +125,7 @@ test('Admin real Reports effects retain 4 legitimate listeners, filter and manua
   let unsubscribes = 0;
   const user = { uid: 'admin-synthetic', getIdToken: async () => 'synthetic-not-a-credential' };
   const Component = load('admin-panel/src/components/admin/AdminDashboardClient.tsx', 'Reports', h, {
-    'firebase/firestore': { collection: (_db, name) => name, query: value => value, orderBy: stub, limit: stub,
+    '@/lib/data/firestore-client': { collection: (_db, name) => name, query: value => value, orderBy: stub, limit: stub,
       onSnapshot: (query, publish) => { registrations.push({ query, publish }); publish({ docs: [] }); return () => { unsubscribes++; }; } },
     recharts: icons, '@/lib/firebase/config': { auth: { currentUser: user }, db: {} },
     '@/lib/admin-traffic': { ...traffic, createTrafficRefresh: (read, publish, options) => traffic.createTrafficRefresh(read, publish, { ...options, schedule: c.schedule, cancel: c.cancel }) },
@@ -283,7 +283,7 @@ test('Admin catalog search/segment/status remain stable with one Firestore load 
     '@/lib/product-image-url': { normalizeProductImageUrl: value => value, productImageSource: () => '', showProductImageFallback: stub },
     '@/lib/catalog-csv': { catalogCsv: stub }, '@/components/products/ProductImageField': { default: stub },
     '@/lib/product-media-client': { uploadProductImage: stub },
-    'firebase/firestore': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
+    '@/lib/data/firestore-client': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
       { id: 'product', data: () => ({ name: 'Synthetic Rice', brand: 'Brand', segment: 'Grocery', status: 'Active', variants: [] }) }] }; } },
     '@/lib/catalog-client': { catalogRequest: stub, catalogPrice: () => 1, brandNameWarning: () => '' },
     '@/lib/firebase/config': { db: {}, auth: {} }, '@/components/admin/ImportCsvModal': { default: stub },

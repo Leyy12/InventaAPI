@@ -1,4 +1,4 @@
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { createDaaSSecurity } from '../services/daas-security.js';
 
 export { requirePlan, requirePaidSubscription } from '../services/daas-security.js';

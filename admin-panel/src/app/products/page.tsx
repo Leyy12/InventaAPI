@@ -11,7 +11,7 @@ import {
   FolderArchive, ImagePlus, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, ChevronRight, Archive,
   type LucideIcon
 } from "lucide-react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs } from "@/lib/data/firestore-client";
 import { catalogRequest, catalogPrice, brandNameWarning } from "@/lib/catalog-client";
 import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";

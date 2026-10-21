@@ -1,6 +1,6 @@
 import { Router, raw } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { getStorage } from 'firebase-admin/storage';
 import { createProductMediaHandlers } from '../services/product-media.js';
 import { processProductImage, MAX_IMAGE_BYTES } from '../services/product-media-processing.js';

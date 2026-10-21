@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { getAuth } from 'firebase-admin/auth';
 import { createPlaygroundPreviewHandler } from '../services/playground-preview.js';
 

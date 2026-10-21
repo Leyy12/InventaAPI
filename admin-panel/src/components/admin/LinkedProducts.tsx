@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, documentId, getDocs, query, where } from "firebase/firestore";
+import { collection, documentId, getDocs, query, where } from "@/lib/data/firestore-client";
 import { db } from "@/lib/firebase/config";
 import { canonicalLinkedProductIds, linkedProductLabels, type ProductLink } from "@/lib/linked-product-names";
 

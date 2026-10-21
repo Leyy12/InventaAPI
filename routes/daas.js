@@ -1,5 +1,5 @@
 import express from 'express';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { requirePaidSubscription, enforceRequestLimit } from '../middleware/planGate.js';
 import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts } from '../services/daas-catalog.js';
 import { createDaaSSecurity } from '../services/daas-security.js';

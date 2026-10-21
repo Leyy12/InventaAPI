@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc } from '@/lib/data/firestore-client';
 import { db } from '@/lib/firebase/config';
 
 interface EnterpriseContactFormProps {

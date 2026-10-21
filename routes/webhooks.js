@@ -1,5 +1,5 @@
 import express from 'express';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { paymentConfiguration } from '../services/payment-contract.js';
 import { createPaymentWebhook } from '../services/payment-webhook.js';
 

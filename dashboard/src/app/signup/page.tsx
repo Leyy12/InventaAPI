@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { createUserWithEmailAndPassword, deleteUser, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { doc, getDocFromServer, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDocFromServer, setDoc, serverTimestamp } from "@/lib/data/firestore-client";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, ArrowLeft, User as UserIcon, Building, Briefcase, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";

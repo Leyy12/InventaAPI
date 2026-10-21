@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { createIpRateLimiter, trustedRateLimitIp } from './services/rate-limit-client-ip.js';
 import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from './services/system-settings.js';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from './database/firestore.js';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -33,6 +33,7 @@ import adminRouter from './routes/admin.js';
 import contactRouter from './routes/contact.js';
 import customerInsightsRouter from './routes/customer-insights.js';
 import playgroundRouter from './routes/playground.js';
+import clientDbRouter from './routes/client-db.js';
 
 
 
@@ -167,6 +168,7 @@ app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/contact', contactRouter);
 app.use('/api/v1/customer/insights', customerInsightsRouter);
 app.use('/api/v1/playground', playgroundRouter);
+app.use('/api/v1/client-db', clientDbRouter);
 
 // --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
 app.use('/api/webhooks', webhooksRouter);

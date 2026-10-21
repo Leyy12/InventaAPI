@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { getAuth } from 'firebase-admin/auth';
 import { createCustomerIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 

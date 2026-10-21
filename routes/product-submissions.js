@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { createProductSubmissionHandlers } from '../services/product-submissions.js';
 
 const handlers = createProductSubmissionHandlers({ getDb: getFirestore,

@@ -1,6 +1,6 @@
 import express from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { createAccountDeletionHandler } from '../services/account-deletion.js';
 const router = express.Router();
 router.post('/deletion', createAccountDeletionHandler({ getDb: () => getFirestore(),

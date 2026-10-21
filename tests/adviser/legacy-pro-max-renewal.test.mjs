@@ -295,7 +295,7 @@ test('actual scheduled downgrade callback preserves legacy evidence; a racing re
     .replace("await import('./subscription-lifecycle.mjs')", 'await loadLifecycle()');
   const imports = { 'firebase-functions/v2/scheduler': { onSchedule: (_options, callback) => callback },
     'firebase-admin/app': { initializeApp() {} }, 'firebase-admin/firestore': { getFirestore: () => f.db },
-    'firebase-functions/params': { defineSecret: () => ({}), defineString: () => ({}) } };
+    'firebase-functions/params': { defineSecret: () => ({ value: () => '' }), defineString: (_, options) => ({ value: () => options?.default ?? '' }) } };
   runInNewContext(source, { exports, require: name => { assert.ok(Object.hasOwn(imports, name)); return imports[name]; },
     loadLifecycle: async () => ({ normalizeExpiredAccount: (db, uid) => lifecycle.normalizeExpiredAccount(db, uid, () => NOW) }),
     console: { log() {}, error() {} } }, { filename: 'functions/index.js' });

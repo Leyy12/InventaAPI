@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onIdTokenChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, getDocFromServer, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, getDocFromServer, addDoc, collection, serverTimestamp } from "@/lib/data/firestore-client";
 import { auth, db } from "./config";
 import { useRouter } from "next/navigation";
 import { readSubscription, establishCustomerTrial, type SubscriptionState } from '@/lib/subscription';
