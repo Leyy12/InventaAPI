@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { Upload, Download, X, Loader2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { catalogRequest } from '@/lib/catalog-client';
+import { extractTemplateRows, fitsTemplate } from '@/lib/csv-extract';
 import ProductImagePreview from '@/components/products/ProductImagePreview';
 
 type Status = 'NEW' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT';
@@ -28,23 +29,34 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
   const [busy, setBusy] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
   const [progress, setProgress] = useState('');
+  const [segment, setSegment] = useState('Grocery');
+  const [notice, setNotice] = useState('');
   const locked = useRef(false);
   const handleFile = async (file: File) => {
     if (locked.current) return;
-    locked.current = true; setBusy(true); setError(''); setPreview(null); setResults([]); setSelected([]); setAcknowledge(false);
+    locked.current = true; setBusy(true); setError(''); setNotice(''); setPreview(null); setResults([]); setSelected([]); setAcknowledge(false);
     try {
       if (!file.name.toLowerCase().endsWith('.csv')) throw new Error('Choose a .csv file.');
       setFileName(file.name);
       // Header:false retains duplicate columns for the authoritative alias checks.
       const parsed = Papa.parse<string[]>(await file.text(), { header: false, skipEmptyLines: 'greedy' });
       if (parsed.errors.length) throw new Error(parsed.errors.map(e => 'CSV row ' + ((e.row ?? 0) + 1) + ': ' + e.message).join('; '));
-      const columns = parsed.data[0]?.length ?? 0;
-      if (columns > 64) throw new Error(`This file has ${columns} columns; Import CSV takes up to 64. Use the Template columns (name, brand, segment, category, size, price, sku…).`);
-      // Vercel rejects request bodies over 4.5 MB before the API sees them.
-      if (new Blob([JSON.stringify({ rows: parsed.data })]).size > 4 * 1024 * 1024) {
-        throw new Error('This file is too large to preview in one go (over about 4 MB of data). Remove unused columns or split it into smaller files.');
+      let rows = parsed.data;
+      // Files in another layout (e.g. an Open Food Facts export) are reduced to
+      // the template columns here, so only the needed details are uploaded.
+      if (!fitsTemplate(rows[0] ?? [])) {
+        const extracted = extractTemplateRows(rows, { segment, category: 'Uncategorized' });
+        if (!extracted.used.name) throw new Error('Could not find a product name column in this file.');
+        rows = extracted.rows;
+        setNotice(`Not in the template layout, so only the needed details were taken: ${Object.entries(extracted.used).map(([field, source]) => `${field} ← ${source}`).join(', ')}. `
+          + `${rows.length - 1} products kept, ${extracted.dropped} without a name left out. Missing segment uses ${segment}; missing category uses "Uncategorized".`
+          + (extracted.missingPrice ? ` ${extracted.missingPrice} rows have no price and will show as Invalid until one is added.` : ''));
       }
-      const next = await catalogRequest<Preview>('/import/preview', 'POST', { rows: parsed.data });
+      // Vercel rejects request bodies over 4.5 MB before the API sees them.
+      if (new Blob([JSON.stringify({ rows })]).size > 4 * 1024 * 1024) {
+        throw new Error('This file is too large to preview in one go (over about 4 MB of product details). Split it into smaller files.');
+      }
+      const next = await catalogRequest<Preview>('/import/preview', 'POST', { rows });
       setPreview(next); setSelected(next.rows.filter(row => row.status === 'NEW' || row.status === 'UPDATE').map(row => row.row));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to preview CSV.'); }
     finally { locked.current = false; setBusy(false); }
@@ -88,7 +100,12 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
           <input type="file" accept=".csv" disabled={busy} className="block mt-3 text-xs"
             onChange={event => { const file = event.target.files?.[0]; if (file) void handleFile(file); event.target.value = ''; }} />
         </label>
-        <p className="text-xs text-slate-400">Required: product name, category, supported segment and price. No row limit. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
+        <label className="block text-xs text-slate-400">Segment for rows that have none:{' '}
+          <select value={segment} disabled={busy} onChange={event => setSegment(event.target.value)} className="ml-1 rounded bg-slate-800 px-2 py-1 text-slate-200">
+            {['Grocery', 'Pharmacy', 'Hardware'].map(option => <option key={option}>{option}</option>)}
+          </select></label>
+        <p className="text-xs text-slate-400">Any CSV layout works: the needed details (name, brand, category, size, price, barcode/SKU…) are picked out. Every product needs a price. No row limit. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
+        {notice && <p role="status" className="text-xs text-sky-300">{notice}</p>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         {preview && <>
           <p className="text-sm">Total rows: {preview.total}</p>
