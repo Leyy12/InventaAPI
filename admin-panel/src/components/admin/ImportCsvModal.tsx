@@ -9,6 +9,7 @@ import ProductImagePreview from '@/components/products/ProductImagePreview';
 
 type Status = 'NEW' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT';
 type Row = { row: number; status: Status; reason: string; matches: string[]; possibleDuplicates: string[]; display?: { name: string; brand: string };
+  inferred?: { segment?: 'category' | 'name' | 'default'; category?: 'default' };
   product: { name: string; brand: string; segment: string; category: string; sku: string; image_url?: string;
     variants: { size?: string; flavor?: string; sku?: string }[] } | null };
 type Preview = { previewId: string; total: number; counts: Record<Status, number>; warnings: string[]; rows: Row[] };
@@ -19,6 +20,8 @@ const COMMIT_BATCH = 25;
 const WRITABLE: Status[] = ['NEW', 'UPDATE', 'POSSIBLE_DUPLICATE'];
 const labels: Record<Status, string> = { NEW: 'New', UPDATE: 'Update', EXACT_EXISTING_MATCH: 'No changes / skipped',
   POSSIBLE_DUPLICATE: 'Possible duplicate', INVALID: 'Invalid', CONFLICT: 'Conflict' };
+// How the API chose a segment for a row that had none.
+const segmentSource = { category: 'from category', name: 'from name', default: 'not found, Grocery' } as const;
 
 export default function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -29,7 +32,6 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
   const [busy, setBusy] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
   const [progress, setProgress] = useState('');
-  const [segment, setSegment] = useState('Grocery');
   const [notice, setNotice] = useState('');
   const locked = useRef(false);
   const handleFile = async (file: File) => {
@@ -45,11 +47,11 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
       // Files in another layout (e.g. an Open Food Facts export) are reduced to
       // the template columns here, so only the needed details are uploaded.
       if (!fitsTemplate(rows[0] ?? [])) {
-        const extracted = extractTemplateRows(rows, { segment, category: 'Uncategorized' });
+        const extracted = extractTemplateRows(rows);
         if (!extracted.used.name) throw new Error('Could not find a product name column in this file.');
         rows = extracted.rows;
         setNotice(`Not in the template layout, so only the needed details were taken: ${Object.entries(extracted.used).map(([field, source]) => `${field} ← ${source}`).join(', ')}. `
-          + `${rows.length - 1} products kept, ${extracted.dropped} without a name left out. Missing segment uses ${segment}; missing category uses "Uncategorized".`);
+          + `${rows.length - 1} products kept, ${extracted.dropped} without a name left out.`);
       }
       // Vercel rejects request bodies over 4.5 MB before the API sees them.
       if (new Blob([JSON.stringify({ rows })]).size > 4 * 1024 * 1024) {
@@ -99,11 +101,9 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
           <input type="file" accept=".csv" disabled={busy} className="block mt-3 text-xs"
             onChange={event => { const file = event.target.files?.[0]; if (file) void handleFile(file); event.target.value = ''; }} />
         </label>
-        <label className="block text-xs text-slate-400">Segment for rows that have none:{' '}
-          <select value={segment} disabled={busy} onChange={event => setSegment(event.target.value)} className="ml-1 rounded bg-slate-800 px-2 py-1 text-slate-200">
-            {['Grocery', 'Pharmacy', 'Hardware'].map(option => <option key={option}>{option}</option>)}
-          </select></label>
-        <p className="text-xs text-slate-400">Any CSV layout works: the needed details (name, brand, category, size, barcode/SKU…) are picked out. Price columns are ignored. No row limit per file, but the catalog holds at most 5,000 products in total. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
+        <p className="text-xs text-slate-400">Any CSV layout works: the needed details (name, brand, category, size, barcode/SKU…) are picked out. Price columns are ignored.
+          One file can mix Grocery, Pharmacy and Hardware products: a row without a segment gets one from its category, then its name, and Grocery when neither says.
+          A row without a category is filed as &quot;Uncategorized&quot;. Existing products keep their segment and category unless the CSV gives new ones. No row limit per file, but the catalog holds at most 5,000 products in total. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
         {notice && <p role="status" className="text-xs text-sky-300">{notice}</p>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         {preview && <>
@@ -117,7 +117,8 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
               <td className="p-2"><input type="checkbox" aria-label={'Select row ' + row.row} checked={selected.includes(row.row)}
                 disabled={busy || !WRITABLE.includes(row.status)} onChange={event => setSelected(previous => event.target.checked ? [...previous, row.row] : previous.filter(value => value !== row.row))} /></td>
               <td className="p-2">{row.row}</td><td className="p-2">{row.product?.name || row.display?.name || 'Invalid row'}<br />{row.product?.brand ?? row.display?.brand}</td>
-              <td className="p-2">{row.product?.segment}<br />{row.product?.category}</td>
+              <td className="p-2">{row.product?.segment}{row.product && row.inferred?.segment && <span className="text-slate-500"> ({segmentSource[row.inferred.segment]})</span>}
+                <br />{row.product?.category}{row.product && row.inferred?.category && <span className="text-slate-500"> (none in CSV)</span>}</td>
               <td className="p-2">{row.product?.variants[0]?.size} {row.product?.variants[0]?.flavor}<br />{row.product?.variants[0]?.sku}</td>
               <td className="p-2">{row.product?.image_url ? <><ProductImagePreview url={row.product.image_url} name={row.product.name} /><span className="block max-w-40 truncate" title={row.product.image_url}>HTTPS image URL</span></> : 'None'}</td>
               <td className="p-2">{labels[row.status]}<br />{row.reason}{[...row.matches, ...row.possibleDuplicates].length > 0 && <p>Catalog IDs: {[...row.matches, ...row.possibleDuplicates].join(', ')}</p>}</td>

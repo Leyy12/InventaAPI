@@ -278,6 +278,19 @@ test('update rows change existing products through the catalog writer; repeats a
   const again = await f.preview(rows);
   assert.deepEqual(again.body.rows.map(row => row.status), ['EXACT_EXISTING_MATCH', 'EXACT_EXISTING_MATCH']);
 });
+test('committed updates keep the stored segment and category when the CSV row has none', async () => {
+  const f = fixture();
+  const vitamin = { name: 'Ceelin', brand: 'Unilab', segment: 'Pharmacy', category: 'Vitamins & Supplements', image_url: '',
+    variants: [{ size: '60ml', sku: '4800010000017' }] };
+  const id = (await f.create(vitamin)).body.product.id;
+  const plan = await f.preview([['name', 'brand', 'size', 'sku', 'image_url'],
+    ['Ceelin', 'Unilab', '60ml', '4800010000017', 'https://images.openfoodfacts.org/c.jpg']]);
+  assert.equal(plan.body.rows[0].status, 'UPDATE');
+  assert.equal((await f.commit(plan.body.previewId)).body.results[0].status, 'UPDATED');
+  const saved = f.db.read('products/' + id);
+  assert.deepEqual([saved.segment, saved.category, saved.image_url],
+    ['Pharmacy', 'Vitamins & Supplements', 'https://images.openfoodfacts.org/c.jpg']);
+});
 test('malformed stored preview expiry fails closed before publication', async () => {
   const f = fixture(), plan = await f.preview(), path = 'catalog_import_previews/' + plan.body.previewId;
   f.db.seed(path, { ...f.db.read(path), expiresAt: 'invalid' });

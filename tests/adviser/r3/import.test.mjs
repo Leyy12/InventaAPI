@@ -27,14 +27,28 @@ test('price columns are skipped silently and any value in them is ignored', () =
   }
   assert.equal(preview(headers.filter(h => h !== 'price'), [values.filter((_, i) => headers[i] !== 'price')]).rows[0].status, 'NEW');
 });
+test('the admin Products export layout imports: Specs and Flavors map, Pricing and Status are skipped quietly', () => {
+  const result = preview(['Name', 'Brand', 'Segment', 'Category', 'Flavors', 'Specs', 'Pricing', 'Status', 'image_url', 'Barcode'],
+    [['Lucky Me Pancit Canton', 'Lucky Me!', 'Grocery', 'Instant Noodles', 'Chilimansi', '60g', '₱15.00', 'Active', '', '4807770270017']]);
+  assert.deepEqual(result.warnings, []); assert.equal(result.rows[0].status, 'NEW');
+  assert.deepEqual(result.rows[0].product.variants[0], { size: '60g', flavor: 'Chilimansi', sku: '4807770270017', expirationDate: '' });
+});
 test('Open Food Facts style columns map without a template', () => {
   const result = preview(['barcode_sku', 'product_name', 'brands', 'quantity_grams', 'image_url', 'category', 'segment'],
     [['4800361403764', 'Nescafe Original', 'Nestlé', '20g', 'https://images.openfoodfacts.org/a.jpg', 'Coffee', 'Grocery']]);
   assert.deepEqual(result.warnings, []); assert.equal(result.rows[0].status, 'NEW');
   assert.deepEqual(result.rows[0].product.variants[0], { size: '20g', flavor: '', sku: '4800361403764', expirationDate: '' });
 });
-for (const field of ['name', 'segment', 'category']) test(`missing required header ${field}`, () => {
-  assert.throws(() => preview(headers.filter(h => h !== field), [values.filter((_, i) => headers[i] !== field)]), /Missing required columns/);
+test('missing required header name', () => {
+  assert.throws(() => preview(headers.filter(h => h !== 'name'), [values.filter((_, i) => headers[i] !== 'name')]), /Missing required column: name/);
+});
+test('segment and category columns are optional: a segment is worked out and the category is "Uncategorized"', () => {
+  const without = field => preview(headers.filter(h => h !== field), [values.filter((_, i) => headers[i] !== field)]).rows[0];
+  const noSegment = without('segment');
+  assert.equal(noSegment.status, 'NEW'); assert.equal(noSegment.product.segment, 'Grocery'); assert.deepEqual(noSegment.inferred, { segment: 'category' });
+  const noCategory = without('category');
+  assert.equal(noCategory.status, 'NEW'); assert.equal(noCategory.product.category, 'Uncategorized');
+  assert.equal(noCategory.product.segment, 'Grocery'); assert.deepEqual(noCategory.inferred, { category: 'default' });
 });
 test('unknown columns warn, but invalid image metadata blocks the row instead of being discarded', () => {
   const result = preview([...headers, 'mystery', 'image_url'], [[...values, 'unused', 'javascript:bad']]);
@@ -69,8 +83,9 @@ test('legacy form and size alias collision is explicit, never first-wins', () =>
 for (const segment of ['Grocery', 'Pharmacy', 'Hardware', 'groceries', 'medicine', 'tools']) test(`supported canonical segment ${segment}`, () => {
   const row = [...values]; row[2] = segment; assert.equal(preview(headers, [row]).rows[0].status, 'NEW');
 });
-for (const [field, value] of [['name', ''], ['category', ''], ['segment', ''], ['segment', 'Unknown'],
-  ['segment', 'medical-unknown']]) {
+// A blank segment or category is worked out instead (see segment-inference.test.mjs);
+// a segment the catalog does not have is still refused.
+for (const [field, value] of [['name', ''], ['segment', 'Unknown'], ['segment', 'medical-unknown']]) {
   test(`invalid row ${field}=${value}`, () => {
     const row = [...values]; row[headers.indexOf(field)] = value;
     const result = preview(headers, [row]); assert.equal(result.rows[0].status, 'INVALID'); assert.ok(result.rows[0].reason);

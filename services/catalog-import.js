@@ -1,5 +1,6 @@
 import { comparisonText, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
 import { brandNameKey, catalogDigest, catalogError, validateCatalogProduct } from './catalog-contract.js';
+import { createSegmentInference } from './segment-inference.js';
 
 // Preserve recognized legacy aliases. No filename/semantic guessing or manual map existed.
 const aliases = {
@@ -12,12 +13,13 @@ const aliases = {
   sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku', barcode_sku: 'sku', ean: 'sku',
   size: 'size', dosage: 'size', unit: 'size', packaging: 'size', form: 'size', strength: 'size',
   pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size', quantity: 'size', quantity_grams: 'size',
-  flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expirationDate',
+  flavor: 'flavor', flavors: 'flavor', variant: 'flavor', formulation: 'flavor', specs: 'size', expiration_date: 'expirationDate',
   expiry: 'expirationDate', expiry_date: 'expirationDate', exp_date: 'expirationDate', expirationdate: 'expirationDate',
   image_url: 'image_url', imageurl: 'image_url',
 };
-// Products carry no price, so price columns are skipped without a warning.
-const priceColumns = new Set(['price', 'srp', 'retail_price', 'unit_price', 'selling_price', 'market_price', 'msrp']);
+// Products carry no price, so price columns are skipped without a warning, as is the
+// Status column of the admin Products export (Name, Brand, Segment, Category, Flavors, Specs, Status, image_url).
+const silentColumns = new Set(['price', 'pricing', 'srp', 'retail_price', 'unit_price', 'selling_price', 'market_price', 'msrp', 'status']);
 const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
 
 // Works out how one CSV row changes the existing product it matched. Only fields
@@ -50,6 +52,13 @@ export function planImportUpdate(existing, csv) {
   return { input, changes };
 }
 
+// A guessed segment or the "Uncategorized" filler only describes a new product. For an
+// existing product they count as blank cells, so they never replace what it has.
+export function importUpdateInput(row) {
+  return { ...row.product, ...(row.inferred?.segment ? { segment: '' } : {}), ...(row.inferred?.category ? { category: '' } : {}) };
+}
+const INFERRED_FROM = { category: 'its category', name: 'its name, brand or size', default: 'nothing in the row (set to Grocery)' };
+
 export function previewCatalogImport(matrix, records) {
   // No row-count cap: large files are stored in chunks by the preview handler.
   if (!Array.isArray(matrix) || matrix.length < 2
@@ -60,14 +69,16 @@ export function previewCatalogImport(matrix, records) {
   const headers = matrix[0].map(raw => {
     const key = raw.replace(/^\uFEFF/u, '').trim().toLowerCase().replace(/\s+/gu, '_');
     const field = Object.hasOwn(aliases, key) ? aliases[key] : null;
-    if (!field && priceColumns.has(key)) return null;
+    if (!field && silentColumns.has(key)) return null;
     if (!field) warnings.push(`Ignored unknown column: ${raw || '(blank)'}`);
     else if (seen.has(field)) throw catalogError(400, `Duplicate column mapping for ${field}.`);
     if (field) seen.add(field);
     return field;
   });
-  const missing = ['name', 'category', 'segment'].filter(field => !seen.has(field));
-  if (missing.length) throw catalogError(400, `Missing required columns: ${missing.join(', ')}.`);
+  // Only a name is required: one file may mix segments, so a blank or missing
+  // segment is worked out per row, and a blank category becomes "Uncategorized".
+  if (!seen.has('name')) throw catalogError(400, 'Missing required column: name.');
+  const inferSegment = createSegmentInference(records);
   // Index the catalog once so each row looks up matches instead of rescanning
   // every product (thousands of rows x thousands of products otherwise).
   const byKey = new Map(), byBrandName = new Map();
@@ -85,9 +96,17 @@ export function previewCatalogImport(matrix, records) {
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
       // Lets the preview name a row even when it turns out invalid.
       row.display = { name: (fields.name || '').slice(0, 160), brand: (fields.brand || '').slice(0, 120) };
-      const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
+      const { name, brand = '', description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
+      let { category = '', segment = '' } = fields;
+      const inferred = {};
+      if (!segment && name) {
+        const guess = inferSegment({ category, name, brand, size, flavor });
+        segment = guess.segment; inferred.segment = guess.source;
+      }
+      if (!category && name) { category = 'Uncategorized'; inferred.category = 'default'; }
       row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
         variants: [{ size, flavor, sku, expirationDate }] });
+      if (Object.keys(inferred).length) row.inferred = inferred;
       delete row.product.is_active; // Re-derived by the writer, never a client input.
       const keys = new Set(productIdentityKeys(row.product));
       row.matches = [...new Set([...keys].flatMap(key => byKey.get(key) || []))].sort();
@@ -101,7 +120,7 @@ export function previewCatalogImport(matrix, records) {
       if (row.matches.length === 1) {
         const record = records.find(item => item.id === row.matches[0]);
         try {
-          const update = planImportUpdate(record.data, row.product);
+          const update = planImportUpdate(record.data, importUpdateInput(row));
           if (update) {
             row.status = 'UPDATE'; row.reason = update.changes.join('; ');
             row.update = { productId: record.id, catalogRevision: record.data.catalogRevision ?? 0 };
@@ -143,5 +162,12 @@ export function previewCatalogImport(matrix, records) {
   }
   const counts = Object.fromEntries(['NEW', 'UPDATE', 'EXACT_EXISTING_MATCH', 'POSSIBLE_DUPLICATE', 'INVALID', 'CONFLICT']
     .map(status => [status, rows.filter(row => row.status === status).length]));
+  const guessed = Object.keys(INFERRED_FROM).map(source => [source, rows.filter(row => row.product && row.inferred?.segment === source).length])
+    .filter(([, count]) => count);
+  if (guessed.length) {
+    warnings.push(`Segment worked out for ${guessed.reduce((sum, [, count]) => sum + count, 0)} rows without one: `
+      + guessed.map(([source, count]) => `${count} from ${INFERRED_FROM[source]}`).join(', ')
+      + '. Existing products keep their segment and category.');
+  }
   return { total: rows.length, counts, warnings, rows };
 }

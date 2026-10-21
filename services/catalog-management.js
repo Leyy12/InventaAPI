@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
 import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
-import { planImportUpdate, previewCatalogImport } from './catalog-import.js';
+import { importUpdateInput, planImportUpdate, previewCatalogImport } from './catalog-import.js';
 import { removeStoredPrices } from './catalog-price-removal.js';
 
 // Firestore documents max out at 1 MiB; leave headroom for field overhead.
@@ -116,7 +116,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
             const { productId } = row.update;
             const current = (await tx.get(db.collection('products').doc(productId))).data();
             if (!current) throw catalogError(404, 'Product was removed after preview.');
-            const update = planImportUpdate(current, row.product);
+            const update = planImportUpdate(current, importUpdateInput(row));
             if (!update) {
               const saved = { row: rowNumber, status: 'SKIPPED', reason: 'Already up to date.', productId, replayed: false };
               tx.set(receiptRef, saved);

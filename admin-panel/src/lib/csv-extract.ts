@@ -16,7 +16,7 @@ const API_ALIASES: Record<string, Field | 'description'> = {
   sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku', barcode_sku: 'sku', ean: 'sku',
   size: 'size', dosage: 'size', unit: 'size', packaging: 'size', form: 'size', strength: 'size',
   pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size', quantity: 'size', quantity_grams: 'size',
-  flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expiration_date',
+  flavor: 'flavor', flavors: 'flavor', variant: 'flavor', formulation: 'flavor', specs: 'size', expiration_date: 'expiration_date',
   expiry: 'expiration_date', expiry_date: 'expiration_date', exp_date: 'expiration_date', expirationdate: 'expiration_date',
   image_url: 'image_url', imageurl: 'image_url',
 };
@@ -28,8 +28,8 @@ const SOURCES: Record<Field, string[]> = {
   brand: ['brands', 'brand', 'brand_name', 'brand_owner', 'manufacturer', 'company'],
   segment: ['segment', 'department', 'dept', 'product_type', 'category_type'],
   category: ['category', 'main_category_en', 'categories_en', 'categories_tags', 'categories', 'product_category', 'subcategory', 'drug_category', 'therapeutic_class'],
-  size: ['size', 'quantity', 'quantity_grams', 'pack_size', 'net_weight', 'weight', 'volume', 'dosage', 'strength'],
-  flavor: ['flavor', 'flavour', 'variant'],
+  size: ['size', 'specs', 'quantity', 'quantity_grams', 'pack_size', 'net_weight', 'weight', 'volume', 'dosage', 'strength'],
+  flavor: ['flavor', 'flavors', 'flavour', 'variant'],
   sku: ['sku', 'code', 'barcode', 'barcode_sku', 'upc', 'ean', 'item_code', 'product_code', 'item_id'],
   description: ['description', 'generic_name_en', 'generic_name'],
   expiration_date: ['expiration_date', 'expiry_date', 'expiry', 'exp_date'],
@@ -67,7 +67,9 @@ export function fitsTemplate(header: string[]): boolean {
 
 export type Extraction = { rows: string[][]; used: Partial<Record<Field, string>>; dropped: number };
 
-export function extractTemplateRows(matrix: string[][], defaults: { segment: string; category: string }): Extraction {
+// Blank segment and category cells stay blank: the API works out each new product's
+// segment from its category or name, and never overwrites existing values with guesses.
+export function extractTemplateRows(matrix: string[][]): Extraction {
   const [header = [], ...body] = matrix;
   const keys = header.map(key);
   const pick: Partial<Record<Field, number[]>> = {}, used: Partial<Record<Field, string>> = {};
@@ -92,8 +94,6 @@ export function extractTemplateRows(matrix: string[][], defaults: { segment: str
     if (!record.name) { dropped++; continue; }
     // Never let one product's description repeat its name.
     if (record.description === record.name) record.description = '';
-    record.segment ||= defaults.segment;
-    record.category ||= defaults.category;
     rows.push(TEMPLATE_COLUMNS.map(field => record[field].slice(0, LIMITS[field] ?? 200)));
   }
   return { rows, used, dropped };
