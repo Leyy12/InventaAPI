@@ -11,6 +11,9 @@
 //     [--category snacks] [--search "pancit canton"] [--barcodes codes.txt]
 //     [--limit 500] [--segment Grocery] [--out openfoodfacts-import.csv] [--start-page 1]
 //
+// A search stops after 10 pages (1,000 products) for signed-out clients; for more,
+// split it by --brand or --category, or look products up one by one with --barcodes.
+//
 // Data licences: database under ODbL 1.0 (credit "Open Food Facts" and share
 // any public database built from it under ODbL); photos under CC BY-SA 3.0.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -50,6 +53,8 @@ async function getJson(url, attempt = 1) {
     await sleep(wait);
     return getJson(url, attempt + 1);
   }
+  // Signed-out clients only get the first 10 search pages (1,000 products).
+  if (response.status === 401) throw new Error('Open Food Facts only serves the first 10 search pages to signed-out clients; narrow the search with --brand or --category, or use --barcodes');
   if (!response.ok) throw new Error(`Open Food Facts returned ${response.status} for ${url}`);
   return response.json();
 }
