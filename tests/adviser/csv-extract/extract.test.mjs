@@ -25,9 +25,9 @@ test('Open Food Facts layout is reduced to the needed details', () => {
   assert.deepEqual([row.name, row.brand, row.segment, row.category, row.size, row.sku, row.price],
     ['nescafe original 20g', 'Nestlé', 'Grocery', 'Beverages And Beverages Preparations', '20g', '4800361403764', '']);
   assert.equal(second[0], 'biscuits'); // falls back to another language's name
-  // The API accepts the extracted header; rows without a price are reported invalid, not dropped silently.
+  // The API accepts the extracted header; price is optional, so rows without one import as new.
   const plan = previewCatalogImport(out.rows, []);
-  assert.equal(plan.total, 2); assert.equal(plan.counts.INVALID, 2); assert.match(plan.rows[0].reason, /Price/u);
+  assert.equal(plan.total, 2); assert.equal(plan.counts.NEW, 2);
 });
 
 test('extracted rows with a price preview as new products', () => {

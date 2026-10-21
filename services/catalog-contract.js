@@ -75,6 +75,10 @@ export function strictPrice(value) {
   }
   return value;
 }
+// Price is optional: a blank or missing price means "not priced yet".
+export function optionalPrice(value) {
+  return value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : strictPrice(value);
+}
 function safePayload(value, depth = 0) {
   if (depth > 8) throw catalogError(400, 'Variant payload is too deeply nested.');
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return;
@@ -114,19 +118,21 @@ export function validateCatalogProduct(input, previous = null) {
   if (!['Active', 'Archived', 'Inactive'].includes(result.status)) throw catalogError(400, 'Invalid product status.');
   result.is_active = result.status === 'Active';
   const variants = input.variants ?? previous?.variants ?? old?.variantPayloads;
-  if (!Array.isArray(variants) || !variants.length || variants.length > 50) throw catalogError(400, 'Provide 1–50 priced variants.');
+  if (!Array.isArray(variants) || !variants.length || variants.length > 50) throw catalogError(400, 'Provide 1–50 variants.');
   result.variants = variants.map(variant => {
     if (!plainObject(variant)) throw catalogError(400, 'Invalid variant.');
     safePayload(variant);
     // Preserve arbitrary Phase 1 payload fields and valid existing value types.
-    strictPrice(variant.price);
+    const unpriced = optionalPrice(variant.price) === undefined;
     for (const key of ['flavor', 'size', 'dosage', 'form', 'specs', 'dimensions', 'value', 'variantName', 'sku', 'expirationDate']) {
       if (variant[key] !== undefined) text(variant[key], key, 200);
     }
     if (variant.image_url !== undefined) {
       try { normalizeProductImageUrl(variant.image_url); } catch { throw catalogError(400, 'Invalid variant image URL.'); }
     }
-    return structuredClone(variant);
+    const copy = structuredClone(variant);
+    if (unpriced) delete copy.price;
+    return copy;
   });
   if (JSON.stringify(result).length > 100000) throw catalogError(400, 'Product payload is too large.');
   const candidate = { ...previous, ...result };

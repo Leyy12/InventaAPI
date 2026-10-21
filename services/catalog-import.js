@@ -1,5 +1,5 @@
 import { comparisonText, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
-import { brandNameKey, catalogDigest, catalogError, strictPrice, validateCatalogProduct } from './catalog-contract.js';
+import { brandNameKey, catalogDigest, catalogError, optionalPrice, validateCatalogProduct } from './catalog-contract.js';
 
 // Preserve recognized legacy aliases. No filename/semantic guessing or manual map existed.
 const aliases = {
@@ -42,7 +42,7 @@ export function planImportUpdate(existing, csv) {
   }
   if (matches.length !== 1) throw catalogError(409, 'Matches an existing product but not exactly one of its variants; edit it by hand.');
   const variant = matches[0];
-  if (variant.price !== row.price) { changes.push(`price: ${money(variant.price)} → ${money(row.price)}`); variant.price = row.price; }
+  if (row.price !== undefined && variant.price !== row.price) { changes.push(`price: ${money(variant.price)} → ${money(row.price)}`); variant.price = row.price; }
   for (const field of [...VARIANT_MATCH_FIELDS, 'expirationDate']) {
     if (row[field] && row[field] !== (variant[field] ?? '')) { changes.push(`${field}: "${variant[field] || ''}" → "${row[field]}"`); variant[field] = row[field]; }
   }
@@ -66,7 +66,7 @@ export function previewCatalogImport(matrix, records) {
     if (field) seen.add(field);
     return field;
   });
-  const missing = ['name', 'category', 'segment', 'price'].filter(field => !seen.has(field));
+  const missing = ['name', 'category', 'segment'].filter(field => !seen.has(field));
   if (missing.length) throw catalogError(400, `Missing required columns: ${missing.join(', ')}.`);
   // Index the catalog once so each row looks up matches instead of rescanning
   // every product (thousands of rows x thousands of products otherwise).
@@ -87,7 +87,7 @@ export function previewCatalogImport(matrix, records) {
       row.display = { name: (fields.name || '').slice(0, 160), brand: (fields.brand || '').slice(0, 120) };
       const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
       row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
-        variants: [{ size, flavor, sku, expirationDate, price: strictPrice(fields.price) }] });
+        variants: [{ size, flavor, sku, expirationDate, ...(optionalPrice(fields.price) === undefined ? {} : { price: optionalPrice(fields.price) }) }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
       const keys = new Set(productIdentityKeys(row.product));
       row.matches = [...new Set([...keys].flatMap(key => byKey.get(key) || []))].sort();

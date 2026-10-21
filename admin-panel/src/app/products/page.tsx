@@ -12,7 +12,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { collection, getDocs } from "@/lib/data/firestore-client";
-import { catalogRequest, catalogPrice, brandNameWarning } from "@/lib/catalog-client";
+import { catalogRequest, withOptionalPrice, brandNameWarning } from "@/lib/catalog-client";
 import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
 import BulkImagesModal from "@/components/admin/BulkImagesModal";
@@ -420,7 +420,7 @@ function EditModal({
         price: product.price ?? "",
       }];
     }
-    return [{ flavor: "", size: "", price: 0 }];
+    return [{ flavor: "", size: "", price: "" }];
   };
 
   const [name, setName] = useState(getProductName(product));
@@ -453,7 +453,7 @@ function EditModal({
 
   const addVariant = () => {
     const f = getSegmentFields(segment);
-    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "", price: 0 }]);
+    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "", price: "" }]);
   };
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
 
@@ -463,7 +463,7 @@ function EditModal({
     savingRef.current = true;
     setSaving(true); setError("");
     try {
-      const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+      const cleaned = variants.map(withOptionalPrice);
       let imageFields: { image_url?: string; image_asset_id?: string } = {};
       if (imageFile) {
         const user = auth.currentUser;
@@ -564,7 +564,7 @@ function EditModal({
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
-                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price", ""].map(h => (
+                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price (optional)", ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>
@@ -646,7 +646,7 @@ function AddProductModal({
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [segment, setSegment] = useState("");
-  const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "", price: 0 }]);
+  const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "", price: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -667,7 +667,7 @@ function AddProductModal({
 
   const addVariant = () => {
     const f = getSegmentFields(segment);
-    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "", price: 0 }]);
+    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "", price: "" }]);
   };
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
 
@@ -682,7 +682,7 @@ function AddProductModal({
       if (createAttempt.current && createAttempt.current.uid !== user.uid) throw new Error('Sign back into the creating account to retry.');
       if (!createAttempt.current) {
         const image_url = normalizeProductImageUrl(imageUrl);
-        const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+        const cleaned = variants.map(withOptionalPrice);
         const key = crypto.randomUUID();
         createAttempt.current = { uid: user.uid, key,
           product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },
@@ -793,7 +793,7 @@ function AddProductModal({
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
-                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price", ""].map(h => (
+                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price (optional)", ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>

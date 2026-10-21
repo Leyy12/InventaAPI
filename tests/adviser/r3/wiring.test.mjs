@@ -5,7 +5,7 @@ const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 
 test('active Admin mutations exclusively use authenticated backend and preserve variants', () => {
   const page = read('admin-panel/src/app/products/page.tsx'), importer = read('admin-panel/src/components/admin/ImportCsvModal.tsx');
   assert.doesNotMatch(page + importer, /\b(?:addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b/u);
-  assert.match(page, /\.\.\.v, price: catalogPrice\(v.price\)/u);
+  assert.match(page, /variants.map\(withOptionalPrice\)/u);
   assert.match(page, /expectedRevision: product.catalogRevision \?\? 0/u);
   assert.match(page, /expectedRevision: p.catalogRevision \?\? 0/u);
   assert.doesNotMatch(page, /ADD_NEW|Variants will be appended/u);

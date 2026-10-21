@@ -59,13 +59,19 @@ test('Brand+Name same/different variant returns warning without merging', async 
   assert.equal(f.products().length, 2); assert.deepEqual(f.products()[0].data.variants, product.variants);
 });
 for (const [name, change] of Object.entries({ segment: { segment: 'Other' }, category: { category: '' }, name: { name: '' },
-  priceMissing: { variants: [{ size: '330ml' }] }, priceEmpty: { variants: [{ price: '' }] },
   priceMalformed: { variants: [{ price: '10abc' }] }, priceNegative: { variants: [{ price: -1 }] },
   priceNaN: { variants: [{ price: NaN }] }, priceInfinite: { variants: [{ price: Infinity }] },
   image: { image_url: 'javascript:alert(1)' }, credentials: { image_url: 'https://u:p@example.invalid/a' },
   unsupported: { role: 'Admin' }, duplicateVariants: { variants: [product.variants[0], product.variants[0]] } })) {
   test('invalid create ' + name, async () => { const f = fixture(); assert.equal((await f.create({ ...product, ...change })).statusCode, 400); assert.equal(f.products().length, 0); });
 }
+test('price is optional: missing or blank prices are stored without one', async () => {
+  const f = fixture();
+  const missing = await f.create({ ...product, variants: [{ size: '330ml', sku: 'NO-PRICE-1' }] });
+  assert.equal(missing.statusCode, 200); assert.equal(Object.hasOwn(f.products()[0].data.variants[0], 'price'), false);
+  const blank = await f.create({ ...product, name: 'Sprite', variants: [{ size: '330ml', sku: 'NO-PRICE-2', price: '' }] });
+  assert.equal(blank.statusCode, 200); assert.equal(Object.hasOwn(f.products()[1].data.variants[0], 'price'), false);
+});
 test('edit preserves arbitrary variant payload and siblings, and rejects stale revision', async () => {
   const f = fixture();
   const variants = [{ ...product.variants[0], custom: { active: true, bins: ['a', 'b'] } }, { price: '50', sku: 'BOTTLE-15', size: '1.5L', anyField: 42 }];

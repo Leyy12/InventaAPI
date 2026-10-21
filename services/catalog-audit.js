@@ -1,5 +1,5 @@
 import { productIdentityKeys, projectProduct, normalizeSku, comparisonText } from './product-contract.js';
-import { brandNameKey, identityId, plainObject, reservationIntegrityProblems, strictPrice } from './catalog-contract.js';
+import { brandNameKey, identityId, optionalPrice, plainObject, reservationIntegrityProblems } from './catalog-contract.js';
 
 // Plain local/exported {id,data} records only. No SDK, configuration or I/O.
 export function auditCatalog(records, reservations = [], { deriveReservationId = identityId } = {}) {
@@ -25,9 +25,9 @@ export function auditCatalog(records, reservations = [], { deriveReservationId =
       if (variantKeys.has(key)) problems.push({ id, kind: 'AMBIGUOUS_VARIANTS' });
       variantKeys.add(key);
     }
-    // Missing/invalid prices are reported without inventing a price for a legacy record.
+    // Price is optional; only malformed prices are reported, never replaced.
     const prices = Array.isArray(data.variants) && data.variants.length ? data.variants.map(v => v?.price) : [data.price ?? data.attributes?.price];
-    for (const price of prices) { try { strictPrice(price); } catch { problems.push({ id, kind: 'INVALID_OR_MISSING_PRICE' }); break; } }
+    for (const price of prices) { try { optionalPrice(price); } catch { problems.push({ id, kind: 'INVALID_PRICE' }); break; } }
     const keys = productIdentityKeys(data);
     keysById.set(id, new Set(keys));
     if (!keys.length) problems.push({ id, kind: 'MISSING_IDENTITY' });

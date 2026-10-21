@@ -64,7 +64,7 @@ function clean(field: Field, source: string, value: string): string {
 export function fitsTemplate(header: string[]): boolean {
   if (header.length > 64) return false;
   const mapped = new Set(header.map(column => API_ALIASES[key(column)]).filter(Boolean));
-  return ['name', 'category', 'segment', 'price'].every(field => mapped.has(field as Field));
+  return ['name', 'category', 'segment'].every(field => mapped.has(field as Field));
 }
 
 export type Extraction = { rows: string[][]; used: Partial<Record<Field, string>>; dropped: number; missingPrice: number };

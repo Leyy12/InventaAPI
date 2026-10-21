@@ -17,7 +17,16 @@ test('BOM/header whitespace normalization and existing aliases', () => {
   const result = preview(['\uFEFF  Product Name  ', 'manufacturer', ' department ', 'product_category', 'srp', 'barcode', 'pack_size']);
   assert.equal(result.rows[0].status, 'NEW'); assert.equal(result.rows[0].product.variants[0].price, 10);
 });
-for (const field of ['name', 'segment', 'category', 'price']) test(`missing required header ${field}`, () => {
+test('price column is optional', () => {
+  const result = preview(headers.filter(h => h !== 'price'), [values.filter((_, i) => headers[i] !== 'price')]);
+  assert.equal(result.rows[0].status, 'NEW'); assert.equal(Object.hasOwn(result.rows[0].product.variants[0], 'price'), false);
+});
+test('blank price imports without a price', () => {
+  const row = [...values]; row[headers.indexOf('price')] = '';
+  const result = preview(headers, [row]); assert.equal(result.rows[0].status, 'NEW');
+  assert.equal(Object.hasOwn(result.rows[0].product.variants[0], 'price'), false);
+});
+for (const field of ['name', 'segment', 'category']) test(`missing required header ${field}`, () => {
   assert.throws(() => preview(headers.filter(h => h !== field), [values.filter((_, i) => headers[i] !== field)]), /Missing required columns/);
 });
 test('unknown columns warn, but invalid image metadata blocks the row instead of being discarded', () => {
@@ -54,7 +63,7 @@ for (const segment of ['Grocery', 'Pharmacy', 'Hardware', 'groceries', 'medicine
   const row = [...values]; row[2] = segment; assert.equal(preview(headers, [row]).rows[0].status, 'NEW');
 });
 for (const [field, value] of [['name', ''], ['category', ''], ['segment', ''], ['segment', 'Unknown'],
-  ['segment', 'medical-unknown'], ['price', ''], ['price', 'abc'], ['price', '10abc'], ['price', '-1'], ['price', 'NaN'], ['price', 'Infinity'], ['price', '₱10'], ['price', '1,234.00']]) {
+  ['segment', 'medical-unknown'], ['price', 'abc'], ['price', '10abc'], ['price', '-1'], ['price', 'NaN'], ['price', 'Infinity'], ['price', '₱10'], ['price', '1,234.00']]) {
   test(`invalid row ${field}=${value}`, () => {
     const row = [...values]; row[headers.indexOf(field)] = value;
     const result = preview(headers, [row]); assert.equal(result.rows[0].status, 'INVALID'); assert.ok(result.rows[0].reason);
@@ -87,6 +96,11 @@ test('blank CSV cells never clear existing fields', () => {
     image_url: 'https://example.invalid/a.jpg', variants: [{ sku: 'A', price: 10, size: '330ml', expirationDate: '2027-01-01' }] };
   assert.equal(planImportUpdate(data, preview().rows[0].product), null);
 });
+test('a blank price never clears an existing price', () => {
+  const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', variants: [{ sku: 'A', price: 25, size: '330ml' }] };
+  const row = [...values]; row[headers.indexOf('price')] = '';
+  assert.equal(planImportUpdate(data, preview(headers, [row]).rows[0].product), null);
+});
 test('a match that cannot be tied to one variant is skipped with a reason', () => {
   const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', sku: 'A',
     variants: [{ price: 1, size: '1L' }, { price: 2, size: '2L' }] };
@@ -110,7 +124,7 @@ test('files of any row count preview; malformed inputs are still rejected', () =
   assert.throws(() => previewCatalogImport([headers, [1]], []), /at least 1 row/);
 });
 test('invalid rows keep their name and brand for the preview table', () => {
-  const row = preview(headers, [values.map((value, i) => headers[i] === 'price' ? '' : value)]).rows[0];
+  const row = preview(headers, [values.map((value, i) => headers[i] === 'price' ? 'abc' : value)]).rows[0];
   assert.equal(row.status, 'INVALID'); assert.equal(row.product, null);
   assert.deepEqual(row.display, { name: 'Coke', brand: 'Coca-Cola' });
 });

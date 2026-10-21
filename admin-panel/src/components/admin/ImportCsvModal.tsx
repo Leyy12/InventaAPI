@@ -10,7 +10,7 @@ import ProductImagePreview from '@/components/products/ProductImagePreview';
 type Status = 'NEW' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT';
 type Row = { row: number; status: Status; reason: string; matches: string[]; possibleDuplicates: string[]; display?: { name: string; brand: string };
   product: { name: string; brand: string; segment: string; category: string; sku: string; image_url?: string;
-    variants: { size?: string; flavor?: string; price: number }[] } | null };
+    variants: { size?: string; flavor?: string; price?: number }[] } | null };
 type Preview = { previewId: string; total: number; counts: Record<Status, number>; warnings: string[]; rows: Row[] };
 type Result = { row: number; status: 'IMPORTED' | 'UPDATED' | 'FAILED' | 'SKIPPED'; reason?: string; productId?: string; replayed?: boolean };
 // Rows per commit request; large files are sent as several requests.
@@ -50,7 +50,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
         rows = extracted.rows;
         setNotice(`Not in the template layout, so only the needed details were taken: ${Object.entries(extracted.used).map(([field, source]) => `${field} ← ${source}`).join(', ')}. `
           + `${rows.length - 1} products kept, ${extracted.dropped} without a name left out. Missing segment uses ${segment}; missing category uses "Uncategorized".`
-          + (extracted.missingPrice ? ` ${extracted.missingPrice} rows have no price and will show as Invalid until one is added.` : ''));
+          + (extracted.missingPrice ? ` ${extracted.missingPrice} rows have no price; they import without one and you can add it later.` : ''));
       }
       // Vercel rejects request bodies over 4.5 MB before the API sees them.
       if (new Blob([JSON.stringify({ rows })]).size > 4 * 1024 * 1024) {
@@ -104,7 +104,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
           <select value={segment} disabled={busy} onChange={event => setSegment(event.target.value)} className="ml-1 rounded bg-slate-800 px-2 py-1 text-slate-200">
             {['Grocery', 'Pharmacy', 'Hardware'].map(option => <option key={option}>{option}</option>)}
           </select></label>
-        <p className="text-xs text-slate-400">Any CSV layout works: the needed details (name, brand, category, size, price, barcode/SKU…) are picked out. Every product needs a price. No row limit. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
+        <p className="text-xs text-slate-400">Any CSV layout works: the needed details (name, brand, category, size, price, barcode/SKU…) are picked out. Price is optional. No row limit. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
         {notice && <p role="status" className="text-xs text-sky-300">{notice}</p>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         {preview && <>
@@ -119,7 +119,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
                 disabled={busy || !WRITABLE.includes(row.status)} onChange={event => setSelected(previous => event.target.checked ? [...previous, row.row] : previous.filter(value => value !== row.row))} /></td>
               <td className="p-2">{row.row}</td><td className="p-2">{row.product?.name || row.display?.name || 'Invalid row'}<br />{row.product?.brand ?? row.display?.brand}</td>
               <td className="p-2">{row.product?.segment}<br />{row.product?.category}</td>
-              <td className="p-2">{row.product?.variants[0]?.size} {row.product?.variants[0]?.flavor}<br />{row.product?.variants[0]?.price}</td>
+              <td className="p-2">{row.product?.variants[0]?.size} {row.product?.variants[0]?.flavor}<br />{row.product?.variants[0]?.price ?? 'No price'}</td>
               <td className="p-2">{row.product?.image_url ? <><ProductImagePreview url={row.product.image_url} name={row.product.name} /><span className="block max-w-40 truncate" title={row.product.image_url}>HTTPS image URL</span></> : 'None'}</td>
               <td className="p-2">{labels[row.status]}<br />{row.reason}{[...row.matches, ...row.possibleDuplicates].length > 0 && <p>Catalog IDs: {[...row.matches, ...row.possibleDuplicates].join(', ')}</p>}</td>
             </tr>)}</tbody>
