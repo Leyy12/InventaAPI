@@ -1,9 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
 import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
-import { previewCatalogImport } from './catalog-import.js';
+import { planImportUpdate, previewCatalogImport } from './catalog-import.js';
 
-export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID, deriveReservationId }) {
+// Firestore documents max out at 1 MiB; leave headroom for field overhead.
+const PREVIEW_CHUNK_BYTES = 700000;
+// Rows per commit request. The admin panel sends a large import as several batches.
+const COMMIT_BATCH_MAX = 200;
+
+async function findPreviewRow(tx, db, previewId, plan, rowNumber, uid) {
+  if (Array.isArray(plan.rows)) return plan.rows.find(item => item.row === rowNumber);
+  const index = (plan.chunks || []).findIndex(chunk => rowNumber >= chunk.first && rowNumber <= chunk.last);
+  if (index < 0) return undefined;
+  const chunk = (await tx.get(db.collection('catalog_import_previews').doc(`${previewId}_chunk${index}`))).data();
+  if (!chunk || chunk.uid !== uid) throw catalogError(403, 'Import preview unavailable to this account.');
+  return chunk.rows.find(item => item.row === rowNumber);
+}
+
+export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID, deriveReservationId, previewChunkBytes = PREVIEW_CHUNK_BYTES }) {
   const wrap = action => async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -53,10 +67,21 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     return db.runTransaction(async tx => {
       await requireCatalogAdmin(tx, db, uid);
       const plan = previewCatalogImport(req.body.rows, await readCatalog(tx, db));
-      if (Buffer.byteLength(JSON.stringify(plan), 'utf8') > 800000) throw catalogError(400, 'Preview is too large; use a smaller file.');
       const ref = db.collection('catalog_import_previews').doc(previewId);
       if ((await tx.get(ref)).exists) throw catalogError(409, 'Preview ID collision. Retry.');
-      tx.set(ref, { ...plan, uid, expiresAt: new Date(now().getTime() + 30 * 60 * 1000).toISOString() });
+      // Rows are split across chunk documents so files of any length stay under
+      // Firestore's 1 MiB per-document limit. Chunks hold consecutive row numbers.
+      const chunks = [];
+      for (const row of plan.rows) {
+        const bytes = Buffer.byteLength(JSON.stringify(row), 'utf8');
+        const last = chunks[chunks.length - 1];
+        if (!last || last.bytes + bytes > previewChunkBytes) chunks.push({ rows: [row], bytes });
+        else { last.rows.push(row); last.bytes += bytes; }
+      }
+      const { rows, ...summary } = plan;
+      tx.set(ref, { ...summary, uid, expiresAt: new Date(now().getTime() + 30 * 60 * 1000).toISOString(),
+        chunks: chunks.map(chunk => ({ first: chunk.rows[0].row, last: chunk.rows[chunk.rows.length - 1].row })) });
+      chunks.forEach((chunk, index) => tx.set(db.collection('catalog_import_previews').doc(`${previewId}_chunk${index}`), { uid, rows: chunk.rows }));
       return { ...plan, previewId };
     });
   });
@@ -64,8 +89,8 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     onlyFields(req.body, ['previewId', 'rows', 'acknowledgePossible']);
     const { previewId, rows, acknowledgePossible = false } = req.body;
     if (typeof previewId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(previewId)
-      || !Array.isArray(rows) || rows.length > 200 || !rows.length || new Set(rows).size !== rows.length
-      || rows.some(row => !Number.isInteger(row) || row < 2 || row > 201) || typeof acknowledgePossible !== 'boolean') {
+      || !Array.isArray(rows) || rows.length > COMMIT_BATCH_MAX || !rows.length || new Set(rows).size !== rows.length
+      || rows.some(row => !Number.isInteger(row) || row < 2) || typeof acknowledgePossible !== 'boolean') {
       throw catalogError(400, 'Invalid import selection.');
     }
     const results = [];
@@ -80,9 +105,27 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
           const receipt = (await tx.get(receiptRef)).data();
           if (receipt) return { ...receipt, replayed: true };
           if (!Number.isFinite(Date.parse(plan.expiresAt)) || Date.parse(plan.expiresAt) <= now().getTime()) throw catalogError(409, 'Preview expired; parse and preview again.');
-          const row = plan.rows.find(item => item.row === rowNumber);
-          if (!row || !['NEW', 'POSSIBLE_DUPLICATE'].includes(row.status)) {
+          const row = await findPreviewRow(tx, db, previewId, plan, rowNumber, uid);
+          if (!row || !['NEW', 'POSSIBLE_DUPLICATE', 'UPDATE'].includes(row.status)) {
             return { row: rowNumber, status: 'SKIPPED', reason: row?.reason || 'Not a valid new row.' };
+          }
+          if (row.status === 'UPDATE') {
+            // Re-plan against the product as it is now, so several rows for one
+            // product (different variants) each apply on top of the last.
+            const { productId } = row.update;
+            const current = (await tx.get(db.collection('products').doc(productId))).data();
+            if (!current) throw catalogError(404, 'Product was removed after preview.');
+            const update = planImportUpdate(current, row.product);
+            if (!update) {
+              const saved = { row: rowNumber, status: 'SKIPPED', reason: 'Already up to date.', productId, replayed: false };
+              tx.set(receiptRef, saved);
+              return saved;
+            }
+            const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'edit', productId, input: update.input,
+              expectedRevision: current.catalogRevision ?? 0, at: now().toISOString(), deriveReservationId });
+            const saved = { row: rowNumber, status: 'UPDATED', productId, reason: update.changes.join('; '), replayed: false };
+            prepared.apply(); tx.set(receiptRef, saved);
+            return { ...saved, activity: prepared.activity };
           }
           if (row.status === 'POSSIBLE_DUPLICATE' && !acknowledgePossible) throw catalogError(409, 'Review and acknowledge possible duplicates.');
           const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'create',

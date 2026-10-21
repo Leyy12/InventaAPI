@@ -1,4 +1,4 @@
-import { productIdentityKeys } from './product-contract.js';
+import { comparisonText, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
 import { brandNameKey, catalogDigest, catalogError, possibleDuplicates, strictPrice, validateCatalogProduct } from './catalog-contract.js';
 
 // Preserve recognized legacy aliases. No filename/semantic guessing or manual map existed.
@@ -17,10 +17,45 @@ const aliases = {
   expiry: 'expirationDate', expiry_date: 'expirationDate', exp_date: 'expirationDate', expirationdate: 'expirationDate',
   image_url: 'image_url', imageurl: 'image_url',
 };
+const money = value => typeof value === 'number' ? `₱${value.toFixed(2)}` : String(value ?? '');
+const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
+
+// Works out how one CSV row changes the existing product it matched. Only fields
+// the CSV fills in are compared; blank CSV cells never clear existing data.
+// Returns { input, changes } for an edit, or null when there is nothing to change.
+// Throws when the CSV row cannot be tied to exactly one existing variant.
+export function planImportUpdate(existing, csv) {
+  const old = projectProduct(existing);
+  if (!old) throw catalogError(409, 'Existing product could not be read.');
+  const changes = [], input = {};
+  for (const field of ['name', 'brand', 'category', 'description', 'image_url']) {
+    const value = csv[field] ?? '';
+    if (value && value !== (old[field] ?? '')) { input[field] = value; changes.push(`${field}: "${old[field] || ''}" → "${value}"`); }
+  }
+  if (csv.segment && csv.segment !== old.segment) { input.segment = csv.segment; changes.push(`segment: ${old.segment || 'none'} → ${csv.segment}`); }
+  const variants = structuredClone(Array.isArray(existing.variants) && existing.variants.length ? existing.variants : old.variantPayloads || []);
+  const row = csv.variants[0], sku = normalizeSku(row.sku);
+  let matches = sku ? variants.filter(variant => normalizeSku(variant.sku) === sku) : [];
+  if (!matches.length) {
+    matches = variants.filter(variant => VARIANT_MATCH_FIELDS.every(field => !row[field] || comparisonText(variant[field]) === comparisonText(row[field])));
+    if (matches.length !== 1 && variants.length === 1) matches = variants;
+  }
+  if (matches.length !== 1) throw catalogError(409, 'Matches an existing product but not exactly one of its variants; edit it by hand.');
+  const variant = matches[0];
+  if (variant.price !== row.price) { changes.push(`price: ${money(variant.price)} → ${money(row.price)}`); variant.price = row.price; }
+  for (const field of [...VARIANT_MATCH_FIELDS, 'expirationDate']) {
+    if (row[field] && row[field] !== (variant[field] ?? '')) { changes.push(`${field}: "${variant[field] || ''}" → "${row[field]}"`); variant[field] = row[field]; }
+  }
+  if (!changes.length) return null;
+  input.variants = variants;
+  return { input, changes };
+}
+
 export function previewCatalogImport(matrix, records) {
-  if (!Array.isArray(matrix) || matrix.length < 2 || matrix.length > 201 || JSON.stringify(matrix).length > 200000
+  // No row-count cap: large files are stored in chunks by the preview handler.
+  if (!Array.isArray(matrix) || matrix.length < 2
     || matrix.some(row => !Array.isArray(row) || row.length > 64 || row.some(v => typeof v !== 'string' || v.length > 4000))) {
-    throw catalogError(400, 'Provide a CSV header and 1–200 rows, at most 200 KB of parsed data.');
+    throw catalogError(400, 'Provide a CSV header and at least 1 row (up to 64 columns, 4,000 characters per cell).');
   }
   const warnings = [], seen = new Set();
   const headers = matrix[0].map(raw => {
@@ -48,8 +83,18 @@ export function previewCatalogImport(matrix, records) {
       row.possibleDuplicates = possibleDuplicates(row.product, records);
       row.status = row.matches.length > 1 ? 'CONFLICT' : row.matches.length ? 'EXACT_EXISTING_MATCH'
         : row.possibleDuplicates.length ? 'POSSIBLE_DUPLICATE' : 'NEW';
-      row.reason = row.matches.length ? 'Canonical identity already exists; skipped without changes.'
+      row.reason = row.matches.length > 1 ? 'Matches more than one existing product; skipped.'
         : row.possibleDuplicates.length ? 'Brand + Product Name matches different canonical identities; review before creation.' : '';
+      if (row.matches.length === 1) {
+        const record = records.find(item => item.id === row.matches[0]);
+        try {
+          const update = planImportUpdate(record.data, row.product);
+          if (update) {
+            row.status = 'UPDATE'; row.reason = update.changes.join('; ');
+            row.update = { productId: record.id, catalogRevision: record.data.catalogRevision ?? 0 };
+          } else row.reason = 'Already matches the existing product; nothing to change.';
+        } catch (error) { row.reason = error.message; }
+      }
     } catch (error) { row.status = 'INVALID'; row.reason = error.message; row.product = null; }
     return row;
   });
@@ -74,7 +119,7 @@ export function previewCatalogImport(matrix, records) {
       }
     }
   }
-  const counts = Object.fromEntries(['NEW', 'EXACT_EXISTING_MATCH', 'POSSIBLE_DUPLICATE', 'INVALID', 'CONFLICT']
+  const counts = Object.fromEntries(['NEW', 'UPDATE', 'EXACT_EXISTING_MATCH', 'POSSIBLE_DUPLICATE', 'INVALID', 'CONFLICT']
     .map(status => [status, rows.filter(row => row.status === status).length]));
   return { total: rows.length, counts, warnings, rows };
 }
