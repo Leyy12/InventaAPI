@@ -9,7 +9,7 @@
 // Usage:
 //   node scripts/openfoodfacts-collect.mjs [--country philippines] [--brand "Nestlé"]
 //     [--category snacks] [--search "pancit canton"] [--barcodes codes.txt]
-//     [--limit 500] [--segment Grocery] [--out openfoodfacts-import.csv]
+//     [--limit 500] [--segment Grocery] [--out openfoodfacts-import.csv] [--start-page 1]
 //
 // Data licences: database under ODbL 1.0 (credit "Open Food Facts" and share
 // any public database built from it under ODbL); photos under CC BY-SA 3.0.
@@ -25,13 +25,14 @@ const PAGE_SIZE = 100;
 const FIELDS = 'code,product_name,product_name_en,generic_name_en,brands,quantity,categories_tags,image_front_url';
 
 function parseArgs(argv) {
-  const options = { country: 'philippines', limit: Infinity, segment: 'Grocery', out: 'openfoodfacts-import.csv' };
+  const options = { country: 'philippines', limit: Infinity, segment: 'Grocery', out: 'openfoodfacts-import.csv', startPage: 1 };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i], value = argv[i + 1];
     if (!flag.startsWith('--') || value === undefined) throw new Error(`Unexpected argument: ${flag}`);
     const name = flag.slice(2);
-    if (!['country', 'brand', 'category', 'search', 'barcodes', 'limit', 'segment', 'out'].includes(name)) throw new Error(`Unknown option: ${flag}`);
-    options[name] = name === 'limit' ? Number(value) : value;
+    if (!['country', 'brand', 'category', 'search', 'barcodes', 'limit', 'segment', 'out', 'start-page'].includes(name)) throw new Error(`Unknown option: ${flag}`);
+    if (name === 'start-page') options.startPage = Number(value);
+    else options[name] = name === 'limit' ? Number(value) : value;
     i++;
   }
   if (!(options.limit > 0)) throw new Error('--limit must be a positive number.');
@@ -42,8 +43,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getJson(url, attempt = 1) {
   const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } });
-  if ((response.status === 429 || response.status >= 500) && attempt <= 4) {
-    const wait = 15000 * attempt;
+  // The search service is often briefly overloaded (503); back off and keep going.
+  if ((response.status === 429 || response.status >= 500) && attempt <= 10) {
+    const wait = Math.min(15000 * attempt, 90000);
     console.warn(`  ${response.status} from Open Food Facts; waiting ${wait / 1000}s before retrying.`);
     await sleep(wait);
     return getJson(url, attempt + 1);
@@ -52,8 +54,8 @@ async function getJson(url, attempt = 1) {
   return response.json();
 }
 
-async function* searchProducts({ country, brand, category, search }) {
-  for (let page = 1; ; page++) {
+async function* searchProducts({ country, brand, category, search, startPage }) {
+  for (let page = startPage; ; page++) {
     const params = new URLSearchParams({ fields: FIELDS, page_size: String(PAGE_SIZE), page: String(page), sort_by: 'code' });
     if (country) params.set('countries_tags_en', country);
     if (brand) params.set('brands_tags', brand);
@@ -109,12 +111,17 @@ async function main() {
   console.log('Collecting from Open Food Facts…');
   const source = options.barcodes ? barcodeProducts(options.barcodes) : searchProducts(options);
   const rows = [], seen = new Set();
-  let skipped = 0;
-  for await (const product of source) {
-    const row = toRow(product, options.segment);
-    if (!row || seen.has(row.sku)) { skipped++; continue; }
-    seen.add(row.sku); rows.push(row);
-    if (rows.length >= options.limit) break;
+  let skipped = 0, failure = null;
+  try {
+    for await (const product of source) {
+      const row = toRow(product, options.segment);
+      if (!row || seen.has(row.sku)) { skipped++; continue; }
+      seen.add(row.sku); rows.push(row);
+      if (rows.length >= options.limit) break;
+    }
+  } catch (error) {
+    // Keep what was collected; rerun with --start-page to continue a search.
+    failure = error;
   }
   const columns = ['name', 'brand', 'segment', 'category', 'size', 'price', 'sku', 'description', 'image_url'];
   writeFileSync(options.out, [columns.join(','), ...rows.map(row => columns.map(column => csvCell(row[column])).join(','))].join('\n') + '\n');
@@ -124,6 +131,7 @@ async function main() {
       .map(value => csvCell(value)).join(','))].join('\n') + '\n');
   console.log(`Wrote ${rows.length} products to ${options.out} (${rows.filter(row => row.image_url).length} with a photo; ${skipped} skipped without a name or repeated).`);
   console.log(`Credits: ${credits}. Fill in the price column before importing.`);
+  if (failure) throw new Error(`Stopped early: ${failure.message}. The products collected so far were saved.`);
 }
 
 main().catch(error => { console.error(error.message); process.exit(1); });
