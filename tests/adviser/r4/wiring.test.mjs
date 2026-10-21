@@ -6,9 +6,10 @@ for (const app of ['dashboard', 'admin-panel']) test(app + ' report panel wires 
   const panel = read(app + '/src/components/reports/CatalogReportPanel.tsx');
   assert.match(panel, /reportView\(source, selection\)/); assert.match(panel, /REPORT_SEGMENTS.map/);
   for (const state of ['loading', 'error', 'empty']) assert.ok(panel.includes('state === "' + state + '"'));
-  for (const metric of ['total', 'priced', 'averagePrice', 'distribution', 'segments', 'categories']) assert.ok(panel.includes('report.' + metric));
+  for (const metric of ['total', 'segments', 'categories']) assert.ok(panel.includes('report.' + metric));
   assert.match(read(app + '/src/lib/reports.ts'), /services\/reporting.js/);
-  assert.doesNotMatch(panel, /stock|\.price \|\| 0/);
+  assert.match(panel, /usage.segments\[selection\]/); assert.match(panel, /Most-used product categories/);
+  assert.doesNotMatch(panel, /stock|price|Price/);
 });
 test('Customer analytics has one scoped dataset, no preference writes or timer filtering', () => {
   const page = read('dashboard/src/app/dashboard/analytics/page.tsx');

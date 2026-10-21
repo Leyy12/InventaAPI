@@ -51,17 +51,34 @@ export function catalogReport(records, selection = 'All') {
   if (!segment) throw new Error('Unsupported report segment.');
   const products = records.map(record => projectProduct(record)).filter(product => product?.visibility.visible
     && (segment === 'All' || product.segment === segment));
-  const prices = products.map(product => product.price).filter(finiteNonnegative);
-  // Preserve established upper cutoffs; continuous intervals also cover decimal prices.
-  const distribution = ['₱0–50', 'Over ₱50–100', 'Over ₱100–500', 'Over ₱500–1,000', 'Over ₱1,000']
-    .map(range => ({ range, count: 0 }));
-  for (const price of prices) distribution[price <= 50 ? 0 : price <= 100 ? 1 : price <= 500 ? 2 : price <= 1000 ? 3 : 4].count++;
   const categories = new Map();
   for (const product of products) categories.set(product.category, (categories.get(product.category) || 0) + 1);
-  return { total: products.length, priced: prices.length, missingPrice: products.length - prices.length,
-    averagePrice: average(prices), distribution,
+  return { total: products.length,
     segments: REPORT_SEGMENTS.map(name => ({ name, count: products.filter(product => product.segment === name).length })),
     categories: [...categories].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) };
+}
+// Category use = customers whose active API keys include published products of
+// that category (the products their apps pull). Holders are { userId, productIds }.
+export function categoryUsageReport(records, holders, selection = 'All') {
+  const segment = reportSelection(selection);
+  if (!segment) throw new Error('Unsupported report segment.');
+  const products = new Map();
+  for (const record of records) {
+    const product = projectProduct(record);
+    if (typeof record?.id === 'string' && product?.visibility.visible && (segment === 'All' || product.segment === segment)) products.set(record.id, product);
+  }
+  const categories = new Map();
+  for (const holder of holders) {
+    for (const id of new Set(holder.productIds)) {
+      const product = products.get(id);
+      if (!product) continue;
+      const row = categories.get(product.category) || { users: new Set(), picks: new Set() };
+      row.users.add(holder.userId); row.picks.add(holder.userId + '\u0000' + id);
+      categories.set(product.category, row);
+    }
+  }
+  return [...categories].map(([name, row]) => ({ name, users: row.users.size, products: row.picks.size }))
+    .sort((a, b) => b.users - a.users || b.products - a.products || a.name.localeCompare(b.name));
 }
 export function reportView(source, selection) {
   if (source.status === 'loading') return { state: 'loading', report: null };

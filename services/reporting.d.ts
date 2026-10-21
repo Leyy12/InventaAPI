@@ -8,13 +8,14 @@ export function reconcileReportSession(previous: ReportSession | null, uid: stri
 export function quotaVerificationKey(uid: string | null, entitlement: Record<string, unknown> | null): string | null;
 export function activeKeyHolders(keys: ReportSource, accounts: ReportSource): number | null;
 export interface CatalogReport {
-  total: number; priced: number; missingPrice: number; averagePrice: number | null;
-  distribution: { range: string; count: number }[];
+  total: number;
   segments: { name: string; count: number }[];
   categories: { name: string; count: number }[];
 }
 export type ReportSource = { status: 'loading' | 'error' | 'ready'; records: Record<string, unknown>[] };
 export function catalogReport(records: unknown[], selection?: ReportSelection): CatalogReport;
+export interface CategoryUsage { name: string; users: number; products: number }
+export function categoryUsageReport(records: unknown[], holders: { userId: string; productIds: string[] }[], selection?: ReportSelection): CategoryUsage[];
 export function reportView(source: ReportSource, selection: ReportSelection): { state: 'loading' | 'error' | 'empty' | 'ready'; report: CatalogReport | null };
 export function quotaSummary(usage: unknown, now?: Date): { used: number | null; limit: number | null; remaining: number | null; percent: number | null; pending: boolean; resetsAt: string; period?: 'daily' | 'monthly' | 'trial' } | null;
 export function reportTimestamp(value: unknown): Date | null;

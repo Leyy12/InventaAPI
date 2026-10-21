@@ -1,11 +1,14 @@
 "use client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { REPORT_SEGMENTS, reportSelection, reportView, type ReportSelection, type ReportSource } from "@/lib/reports";
+import type { CategoryUsageState } from "@/lib/category-usage";
 
-export default function CatalogReportPanel({ source, selection, onSelection, restricted = false }: {
-  source: ReportSource; selection: ReportSelection; onSelection: (value: ReportSelection) => void; restricted?: boolean;
+export default function CatalogReportPanel({ source, usage, selection, onSelection, restricted = false }: {
+  source: ReportSource; usage: CategoryUsageState; selection: ReportSelection; onSelection: (value: ReportSelection) => void; restricted?: boolean;
 }) {
   const { state, report } = reportView(source, selection);
+  const used = usage.status === "ready" ? usage.segments[selection] ?? [] : null;
+  const top = used?.slice(0, 8) ?? [];
   return <section className="space-y-5" aria-label="Catalog reports">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><h2 className="text-xl font-semibold text-white">Catalog reports</h2>
@@ -25,24 +28,29 @@ export default function CatalogReportPanel({ source, selection, onSelection, res
     {state === "error" && <p role="alert" className="text-rose-300">Unable to load report data. Reload to retry.</p>}
     {report && <>
       <div className="grid gap-4 sm:grid-cols-3">
-        {[["Published products", report.total.toLocaleString()], ["Products with a valid price", report.priced.toLocaleString()],
-          ["Average base price", report.averagePrice === null ? "Unavailable" : report.averagePrice.toLocaleString("en-PH", { style: "currency", currency: "PHP" })]]
+        {[["Published products", report.total.toLocaleString()],
+          ["Categories in use", used ? used.length.toLocaleString() : usage.status === "error" ? "Unavailable" : "Loading…"],
+          ["Most-used category", used ? used[0]?.name ?? "None yet" : usage.status === "error" ? "Unavailable" : "Loading…"]]
           .map(([label, value]) => <div key={label} className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-5">
-            <p className="text-sm text-slate-400">{label}</p><p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+            <p className="text-sm text-slate-400">{label}</p><p className="mt-2 truncate text-2xl font-semibold text-white" title={value}>{value}</p>
           </div>)}
       </div>
       {state === "empty" ? <p role="status" className="text-slate-400">No products found for {selection === "All" ? "the selected scope" : selection}.</p> :
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-5">
-            <h3 className="font-semibold text-white">Price distribution</h3>
-            <p className="mb-4 text-xs text-slate-400">One canonical base price per product (lowest valid variant price, with legacy fallback). {report.missingPrice} without a valid price excluded.</p>
-            {report.priced === 0 ? <p role="status" className="text-slate-400">No valid prices available for this segment.</p> :
-              <ResponsiveContainer width="100%" height={250}><BarChart data={report.distribution} margin={{ bottom: 30 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="range" tick={{ fill: "#94a3b8", fontSize: 10 }} interval={0} angle={-15} textAnchor="end" />
-                <YAxis allowDecimals={false} tick={{ fill: "#94a3b8" }} />
-                <Tooltip /><Bar dataKey="count" name="Products" fill="#6366f1" radius={[5, 5, 0, 0]} />
-              </BarChart></ResponsiveContainer>}
+            <h3 className="font-semibold text-white">Most-used product categories</h3>
+            <p className="mb-4 text-xs text-slate-400">Customers whose active API keys include products from each category. Counts refresh when this page opens.</p>
+            {usage.status === "loading" ? <p role="status" className="animate-pulse text-slate-400">Loading category usage…</p> :
+              usage.status === "error" ? <p role="alert" className="text-rose-300">Unable to load category usage. Reload to retry.</p> :
+              !top.length ? <p role="status" className="text-slate-400">No customer has picked products in this segment yet.</p> : <>
+              <ResponsiveContainer width="100%" height={Math.max(160, top.length * 36)}><BarChart data={top} layout="vertical" margin={{ left: 10, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fill: "#94a3b8" }} />
+                <YAxis type="category" dataKey="name" width={130} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip /><Bar dataKey="users" name="Customers using" fill="#6366f1" radius={[0, 5, 5, 0]} />
+              </BarChart></ResponsiveContainer>
+              <ul className="mt-4 space-y-2 text-sm text-slate-300">{top.map(item => <li key={item.name} className="flex justify-between gap-4">
+                <span>{item.name}</span><span className="text-slate-400">{item.users} {item.users === 1 ? "customer" : "customers"} · {item.products} {item.products === 1 ? "product" : "products"} picked</span></li>)}</ul></>}
           </div>
           <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-5">
             <h3 className="mb-3 font-semibold text-white">Products by segment</h3>
