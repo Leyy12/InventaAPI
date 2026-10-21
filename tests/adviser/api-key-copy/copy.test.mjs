@@ -74,7 +74,7 @@ test('route and UI wiring: owner-only secret route, copy button only for copyabl
   assert.match(routes, /router\.get\('\/:id\/secret', handlers\.reveal\)/);
   assert.match(routes, /vaultSecret: process\.env\.API_KEY_ENCRYPTION_SECRET/);
   const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/api-keys/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /apiKey\.copyAvailable && <button/);
+  assert.match(page, /disabled=\{!apiKey\.copyAvailable/);
   assert.match(page, /\/secret`\)/);
   assert.match(page, /navigator\.clipboard\.writeText\(data\.key\)/);
   assert.match(page, /Create a new key to be able to copy it later/);

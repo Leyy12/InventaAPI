@@ -167,18 +167,19 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
                       </div>
                     </div>
                     <p className="text-xs font-medium text-slate-400 mb-2">API KEY</p>
-                    <div className="flex items-stretch gap-2">
-                      <div className="min-w-0 flex-1 rounded-lg bg-slate-950 border border-slate-700 px-4 py-3 font-mono text-sm text-indigo-300 break-all">
+                    <div className="relative">
+                      <div className="rounded-lg bg-slate-950 border border-slate-700 pl-4 pr-24 py-3 font-mono text-sm text-indigo-300 break-all">
                         {`${apiKey.keyPrefix}••••••••`}
                       </div>
-                      {apiKey.copyAvailable && <button type="button" onClick={() => void copyKey(apiKey.id)}
-                        disabled={copyState?.id === apiKey.id && copyState.status === "copying"}
-                        aria-label={`Copy API key ${apiKey.name}`}
-                        className="shrink-0 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 text-sm text-slate-200 inline-flex items-center gap-2 disabled:opacity-60">
+                      <button type="button" onClick={() => void copyKey(apiKey.id)}
+                        disabled={!apiKey.copyAvailable || (copyState?.id === apiKey.id && copyState.status === "copying")}
+                        aria-label={apiKey.copyAvailable ? `Copy API key ${apiKey.name}` : "Copy unavailable for this key"}
+                        title={apiKey.copyAvailable ? "Copy API key" : "Create a new key to be able to copy it later"}
+                        className="absolute inset-y-0 right-1.5 my-1.5 rounded-md px-2.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
                         {copyState?.id === apiKey.id && copyState.status === "copied"
-                          ? <><Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /> Copied</>
-                          : <><Copy className="w-4 h-4" aria-hidden="true" /> Copy</>}
-                      </button>}
+                          ? <><Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /><span className="text-emerald-400">Copied</span></>
+                          : <Copy className="w-4 h-4" aria-hidden="true" />}
+                      </button>
                     </div>
                     <p role="status" className="mt-2 text-xs text-amber-200">
                       {copyState?.id === apiKey.id && copyState.status === "failed" ? "Could not copy this key. Please try again."
