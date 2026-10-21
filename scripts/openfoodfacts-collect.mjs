@@ -111,29 +111,37 @@ function toRow(product, segment) {
   };
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  console.log('Collecting from Open Food Facts…');
-  const source = options.barcodes ? barcodeProducts(options.barcodes) : searchProducts(options);
-  const rows = [], seen = new Set();
-  let skipped = 0, failure = null;
-  try {
-    for await (const product of source) {
-      const row = toRow(product, options.segment);
-      if (!row || seen.has(row.sku)) { skipped++; continue; }
-      seen.add(row.sku); rows.push(row);
-      if (rows.length >= options.limit) break;
-    }
-  } catch (error) {
-    // Keep what was collected; rerun with --start-page to continue a search.
-    failure = error;
-  }
+function writeFiles(options, rows) {
   const columns = ['name', 'brand', 'segment', 'category', 'size', 'sku', 'description', 'image_url'];
   writeFileSync(options.out, [columns.join(','), ...rows.map(row => columns.map(column => csvCell(row[column])).join(','))].join('\n') + '\n');
   const credits = options.out.replace(/\.csv$/iu, '') + '-credits.csv';
   writeFileSync(credits, ['barcode,name,product_page,image_url,data_license,image_license,source',
     ...rows.map(row => [row.sku, row.name, `${API}/product/${row.sku}`, row.image_url, 'ODbL 1.0', row.image_url ? 'CC BY-SA 3.0' : '', 'Open Food Facts contributors']
       .map(value => csvCell(value)).join(','))].join('\n') + '\n');
+  return credits;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  console.log('Collecting from Open Food Facts…');
+  const source = options.barcodes ? barcodeProducts(options.barcodes) : searchProducts(options);
+  const rows = [], seen = new Set();
+  let skipped = 0, failure = null;
+  // Long runs save as they go, so a stopped run keeps its products.
+  process.once('SIGTERM', () => { writeFiles(options, rows); process.exit(143); });
+  try {
+    for await (const product of source) {
+      const row = toRow(product, options.segment);
+      if (!row || seen.has(row.sku)) { skipped++; continue; }
+      seen.add(row.sku); rows.push(row);
+      if (rows.length % 100 === 0) writeFiles(options, rows);
+      if (rows.length >= options.limit) break;
+    }
+  } catch (error) {
+    // Keep what was collected; rerun with --start-page to continue a search.
+    failure = error;
+  }
+  const credits = writeFiles(options, rows);
   console.log(`Wrote ${rows.length} products to ${options.out} (${rows.filter(row => row.image_url).length} with a photo; ${skipped} skipped without a name or repeated).`);
   console.log(`Credits: ${credits}. Ready to import.`);
   if (failure) throw new Error(`Stopped early: ${failure.message}. The products collected so far were saved.`);
