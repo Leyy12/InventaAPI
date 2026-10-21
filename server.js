@@ -32,6 +32,7 @@ import freetrialRouter from './routes/freetrial.js';
 import adminRouter from './routes/admin.js';
 import contactRouter from './routes/contact.js';
 import customerInsightsRouter from './routes/customer-insights.js';
+import reportsRouter from './routes/reports.js';
 import playgroundRouter from './routes/playground.js';
 import clientDbRouter from './routes/client-db.js';
 
@@ -167,6 +168,7 @@ app.use('/api/v1/free-trial', freetrialRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/contact', contactRouter);
 app.use('/api/v1/customer/insights', customerInsightsRouter);
+app.use('/api/v1/reports', reportsRouter);
 app.use('/api/v1/playground', playgroundRouter);
 app.use('/api/v1/client-db', clientDbRouter);
 
