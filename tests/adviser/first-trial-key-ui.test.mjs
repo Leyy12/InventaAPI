@@ -157,7 +157,7 @@ test('real existing-key mode locks persisted products, toggles only pending addi
     f.card('hardware-40').props.onClick(); await flush();
     assert.equal(f.button('Add Selected Products').props.disabled, true);
     f.button('Select All').props.onClick(); await flush();
-    assert.equal(f.cards().filter(n => n.props.className.includes('border-2')).length, 50);
+    assert.equal(f.cards().filter(n => n.props.className.includes('border-2')).length, 10); // only the 10 newly picked; the 40 included stay neutral
     await f.button('Add Selected Products').props.onClick(); await flush();
     const body = JSON.parse(f.keyCalls.find(call => call.init?.method === 'PATCH').init.body);
     assert.equal(body.expectedScopeVersion, 7); assert.equal(body.linkedProductIds.length, 50);

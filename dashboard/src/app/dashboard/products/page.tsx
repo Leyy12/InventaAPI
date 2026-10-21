@@ -91,8 +91,9 @@ function CustomerCatalogSession() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'not-selected'>('all');
   const [productCategory, setProductCategory] = useState(ALL_CATEGORIES);
-  // Products already linked to a key stay selectable for another key; each key's name is its own filter.
-  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('all');
+  // Products already linked to a key are hidden by default but stay selectable
+  // for another key through this filter; each key's name is its own filter.
+  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('unused');
   const [keyUsage, setKeyUsage] = useState<KeyProductUsage[]>([]);
   const keyNames = useMemo(() => keyNamesByProduct(keyUsage), [keyUsage]);
   
@@ -234,10 +235,12 @@ function CustomerCatalogSession() {
   const activeKeyUsageFilter: KeyUsageFilter = keyUsageFilter.startsWith('key:')
     && !keyUsage.some(key => `key:${key.id}` === keyUsageFilter) ? 'all' : keyUsageFilter;
   const filteredProducts = searchedProducts.filter(product => {
-    const isSelected = selectedProducts.has(product.id!) || (activeTrial && !trialNewKey && trialState.included.has(product.id!));
-    return (selectionFilter === 'all' || (selectionFilter === 'selected' ? isSelected : !isSelected))
-      && matchesCategory(product, activeCategory)
-      && matchesKeyUsage(product.id!, activeKeyUsageFilter, keyUsage, keyNames);
+    // "Checked" means picked in this session. Picked products stay where they
+    // are under the selection and API key filters so a click never hides them.
+    const isPicked = selectedProducts.has(product.id!);
+    if (selectionFilter === 'selected' && !isPicked) return false;
+    return matchesCategory(product, activeCategory) && (isPicked
+      || (selectionFilter !== 'selected' && matchesKeyUsage(product.id!, activeKeyUsageFilter, keyUsage, keyNames)));
   });
   const selectionPlaygroundHref = playgroundHref(products, selectedProducts, selectedVariants);
   const presentationFiltered = selectionFilter !== 'all' || activeCategory !== ALL_CATEGORIES || activeKeyUsageFilter !== 'all';
@@ -453,6 +456,9 @@ function CustomerCatalogSession() {
       // Trial refresh clears selections that are now included; keep the success view's list.
       setGeneratedLinkedProducts(selectedItems.map(product => ({ id: product.id!, name: product.name || 'Product unavailable' })));
       setTrialNewKey(false);
+      // The new key's products move to "Added to a key" and leave the default view.
+      setSelectedProducts(new Set());
+      setSelectedVariants({});
       if (activeTrial && user) {
         invalidateAccountUsage(user.uid);
         receiveTrialCatalog(await apiKeyRequest(user), user.uid);
@@ -862,7 +868,9 @@ DAAS_API_KEY=${generatedKey}
             // A new Trial key may reuse included products; only new products need a free slot.
             const selectionDisabled = upgradeRequired || !trialReady || generating || (activeTrial && (!trialState.canToggle
               || (isIncluded ? !trialNewKey : !trialState.pending.has(product.id!) && !trialState.canSelect)));
-            const isSelected = selectedProducts.has(product.id!) || (isIncluded && !trialNewKey);
+            // Only products picked in this session are highlighted; products
+            // already in a key carry a quiet note instead.
+            const isSelected = selectedProducts.has(product.id!);
             const showIncludedScope = isIncluded && !selectedProducts.has(product.id!);
             const productVars = showIncludedScope ? new Set(includedVariants[product.id!] ?? product.variants?.map(v => `${v.flavor || ''}|${v.size || ''}`)) : selectedVariants[product.id!] || new Set();
             const totalVars = product.variants ? product.variants.length : 0;
@@ -921,7 +929,7 @@ DAAS_API_KEY=${generatedKey}
                 {/* Card Body */}
                 <div className="p-4">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
-                  {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-indigo-300 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
+                  {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
                   {keyNames.has(product.id!) && <p className="flex items-center gap-1 text-xs text-emerald-300 mb-1 min-w-0">
                     <Key className="w-3 h-3 shrink-0" aria-hidden="true" />
                     <span className="truncate">In key: {keyNames.get(product.id!)!.join(', ')}</span>
@@ -934,13 +942,16 @@ DAAS_API_KEY=${generatedKey}
                       {product.variants.map((v, i) => {
                         const variantId = `${v.flavor || ''}|${v.size || ''}`;
                         const isVarSelected = productVars.has(variantId);
+                        const isVarIncluded = isVarSelected && showIncludedScope;
                         return (
                           <button
                             key={i}
                             onClick={(e) => toggleVariant(e, product.id!, variantId)}
                             disabled={selectionDisabled}
                             className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
-                              isVarSelected 
+                              isVarIncluded
+                                ? 'bg-slate-800/80 text-emerald-300/90 border border-emerald-700/40'
+                                : isVarSelected
                                 ? 'bg-indigo-500 text-white border border-indigo-600'
                                 : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-300'
                             }`}
