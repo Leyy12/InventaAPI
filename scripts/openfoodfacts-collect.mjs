@@ -68,7 +68,8 @@ async function* searchProducts({ country, brand, category, search, startPage }) 
     const products = body.products || [];
     console.log(`  page ${page}: ${products.length} products (of ${body.count ?? '?'})`);
     yield* products;
-    if (products.length < PAGE_SIZE) return;
+    // Pages can come back a few products short, so stop on the total count instead.
+    if (!products.length || page * PAGE_SIZE >= (body.count ?? 0)) return;
     await sleep(SEARCH_DELAY_MS);
   }
 }
