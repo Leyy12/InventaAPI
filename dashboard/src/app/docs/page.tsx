@@ -7,7 +7,7 @@ export default function DocsPage() {
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Quick start and authentication</h2>
       <p>API keys can be generated once per account per UTC day. Only a successfully created key uses this allowance. Revoking it or losing its one-time secret does not restore the allowance. Free Trial additionally permits up to 5 active API keys sharing up to 50 linked products. Use secure one-for-one replacement if its secret is lost.</p>
-      <p>Select authorized products and create a key on the <Link href="/dashboard/products" className="text-indigo-300">Products page</Link>. Save the secret when it is shown once. Manage or revoke keys on the <Link href="/dashboard/api-keys" className="text-indigo-300">API Keys page</Link>.</p>
+      <p>Select authorized products and create a key on the <Link href="/dashboard/products" className="text-indigo-300">Products page</Link>. Copy the secret when it is shown; you can copy it again later from API Keys. Manage or revoke keys on the <Link href="/dashboard/api-keys" className="text-indigo-300">API Keys page</Link>.</p>
       <p>Send your saved API key in the <code>x-api-key: YOUR_API_KEY</code> header. This is different from the Firebase Bearer authentication used by the Customer management application.</p>
       <p>Keep keys in server-side secret configuration, never in URLs, public repositories, browser code or analytics. Example hostnames must be replaced with your operator-confirmed API origin.</p>
     </section>

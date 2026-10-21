@@ -19,7 +19,7 @@ test('API Keys is management-only; Products retains generation entry point', () 
 
 test('active Customer key cards retain masked metadata and Revoke without a replacement action', () => {
   assert.match(keys, /apiKey\.keyPrefix\}••••••••/);
-  assert.match(keys, /Secret shown only once/);
+  assert.match(keys, /Created before copy was available/);
   assert.doesNotMatch(keys, /Replace API Key|replaceKey|RotateCw/u);
   assert.match(keys, /\{apiKey\.plan\}/);
   assert.match(keys, /formatDate\(apiKey\.lastUsed\)/);

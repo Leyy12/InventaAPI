@@ -702,16 +702,16 @@ DAAS_API_KEY=${generatedKey}
             onChange={(e) => setActiveSegment(e.target.value)}
             disabled={isFreePlan(appUser?.plan)}
             className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px] disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Filter products by category"
+            aria-label="Filter products by industry"
           >
             {isFreePlan(appUser?.plan) ? (
-              <option value={activeSegment}>{activeSegment}</option>
+              <option value={activeSegment}>Industry: {activeSegment}</option>
             ) : (
               <>
-                <option value="All">All Categories</option>
-                <option value="Hardware">Hardware</option>
-                <option value="Grocery">Grocery</option>
-                <option value="Pharmacy">Pharmacy</option>
+                <option value="All">Industry: All</option>
+                <option value="Hardware">Industry: Hardware</option>
+                <option value="Grocery">Industry: Grocery</option>
+                <option value="Pharmacy">Industry: Pharmacy</option>
               </>
             )}
           </select>
@@ -727,9 +727,9 @@ DAAS_API_KEY=${generatedKey}
           <select id="selection-filter" value={selectionFilter}
             onChange={event => setSelectionFilter(event.target.value as typeof selectionFilter)}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
-            <option value="all">All Products</option>
-            <option value="selected">Selected</option>
-            <option value="not-selected">Not Selected</option>
+            <option value="all">Selection: All</option>
+            <option value="selected">Selection: Checked</option>
+            <option value="not-selected">Selection: Not checked</option>
           </select>
         </div>
 
@@ -739,8 +739,8 @@ DAAS_API_KEY=${generatedKey}
             onChange={event => setProductCategory(event.target.value)}
             disabled={categoryOptions.length === 0}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50">
-            <option value={ALL_CATEGORIES}>All Product Categories</option>
-            {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
+            <option value={ALL_CATEGORIES}>Category: All</option>
+            {categoryOptions.map(category => <option key={category} value={category}>Category: {category}</option>)}
           </select>
         </div>
 
@@ -749,10 +749,10 @@ DAAS_API_KEY=${generatedKey}
           <select id="key-usage-filter" value={activeKeyUsageFilter}
             onChange={event => setKeyUsageFilter(event.target.value as KeyUsageFilter)}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
-            <option value="all">All products</option>
-            <option value="unused">Not in an API key</option>
-            {keyUsage.length > 0 && <option value="used">In any API key</option>}
-            {keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>In key: {key.name}</option>)}
+            <option value="all">API key: All</option>
+            <option value="unused">API key: Not added yet</option>
+            {keyUsage.length > 0 && <option value="used">API key: Added to any key</option>}
+            {keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>API key: {key.name}</option>)}
           </select>
         </div>
 
@@ -763,6 +763,7 @@ DAAS_API_KEY=${generatedKey}
             disabled={selectableIds.length === 0 || upgradeRequired || !trialReady || generating}
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-sm font-medium text-slate-300 transition-all whitespace-nowrap"
             aria-label={`Select ${selectableIds.length} new products in view`}
+            title="Checks every product currently shown by the filters above"
           >
             Select All ({selectableIds.length})
           </button>
@@ -1076,7 +1077,7 @@ DAAS_API_KEY=${generatedKey}
                   )}
                 </div>
                 <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
-                  <p className="text-xs font-medium text-emerald-400 mb-2">API Key — shown once</p>
+                  <p className="text-xs font-medium text-emerald-400 mb-2">API Key — copy it now (you can copy it again later from API Keys)</p>
                   <div className="flex items-start gap-2 bg-slate-900 rounded-lg p-3 mb-3">
                     <span className="min-w-0 flex-1 break-all font-mono text-sm text-emerald-300 select-all">{generatedKey}</span>
                     <button type="button" onClick={() => void copyGeneratedKey()}

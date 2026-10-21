@@ -18,7 +18,7 @@ const highlighted = card => {
 test('All Products default; three labelled filter options; changing filter performs no requests', () => using({}, async f => {
   const control = f.find(n => n.props.id === 'selection-filter');
   assert.equal(control.props.value, 'all');
-  assert.deepEqual(nodes(control, n => n.type === 'option').map(text), ['All Products', 'Selected', 'Not Selected']);
+  assert.deepEqual(nodes(control, n => n.type === 'option').map(text), ['Selection: All', 'Selection: Checked', 'Selection: Not checked']);
   assert.ok(f.find(n => n.type === 'label' && n.props.htmlFor === 'selection-filter'));
   assert.equal(f.cards().length, 60);
   assert.doesNotMatch(text(f.h.output), /New Product Selections/);
@@ -171,7 +171,7 @@ test('products already in a key stay listed and labelled; filters show unused or
   await f.segment('Grocery');
   const control = f.find(n => n.props.id === 'key-usage-filter');
   assert.equal(control.props.value, 'all');
-  assert.match(text(control), /Not in an API key/); assert.match(text(control), /In key:\s+Fixture POS/);
+  assert.match(text(control), /API key: Not added yet/); assert.match(text(control), /API key:\s+Fixture POS/);
   assert.equal(f.cards().length, 60);
   // Paid accounts can reuse a product already in a key for another key.
   await f.click(f.card('grocery-0')); highlighted(f.card('grocery-0'));

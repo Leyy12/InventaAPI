@@ -22,14 +22,14 @@ test('static wiring: all management routes use tested authenticated handlers', (
   const routes = source('../routes/apikeys.js');
   for (const [verb, path, handler] of [
     ['post', '/generate', 'create'], ['get', '/', 'list'], ['get', '/:id', 'view'],
-    ['post', '/:id/replace', 'replace'],
+    ['post', '/:id/replace', 'replace'], ['get', '/:id/secret', 'reveal'],
     ['patch', '/:id/products', 'products'], ['patch', '/:id', 'rename'], ['delete', '/:id', 'revoke'],
   ]) assert.ok(routes.includes(`router.${verb}('${path}', handlers.${handler})`));
   assert.match(routes, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);
   // History remains token-scoped; replacement adds a separately tested
   // authenticated, transactionally guarded management handler.
   assert.match(routes, /router\.get\('\/history', createApiHistoryHandler\(/u);
-  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 8);
+  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 9);
 });
 
 test('static wiring: protected DaaS endpoints consume account quota, with paid sales checked in transaction', () => {

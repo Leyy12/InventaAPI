@@ -49,7 +49,7 @@ for (const status of ['trial', 'active', 'upgrade_required', null]) {
       assert.doesNotMatch(content, /Remaining Slots|Trial expires|Free Trial · Active|Plan settings|Requests used today|Daily account limit/);
       assert.equal(nodes(f.h.output, n => n.type === 'h2' && text(n) === 'Active API Keys').length, 1);
       assert.match(content, /Keep Your Keys Secure/);
-      assert.match(content, /Secrets are shown only once/);
+      assert.match(content, /Store secrets securely/);
       assert.match(content, /Manage or revoke existing API credentials/);
       assert.match(content, /New API keys are created from/);
       const top = f.h.output.props.children.filter(Boolean);
