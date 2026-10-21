@@ -83,6 +83,8 @@ export function previewCatalogImport(matrix, records) {
       if (values.length !== headers.length) throw catalogError(400, 'Column count does not match header.');
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
+      // Lets the preview name a row even when it turns out invalid.
+      row.display = { name: (fields.name || '').slice(0, 160), brand: (fields.brand || '').slice(0, 120) };
       const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
       row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
         variants: [{ size, flavor, sku, expirationDate, price: strictPrice(fields.price) }] });

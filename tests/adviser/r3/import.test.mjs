@@ -109,3 +109,8 @@ test('files of any row count preview; malformed inputs are still rejected', () =
   assert.throws(() => previewCatalogImport([headers], []), /at least 1 row/);
   assert.throws(() => previewCatalogImport([headers, [1]], []), /at least 1 row/);
 });
+test('invalid rows keep their name and brand for the preview table', () => {
+  const row = preview(headers, [values.map((value, i) => headers[i] === 'price' ? '' : value)]).rows[0];
+  assert.equal(row.status, 'INVALID'); assert.equal(row.product, null);
+  assert.deepEqual(row.display, { name: 'Coke', brand: 'Coca-Cola' });
+});

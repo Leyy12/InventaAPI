@@ -8,7 +8,7 @@ import { extractTemplateRows, fitsTemplate } from '@/lib/csv-extract';
 import ProductImagePreview from '@/components/products/ProductImagePreview';
 
 type Status = 'NEW' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT';
-type Row = { row: number; status: Status; reason: string; matches: string[]; possibleDuplicates: string[];
+type Row = { row: number; status: Status; reason: string; matches: string[]; possibleDuplicates: string[]; display?: { name: string; brand: string };
   product: { name: string; brand: string; segment: string; category: string; sku: string; image_url?: string;
     variants: { size?: string; flavor?: string; price: number }[] } | null };
 type Preview = { previewId: string; total: number; counts: Record<Status, number>; warnings: string[]; rows: Row[] };
@@ -117,7 +117,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
             <tbody>{preview.rows.map(row => <tr key={row.row} className="border-t border-slate-800">
               <td className="p-2"><input type="checkbox" aria-label={'Select row ' + row.row} checked={selected.includes(row.row)}
                 disabled={busy || !WRITABLE.includes(row.status)} onChange={event => setSelected(previous => event.target.checked ? [...previous, row.row] : previous.filter(value => value !== row.row))} /></td>
-              <td className="p-2">{row.row}</td><td className="p-2">{row.product?.name || 'Invalid row'}<br />{row.product?.brand}</td>
+              <td className="p-2">{row.row}</td><td className="p-2">{row.product?.name || row.display?.name || 'Invalid row'}<br />{row.product?.brand ?? row.display?.brand}</td>
               <td className="p-2">{row.product?.segment}<br />{row.product?.category}</td>
               <td className="p-2">{row.product?.variants[0]?.size} {row.product?.variants[0]?.flavor}<br />{row.product?.variants[0]?.price}</td>
               <td className="p-2">{row.product?.image_url ? <><ProductImagePreview url={row.product.image_url} name={row.product.name} /><span className="block max-w-40 truncate" title={row.product.image_url}>HTTPS image URL</span></> : 'None'}</td>
