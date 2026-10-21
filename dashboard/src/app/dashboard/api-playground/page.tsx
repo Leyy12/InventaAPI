@@ -315,9 +315,9 @@ export default function ApiPlaygroundPage() {
                   <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-4 py-3 text-xs text-indigo-300">
                     <p className="font-bold mb-1">📦 Response Schema Note</p>
                     <p className="text-indigo-300/70 leading-relaxed">
-                      Each product includes a <code className="bg-indigo-500/20 px-1 rounded">variants</code> array with the full list of options (flavor, size, price, SKU, expirationDate).
-                      The root-level <code className="bg-indigo-500/20 px-1 rounded">price</code> and <code className="bg-indigo-500/20 px-1 rounded">size</code> fields reflect the{' '}
-                      <strong>lowest-priced variant</strong> for convenience — use the <code className="bg-indigo-500/20 px-1 rounded">variants</code> array for the full options list.
+                      Each product includes a <code className="bg-indigo-500/20 px-1 rounded">variants</code> array with the full list of options (flavor, size, SKU, expirationDate).
+                      The root-level <code className="bg-indigo-500/20 px-1 rounded">sku</code> and <code className="bg-indigo-500/20 px-1 rounded">size</code> fields reflect the{' '}
+                      <strong>first variant</strong> for convenience — use the <code className="bg-indigo-500/20 px-1 rounded">variants</code> array for the full options list. Products carry no price.
                     </p>
                   </div>
                 )}

@@ -1,23 +1,23 @@
 import { comparisonText, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
-import { brandNameKey, catalogDigest, catalogError, strictPrice, validateCatalogProduct } from './catalog-contract.js';
+import { brandNameKey, catalogDigest, catalogError, validateCatalogProduct } from './catalog-contract.js';
 
 // Preserve recognized legacy aliases. No filename/semantic guessing or manual map existed.
 const aliases = {
   name: 'name', product_name: 'name', productname: 'name', generic_name: 'name', genericname: 'name',
   item_name: 'name', medicine_name: 'name', drug_name: 'name', item: 'name', description: 'description',
-  brand: 'brand', brand_name: 'brand', brandname: 'brand', manufacturer: 'brand', company: 'brand', lab: 'brand',
+  brand: 'brand', brands: 'brand', brand_name: 'brand', brandname: 'brand', manufacturer: 'brand', company: 'brand', lab: 'brand',
   segment: 'segment', category_type: 'segment', product_type: 'segment', type: 'segment', dept: 'segment', department: 'segment',
   category: 'category', drug_category: 'category', subcategory: 'category', sub_category: 'category',
   product_category: 'category', class: 'category', therapeutic_class: 'category', drug_class: 'category',
-  sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku',
-  price: 'price', srp: 'price', retail_price: 'price', unit_price: 'price', selling_price: 'price', market_price: 'price', msrp: 'price',
+  sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku', barcode_sku: 'sku', ean: 'sku',
   size: 'size', dosage: 'size', unit: 'size', packaging: 'size', form: 'size', strength: 'size',
-  pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size',
+  pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size', quantity: 'size', quantity_grams: 'size',
   flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expirationDate',
   expiry: 'expirationDate', expiry_date: 'expirationDate', exp_date: 'expirationDate', expirationdate: 'expirationDate',
   image_url: 'image_url', imageurl: 'image_url',
 };
-const money = value => typeof value === 'number' ? `₱${value.toFixed(2)}` : String(value ?? '');
+// Products carry no price, so price columns are skipped without a warning.
+const priceColumns = new Set(['price', 'srp', 'retail_price', 'unit_price', 'selling_price', 'market_price', 'msrp']);
 const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
 
 // Works out how one CSV row changes the existing product it matched. Only fields
@@ -42,7 +42,6 @@ export function planImportUpdate(existing, csv) {
   }
   if (matches.length !== 1) throw catalogError(409, 'Matches an existing product but not exactly one of its variants; edit it by hand.');
   const variant = matches[0];
-  if (variant.price !== row.price) { changes.push(`price: ${money(variant.price)} → ${money(row.price)}`); variant.price = row.price; }
   for (const field of [...VARIANT_MATCH_FIELDS, 'expirationDate']) {
     if (row[field] && row[field] !== (variant[field] ?? '')) { changes.push(`${field}: "${variant[field] || ''}" → "${row[field]}"`); variant[field] = row[field]; }
   }
@@ -61,12 +60,13 @@ export function previewCatalogImport(matrix, records) {
   const headers = matrix[0].map(raw => {
     const key = raw.replace(/^\uFEFF/u, '').trim().toLowerCase().replace(/\s+/gu, '_');
     const field = Object.hasOwn(aliases, key) ? aliases[key] : null;
+    if (!field && priceColumns.has(key)) return null;
     if (!field) warnings.push(`Ignored unknown column: ${raw || '(blank)'}`);
     else if (seen.has(field)) throw catalogError(400, `Duplicate column mapping for ${field}.`);
     if (field) seen.add(field);
     return field;
   });
-  const missing = ['name', 'category', 'segment', 'price'].filter(field => !seen.has(field));
+  const missing = ['name', 'category', 'segment'].filter(field => !seen.has(field));
   if (missing.length) throw catalogError(400, `Missing required columns: ${missing.join(', ')}.`);
   // Index the catalog once so each row looks up matches instead of rescanning
   // every product (thousands of rows x thousands of products otherwise).
@@ -83,9 +83,11 @@ export function previewCatalogImport(matrix, records) {
       if (values.length !== headers.length) throw catalogError(400, 'Column count does not match header.');
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
+      // Lets the preview name a row even when it turns out invalid.
+      row.display = { name: (fields.name || '').slice(0, 160), brand: (fields.brand || '').slice(0, 120) };
       const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
       row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
-        variants: [{ size, flavor, sku, expirationDate, price: strictPrice(fields.price) }] });
+        variants: [{ size, flavor, sku, expirationDate }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
       const keys = new Set(productIdentityKeys(row.product));
       row.matches = [...new Set([...keys].flatMap(key => byKey.get(key) || []))].sort();

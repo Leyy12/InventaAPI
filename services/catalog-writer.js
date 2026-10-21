@@ -38,9 +38,10 @@ export async function requireCatalogAdmin(tx, db, uid) {
     throw catalogError(403, 'Admin access required.');
   }
 }
+export const CATALOG_LIMIT = 5000;
 export async function readCatalog(tx, db) {
-  const snapshot = await tx.get(db.collection('products').limit(5001));
-  if (snapshot.docs.length > 5000) throw catalogError(503, 'Catalog exceeds safe scan limit; operator migration required.');
+  const snapshot = await tx.get(db.collection('products').limit(CATALOG_LIMIT + 1));
+  if (snapshot.docs.length > CATALOG_LIMIT) throw catalogError(503, 'Catalog exceeds safe scan limit; operator migration required.');
   return snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
 }
 
@@ -60,6 +61,8 @@ export async function prepareCatalogWrite({ tx, db, uid, actor, action, productI
   if (action !== 'create' && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0
     || expectedRevision !== (previous.catalogRevision ?? 0))) throw catalogError(409, 'Product changed; reload before editing.');
   const records = await readCatalog(tx, db);
+  // Stop at the scan limit so a create can never lock every later catalog write.
+  if (action === 'create' && records.length >= CATALOG_LIMIT) throw catalogError(409, `The catalog is full (${CATALOG_LIMIT.toLocaleString('en-US')} products). Delete products before adding more.`);
   const audit = auditCatalog(records, [], { deriveReservationId });
   const integrity = audit.problems.filter(problem => problem.kind.startsWith('RESERVATION_'));
   if (integrity.length) throw reservationIntegrityError(integrity);

@@ -4,6 +4,7 @@ import { extractTemplateRows, fitsTemplate } from '../../../admin-panel/src/lib/
 import { previewCatalogImport } from '../../../services/catalog-import.js';
 
 const defaults = { segment: 'Grocery', category: 'Uncategorized' };
+const head = out => out.rows[0];
 
 test('template files go to the API unchanged', () => {
   assert.equal(fitsTemplate(['name', 'brand', 'segment', 'category', 'size', 'price', 'sku']), true);
@@ -19,20 +20,28 @@ test('Open Food Facts layout is reduced to the needed details', () => {
   assert.equal(fitsTemplate(header), false);
   const out = extractTemplateRows(matrix, defaults);
   assert.equal(out.used.name, 'product_name_en'); assert.equal(out.used.sku, 'code'); assert.equal(out.used.size, 'quantity');
-  assert.equal(out.dropped, 1); assert.equal(out.missingPrice, 2);
-  const [head, first, second] = out.rows;
-  const row = Object.fromEntries(head.map((field, i) => [field, first[i]]));
-  assert.deepEqual([row.name, row.brand, row.segment, row.category, row.size, row.sku, row.price],
-    ['nescafe original 20g', 'Nestlé', 'Grocery', 'Beverages And Beverages Preparations', '20g', '4800361403764', '']);
+  assert.equal(out.dropped, 1); assert.equal(head(out).includes('price'), false);
+  const [columns, first, second] = out.rows;
+  const row = Object.fromEntries(columns.map((field, i) => [field, first[i]]));
+  assert.deepEqual([row.name, row.brand, row.segment, row.category, row.size, row.sku],
+    ['nescafe original 20g', 'Nestlé', 'Grocery', 'Beverages And Beverages Preparations', '20g', '4800361403764']);
   assert.equal(second[0], 'biscuits'); // falls back to another language's name
-  // The API accepts the extracted header; rows without a price are reported invalid, not dropped silently.
+  // The API accepts the extracted header, and products carry no price.
   const plan = previewCatalogImport(out.rows, []);
-  assert.equal(plan.total, 2); assert.equal(plan.counts.INVALID, 2); assert.match(plan.rows[0].reason, /Price/u);
+  assert.equal(plan.total, 2); assert.equal(plan.counts.NEW, 2);
 });
 
-test('extracted rows with a price preview as new products', () => {
+test('price columns are left out and the rows preview as new products', () => {
   const out = extractTemplateRows([['Item Description', 'Selling Price', 'Barcode'], ['Lucky Me Pancit Canton', '15', '4807770270017']], defaults);
-  assert.equal(out.used.price, 'Selling Price');
+  assert.equal(head(out).includes('price'), false); assert.equal(out.used.sku, 'Barcode');
   const plan = previewCatalogImport(out.rows, []);
   assert.equal(plan.counts.NEW, 1); assert.equal(plan.rows[0].product.segment, 'Grocery');
+});
+
+test('the Philippines products file maps barcode, brand and size', () => {
+  const out = extractTemplateRows([['barcode_sku', 'product_name', 'brands', 'quantity_grams', 'image_url'],
+    ['4800361403764', 'nescafe original 20g', 'Nestlé', '20g', 'https://images.openfoodfacts.org/a.jpg']], defaults);
+  assert.deepEqual(out.used, { name: 'product_name', brand: 'brands', size: 'quantity_grams', sku: 'barcode_sku', image_url: 'image_url' });
+  const plan = previewCatalogImport(out.rows, []);
+  assert.equal(plan.counts.NEW, 1); assert.equal(plan.rows[0].product.variants[0].sku, '4800361403764');
 });

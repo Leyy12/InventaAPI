@@ -55,12 +55,7 @@ export function validateSubmissionContent(input) {
       object(variant, [...fields, 'price']);
       const result = {};
       for (const field of fields) if (variant[field] !== undefined) result[field] = text(variant[field], 200);
-      if (variant.price !== undefined) {
-        if (typeof variant.price !== 'number' || !Number.isFinite(variant.price) || variant.price < 0 || variant.price > 1e9) {
-          throw submissionError(400, 'Variant price must be a finite non-negative number.');
-        }
-        result.price = variant.price;
-      }
+      // Products carry no price; a price sent by an older client is accepted and dropped.
       return result;
     }),
   };

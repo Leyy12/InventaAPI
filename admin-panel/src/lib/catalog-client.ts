@@ -14,11 +14,10 @@ export async function catalogRequest<T>(path: string, method: string, body: unkn
   return result as T;
 }
 
-export function catalogPrice(value: unknown): number {
-  const number = typeof value === 'number' ? value
-    : typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : NaN;
-  if (!Number.isFinite(number) || number < 0 || number > 1e9) throw new Error('Each variant needs a valid non-negative price.');
-  return number;
+// Products carry no price; a price still on a loaded variant is never sent back.
+export function withoutPrice<T extends { price?: unknown }>(variant: T): Omit<T, 'price'> {
+  const { price, ...rest } = variant;
+  return rest;
 }
 
 // Secondary display warning only; authoritative identity comes from the backend.
