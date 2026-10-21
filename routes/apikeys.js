@@ -7,6 +7,7 @@ import { createApiHistoryHandler } from '../services/api-history.js';
 const router = express.Router();
 const handlers = createApiKeyHandlers({
   monthlyCutoverAt: process.env.FREE_MONTHLY_QUOTA_CUTOVER_AT,
+  vaultSecret: process.env.API_KEY_ENCRYPTION_SECRET,
   getDb: () => getFirestore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
 });
@@ -20,6 +21,7 @@ router.get('/history', createApiHistoryHandler({
   documentId: FieldPath.documentId(),
 }));
 router.get('/:id', handlers.view);
+router.get('/:id/secret', handlers.reveal);
 router.post('/:id/replace', handlers.replace);
 router.patch('/:id/products', handlers.products);
 router.patch('/:id', handlers.rename);

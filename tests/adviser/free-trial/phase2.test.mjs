@@ -165,7 +165,7 @@ test('Customer linked-key success modal keeps Key Name, product names and one-ti
   const page = readFileSync(new URL('../../../dashboard/src/app/dashboard/products/page.tsx', import.meta.url), 'utf8');
   assert.match(page, /setGeneratedKeyName\(typeof data\.name/u);
   assert.match(page, /Key Name<\/p>/u);
-  assert.match(page, /API Key — shown once/u);
+  assert.match(page, /API Key — copy it now/u);
   assert.match(page, /navigator\.clipboard\.writeText\(generatedKey\)/u);
   assert.match(page, /setGeneratedKey\(null\)/u);
   assert.match(page, /setGeneratedKeyName\(null\)/u);

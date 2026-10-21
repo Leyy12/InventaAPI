@@ -7,6 +7,7 @@ import {
 } from './api-key-security.js';
 import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS, trialCatalogChangeAllowed } from '../functions/entitlement-limits.mjs';
 import { authorizedProductIds } from './daas-catalog.js';
+import { openCredential, sealCredential } from './credential-vault.js';
 import { normalizeSegment } from './product-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 
@@ -35,7 +36,11 @@ function keyName(value) {
   return value.trim();
 }
 
-export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new Date(), monthlyCutoverAt = null }) {
+export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new Date(), monthlyCutoverAt = null, vaultSecret = null }) {
+  const sealed = issued => {
+    const value = sealCredential(issued.credential, issued.id, vaultSecret);
+    return value ? { credentialSealed: value } : {};
+  };
   const authenticated = operation => async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -220,7 +225,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         const ref = db.collection('api_keys').doc(issued.id);
         if ((await tx.get(ref)).exists) throw new ApiSecurityError(503, 'KEY_COLLISION', 'Retry key creation.');
         const record = {
-          ...issued.stored, ...scope, scopeVersion: 0, name, userId: actor.uid, userEmail: actor.email || '',
+          ...issued.stored, ...sealed(issued), ...scope, scopeVersion: 0, name, userId: actor.uid, userEmail: actor.email || '',
           status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
           plan: context.entitlement.plan, requestLimit: context.entitlement.limit,
           productAvailability: Object.fromEntries(authorizedProductIds(scope).map(id => [id, { availableSince: now }])),
@@ -252,7 +257,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         // Only allowlisted, non-secret fields survive rotation. In particular, a
         // legacy plaintext `key` and unknown future fields are never copied.
         const replacement = {
-          ...issued.stored,
+          ...issued.stored, ...sealed(issued),
           name: oldKey.name || 'Replacement API key',
           userId: actor.uid, userEmail: actor.email || '',
           status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
@@ -278,6 +283,20 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       return res.json({ success: true,
         ...publicKeyMetadata(issued.id, record, context.entitlement, context.usage),
         key: issued.credential });
+    }),
+    // Owner-only copy of a sealed secret. Keys created before sealing existed,
+    // or while no vault secret is configured, stay hash-only and unrecoverable.
+    reveal: authenticated(async (req, res, actor, db) => {
+      const ref = refFor(db, req.params.id);
+      const key = assertOwner(await ref.get(), actor.uid);
+      assertActiveKey(key, clock());
+      const credential = openCredential(key.credentialSealed, ref.id, vaultSecret);
+      if (!credential) {
+        throw new ApiSecurityError(404, 'KEY_NOT_RECOVERABLE',
+          'This key was created before copy was available. Create a new key to be able to copy it later.');
+      }
+      await audit(db, 'API Key Copied', actor, ref.id);
+      return res.json({ success: true, key: credential });
     }),
     rename: authenticated(async (req, res, actor, db) => {
       const name = keyName(req.body?.name);

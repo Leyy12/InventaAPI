@@ -1077,7 +1077,7 @@ DAAS_API_KEY=${generatedKey}
                   )}
                 </div>
                 <div className="bg-slate-950 border-2 border-emerald-500/30 rounded-xl p-4 mb-6">
-                  <p className="text-xs font-medium text-emerald-400 mb-2">API Key — shown once</p>
+                  <p className="text-xs font-medium text-emerald-400 mb-2">API Key — copy it now (you can copy it again later from API Keys)</p>
                   <div className="flex items-start gap-2 bg-slate-900 rounded-lg p-3 mb-3">
                     <span className="min-w-0 flex-1 break-all font-mono text-sm text-emerald-300 select-all">{generatedKey}</span>
                     <button type="button" onClick={() => void copyGeneratedKey()}

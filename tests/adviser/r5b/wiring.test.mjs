@@ -35,7 +35,9 @@ test('copy targets are deliberate, contextual and report clipboard failure',()=>
   const products=source('dashboard/src/app/dashboard/products/page.tsx');
   assert.match(products,/Copy API key/i);assert.match(products,/await navigator.clipboard.writeText/);assert.match(products,/Copy failed/);
   const keys=source('dashboard/src/app/dashboard/api-keys/page.tsx');
-  assert.match(keys,/apiKey\.keyPrefix\}••••••••/);assert.doesNotMatch(keys,/Copy API key|navigator\.clipboard|apiKey\.secret/);
+  assert.match(keys,/apiKey\.keyPrefix\}••••••••/);assert.doesNotMatch(keys,/apiKey\.secret/);
+  // Copy fetches the sealed secret on demand from the owner-only route and never keeps it in state.
+  assert.match(keys,/\/secret`\)/);assert.match(keys,/navigator\.clipboard\.writeText\(data\.key\)/);
 });
 test('placeholder examples centralized across keys/docs/playground and admin route is not a DaaS example',()=>{
   for(const path of ['dashboard/api-keys','dashboard/api-playground','docs']) assert.match(source(`dashboard/src/app/${path}/page.tsx`),/<CodeSnippet/);

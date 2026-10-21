@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Clock, Code, Key, Shield, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, Clock, Code, Copy, Key, Shield, Trash2 } from "lucide-react";
 import type { User } from "firebase/auth";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { apiKeyRequest } from "@/lib/api-keys";
@@ -20,6 +20,7 @@ interface ApiKey {
   createdAt: string | null;
   lastUsed: string | null;
   status: "active" | "revoked";
+  copyAvailable?: boolean;
 }
 
 export default function ApiKeysPage() {
@@ -46,6 +47,7 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState<Record<string, boolean>>({});
+  const [copyState, setCopyState] = useState<{ id: string; status: "copying" | "copied" | "failed" } | null>(null);
   const listGeneration = useRef(0);
   const upgradeRequired = entitlementStatus === "upgrade_required";
 
@@ -85,6 +87,21 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
     }
   };
 
+  // The secret is fetched on demand and goes straight to the clipboard; it is
+  // never kept in component state.
+  const copyKey = async (id: string) => {
+    setCopyState({ id, status: "copying" });
+    try {
+      const data = await apiKeyRequest(user, `/${encodeURIComponent(id)}/secret`);
+      if (typeof data.key !== "string") throw new Error("Invalid key response");
+      await navigator.clipboard.writeText(data.key);
+      setCopyState({ id, status: "copied" });
+    } catch {
+      setCopyState({ id, status: "failed" });
+    }
+    window.setTimeout(() => setCopyState(current => current?.id === id ? null : current), 2500);
+  };
+
   const formatDate = (value: string | null) => {
     if (!value) return "Never";
     const date = new Date(value);
@@ -112,7 +129,7 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
 
       <div className="glass-card rounded-xl p-6 border-l-4 border-amber-500">
         <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2"><Shield className="w-5 h-5 text-amber-400" /> Keep Your Keys Secure</h2>
-        <p className="text-sm text-slate-300">Secrets are shown only once. Store them securely and never put them in public repositories or client-side code. Revoking a key immediately disables that credential; revocation does not create another key.</p>
+        <p className="text-sm text-slate-300">Store secrets securely and never put them in public repositories or client-side code. Revoking a key immediately disables that credential; revocation does not create another key.</p>
       </div>
       <p className="text-sm text-slate-400">Free Trial permits up to 5 active API keys sharing up to 50 linked products for 7 days; reusing a product in another key does not use another slot. API calls do not consume products. Manage the catalog and create keys in Products. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
       <RequestHistory />
@@ -150,10 +167,24 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
                       </div>
                     </div>
                     <p className="text-xs font-medium text-slate-400 mb-2">API KEY</p>
-                    <div className="rounded-lg bg-slate-950 border border-slate-700 px-4 py-3 font-mono text-sm text-indigo-300 break-all">
-                      {`${apiKey.keyPrefix}••••••••`}
+                    <div className="flex items-stretch gap-2">
+                      <div className="min-w-0 flex-1 rounded-lg bg-slate-950 border border-slate-700 px-4 py-3 font-mono text-sm text-indigo-300 break-all">
+                        {`${apiKey.keyPrefix}••••••••`}
+                      </div>
+                      {apiKey.copyAvailable && <button type="button" onClick={() => void copyKey(apiKey.id)}
+                        disabled={copyState?.id === apiKey.id && copyState.status === "copying"}
+                        aria-label={`Copy API key ${apiKey.name}`}
+                        className="shrink-0 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 text-sm text-slate-200 inline-flex items-center gap-2 disabled:opacity-60">
+                        {copyState?.id === apiKey.id && copyState.status === "copied"
+                          ? <><Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /> Copied</>
+                          : <><Copy className="w-4 h-4" aria-hidden="true" /> Copy</>}
+                      </button>}
                     </div>
-                    <p className="mt-2 text-xs text-amber-200">Secret shown only once</p>
+                    <p role="status" className="mt-2 text-xs text-amber-200">
+                      {copyState?.id === apiKey.id && copyState.status === "failed" ? "Could not copy this key. Please try again."
+                        : apiKey.copyAvailable ? "Only you can copy this key while signed in."
+                          : "Created before copy was available. Create a new key to be able to copy it later."}
+                    </p>
                     <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-700 text-sm">
                       <div><p className="text-xs text-slate-400">LAST USED</p>{formatDate(apiKey.lastUsed)}</div>
                       <div><p className="text-xs text-slate-400">PLAN</p>{apiKey.plan}</div>

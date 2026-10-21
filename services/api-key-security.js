@@ -124,6 +124,7 @@ export function publicKeyMetadata(id, key, entitlement, usage) {
   return {
     id, name: key.name || '', status: key.status, userId: key.userId,
     keyPrefix: key.credentialVersion === 2 ? key.keyPrefix : 'daas_legacy',
+    copyAvailable: key.credentialVersion === 2 && Boolean(key.credentialSealed),
     credentialVersion: key.credentialVersion === 2 ? 2 : 1,
     createdAt: key.createdAt ?? null, lastUsed: key.lastUsed ?? null, expiresAt: key.expiresAt ?? null,
     linkedProductIds: fullIds.filter(productId => !Object.hasOwn(key.linkedVariantSelections || {}, productId)),
