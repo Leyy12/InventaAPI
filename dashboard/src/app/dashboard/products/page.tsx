@@ -91,9 +91,9 @@ function CustomerCatalogSession() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'not-selected'>('all');
   const [productCategory, setProductCategory] = useState(ALL_CATEGORIES);
-  // Products already linked to a key are hidden by default but stay selectable
-  // for another key through this filter; each key's name is its own filter.
-  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('unused');
+  // Products already linked to a key stay listed with a quiet "In key" note and
+  // remain selectable for another key; each key's name is its own filter.
+  const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('all');
   const [keyUsage, setKeyUsage] = useState<KeyProductUsage[]>([]);
   const keyNames = useMemo(() => keyNamesByProduct(keyUsage), [keyUsage]);
   
@@ -756,8 +756,6 @@ DAAS_API_KEY=${generatedKey}
             onChange={event => setKeyUsageFilter(event.target.value as KeyUsageFilter)}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
             <option value="all">API key: All</option>
-            <option value="unused">API key: Not added yet</option>
-            {keyUsage.length > 0 && <option value="used">API key: Added to any key</option>}
             {keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>API key: {key.name}</option>)}
           </select>
         </div>
@@ -884,7 +882,7 @@ DAAS_API_KEY=${generatedKey}
                 aria-label={`${product.name}${isIncluded ? ', Included' : isSelected ? ', Selected' : ''}`}
                 style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : '#334155',
                   boxShadow: isSelected ? '0 0 0 1px #818cf8, 0 4px 20px rgb(99 102 241 / 0.2)' : undefined }}
-                className={`glass-card rounded-xl transition-all overflow-hidden ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
+                className={`glass-card rounded-xl transition-all overflow-hidden flex flex-col ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
                   isSelected
                     ? "border-2 border-indigo-500 shadow-lg shadow-indigo-500/20"
                     : "border border-slate-700 hover:border-slate-600"
@@ -926,8 +924,8 @@ DAAS_API_KEY=${generatedKey}
                   )}
                 </div>
 
-                {/* Card Body */}
-                <div className="p-4">
+                {/* Card Body: the variant/price footer is pinned to the bottom so rows line up. */}
+                <div className="p-4 flex flex-1 flex-col min-w-0">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
                   {keyNames.has(product.id!) && <p className="flex items-center gap-1 text-xs text-emerald-300 mb-1 min-w-0">
@@ -948,7 +946,8 @@ DAAS_API_KEY=${generatedKey}
                             key={i}
                             onClick={(e) => toggleVariant(e, product.id!, variantId)}
                             disabled={selectionDisabled}
-                            className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
+                            title={[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}
+                            className={`inline-flex h-5 max-w-full items-center gap-1 px-2 rounded text-[10px] leading-none font-medium whitespace-nowrap transition-colors ${
                               isVarIncluded
                                 ? 'bg-slate-800/80 text-emerald-300/90 border border-emerald-700/40'
                                 : isVarSelected
@@ -956,13 +955,13 @@ DAAS_API_KEY=${generatedKey}
                                 : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-300'
                             }`}
                           >
-                            {isVarSelected && <Check className="w-2.5 h-2.5" />}
-                            {[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}
+                            {isVarSelected && <Check className="w-2.5 h-2.5 shrink-0" />}
+                            <span className="truncate">{[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}</span>
                           </button>
                         );
                       })}
                       {hasNearExpiry(product) && (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                        <span className="inline-flex h-5 items-center gap-1 px-2 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] leading-none text-amber-400 font-medium">
                           <AlertTriangle className="w-2.5 h-2.5" /> Expiring soon
                         </span>
                       )}
@@ -977,7 +976,8 @@ DAAS_API_KEY=${generatedKey}
                     ) : null
                   )}
 
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/60">
+                  <div aria-hidden="true" className="h-3 shrink-0" />
+                  <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-700/60">
                     <span className="text-xs text-slate-500">
                       {product.variants && product.variants.length > 0
                         ? `${product.variants.length} variant${product.variants.length !== 1 ? 's' : ''}`
