@@ -173,11 +173,11 @@ test('full-width catalog has no empty selection area; compact upper summary and 
   assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
 }));
 
-test('products already in a key stay listed and labelled; filters show unused or one key by name', () => using({ trial: false, included: 5 }, async f => {
+test('products already in a key stay listed and labelled; filter by one key name', () => using({ trial: false, included: 5 }, async f => {
   await f.segment('Grocery');
   const control = f.find(n => n.props.id === 'key-usage-filter');
   assert.equal(control.props.value, 'all');
-  assert.match(text(control), /API key: Not added yet/); assert.match(text(control), /API key:\s+Fixture POS/);
+  assert.deepEqual(nodes(control, n => n.type === 'option').map(n => text(n).replace(/\s+/g, ' ')), ['API key: All', 'API key: Fixture POS']);
   assert.equal(f.cards().length, 60);
   // Paid accounts can reuse a product already in a key for another key.
   await f.click(f.card('grocery-0')); highlighted(f.card('grocery-0'));
@@ -191,14 +191,13 @@ test('products already in a key stay listed and labelled; filters show unused or
   assert.doesNotMatch(text(f.card('grocery-5')), /In key:/);
 }));
 
-test('default hides products already in a key; picking one from a key filter keeps it visible', () => using({ trial: false, included: 5, keyFilter: 'unused' }, async f => {
+test('default shows every product; products in a key carry a quiet note and no highlight', () => using({ trial: false, included: 5, keyFilter: 'unused' }, async f => {
   await f.segment('Grocery');
-  assert.equal(f.find(n => n.props.id === 'key-usage-filter').props.value, 'unused');
-  assert.equal(f.cards().length, 55); assert.equal(f.card('grocery-0'), undefined);
+  assert.equal(f.find(n => n.props.id === 'key-usage-filter').props.value, 'all');
+  assert.equal(f.cards().length, 60);
+  assert.match(text(f.card('grocery-0')), /In key:\s+Fixture POS/); notHighlighted(f.card('grocery-0'));
   await f.keyFilter('key:fixture-key'); await f.click(f.card('grocery-0'));
-  await f.keyFilter('unused');
-  assert.equal(f.cards().length, 56); highlighted(f.card('grocery-0'));
-  assert.match(text(f.card('grocery-0')), /In key:\s+Fixture POS/);
+  await f.keyFilter('all'); highlighted(f.card('grocery-0'));
 }));
 
 test('product category filter lists the categories in view and composes with search and selection', () => using({ trial: false }, async f => {
