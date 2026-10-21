@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Scale, FileCheck, Shield, CreditCard, Ban, Globe, UserCheck, ShieldAlert, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Scale, FileCheck, Shield, CreditCard, Ban, Globe, UserCheck, ShieldAlert, TriangleAlert, Images } from "lucide-react";
 
 export default function TermsOfServicePage() {
   return (
@@ -135,6 +135,25 @@ export default function TermsOfServicePage() {
               <p className="mt-4">
                 For questions about these Terms, reach out via our <Link href="/contact" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Contact page</Link> or email{" "}
                 <a href="mailto:support@inventaapi.com" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">support@inventaapi.com</a>.
+              </p>
+            </section>
+
+            <section>
+              <div className="flex items-center gap-3 mb-4">
+                <Images className="w-5 h-5 text-indigo-400" />
+                <h2 className="text-xl font-semibold text-white m-0">9. Product Images &amp; Credits</h2>
+              </div>
+              <p>
+                Some product photos in the catalog come from{" "}
+                <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Open Food Facts</a>,
+                a free, collaborative database of food products. These photos are © Open Food Facts contributors and are used under the{" "}
+                <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Creative Commons Attribution-ShareAlike 3.0</a>{" "}
+                license. They may have been resized or converted for display.
+              </p>
+              <p className="mt-4">
+                If you reuse or redistribute these photos, you must follow that license, including crediting Open Food Facts and its
+                contributors. Product names, brands and logos shown in photos belong to their respective owners. Other product images
+                are provided by InventaAPI or by the businesses that submitted the products.
               </p>
             </section>
           </div>
