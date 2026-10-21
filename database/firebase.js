@@ -1,5 +1,5 @@
 import { initializeApp, cert, getApps, applicationDefault } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from './firestore.js';
 import { firebaseCredentialMode, initializeStagingAdc } from './firebase-credentials.js';
 
 // ─── Firebase Initialization ────────────────────────────────────────────────

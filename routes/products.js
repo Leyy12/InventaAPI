@@ -1,5 +1,5 @@
 import express from 'express';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { createCustomerCatalogHandler } from '../services/customer-catalog.js';
 
 const router = express.Router();

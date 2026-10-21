@@ -38,7 +38,8 @@
     "test:adviser:r7c": "node scripts/run-adviser-r7c-tests.mjs",
     "test:adviser:r8c": "node scripts/run-adviser-r8c-tests.mjs",
     "test:adviser:api-key-copy": "node --test tests/adviser/api-key-copy/*.test.mjs",
-    "test:adviser:bulk-images": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/bulk-images/*.test.mjs"
+    "test:adviser:bulk-images": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/bulk-images/*.test.mjs",
+    "test:supabase": "node --test --test-reporter=spec tests/supabase/postgres-firestore.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -55,6 +56,7 @@
     "ipaddr.js": "1.9.1",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^10.0.15",
+    "pg": "^8.23.1",
     "sharp": "^0.35.4"
   },
   "devDependencies": {

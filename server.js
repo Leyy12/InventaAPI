@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { createIpRateLimiter, trustedRateLimitIp } from './services/rate-limit-client-ip.js';
 import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from './services/system-settings.js';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from './database/firestore.js';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';

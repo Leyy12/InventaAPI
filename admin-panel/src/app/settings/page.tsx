@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Settings, Save, Server, Shield } from 'lucide-react';
 import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { SupabaseCopyCard } from '@/components/admin/SupabaseCopyCard';
 import { TRIAL_MAX_PRODUCTS } from '../../../../functions/entitlement-limits.mjs';
 
 type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
@@ -220,6 +221,7 @@ export default function SettingsPage() {
           </div>
           <p role="status" className="text-xs text-slate-400 mt-3">{health}</p>
         </div>
+        <SupabaseCopyCard />
       </div>
     </div>
     <dialog ref={dialog} aria-labelledby="maintenance-confirm-title" onCancel={() => setConfirmMaintenance(false)} className="bg-slate-900 text-white rounded-xl border border-slate-700 p-6 max-w-md backdrop:bg-black/60">

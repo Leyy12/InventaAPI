@@ -9,7 +9,7 @@ const DAAS_API_KEY = process.env.DAAS_API_KEY || 'daas_fallback_key';
 
 
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 
 // Firebase ID Token verification middleware
 export const verifyFirebaseToken = async (req, res, next) => {

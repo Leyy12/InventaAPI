@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { createCatalogHandlers } from '../services/catalog-management.js';
 
 const handlers = createCatalogHandlers({ getDb: getFirestore,
