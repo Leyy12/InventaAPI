@@ -37,7 +37,8 @@
     "test:adviser:r6c": "node scripts/run-adviser-r6c-tests.mjs",
     "test:adviser:r7c": "node scripts/run-adviser-r7c-tests.mjs",
     "test:adviser:r8c": "node scripts/run-adviser-r8c-tests.mjs",
-    "test:adviser:api-key-copy": "node --test tests/adviser/api-key-copy/*.test.mjs"
+    "test:adviser:api-key-copy": "node --test tests/adviser/api-key-copy/*.test.mjs",
+    "test:adviser:bulk-images": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/bulk-images/*.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
