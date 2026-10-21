@@ -1156,8 +1156,15 @@ export default function MasterProductCatalogPage() {
                       <td className={`px-4 py-3 overflow-hidden align-middle ${isArchived ? "opacity-50" : ""}`}>
                         <div className="flex items-center gap-3">
                           {/* Thumbnail */}
-                          <div className="w-9 h-9 rounded-lg bg-slate-800/80 border border-white/5 flex items-center justify-center shrink-0">
-                            <Package className="w-4 h-4 text-slate-500" />
+                          <div key={productImageSource(product)} className="relative w-9 h-9 shrink-0">
+                            {productImageSource(product) ? (
+                              <img src={productImageSource(product)} alt={getProductName(product)} loading="lazy"
+                                referrerPolicy="no-referrer" onError={showProductImageFallback}
+                                className="w-9 h-9 rounded-lg object-cover border border-white/5 bg-slate-800/80" />
+                            ) : null}
+                            <div className={`absolute inset-0 w-9 h-9 rounded-lg bg-slate-800/80 border border-white/5 flex items-center justify-center ${productImageSource(product) ? 'hidden' : ''}`}>
+                              <Package className="w-4 h-4 text-slate-500" />
+                            </div>
                           </div>
                           {/* Info */}
                           <div className="min-w-0 flex-1">
