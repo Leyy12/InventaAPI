@@ -13,14 +13,14 @@ const product = { name: 'Coke', brand: 'Coca-Cola', category: 'Drinks', segment:
   image_url: 'https://example.invalid/a.jpg', variants: [{ size: '330ml', sku: 'CAN-330', price: 0 }] };
 const matrix = (sku = 'CAN-330', name = 'Coke') => [['name', 'brand', 'category', 'segment', 'size', 'sku', 'price'],
   [name, 'Coca-Cola', 'Drinks', 'Grocery', '330ml', sku, '0']];
-function fixture(extra = {}, deriveReservationId) {
+function fixture(extra = {}, deriveReservationId, options = {}) {
   // Query phantom detection deliberately disabled. Claims/fence must provide safety.
   const db = memoryFirestore({ 'users/admin': { role: 'Admin' }, 'users/other-admin': { role: 'Admin' },
     'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, ...extra }, { queryConflicts: false });
   let serial = 0, time = new Date('2026-09-20T12:00:00Z');
   const checked = [];
   const dependencies = { getDb: () => db, now: () => time, makeId: () => 'r3-' + (++serial), deriveReservationId,
-    verifyIdToken: async (token, revoked) => { checked.push([token, revoked]); if (token === 'invalid') throw Error('Bad token'); return { uid: token }; } };
+    verifyIdToken: async (token, revoked) => { checked.push([token, revoked]); if (token === 'invalid') throw Error('Bad token'); return { uid: token }; }, ...options };
   const handlers = createCatalogHandlers(dependencies), submissions = createProductSubmissionHandlers(dependencies);
   const call = (name, body, params = {}, token = 'admin') => invoke(handlers[name], { body, params, token });
   const create = (value = product) => call('create', { product: value });
@@ -236,6 +236,19 @@ test('expired preview receipt still accurately recovers an already committed row
   const replay = (await f.commit(plan.body.previewId)).body.results[0];
   assert.equal(replay.status, 'IMPORTED'); assert.equal(replay.replayed, true);
   assert.equal(f.products().length, 1);
+});
+test('large previews are stored in chunks and every row commits in batches', async () => {
+  const f = fixture({}, undefined, { previewChunkBytes: 2000 });
+  const rows = [matrix()[0], ...Array.from({ length: 450 }, (_, i) => ['Item ' + i, 'Brand ' + i, 'Drinks', 'Grocery', '330ml', 'BULK-' + i, '5'])];
+  const plan = await f.preview(rows);
+  assert.equal(plan.statusCode, 200); assert.equal(plan.body.total, 450); assert.equal(plan.body.counts.NEW, 450);
+  const head = f.db.read('catalog_import_previews/' + plan.body.previewId);
+  assert.equal(head.rows, undefined); assert.ok(head.chunks.length > 1);
+  const numbers = plan.body.rows.map(row => row.row), results = [];
+  for (let i = 0; i < numbers.length; i += 200) results.push(...(await f.commit(plan.body.previewId, numbers.slice(i, i + 200))).body.results);
+  assert.equal(results.filter(result => result.status === 'IMPORTED').length, 450);
+  assert.equal(f.products().length, 450);
+  assert.equal((await f.commit(plan.body.previewId, numbers.slice(0, 201))).statusCode, 400);
 });
 test('malformed stored preview expiry fails closed before publication', async () => {
   const f = fixture(), plan = await f.preview(), path = 'catalog_import_previews/' + plan.body.previewId;

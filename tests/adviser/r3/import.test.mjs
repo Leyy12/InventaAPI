@@ -87,7 +87,9 @@ test('multiple historical owners are conflict, never selected arbitrarily', () =
   const data = preview().rows[0].product;
   assert.equal(preview(headers, [values], [{ id: 'a', data }, { id: 'b', data }]).rows[0].status, 'CONFLICT');
 });
-test('file limits reject oversized/malformed inputs before preview state', () => {
-  assert.throws(() => previewCatalogImport([headers, ...Array(201).fill(values)], []), /1–200/);
-  assert.throws(() => previewCatalogImport([headers, [1]], []), /parsed data/);
+test('files of any row count preview; malformed inputs are still rejected', () => {
+  const many = Array.from({ length: 1000 }, (_, i) => values.map((value, j) => headers[j] === 'sku' ? 'BULK-' + i : value));
+  assert.equal(previewCatalogImport([headers, ...many], []).total, 1000);
+  assert.throws(() => previewCatalogImport([headers], []), /at least 1 row/);
+  assert.throws(() => previewCatalogImport([headers, [1]], []), /at least 1 row/);
 });

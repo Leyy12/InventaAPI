@@ -18,9 +18,10 @@ const aliases = {
   image_url: 'image_url', imageurl: 'image_url',
 };
 export function previewCatalogImport(matrix, records) {
-  if (!Array.isArray(matrix) || matrix.length < 2 || matrix.length > 201 || JSON.stringify(matrix).length > 200000
+  // No row-count cap: large files are stored in chunks by the preview handler.
+  if (!Array.isArray(matrix) || matrix.length < 2
     || matrix.some(row => !Array.isArray(row) || row.length > 64 || row.some(v => typeof v !== 'string' || v.length > 4000))) {
-    throw catalogError(400, 'Provide a CSV header and 1–200 rows, at most 200 KB of parsed data.');
+    throw catalogError(400, 'Provide a CSV header and at least 1 row (up to 64 columns, 4,000 characters per cell).');
   }
   const warnings = [], seen = new Set();
   const headers = matrix[0].map(raw => {

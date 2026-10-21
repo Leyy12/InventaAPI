@@ -12,6 +12,8 @@ type Row = { row: number; status: Status; reason: string; matches: string[]; pos
     variants: { size?: string; flavor?: string; price: number }[] } | null };
 type Preview = { previewId: string; total: number; counts: Record<Status, number>; warnings: string[]; rows: Row[] };
 type Result = { row: number; status: 'IMPORTED' | 'FAILED' | 'SKIPPED'; reason?: string; productId?: string; replayed?: boolean };
+// Rows per commit request; large files are sent as several requests.
+const COMMIT_BATCH = 25;
 const labels: Record<Status, string> = { NEW: 'New', EXACT_EXISTING_MATCH: 'Exact existing / skipped',
   POSSIBLE_DUPLICATE: 'Possible duplicate', INVALID: 'Invalid', CONFLICT: 'Conflict' };
 
@@ -23,12 +25,13 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
+  const [progress, setProgress] = useState('');
   const locked = useRef(false);
   const handleFile = async (file: File) => {
     if (locked.current) return;
     locked.current = true; setBusy(true); setError(''); setPreview(null); setResults([]); setSelected([]); setAcknowledge(false);
     try {
-      if (!file.name.toLowerCase().endsWith('.csv') || file.size > 256 * 1024) throw new Error('Choose a CSV file no larger than 256 KB.');
+      if (!file.name.toLowerCase().endsWith('.csv')) throw new Error('Choose a .csv file.');
       setFileName(file.name);
       // Header:false retains duplicate columns for the authoritative alias checks.
       const parsed = Papa.parse<string[]>(await file.text(), { header: false, skipEmptyLines: 'greedy' });
@@ -40,15 +43,22 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
   };
   const commit = async () => {
     if (locked.current || !preview || !selected.length) return;
-    locked.current = true; setBusy(true); setError('');
+    locked.current = true; setBusy(true); setError(''); setResults([]);
+    const done: Result[] = [];
+    const rows = [...selected].sort((a, b) => a - b);
     try {
-      const result = await catalogRequest<{ results: Result[] }>('/import/commit', 'POST', {
-        previewId: preview.previewId, rows: selected, acknowledgePossible: acknowledge,
-      });
-      setResults(result.results);
-      if (result.results.some(row => row.status === 'IMPORTED')) onImported();
+      for (let i = 0; i < rows.length; i += COMMIT_BATCH) {
+        setProgress(`Importing ${Math.min(i + COMMIT_BATCH, rows.length)} of ${rows.length} rows…`);
+        const result = await catalogRequest<{ results: Result[] }>('/import/commit', 'POST', {
+          previewId: preview.previewId, rows: rows.slice(i, i + COMMIT_BATCH), acknowledgePossible: acknowledge,
+        });
+        done.push(...result.results); setResults([...done]);
+      }
     } catch (cause) { setError((cause instanceof Error ? cause.message : 'Import response unavailable.') + ' Retry this same preview to recover row results.'); }
-    finally { locked.current = false; setBusy(false); }
+    finally {
+      if (done.some(row => row.status === 'IMPORTED')) onImported();
+      locked.current = false; setBusy(false); setProgress('');
+    }
   };
   const downloadTemplate = () => {
     const csv = 'name,brand,segment,category,size,price,sku,expiration_date,description,image_url\n"Sample Item","Sample Brand","Grocery","Food","330ml","0","SAMPLE-330","","Example only",""';
@@ -70,7 +80,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
           <input type="file" accept=".csv" disabled={busy} className="block mt-3 text-xs"
             onChange={event => { const file = event.target.files?.[0]; if (file) void handleFile(file); event.target.value = ''; }} />
         </label>
-        <p className="text-xs text-slate-400">Required: product name, category, supported segment and price. Up to 200 rows. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
+        <p className="text-xs text-slate-400">Required: product name, category, supported segment and price. No row limit. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         {preview && <>
           <p className="text-sm">Total rows: {preview.total}</p>
@@ -100,7 +110,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
       <div className="px-6 py-4 border-t border-slate-800 flex justify-between text-xs">
         <span>{selected.length} selected</span>
         <button onClick={() => void commit()} disabled={busy || !selected.length || (!!hasSelectedPossible && !acknowledge)} className="rounded-lg px-4 py-2 bg-indigo-600 disabled:opacity-40">
-          {busy ? <><Loader2 className="inline w-4 h-4 animate-spin" /> Working…</> : 'Confirm selected import / retry'}
+          {busy ? <><Loader2 className="inline w-4 h-4 animate-spin" /> {progress || 'Working…'}</> : 'Confirm selected import / retry'}
         </button>
       </div>
     </div>
