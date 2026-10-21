@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase/config";
 import { createTrafficRefresh, createTrafficRequest } from "@/lib/admin-traffic";
 import { useAdminAuth } from "@/lib/firebase/admin-auth-context";
 import { activeKeyHolders, reportTimestamp, telemetryReport, type ReportSelection, type ReportSource } from "@/lib/reports";
+import { useCategoryUsage } from "@/lib/category-usage";
 import CatalogReportPanel from "@/components/reports/CatalogReportPanel";
 
 type Feed = "products" | "users" | "keys" | "telemetry" | "audit";
@@ -14,6 +15,7 @@ const initial: ReportSource = { status: "loading", records: [] };
 function Reports({ user }: { user: User }) {
   const [selection, setSelection] = useState<ReportSelection>("All");
   const [sources, setSources] = useState<Record<Feed, ReportSource>>({ products: initial, users: initial, keys: initial, telemetry: initial, audit: initial });
+  const usage = useCategoryUsage(user);
   const trafficRefresh = useRef<ReturnType<typeof createTrafficRefresh> | null>(null);
   useEffect(() => {
     const current = () => auth.currentUser === user;
@@ -46,7 +48,7 @@ function Reports({ user }: { user: User }) {
   const unavailable = (feed: Feed) => sources[feed].status === "loading" ? "Loading…" : "Unavailable";
   return <div className="w-full px-6 lg:px-8 pb-8 space-y-8">
     <h1 className="text-2xl font-bold text-white">Dashboard and reports</h1>
-    <CatalogReportPanel source={sources.products} selection={selection} onSelection={setSelection} />
+    <CatalogReportPanel source={sources.products} usage={usage} selection={selection} onSelection={setSelection} />
     <section aria-label="Global account and recorded traffic summaries" className="space-y-4">
       <h2 className="text-xl font-semibold text-white">Global activity</h2>
       <p className="text-sm text-slate-400">Account, traffic and audit summaries are global; the catalog segment filter does not change them.</p>

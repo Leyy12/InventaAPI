@@ -130,7 +130,7 @@ test('Admin real Reports effects retain 4 legitimate listeners, filter and manua
     recharts: icons, '@/lib/firebase/config': { auth: { currentUser: user }, db: {} },
     '@/lib/admin-traffic': { ...traffic, createTrafficRefresh: (read, publish, options) => traffic.createTrafficRefresh(read, publish, { ...options, schedule: c.schedule, cancel: c.cancel }) },
     '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) }, '@/lib/reports': reporting,
-    '@/components/reports/CatalogReportPanel': { default: stub },
+    '@/components/reports/CatalogReportPanel': { default: stub }, '@/lib/category-usage': { useCategoryUsage: () => ({ status: 'loading', segments: {} }) },
   }, { ...b, fetch: async url => { reads.push(url); return { ok: true, json: async () => ({ success: true, limit: 500, records: [] }) }; } });
   h.mount(Component, { user }); await flush(); assert.equal(reads.length, 1); assert.equal(registrations.length, 4);
   nodes(h.output, node => node.props.onSelection)[0].props.onSelection('Hardware'); await flush();

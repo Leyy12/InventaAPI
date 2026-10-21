@@ -4,18 +4,20 @@ import { collection, onSnapshot } from "@/lib/data/firestore-client";
 import { db } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { reconcileReportSession, type ReportSession, type ReportSelection, type ReportSource } from "@/lib/reports";
+import { useCategoryUsage } from "@/lib/category-usage";
 import CatalogReportPanel from "@/components/reports/CatalogReportPanel";
 import SalesAnalyticsPanel from "@/components/reports/SalesAnalyticsPanel";
 import Link from "next/link";
 
 function CatalogDataset({ session, onSelection }: { session: ReportSession; onSelection: (value: ReportSelection) => void }) {
   const [source, setSource] = useState<ReportSource>({ status: "loading", records: [] });
+  const usage = useCategoryUsage(useAuth().user);
   useEffect(() => onSnapshot(collection(db, "products"),
     snapshot => setSource({ status: "ready", records: snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) }),
     () => setSource({ status: "error", records: [] })), []);
   // Retain the existing public-catalog listener, but hide data while unverified.
   if (!session.scope.segment) return null;
-  return <CatalogReportPanel source={source} selection={session.selection} onSelection={onSelection} restricted={session.scope.restricted} />;
+  return <CatalogReportPanel source={source} usage={usage} selection={session.selection} onSelection={onSelection} restricted={session.scope.restricted} />;
 }
 function AccountReports({ uid, plan, preference }: { uid: string; plan: unknown; preference: unknown }) {
   const [stored, setStored] = useState(() => reconcileReportSession(null, uid, plan, preference));
