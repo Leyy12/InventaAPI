@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { previewCatalogImport } from '../../../services/catalog-import.js';
+import { planImportUpdate, previewCatalogImport } from '../../../services/catalog-import.js';
 import { productIdentityKeys } from '../../../services/product-contract.js';
 
 const headers = ['name', 'brand', 'segment', 'category', 'price', 'sku', 'size'];
@@ -37,10 +37,12 @@ test('blank image remains optional and duplicate image aliases reject ambiguous 
 for (const value of ['C:\\photos\\a.jpg', 'file:///a.png', 'http://example.invalid/a', 'data:image/png;base64,eA==', 'https://u:p@example.invalid/a']) {
   test(`CSV rejects unsafe image value ${value}`, () => assert.equal(preview([...headers, 'image_url'], [[...values, value]]).rows[0].status, 'INVALID'));
 }
-test('existing canonical product is skipped even if CSV supplies a different valid image', () => {
+test('existing canonical product with a new image is an update; identical rows are skipped', () => {
   const old = preview().rows[0].product;
   const result = preview([...headers, 'image_url'], [[...values, 'https://example.invalid/new.webp']], [{id:'existing',data:old}]);
-  assert.equal(result.rows[0].status, 'EXACT_EXISTING_MATCH'); assert.equal(old.image_url, '');
+  assert.equal(result.rows[0].status, 'UPDATE'); assert.equal(old.image_url, '');
+  assert.deepEqual(result.rows[0].update, { productId: 'existing', catalogRevision: 0 });
+  assert.equal(preview(headers, [values], [{ id: 'existing', data: old }]).rows[0].status, 'EXACT_EXISTING_MATCH');
 });
 for (const extra of ['name', 'Product Name', 'productname']) test(`ambiguous duplicate header ${extra}`, () => {
   assert.throws(() => preview([...headers, extra], [[...values, 'other']]), /Duplicate column mapping/);
@@ -71,11 +73,25 @@ test('conflicting within-file rows all become conflicts including later exact re
   const other = [...values]; other[4] = '50';
   assert.deepEqual(preview(headers, [values, other, values]).rows.map(row => row.status), ['CONFLICT', 'CONFLICT', 'CONFLICT']);
 });
-test('catalog canonical match skips even different prices without changing siblings', () => {
+test('catalog canonical match with a new price updates only that variant, keeping siblings', () => {
   const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', variants: [
     { sku: 'A', price: 100, size: '330ml', arbitrary: { nested: 5 } }, { sku: 'B', price: 150, size: '1.5L' }] };
   const before = structuredClone(data), result = preview(headers, [values], [{ id: 'catalog', data }]);
-  assert.equal(result.rows[0].status, 'EXACT_EXISTING_MATCH'); assert.deepEqual(data, before);
+  assert.equal(result.rows[0].status, 'UPDATE'); assert.match(result.rows[0].reason, /price: ₱100\.00 → ₱10\.00/u);
+  assert.deepEqual(data, before);
+  const { input } = planImportUpdate(data, result.rows[0].product);
+  assert.deepEqual(input.variants, [{ sku: 'A', price: 10, size: '330ml', arbitrary: { nested: 5 } }, { sku: 'B', price: 150, size: '1.5L' }]);
+});
+test('blank CSV cells never clear existing fields', () => {
+  const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', description: 'Keep me',
+    image_url: 'https://example.invalid/a.jpg', variants: [{ sku: 'A', price: 10, size: '330ml', expirationDate: '2027-01-01' }] };
+  assert.equal(planImportUpdate(data, preview().rows[0].product), null);
+});
+test('a match that cannot be tied to one variant is skipped with a reason', () => {
+  const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', sku: 'A',
+    variants: [{ price: 1, size: '1L' }, { price: 2, size: '2L' }] };
+  const row = preview(headers, [values], [{ id: 'catalog', data }]).rows[0];
+  assert.equal(row.status, 'EXACT_EXISTING_MATCH'); assert.match(row.reason, /exactly one of its variants/u);
 });
 test('same Brand+Name with different canonical variants flags both rows, no merge', () => {
   const other = [...values]; other[5] = 'B'; other[6] = '1.5L';

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
 import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
-import { previewCatalogImport } from './catalog-import.js';
+import { planImportUpdate, previewCatalogImport } from './catalog-import.js';
 
 // Firestore documents max out at 1 MiB; leave headroom for field overhead.
 const PREVIEW_CHUNK_BYTES = 700000;
@@ -106,8 +106,26 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
           if (receipt) return { ...receipt, replayed: true };
           if (!Number.isFinite(Date.parse(plan.expiresAt)) || Date.parse(plan.expiresAt) <= now().getTime()) throw catalogError(409, 'Preview expired; parse and preview again.');
           const row = await findPreviewRow(tx, db, previewId, plan, rowNumber, uid);
-          if (!row || !['NEW', 'POSSIBLE_DUPLICATE'].includes(row.status)) {
+          if (!row || !['NEW', 'POSSIBLE_DUPLICATE', 'UPDATE'].includes(row.status)) {
             return { row: rowNumber, status: 'SKIPPED', reason: row?.reason || 'Not a valid new row.' };
+          }
+          if (row.status === 'UPDATE') {
+            // Re-plan against the product as it is now, so several rows for one
+            // product (different variants) each apply on top of the last.
+            const { productId } = row.update;
+            const current = (await tx.get(db.collection('products').doc(productId))).data();
+            if (!current) throw catalogError(404, 'Product was removed after preview.');
+            const update = planImportUpdate(current, row.product);
+            if (!update) {
+              const saved = { row: rowNumber, status: 'SKIPPED', reason: 'Already up to date.', productId, replayed: false };
+              tx.set(receiptRef, saved);
+              return saved;
+            }
+            const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'edit', productId, input: update.input,
+              expectedRevision: current.catalogRevision ?? 0, at: now().toISOString(), deriveReservationId });
+            const saved = { row: rowNumber, status: 'UPDATED', productId, reason: update.changes.join('; '), replayed: false };
+            prepared.apply(); tx.set(receiptRef, saved);
+            return { ...saved, activity: prepared.activity };
           }
           if (row.status === 'POSSIBLE_DUPLICATE' && !acknowledgePossible) throw catalogError(409, 'Review and acknowledge possible duplicates.');
           const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'create',

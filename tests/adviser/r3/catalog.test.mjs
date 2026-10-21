@@ -250,6 +250,23 @@ test('large previews are stored in chunks and every row commits in batches', asy
   assert.equal(f.products().length, 450);
   assert.equal((await f.commit(plan.body.previewId, numbers.slice(0, 201))).statusCode, 400);
 });
+test('update rows change existing products through the catalog writer; repeats are safe', async () => {
+  const f = fixture();
+  const twoSizes = { ...product, image_url: '', variants: [{ size: '330ml', sku: 'CAN-330', price: 0 }, { size: '1L', sku: 'BOT-1L', price: 50 }] };
+  const id = (await f.create(twoSizes)).body.product.id;
+  const rows = [matrix()[0], ['Coke', 'Coca-Cola', 'Drinks', 'Grocery', '330ml', 'CAN-330', '25'],
+    ['Coke', 'Coca-Cola', 'Drinks', 'Grocery', '1L', 'BOT-1L', '60']];
+  const plan = await f.preview(rows);
+  assert.deepEqual(plan.body.rows.map(row => row.status), ['UPDATE', 'UPDATE']);
+  const first = await f.commit(plan.body.previewId, [2, 3]);
+  assert.deepEqual(first.body.results.map(row => row.status), ['UPDATED', 'UPDATED']);
+  const saved = f.db.read('products/' + id);
+  assert.deepEqual(saved.variants.map(variant => variant.price), [25, 60]);
+  assert.equal(saved.catalogRevision, 3); assert.equal(f.products().length, 1);
+  assert.equal((await f.commit(plan.body.previewId, [2])).body.results[0].replayed, true);
+  const again = await f.preview(rows);
+  assert.deepEqual(again.body.rows.map(row => row.status), ['EXACT_EXISTING_MATCH', 'EXACT_EXISTING_MATCH']);
+});
 test('malformed stored preview expiry fails closed before publication', async () => {
   const f = fixture(), plan = await f.preview(), path = 'catalog_import_previews/' + plan.body.previewId;
   f.db.seed(path, { ...f.db.read(path), expiresAt: 'invalid' });
