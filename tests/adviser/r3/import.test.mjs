@@ -15,16 +15,23 @@ for (const alias of ['Product Name', 'product_name', 'ProductName', ' generic_na
 });
 test('BOM/header whitespace normalization and existing aliases', () => {
   const result = preview(['\uFEFF  Product Name  ', 'manufacturer', ' department ', 'product_category', 'srp', 'barcode', 'pack_size']);
-  assert.equal(result.rows[0].status, 'NEW'); assert.equal(result.rows[0].product.variants[0].price, 10);
-});
-test('price column is optional', () => {
-  const result = preview(headers.filter(h => h !== 'price'), [values.filter((_, i) => headers[i] !== 'price')]);
-  assert.equal(result.rows[0].status, 'NEW'); assert.equal(Object.hasOwn(result.rows[0].product.variants[0], 'price'), false);
-});
-test('blank price imports without a price', () => {
-  const row = [...values]; row[headers.indexOf('price')] = '';
-  const result = preview(headers, [row]); assert.equal(result.rows[0].status, 'NEW');
+  assert.equal(result.rows[0].status, 'NEW'); assert.deepEqual(result.warnings, []);
   assert.equal(Object.hasOwn(result.rows[0].product.variants[0], 'price'), false);
+});
+test('price columns are skipped silently and any value in them is ignored', () => {
+  for (const price of ['', '10', 'abc', '-1', '₱10']) {
+    const row = [...values]; row[headers.indexOf('price')] = price;
+    const result = preview(headers, [row]);
+    assert.equal(result.rows[0].status, 'NEW'); assert.deepEqual(result.warnings, []);
+    assert.equal(Object.hasOwn(result.rows[0].product.variants[0], 'price'), false);
+  }
+  assert.equal(preview(headers.filter(h => h !== 'price'), [values.filter((_, i) => headers[i] !== 'price')]).rows[0].status, 'NEW');
+});
+test('Open Food Facts style columns map without a template', () => {
+  const result = preview(['barcode_sku', 'product_name', 'brands', 'quantity_grams', 'image_url', 'category', 'segment'],
+    [['4800361403764', 'Nescafe Original', 'Nestlé', '20g', 'https://images.openfoodfacts.org/a.jpg', 'Coffee', 'Grocery']]);
+  assert.deepEqual(result.warnings, []); assert.equal(result.rows[0].status, 'NEW');
+  assert.deepEqual(result.rows[0].product.variants[0], { size: '20g', flavor: '', sku: '4800361403764', expirationDate: '' });
 });
 for (const field of ['name', 'segment', 'category']) test(`missing required header ${field}`, () => {
   assert.throws(() => preview(headers.filter(h => h !== field), [values.filter((_, i) => headers[i] !== field)]), /Missing required columns/);
@@ -63,43 +70,42 @@ for (const segment of ['Grocery', 'Pharmacy', 'Hardware', 'groceries', 'medicine
   const row = [...values]; row[2] = segment; assert.equal(preview(headers, [row]).rows[0].status, 'NEW');
 });
 for (const [field, value] of [['name', ''], ['category', ''], ['segment', ''], ['segment', 'Unknown'],
-  ['segment', 'medical-unknown'], ['price', 'abc'], ['price', '10abc'], ['price', '-1'], ['price', 'NaN'], ['price', 'Infinity'], ['price', '₱10'], ['price', '1,234.00']]) {
+  ['segment', 'medical-unknown']]) {
   test(`invalid row ${field}=${value}`, () => {
     const row = [...values]; row[headers.indexOf(field)] = value;
     const result = preview(headers, [row]); assert.equal(result.rows[0].status, 'INVALID'); assert.ok(result.rows[0].reason);
   });
 }
-test('literal zero is valid and optional SKU uses Phase 1 fallback', () => {
-  const row = [...values]; row[4] = '0'; row[5] = '';
+test('optional SKU uses Phase 1 fallback', () => {
+  const row = [...values]; row[5] = '';
   const product = preview(headers, [row]).rows[0].product;
-  assert.equal(product.variants[0].price, 0); assert.match(productIdentityKeys(product)[0], /^fallback:/);
+  assert.match(productIdentityKeys(product)[0], /^fallback:/);
 });
 test('column count mismatch is reported as invalid row', () => assert.equal(preview(headers, [values.slice(1)]).rows[0].status, 'INVALID'));
 test('identical within-file rows have one new operation and an explicit skipped duplicate', () => {
   assert.deepEqual(preview(headers, [values, values]).rows.map(row => row.status), ['NEW', 'EXACT_EXISTING_MATCH']);
 });
 test('conflicting within-file rows all become conflicts including later exact repeats', () => {
-  const other = [...values]; other[4] = '50';
+  const other = [...values]; other[6] = '1L';
   assert.deepEqual(preview(headers, [values, other, values]).rows.map(row => row.status), ['CONFLICT', 'CONFLICT', 'CONFLICT']);
 });
-test('catalog canonical match with a new price updates only that variant, keeping siblings', () => {
+test('catalog canonical match with a new size updates only that variant, keeping siblings', () => {
   const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', variants: [
-    { sku: 'A', price: 100, size: '330ml', arbitrary: { nested: 5 } }, { sku: 'B', price: 150, size: '1.5L' }] };
+    { sku: 'A', size: '300ml', arbitrary: { nested: 5 } }, { sku: 'B', size: '1.5L' }] };
   const before = structuredClone(data), result = preview(headers, [values], [{ id: 'catalog', data }]);
-  assert.equal(result.rows[0].status, 'UPDATE'); assert.match(result.rows[0].reason, /price: ₱100\.00 → ₱10\.00/u);
+  assert.equal(result.rows[0].status, 'UPDATE'); assert.match(result.rows[0].reason, /size: "300ml" → "330ml"/u);
   assert.deepEqual(data, before);
   const { input } = planImportUpdate(data, result.rows[0].product);
-  assert.deepEqual(input.variants, [{ sku: 'A', price: 10, size: '330ml', arbitrary: { nested: 5 } }, { sku: 'B', price: 150, size: '1.5L' }]);
+  assert.deepEqual(input.variants, [{ sku: 'A', size: '330ml', arbitrary: { nested: 5 } }, { sku: 'B', size: '1.5L' }]);
 });
 test('blank CSV cells never clear existing fields', () => {
   const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', description: 'Keep me',
     image_url: 'https://example.invalid/a.jpg', variants: [{ sku: 'A', price: 10, size: '330ml', expirationDate: '2027-01-01' }] };
   assert.equal(planImportUpdate(data, preview().rows[0].product), null);
 });
-test('a blank price never clears an existing price', () => {
+test('a stored price alone is not a change worth an update', () => {
   const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', variants: [{ sku: 'A', price: 25, size: '330ml' }] };
-  const row = [...values]; row[headers.indexOf('price')] = '';
-  assert.equal(planImportUpdate(data, preview(headers, [row]).rows[0].product), null);
+  assert.equal(planImportUpdate(data, preview().rows[0].product), null);
 });
 test('a match that cannot be tied to one variant is skipped with a reason', () => {
   const data = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', sku: 'A',
@@ -124,7 +130,7 @@ test('files of any row count preview; malformed inputs are still rejected', () =
   assert.throws(() => previewCatalogImport([headers, [1]], []), /at least 1 row/);
 });
 test('invalid rows keep their name and brand for the preview table', () => {
-  const row = preview(headers, [values.map((value, i) => headers[i] === 'price' ? 'abc' : value)]).rows[0];
+  const row = preview(headers, [values.map((value, i) => headers[i] === 'segment' ? 'Unknown' : value)]).rows[0];
   assert.equal(row.status, 'INVALID'); assert.equal(row.product, null);
   assert.deepEqual(row.display, { name: 'Coke', brand: 'Coca-Cola' });
 });

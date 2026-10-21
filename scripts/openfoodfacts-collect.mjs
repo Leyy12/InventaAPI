@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Collects products from Open Food Facts (world.openfoodfacts.org) into a CSV
 // the admin Import CSV dialog reads directly: name, brand, segment, category,
-// size, price, sku (barcode), description, image_url (front photo).
+// size, sku (barcode), description, image_url (front photo).
 //
-// Open Food Facts has no prices, so the price column is left empty (price is optional).
+// Products carry no price, so no price column is written.
 // A second file (<out>-credits.csv) lists each product page and photo licence.
 //
 // Usage:
@@ -105,7 +105,6 @@ function toRow(product, segment) {
     segment,
     category: tag ? titleCase(tag.slice(3)).slice(0, 120) : 'Uncategorized',
     size: (product.quantity || '').trim().slice(0, 200),
-    price: '',
     sku: product.code,
     description: (product.generic_name_en || '').trim().slice(0, 4000),
     image_url: image,
@@ -129,14 +128,14 @@ async function main() {
     // Keep what was collected; rerun with --start-page to continue a search.
     failure = error;
   }
-  const columns = ['name', 'brand', 'segment', 'category', 'size', 'price', 'sku', 'description', 'image_url'];
+  const columns = ['name', 'brand', 'segment', 'category', 'size', 'sku', 'description', 'image_url'];
   writeFileSync(options.out, [columns.join(','), ...rows.map(row => columns.map(column => csvCell(row[column])).join(','))].join('\n') + '\n');
   const credits = options.out.replace(/\.csv$/iu, '') + '-credits.csv';
   writeFileSync(credits, ['barcode,name,product_page,image_url,data_license,image_license,source',
     ...rows.map(row => [row.sku, row.name, `${API}/product/${row.sku}`, row.image_url, 'ODbL 1.0', row.image_url ? 'CC BY-SA 3.0' : '', 'Open Food Facts contributors']
       .map(value => csvCell(value)).join(','))].join('\n') + '\n');
   console.log(`Wrote ${rows.length} products to ${options.out} (${rows.filter(row => row.image_url).length} with a photo; ${skipped} skipped without a name or repeated).`);
-  console.log(`Credits: ${credits}. Price is optional; add it now or later in the admin panel.`);
+  console.log(`Credits: ${credits}. Ready to import.`);
   if (failure) throw new Error(`Stopped early: ${failure.message}. The products collected so far were saved.`);
 }
 

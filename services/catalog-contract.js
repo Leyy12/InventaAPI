@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { comparisonText, normalizeDisplayText, normalizeSegment, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
+import { comparisonText, normalizeDisplayText, normalizeSegment, normalizeSku, productIdentityKeys, projectProduct, withoutPrice } from './product-contract.js';
 import { normalizeProductImageUrl, submissionError } from './product-submission-contract.js';
 
 export const catalogError = (status, message) => submissionError(status, message);
@@ -68,17 +68,6 @@ function text(value, field, maximum, required = false) {
   if (required && !result) throw catalogError(400, `Missing ${field}.`);
   return result;
 }
-export function strictPrice(value) {
-  if (typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value.trim())) value = Number(value.trim());
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1e9) {
-    throw catalogError(400, 'Price must be a finite non-negative number; missing/malformed prices are invalid.');
-  }
-  return value;
-}
-// Price is optional: a blank or missing price means "not priced yet".
-export function optionalPrice(value) {
-  return value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : strictPrice(value);
-}
 function safePayload(value, depth = 0) {
   if (depth > 8) throw catalogError(400, 'Variant payload is too deeply nested.');
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return;
@@ -123,16 +112,14 @@ export function validateCatalogProduct(input, previous = null) {
     if (!plainObject(variant)) throw catalogError(400, 'Invalid variant.');
     safePayload(variant);
     // Preserve arbitrary Phase 1 payload fields and valid existing value types.
-    const unpriced = optionalPrice(variant.price) === undefined;
     for (const key of ['flavor', 'size', 'dosage', 'form', 'specs', 'dimensions', 'value', 'variantName', 'sku', 'expirationDate']) {
       if (variant[key] !== undefined) text(variant[key], key, 200);
     }
     if (variant.image_url !== undefined) {
       try { normalizeProductImageUrl(variant.image_url); } catch { throw catalogError(400, 'Invalid variant image URL.'); }
     }
-    const copy = structuredClone(variant);
-    if (unpriced) delete copy.price;
-    return copy;
+    // Products carry no price; any price sent is dropped rather than stored.
+    return withoutPrice(structuredClone(variant));
   });
   if (JSON.stringify(result).length > 100000) throw catalogError(400, 'Product payload is too large.');
   const candidate = { ...previous, ...result };

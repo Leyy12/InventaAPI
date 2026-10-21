@@ -10,7 +10,7 @@ import { assertBackfillReservationPlan, backfillCatalogReservations, prepareCata
 import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
 
 const product = { name: 'Coke', brand: 'Coca-Cola', category: 'Drinks', segment: 'Grocery',
-  image_url: 'https://example.invalid/a.jpg', variants: [{ size: '330ml', sku: 'CAN-330', price: 0 }] };
+  image_url: 'https://example.invalid/a.jpg', variants: [{ size: '330ml', sku: 'CAN-330' }] };
 const matrix = (sku = 'CAN-330', name = 'Coke') => [['name', 'brand', 'category', 'segment', 'size', 'sku', 'price'],
   [name, 'Coca-Cola', 'Drinks', 'Grocery', '330ml', sku, '0']];
 function fixture(extra = {}, deriveReservationId, options = {}) {
@@ -54,27 +54,32 @@ test('Admin create verifies revocation, normalizes segment and binds canonical i
 });
 test('Brand+Name same/different variant returns warning without merging', async () => {
   const f = fixture(), a = await f.create();
-  const b = await f.create({ ...product, brand: ' COCA-COLA ', name: ' coke ', variants: [{ size: '1.5L', sku: 'BOTTLE-15', price: 50 }] });
+  const b = await f.create({ ...product, brand: ' COCA-COLA ', name: ' coke ', variants: [{ size: '1.5L', sku: 'BOTTLE-15' }] });
   assert.equal(b.statusCode, 200); assert.deepEqual(b.body.possibleDuplicates, [a.body.product.id]);
   assert.equal(f.products().length, 2); assert.deepEqual(f.products()[0].data.variants, product.variants);
 });
 for (const [name, change] of Object.entries({ segment: { segment: 'Other' }, category: { category: '' }, name: { name: '' },
-  priceMalformed: { variants: [{ price: '10abc' }] }, priceNegative: { variants: [{ price: -1 }] },
   priceNaN: { variants: [{ price: NaN }] }, priceInfinite: { variants: [{ price: Infinity }] },
   image: { image_url: 'javascript:alert(1)' }, credentials: { image_url: 'https://u:p@example.invalid/a' },
   unsupported: { role: 'Admin' }, duplicateVariants: { variants: [product.variants[0], product.variants[0]] } })) {
   test('invalid create ' + name, async () => { const f = fixture(); assert.equal((await f.create({ ...product, ...change })).statusCode, 400); assert.equal(f.products().length, 0); });
 }
-test('price is optional: missing or blank prices are stored without one', async () => {
+test('products carry no price: a price sent by a client is dropped, never stored', async () => {
   const f = fixture();
-  const missing = await f.create({ ...product, variants: [{ size: '330ml', sku: 'NO-PRICE-1' }] });
-  assert.equal(missing.statusCode, 200); assert.equal(Object.hasOwn(f.products()[0].data.variants[0], 'price'), false);
-  const blank = await f.create({ ...product, name: 'Sprite', variants: [{ size: '330ml', sku: 'NO-PRICE-2', price: '' }] });
-  assert.equal(blank.statusCode, 200); assert.equal(Object.hasOwn(f.products()[1].data.variants[0], 'price'), false);
+  const sent = await f.create({ ...product, variants: [{ size: '330ml', sku: 'NO-PRICE-1', price: 25 }] });
+  assert.equal(sent.statusCode, 200); assert.equal(Object.hasOwn(f.products()[0].data.variants[0], 'price'), false);
+  const odd = await f.create({ ...product, name: 'Sprite', variants: [{ size: '330ml', sku: 'NO-PRICE-2', price: '10abc' }] });
+  assert.equal(odd.statusCode, 200); assert.equal(Object.hasOwn(f.products()[1].data.variants[0], 'price'), false);
+});
+test('editing a product that still has a stored price removes it', async () => {
+  const f = fixture(), id = (await f.create()).body.product.id;
+  f.db.seed('products/' + id, { ...f.db.read('products/' + id), variants: [{ size: '330ml', sku: 'CAN-330', price: 12 }] });
+  const edited = await f.call('edit', { product: { description: 'Updated' }, expectedRevision: 1 }, { id });
+  assert.equal(edited.statusCode, 200); assert.deepEqual(f.db.read('products/' + id).variants, [{ size: '330ml', sku: 'CAN-330' }]);
 });
 test('edit preserves arbitrary variant payload and siblings, and rejects stale revision', async () => {
   const f = fixture();
-  const variants = [{ ...product.variants[0], custom: { active: true, bins: ['a', 'b'] } }, { price: '50', sku: 'BOTTLE-15', size: '1.5L', anyField: 42 }];
+  const variants = [{ ...product.variants[0], custom: { active: true, bins: ['a', 'b'] } }, { sku: 'BOTTLE-15', size: '1.5L', anyField: 42 }];
   const created = await f.create({ ...product, variants }); assert.equal(created.statusCode, 200);
   const id = created.body.product.id;
   const edited = await f.call('edit', { product: { description: 'Updated' }, expectedRevision: 1 }, { id });
@@ -258,16 +263,16 @@ test('large previews are stored in chunks and every row commits in batches', asy
 });
 test('update rows change existing products through the catalog writer; repeats are safe', async () => {
   const f = fixture();
-  const twoSizes = { ...product, image_url: '', variants: [{ size: '330ml', sku: 'CAN-330', price: 0 }, { size: '1L', sku: 'BOT-1L', price: 50 }] };
+  const twoSizes = { ...product, image_url: '', variants: [{ size: '330ml', sku: 'CAN-330' }, { size: '1L', sku: 'BOT-1L' }] };
   const id = (await f.create(twoSizes)).body.product.id;
-  const rows = [matrix()[0], ['Coke', 'Coca-Cola', 'Drinks', 'Grocery', '330ml', 'CAN-330', '25'],
-    ['Coke', 'Coca-Cola', 'Drinks', 'Grocery', '1L', 'BOT-1L', '60']];
+  const rows = [matrix()[0], ['Coke', 'Coca-Cola', 'Drinks', 'Grocery', '355ml', 'CAN-330', '25'],
+    ['Coke', 'Coca-Cola', 'Drinks', 'Grocery', '1.5L', 'BOT-1L', '60']];
   const plan = await f.preview(rows);
   assert.deepEqual(plan.body.rows.map(row => row.status), ['UPDATE', 'UPDATE']);
   const first = await f.commit(plan.body.previewId, [2, 3]);
   assert.deepEqual(first.body.results.map(row => row.status), ['UPDATED', 'UPDATED']);
   const saved = f.db.read('products/' + id);
-  assert.deepEqual(saved.variants.map(variant => variant.price), [25, 60]);
+  assert.deepEqual(saved.variants, [{ size: '355ml', sku: 'CAN-330' }, { size: '1.5L', sku: 'BOT-1L' }]);
   assert.equal(saved.catalogRevision, 3); assert.equal(f.products().length, 1);
   assert.equal((await f.commit(plan.body.previewId, [2])).body.results[0].replayed, true);
   const again = await f.preview(rows);
@@ -488,3 +493,30 @@ for (const failure of ['canonical', 'reservation-write', 'completion-write', 'co
     assert.deepEqual(f.db.dump(), before); assert.equal(f.db.read('catalog_control/writer').auditCompletedAt, undefined);
   });
 }
+test('removing stored prices backs every price up first, then deletes only the prices', async () => {
+  const f = fixture({
+    'products/priced': { name: 'Coke', category: 'Drinks', segment: 'Grocery', price: 20, attributes: { price: '20', brand: 'Coca-Cola' },
+      variants: [{ size: '330ml', sku: 'CAN-330', price: 20 }, { size: '1L', sku: 'BOT-1L', price: '55.00', custom: 1 }] },
+    'products/plain': { name: 'Salt', category: 'Condiments', segment: 'Grocery', variants: [{ size: '1kg', sku: 'SALT-1' }] } });
+  assert.equal((await f.call('removePrices', {})).statusCode, 400);
+  assert.equal((await f.call('removePrices', { confirm: 'REMOVE ALL PRICES' }, {}, 'customer')).statusCode, 403);
+  assert.equal(f.db.read('products/priced').price, 20);
+  const result = await f.call('removePrices', { confirm: 'REMOVE ALL PRICES' });
+  assert.equal(result.statusCode, 200); assert.equal(result.body.products, 1);
+  const entry = { id: 'priced', price: 20, attributesPrice: '20',
+    variants: [{ index: 0, sku: 'CAN-330', price: 20 }, { index: 1, sku: 'BOT-1L', price: '55.00' }] };
+  assert.deepEqual(result.body.backup, [entry]);
+  assert.deepEqual(f.db.read(`catalog_price_backups/${result.body.backupId}_chunk0`).entries, [entry]);
+  assert.equal(f.db.read(`catalog_price_backups/${result.body.backupId}`).products, 1);
+  assert.deepEqual(f.db.read('products/priced'), { name: 'Coke', category: 'Drinks', segment: 'Grocery', attributes: { brand: 'Coca-Cola' },
+    variants: [{ size: '330ml', sku: 'CAN-330' }, { size: '1L', sku: 'BOT-1L', custom: 1 }] });
+  assert.deepEqual(f.db.read('products/plain').variants, [{ size: '1kg', sku: 'SALT-1' }]);
+  assert.equal((await f.call('removePrices', { confirm: 'REMOVE ALL PRICES' })).body.products, 0);
+});
+test('the catalog stops accepting new products at 5,000', async () => {
+  const seeded = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`products/p${i}`,
+    { name: `Item ${i}`, category: 'Food', segment: 'Grocery', variants: [{ sku: `SKU-${i}` }] }]));
+  const f = fixture(seeded);
+  const result = await f.create();
+  assert.equal(result.statusCode, 409); assert.match(result.body.error, /catalog is full/u);
+});

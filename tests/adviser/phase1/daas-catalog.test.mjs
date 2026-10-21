@@ -39,7 +39,7 @@ test('the same existing API key dereferences the current product on every reques
 
   assert.equal(before.products[0].name, 'Original name');
   assert.equal(after.products[0].name, 'Current approved name');
-  assert.equal(after.products[0].price, 125);
+  assert.equal(Object.hasOwn(after.products[0], 'price'), false); // Products carry no price.
   assert.equal(apiKeyData.id, 'key-document-1');
   assert.deepEqual(apiKeyData.linkedProductIds, ['product-x']);
 });
@@ -70,7 +70,7 @@ test('a legacy linkedProducts key reloads current data and ignores its stale emb
 
   assert.equal(before.products[0].name, 'Current catalog name');
   assert.equal(after.products[0].name, 'Updated current name');
-  assert.equal(after.products[0].price, 150);
+  assert.equal(Object.hasOwn(after.products[0], 'price'), false); // Products carry no price.
   assert.notEqual(after.products[0].name, apiKeyData.linkedProducts[0].name);
   assert.notEqual(after.products[0].sku, apiKeyData.linkedProducts[0].sku);
 });
@@ -244,13 +244,13 @@ test('DaaS formatting preserves the response shape for current and legacy produc
     availability: { availableSince: new Date('2026-01-02T03:04:05.000Z') },
   });
   assert.equal(current.sku, 'OJ-1L');
-  assert.equal(current.price, 90);
+  assert.equal(Object.hasOwn(current, 'price'), false); // Products carry no price.
   assert.equal(current.variants.length, 1);
   assert.equal(current.availableToConsumerSince, '2026-01-02T03:04:05.000Z');
 
   const legacy = formatDaaSProduct(result.products[1]);
   assert.equal(legacy.sku, 'HAM-1');
-  assert.equal(legacy.price, 64);
+  assert.equal(Object.hasOwn(legacy, 'price'), false); // Products carry no price.
   assert.equal(legacy.size, 'Standard');
 });
 
@@ -291,10 +291,8 @@ test('DaaS preserves arbitrary stored variant payload fields and value types', a
   });
 
   assert.equal(formatted.variants.length, 1);
-  assert.equal(formatted.price, 90.5);
-  assert.equal(typeof formatted.price, 'number');
-  assert.equal(formatted.variants[0].price, '90.50');
-  assert.equal(typeof formatted.variants[0].price, 'string');
+  assert.equal(Object.hasOwn(formatted, 'price'), false); // Products carry no price.
+  assert.equal(Object.hasOwn(formatted.variants[0], 'price'), false);
   assert.equal(formatted.variants[0].color, 'Orange');
   assert.equal(formatted.variants[0].packageCount, 12);
   assert.equal(formatted.variants[0].seasonal, false);

@@ -72,15 +72,6 @@ function firstText(...values) {
   return null;
 }
 
-function optionalNumber(value) {
-  if (value === undefined || value === null || value === '') return null;
-  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().replace(/,/g, '');
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
-  const number = Number(normalized);
-  return Number.isFinite(number) && number >= 0 ? number : null;
-}
 
 function clonePlainObject(value) {
   return plainObject(value) ? { ...value } : {};
@@ -93,8 +84,6 @@ function normalizeVariant(value) {
     const normalized = firstText(value[field]);
     if (normalized) variant[field] = normalized;
   }
-  const price = optionalNumber(value.price);
-  if (price !== null) variant.price = price;
   return Object.keys(variant).length ? variant : null;
 }
 
@@ -159,16 +148,10 @@ export function evaluateProductVisibility(product) {
   return { visible: false, reason: 'no_publication_signal' };
 }
 
-function lowestPricedVariant(variants) {
-  if (!variants.length) return null;
-  return variants.reduce((best, candidate) => {
-    if (!best) return candidate;
-    const bestPrice = optionalNumber(best.price);
-    const candidatePrice = optionalNumber(candidate.price);
-    if (candidatePrice === null) return best;
-    if (bestPrice === null || candidatePrice < bestPrice) return candidate;
-    return best;
-  }, null);
+// Products carry no price; any price still stored on a variant is never projected.
+export function withoutPrice(variant) {
+  const { price, ...rest } = variant;
+  return rest;
 }
 
 function identityKeysFromCanonical(product) {
@@ -225,19 +208,17 @@ export function projectProduct(source, documentId = null) {
   if (!plainObject(source)) return null;
   const attributes = clonePlainObject(source.attributes);
   const rootSku = firstText(source.sku, source.barcode, source.productCode, source.product_code);
-  const rootPrice = optionalNumber(source.price ?? attributes.price);
   const rootSize = firstText(source.size, attributes.size);
   const rootExpiration = firstText(source.expirationDate, source.expiration_date);
   const storedVariantPayloads = Array.isArray(source.variants)
-    ? source.variants.filter(plainObject).map(variant => ({ ...variant }))
+    ? source.variants.filter(plainObject).map(withoutPrice)
     : [];
   const variants = storedVariantPayloads.map(normalizeVariant).filter(Boolean);
   let variantPayloads = storedVariantPayloads;
 
-  if (!variants.length && (rootSku || rootPrice !== null || rootSize || rootExpiration)) {
+  if (!variants.length && (rootSku || rootSize || rootExpiration)) {
     const base = {};
     if (rootSku) base.sku = rootSku;
-    if (rootPrice !== null) base.price = rootPrice;
     if (rootSize) base.size = rootSize;
     if (rootExpiration) base.expirationDate = rootExpiration;
     const flavor = firstText(source.flavor, source.variant, attributes.flavor, attributes.variant);
@@ -246,7 +227,7 @@ export function projectProduct(source, documentId = null) {
     if (!storedVariantPayloads.length) variantPayloads = [{ ...base }];
   }
 
-  const baseVariant = lowestPricedVariant(variants);
+  const baseVariant = variants[0] || null;
   let visibility = evaluateProductVisibility(source);
   const category = normalizeCategory(firstText(
     source.category, source.productCategory, source.product_category, source.subcategory, source.sub_category,
@@ -275,9 +256,6 @@ export function projectProduct(source, documentId = null) {
     category,
     categoryKey: comparisonText(category),
     segment,
-    price: baseVariant && optionalNumber(baseVariant.price) !== null
-      ? optionalNumber(baseVariant.price)
-      : rootPrice,
     size: firstText(baseVariant?.size, rootSize),
     capacity: firstText(source.capacity, attributes.capacity),
     image_url: hasOwn(source, 'image_url')

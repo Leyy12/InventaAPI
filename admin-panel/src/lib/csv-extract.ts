@@ -2,21 +2,20 @@
 // Import CSV template columns. The API still validates every value; this only
 // picks the right source column for each field and drops everything else.
 
-export const TEMPLATE_COLUMNS = ['name', 'brand', 'segment', 'category', 'size', 'flavor', 'price', 'sku', 'description', 'expiration_date', 'image_url'] as const;
+export const TEMPLATE_COLUMNS = ['name', 'brand', 'segment', 'category', 'size', 'flavor', 'sku', 'description', 'expiration_date', 'image_url'] as const;
 type Field = typeof TEMPLATE_COLUMNS[number];
 
 // Header names the API already understands (services/catalog-import.js aliases).
 const API_ALIASES: Record<string, Field | 'description'> = {
   name: 'name', product_name: 'name', productname: 'name', generic_name: 'name', genericname: 'name',
   item_name: 'name', medicine_name: 'name', drug_name: 'name', item: 'name', description: 'description',
-  brand: 'brand', brand_name: 'brand', brandname: 'brand', manufacturer: 'brand', company: 'brand', lab: 'brand',
+  brand: 'brand', brands: 'brand', brand_name: 'brand', brandname: 'brand', manufacturer: 'brand', company: 'brand', lab: 'brand',
   segment: 'segment', category_type: 'segment', product_type: 'segment', type: 'segment', dept: 'segment', department: 'segment',
   category: 'category', drug_category: 'category', subcategory: 'category', sub_category: 'category',
   product_category: 'category', class: 'category', therapeutic_class: 'category', drug_class: 'category',
-  sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku',
-  price: 'price', srp: 'price', retail_price: 'price', unit_price: 'price', selling_price: 'price', market_price: 'price', msrp: 'price',
+  sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku', barcode_sku: 'sku', ean: 'sku',
   size: 'size', dosage: 'size', unit: 'size', packaging: 'size', form: 'size', strength: 'size',
-  pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size',
+  pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size', quantity: 'size', quantity_grams: 'size',
   flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expiration_date',
   expiry: 'expiration_date', expiry_date: 'expiration_date', exp_date: 'expiration_date', expirationdate: 'expiration_date',
   image_url: 'image_url', imageurl: 'image_url',
@@ -29,10 +28,9 @@ const SOURCES: Record<Field, string[]> = {
   brand: ['brands', 'brand', 'brand_name', 'brand_owner', 'manufacturer', 'company'],
   segment: ['segment', 'department', 'dept', 'product_type', 'category_type'],
   category: ['category', 'main_category_en', 'categories_en', 'categories_tags', 'categories', 'product_category', 'subcategory', 'drug_category', 'therapeutic_class'],
-  size: ['size', 'quantity', 'pack_size', 'net_weight', 'weight', 'volume', 'dosage', 'strength'],
+  size: ['size', 'quantity', 'quantity_grams', 'pack_size', 'net_weight', 'weight', 'volume', 'dosage', 'strength'],
   flavor: ['flavor', 'flavour', 'variant'],
-  price: ['price', 'srp', 'retail_price', 'selling_price', 'unit_price', 'market_price', 'msrp'],
-  sku: ['sku', 'code', 'barcode', 'upc', 'ean', 'item_code', 'product_code', 'item_id'],
+  sku: ['sku', 'code', 'barcode', 'barcode_sku', 'upc', 'ean', 'item_code', 'product_code', 'item_id'],
   description: ['description', 'generic_name_en', 'generic_name'],
   expiration_date: ['expiration_date', 'expiry_date', 'expiry', 'exp_date'],
   image_url: ['image_url', 'image_front_url', 'imageurl', 'image'],
@@ -67,7 +65,7 @@ export function fitsTemplate(header: string[]): boolean {
   return ['name', 'category', 'segment'].every(field => mapped.has(field as Field));
 }
 
-export type Extraction = { rows: string[][]; used: Partial<Record<Field, string>>; dropped: number; missingPrice: number };
+export type Extraction = { rows: string[][]; used: Partial<Record<Field, string>>; dropped: number };
 
 export function extractTemplateRows(matrix: string[][], defaults: { segment: string; category: string }): Extraction {
   const [header = [], ...body] = matrix;
@@ -82,7 +80,7 @@ export function extractTemplateRows(matrix: string[][], defaults: { segment: str
     if (indexes.length) { pick[field] = indexes; used[field] = header[indexes[0]]; }
   }
   const rows: string[][] = [[...TEMPLATE_COLUMNS]];
-  let dropped = 0, missingPrice = 0;
+  let dropped = 0;
   for (const values of body) {
     const record = Object.fromEntries(TEMPLATE_COLUMNS.map(field => {
       for (const i of pick[field] ?? []) {
@@ -96,8 +94,7 @@ export function extractTemplateRows(matrix: string[][], defaults: { segment: str
     if (record.description === record.name) record.description = '';
     record.segment ||= defaults.segment;
     record.category ||= defaults.category;
-    if (!record.price) missingPrice++;
     rows.push(TEMPLATE_COLUMNS.map(field => record[field].slice(0, LIMITS[field] ?? 200)));
   }
-  return { rows, used, dropped, missingPrice };
+  return { rows, used, dropped };
 }

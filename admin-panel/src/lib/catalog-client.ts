@@ -14,20 +14,10 @@ export async function catalogRequest<T>(path: string, method: string, body: unkn
   return result as T;
 }
 
-// Price is optional: blank means "not priced yet" and is left off the variant.
-export function catalogPrice(value: unknown): number | undefined {
-  if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) return undefined;
-  const number = typeof value === 'number' ? value
-    : typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : NaN;
-  if (!Number.isFinite(number) || number < 0 || number > 1e9) throw new Error('Price must be blank or a valid non-negative number.');
-  return number;
-}
-
-// Drops a blank price instead of sending it.
-export function withOptionalPrice<T extends { price?: unknown }>(variant: T): Omit<T, 'price'> & { price?: number } {
+// Products carry no price; a price still on a loaded variant is never sent back.
+export function withoutPrice<T extends { price?: unknown }>(variant: T): Omit<T, 'price'> {
   const { price, ...rest } = variant;
-  const value = catalogPrice(price);
-  return value === undefined ? rest : { ...rest, price: value };
+  return rest;
 }
 
 // Secondary display warning only; authoritative identity comes from the backend.

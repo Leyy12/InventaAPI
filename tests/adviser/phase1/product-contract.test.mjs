@@ -28,7 +28,7 @@ test('projects the current variants shape without mutating the source', () => {
   assert.equal(projected.name, 'Vitamin C');
   assert.equal(projected.segment, 'Pharmacy');
   assert.equal(projected.category, 'Supplements');
-  assert.equal(projected.price, 12.5);
+  assert.equal(Object.hasOwn(projected, 'price'), false); // Products carry no price.
   assert.equal(projected.visibility.visible, true);
   assert.deepEqual(projected.identityKeys, ['sku:VC-1000', 'sku:VC-500']);
   assert.equal(source.variants[0].sku, ' vc-500 ');
@@ -52,7 +52,7 @@ test('projects legacy root fields and variations into the compatibility shape', 
   assert.equal(projected.sku, '4800000000100');
   assert.equal(projected.brand, 'Generic Premium');
   assert.equal(projected.segment, 'Hardware');
-  assert.equal(projected.price, 64);
+  assert.equal(Object.hasOwn(projected, 'price'), false); // Products carry no price.
   assert.equal(projected.variants.length, 1);
   assert.equal(projected.variants[0].size, 'Standard');
   assert.equal(projected.variations[0].type, 'Weight');
