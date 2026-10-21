@@ -4,7 +4,7 @@ import { useState } from "react";
 import { 
   Package, Plus, Edit2, Trash2, Search, Filter 
 } from "lucide-react";
-import { collection, addDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, addDoc, deleteDoc, doc } from "@/lib/data/firestore-client";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";

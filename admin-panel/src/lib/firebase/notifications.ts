@@ -11,7 +11,7 @@ import {
   writeBatch,
   getDocs,
   Timestamp,
-} from "firebase/firestore";
+} from "@/lib/data/firestore-client";
 import { db } from "./config";
 
 export type NotificationType =

@@ -4,15 +4,29 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const resendApiKey = defineSecret('RESEND_API_KEY');
 const trialWarningFrom = defineString('TRIAL_WARNING_FROM_EMAIL');
+// Same switch as the API (database/firestore.js): DATA_BACKEND=supabase plus the
+// SUPABASE_DB_URL secret moves these jobs to the Supabase database.
+const dataBackend = defineString('DATA_BACKEND', { default: 'firebase' });
+const supabaseDbUrl = defineSecret('SUPABASE_DB_URL');
 initializeApp();
+
+let postgresDb;
+async function getDb() {
+    if (dataBackend.value() !== 'supabase') return getFirestore();
+    if (!postgresDb) {
+        const { PostgresFirestore } = await import('./postgres-firestore.mjs');
+        postgresDb = new PostgresFirestore({ connectionString: supabaseDbUrl.value(), projectId: process.env.GCLOUD_PROJECT });
+    }
+    return postgresDb;
+}
 
 // Existing optional schedule retained. API enforcement never depends on it.
 exports.downgradeExpiredSubscriptions = onSchedule({
     schedule: '0 16 * * *', timeZone: 'UTC', region: 'asia-southeast1',
-    memory: '256MiB', timeoutSeconds: 300,
+    memory: '256MiB', timeoutSeconds: 300, secrets: [supabaseDbUrl],
 }, async () => {
     const { normalizeExpiredAccount } = await import('./subscription-lifecycle.mjs');
-    const db = getFirestore();
+    const db = await getDb();
     let downgraded = 0;
     for (const plan of ['Pro', 'pro', 'Professional', 'professional', 'Pro Max', 'pro max']) {
         const users = await db.collection('users').where('plan', '==', plan).get();
@@ -29,13 +43,13 @@ exports.downgradeExpiredSubscriptions = onSchedule({
 // authoritative even if this scheduler or the email provider is unavailable.
 exports.monitorFreeTrials = onSchedule({
     schedule: '0 */6 * * *', timeZone: 'UTC', region: 'asia-southeast1',
-    memory: '256MiB', timeoutSeconds: 300, secrets: [resendApiKey],
+    memory: '256MiB', timeoutSeconds: 300, secrets: [resendApiKey, supabaseDbUrl],
 }, async () => {
     const { processTrialWarning } = await import('./trial-warning.mjs');
     const { sendResendTrialEmail } = await import('./trial-warning-email.mjs');
     const from = trialWarningFrom.value(), apiKey = resendApiKey.value();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from || '') || !apiKey) throw new Error('Trial warning email configuration is missing or invalid.');
-    const db = getFirestore(), now = new Date();
+    const db = await getDb(), now = new Date();
     // ISO UTC Trial expirations are written by activation. One indexed field,
     // bounded pages; no full users scan and no new composite index.
     let query = db.collection('users').where('trialExpiresAt', '>', now.toISOString())

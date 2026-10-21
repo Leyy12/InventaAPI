@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDocFromServer } from "firebase/firestore";
+import { doc, getDocFromServer } from "@/lib/data/firestore-client";
 import { profileRole } from '../../../../services/auth-navigation';
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";

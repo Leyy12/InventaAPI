@@ -175,7 +175,7 @@ function pageFixture() {
   const linkedProps = { names: { p1: 'Persisted Product', old: 'Historical Product' }, loading: false, error: false };
   const Component = load('admin-panel/src/app/consumers/page.tsx', 'ConsumersPage', h, {
     'lucide-react': new Proxy({}, { get: () => stub }),
-    'firebase/firestore': { collection: (_db, name) => name, query: value => value, orderBy: stub,
+    '@/lib/data/firestore-client': { collection: (_db, name) => name, query: value => value, orderBy: stub,
       onSnapshot: (name, publish) => { subscriptions.push(name); publish({ docs: (name === 'users'
         ? [{ id: 'a', data: () => ({ businessName: 'Synthetic Owner', email: 'synthetic@invalid.test' }) }]
         : keyRows.map(row => ({ id: row.id, data: () => row }))) }); return stub; } },

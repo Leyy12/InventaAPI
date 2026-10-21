@@ -62,7 +62,7 @@ function pageFixture(records = [], failure = false) {
   const page = load('admin-panel/src/app/audit/page.tsx', 'AuditLogsPage', h, {
     'lucide-react': new Proxy({}, { get: () => () => null }),
     '@/lib/firebase/config': { db: 'synthetic-database' }, '@/lib/audit-log-display': display,
-    'firebase/firestore': {
+    '@/lib/data/firestore-client': {
       collection: (_db, name) => { calls.push(['collection', name]); return name; },
       orderBy: (...args) => { calls.push(['orderBy', ...args]); return args; },
       limit: n => { calls.push(['limit', n]); return n; }, query: (...args) => args,

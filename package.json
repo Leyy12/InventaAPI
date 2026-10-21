@@ -39,7 +39,7 @@
     "test:adviser:r8c": "node scripts/run-adviser-r8c-tests.mjs",
     "test:adviser:api-key-copy": "node --test tests/adviser/api-key-copy/*.test.mjs",
     "test:adviser:bulk-images": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/bulk-images/*.test.mjs",
-    "test:supabase": "node --test --test-reporter=spec tests/supabase/postgres-firestore.test.mjs"
+    "test:supabase": "node --test --test-concurrency=1 --test-reporter=spec tests/supabase/*.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

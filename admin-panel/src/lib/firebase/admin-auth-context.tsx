@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onIdTokenChanged, User } from 'firebase/auth';
-import { doc, getDocFromServer } from 'firebase/firestore';
+import { doc, getDocFromServer } from '@/lib/data/firestore-client';
 import { auth, db } from './config';
 import { useRouter } from 'next/navigation';
 import { createAuthSession, createLogoutAction, profileRole, type AuthStatus, type LogoutResult } from '../../../../services/auth-navigation';

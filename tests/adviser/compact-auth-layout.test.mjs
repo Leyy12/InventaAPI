@@ -16,7 +16,7 @@ for (const pendingPlan of [null, 'free', 'pro', 'pro_max']) {
   test(`real inline card is plan-neutral without discarding ${pendingPlan} continuation`, () => {
     const h = hooks();
     const component = load('dashboard/src/components/auth/LoginForm.tsx', 'exports.default', h, {
-      'next/image': 'Image', 'next/link': 'Link', 'firebase/auth': {}, 'firebase/firestore': {},
+      'next/image': 'Image', 'next/link': 'Link', 'firebase/auth': {}, '@/lib/data/firestore-client': {},
       '@/lib/firebase/config': { auth: {}, db: {} },
       'next/navigation': { useRouter: () => ({}) },
       '@/lib/firebase/auth-context': { useAuth: () => ({ refreshUserDoc() {} }) },
@@ -77,7 +77,7 @@ test('Pricing navbar remains heading navigation; all three signup destinations r
 test('real signup retains every input, consent and both footer/submit actions', () => {
   const h = hooks();
   const component = load('dashboard/src/app/signup/page.tsx', 'SignupPageInner', h, {
-    'firebase/auth': {}, 'firebase/firestore': {}, '@/lib/firebase/config': { auth: {}, db: {} },
+    'firebase/auth': {}, '@/lib/data/firestore-client': {}, '@/lib/firebase/config': { auth: {}, db: {} },
     'next/navigation': { useRouter: () => ({}), useSearchParams: () => new URLSearchParams() },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,

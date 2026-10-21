@@ -14,7 +14,7 @@ import {
   where,
   orderBy,
   limit as firestoreLimit
-} from 'firebase/firestore';
+} from '@/lib/data/firestore-client';
 
 /**
  * Product Variant Interface — new schema after variants migration

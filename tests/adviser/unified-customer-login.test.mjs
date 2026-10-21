@@ -28,7 +28,7 @@ function signup(query = '', failure = '') {
       deleteUser: async () => { events.push('delete'); },
     },
     '@/components/subscription/PostSignupPlans': 'PostSignupPlans',
-    'firebase/firestore': {
+    '@/lib/data/firestore-client': {
       doc: (...args) => args, serverTimestamp: () => 'server-time',
       setDoc: async (_, profile) => { events.push('profile'); profiles.push(profile); if (failure === 'profile') throw Error('synthetic profile failure'); },
       ...(failure === 'confirm' ? { getDocFromServer: async () => ({ exists: () => false }) } : {}),
@@ -103,7 +103,7 @@ function modal(pendingPlan = null, plan = 'Free', blocked = false, resetFailure 
       signInWithEmailAndPassword: async () => { signins++; auth.currentUser = user; return { user }; },
       signOut: async () => { signouts++; auth.currentUser = null; },
     },
-    'firebase/firestore': { doc: (...args) => args, getDocFromServer: async () => ({ data: () => profile }),
+    '@/lib/data/firestore-client': { doc: (...args) => args, getDocFromServer: async () => ({ data: () => profile }),
       updateDoc: async (_, fields) => writes.push(fields) },
     '@/lib/firebase/config': { auth, db: {} },
     'next/navigation': { useRouter: () => ({ push: route => routes.push(route) }) },
