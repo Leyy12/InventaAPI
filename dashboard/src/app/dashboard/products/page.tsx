@@ -645,11 +645,29 @@ DAAS_API_KEY=${generatedKey}
         </div>
         {/* Page actions. When they scroll out of view with products selected, a compact
             copy docks into the top bar (above). */}
-        <div ref={setSummaryElement} role="group" aria-label="Catalog actions" className="flex flex-wrap items-center gap-3">
+        <div ref={setSummaryElement} role="group" aria-label="Catalog actions" className="flex flex-wrap items-center justify-end gap-3">
+          {/* Selection actions go first so Generate API Key and Add Product keep their place. */}
           {hasPendingSelection && <span role="status" className="flex items-center gap-1.5 text-xs text-slate-400">
             <ShoppingCart className="h-4 w-4 text-indigo-400" aria-hidden="true" />
             {trialPendingCount !== null ? `${trialPendingCount} selected to add` : `${cartSummary.totalProducts} selected`}
           </span>}
+          {hasPendingSelection && <>
+            <button
+              onClick={clearSelection}
+              disabled={generating}
+              className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium text-slate-200 transition-colors disabled:opacity-50"
+              aria-label={activeTrial ? 'Clear new selections' : 'Clear all selected products'}
+            >
+              {activeTrial ? 'Clear New Selections' : 'Clear All'}
+            </button>
+            <Link
+              href={selectionPlaygroundHref}
+              className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium text-slate-200 transition-colors flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Test in Playground
+            </Link>
+          </>}
           {trialAddMode ? <button onClick={addTrialProducts}
             disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
             className="px-6 py-3 rounded-xl bg-indigo-500 text-white disabled:opacity-50">Add Selected Products</button> : !upgradeRequired && (selectedProducts.size > 0 || activeTrial) && (
@@ -678,23 +696,6 @@ DAAS_API_KEY=${generatedKey}
             <Plus className="w-4 h-4" />
             Add Product
           </button>
-          {hasPendingSelection && <>
-            <button
-              onClick={clearSelection}
-              disabled={generating}
-              className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium text-slate-200 transition-colors disabled:opacity-50"
-              aria-label={activeTrial ? 'Clear new selections' : 'Clear all selected products'}
-            >
-              {activeTrial ? 'Clear New Selections' : 'Clear All'}
-            </button>
-            <Link
-              href={selectionPlaygroundHref}
-              className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-medium text-slate-200 transition-colors flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              Test in Playground
-            </Link>
-          </>}
         </div>
       </div>
 
