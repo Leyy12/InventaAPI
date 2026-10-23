@@ -1,4 +1,4 @@
-import { normalizeSegment, projectProduct, comparisonText } from './product-contract.js';
+import { normalizeSegment, projectProduct, comparisonText, withoutPrices } from './product-contract.js';
 
 const badQuery = message => Object.assign(new Error(message), { status: 400 });
 function integer(value, fallback, maximum) {
@@ -30,7 +30,7 @@ export function catalogResult(documents, { segment, search = '', limit = null, o
     const canonical = projectProduct(value, document.id);
     if (!canonical?.visibility.visible || (segment && canonical.segment !== segment)) continue;
     // A stored `id` must never replace the actual Firestore document identity.
-    unique.set(document.id, { ...value, id: document.id, segment: canonical.segment });
+    unique.set(document.id, withoutPrices({ ...value, id: document.id, segment: canonical.segment }));
   }
   const available = [...unique.values()].sort((a, b) =>
     comparisonText(a.name).localeCompare(comparisonText(b.name), 'en') || a.id.localeCompare(b.id, 'en'));

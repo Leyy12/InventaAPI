@@ -49,7 +49,7 @@ Data saved while on Supabase stays only in Supabase.
 3. Drop the CSV on the window (any size, any column order). Your catalog export format
    (Name, Brand, Segment, Category, Flavors, Specs, Pricing, image_url) works as is.
 4. Read the four tabs. Nothing is saved yet.
-   - **New**: products that will be created. Price is not needed.
+   - **New**: products that will be created. Prices are not used; a price column is ignored.
    - **Appended**: a new size of a product that already exists; added to that product.
    - **Updates**: existing products that get something new, usually a missing photo.
      Existing photos are never replaced.

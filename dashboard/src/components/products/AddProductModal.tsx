@@ -24,7 +24,6 @@ interface VariantRow {
   flavor: string;
   size: string;
   sku: string;
-  price: string;
 }
 
 export default function AddProductModal({ open, onClose, onAdded }: AddProductModalProps) {
@@ -44,7 +43,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   const segment = segmentLocked ? activeCustomerSegment(appUser) || '' : paidSegment;
   const [category, setCategory]     = useState("");
   const [description, setDescription] = useState("");
-  const [variants, setVariants]     = useState<VariantRow[]>([{ flavor: "", size: "", sku: "", price: "" }]);
+  const [variants, setVariants]     = useState<VariantRow[]>([{ flavor: "", size: "", sku: "" }]);
   const [saving, setSaving]         = useState(false);
   const [feedback, setFeedback] = useState<SubmissionFeedback | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -68,7 +67,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   useEffect(() => {
     if (!open || attempt.current) return;
     setName(""); setBrand(""); setSegment(""); setCategory("");
-    setImageUrl(""); setImageFile(null); setDescription(""); setVariants([{ flavor: "", size: "", sku: "", price: "" }]);
+    setImageUrl(""); setImageFile(null); setDescription(""); setVariants([{ flavor: "", size: "", sku: "" }]);
     setConfirmed(false);
     accepted.current = false;
   }, [open]);
@@ -76,7 +75,7 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
   const updateVariant = (i: number, field: keyof VariantRow, val: string) =>
     setVariants(prev => prev.map((v, idx) => idx === i ? { ...v, [field]: val } : v));
   const addVariant = () =>
-    setVariants(prev => [...prev, { flavor: "", size: "", sku: "", price: "" }]);
+    setVariants(prev => [...prev, { flavor: "", size: "", sku: "" }]);
   const removeVariant = (i: number) =>
     setVariants(prev => prev.filter((_, idx) => idx !== i));
 
@@ -91,11 +90,8 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
     try {
       if (attempt.current && attempt.current.uid !== user.uid) throw new Error("Sign back into the submitting account to retry.");
       if (!attempt.current) {
-        const cleanedVariants = variants.filter(v => v.flavor || v.size || v.sku || v.price).map(v => {
-          const price = v.price.trim() ? Number(v.price) : 0;
-          if (!Number.isFinite(price) || price < 0) throw new Error("Invalid variant price.");
-          return { flavor: v.flavor.trim(), size: v.size.trim(), sku: v.sku.trim(), price };
-        });
+        const cleanedVariants = variants.filter(v => v.flavor || v.size || v.sku)
+          .map(v => ({ flavor: v.flavor.trim(), size: v.size.trim(), sku: v.sku.trim() }));
         const payload = { name: name.trim(), brand: brand.trim(), segment, category: category.trim(),
           description: description.trim(), variants: cleanedVariants, image_url: normalizeProductImageUrl(imageUrl) };
         const key = crypto.randomUUID();
@@ -215,8 +211,8 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               {/* Header row */}
-              <div className="hidden sm:grid grid-cols-[1fr_90px_110px_90px_32px] bg-slate-800/60 px-3 py-2 gap-2">
-                {["Flavor", "Size", "SKU", "Price", ""].map(h => (
+              <div className="hidden sm:grid grid-cols-[1fr_90px_110px_32px] bg-slate-800/60 px-3 py-2 gap-2">
+                {["Flavor", "Size", "SKU", ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>
@@ -227,16 +223,13 @@ export default function AddProductModal({ open, onClose, onAdded }: AddProductMo
                   <p className="text-xs text-slate-600 text-center py-4">No variants. Click &quot;Add Variant&quot; to begin.</p>
                 )}
                 {variants.map((v, i) => (
-                  <div key={i} className="grid grid-cols-2 sm:grid-cols-[1fr_90px_110px_90px_32px] px-3 py-2 gap-2 items-center hover:bg-slate-800/20">
+                  <div key={i} className="grid grid-cols-2 sm:grid-cols-[1fr_90px_110px_32px] px-3 py-2 gap-2 items-center hover:bg-slate-800/20">
                     <input aria-label={`Variant ${i + 1} flavor`} value={v.flavor} onChange={e => updateVariant(i, "flavor", e.target.value)}
                       placeholder="e.g. Cheese" className={inputCls + " py-1.5 text-xs"} />
                     <input aria-label={`Variant ${i + 1} size`} value={v.size} onChange={e => updateVariant(i, "size", e.target.value)}
                       placeholder="e.g. 85g" className={inputCls + " py-1.5 text-xs"} />
                     <input aria-label={`Variant ${i + 1} SKU`} value={v.sku} onChange={e => updateVariant(i, "sku", e.target.value)}
                       placeholder="e.g. ABC-001" className={inputCls + " py-1.5 text-xs"} />
-                    <input aria-label={`Variant ${i + 1} price`} type="number" min="0" step="0.01" value={v.price}
-                      onChange={e => updateVariant(i, "price", e.target.value)}
-                      placeholder="0.00" className={inputCls + " py-1.5 text-xs"} />
                     <button type="button" aria-label={`Remove variant ${i + 1}`} onClick={() => removeVariant(i)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                       <X className="w-3.5 h-3.5" />

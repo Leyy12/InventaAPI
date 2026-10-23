@@ -11,9 +11,9 @@ function files(dir) {
   });
 }
 const frontends = ['dashboard', 'admin-panel'];
-const dormant = ['admin-panel/src/components/admin/AdminProductTable.tsx', 'dashboard/src/app/dashboard/products/page.tsx.backup'];
+const dormant = ['dashboard/src/app/dashboard/products/page.tsx.backup'];
 const storage = /firebase\/storage|uploadBytes|uploadBytesResumable|getDownloadURL|deleteObject|getStorage/u;
-test('Storage references are confined to initialization and the two dormant sources', () => {
+test('Storage references are confined to initialization and the dormant backup source', () => {
   const found = frontends.flatMap(app => files(app + '/src')).filter(path => storage.test(read(path))).sort();
   assert.deepEqual(found, [...dormant, ...frontends.map(app => app + '/src/lib/firebase/config.ts')].sort());
   for (const app of frontends) {

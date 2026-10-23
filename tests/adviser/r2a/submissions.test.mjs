@@ -133,7 +133,7 @@ test('approval creates canonical visible DaaS-compatible product and review meta
   assert.equal(result.statusCode, 200); assert.equal(f.products().length, 1);
   const product = f.products()[0][1], projection = projectProduct(product);
   assert.equal(projection.visibility.visible, true); assert.deepEqual(projection.identityKeys, ['sku:ABC-123']);
-  assert.equal(projection.image_url, content.image_url.trim()); assert.equal(projection.price, 25);
+  assert.equal(projection.image_url, content.image_url.trim()); assert.equal(projection.price, undefined);
   const row = f.db.read(`product_requests/${created.body.id}`);
   assert.equal(row.status, 'approved'); assert.equal(row.reviewedBy, 'admin'); assert.equal(row.reviewedAt, at);
   assert.equal(row.productId, result.body.productId); assert.equal((await f.review(created.body.id)).body.replayed, true);

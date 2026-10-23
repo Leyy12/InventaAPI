@@ -17,7 +17,7 @@ import { activeCustomerSegment, scopeCustomerProducts } from '../../../../../ser
 import AddProductModal from "@/components/products/AddProductModal";
 import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 import { useAuth } from "@/lib/firebase/auth-context";
-import { getBasePrice, getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
+import { getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
@@ -924,7 +924,7 @@ DAAS_API_KEY=${generatedKey}
                   )}
                 </div>
 
-                {/* Card Body: the variant/price footer is pinned to the bottom so rows line up. */}
+                {/* Card Body: the variant footer is pinned to the bottom so rows line up. */}
                 <div className="p-4 flex flex-1 flex-col min-w-0">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
@@ -983,9 +983,6 @@ DAAS_API_KEY=${generatedKey}
                         ? `${product.variants.length} variant${product.variants.length !== 1 ? 's' : ''}`
                         : <span className="font-mono">{product.sku || '—'}</span>
                       }
-                    </span>
-                    <span className="text-sm font-bold text-white">
-                      {getBasePrice(product) > 0 ? `from ₱${getBasePrice(product).toFixed(2)}` : '—'}
                     </span>
                   </div>
                 </div>

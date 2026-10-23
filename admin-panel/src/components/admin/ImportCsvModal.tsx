@@ -9,7 +9,7 @@ import { extractTemplateRows, fitsTemplate } from '@/lib/csv-extract';
 // Server statuses (services/catalog-import.js). The window groups them into four tabs.
 type Status = 'NEW' | 'APPEND' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT' | 'NO_IMAGE';
 type PreviewRow = { row: number; status: Status; reason: string;
-  product: { name: string; brand: string; segment: string; category: string; sku: string; size: string; flavor: string; price: number | null } | null };
+  product: { name: string; brand: string; segment: string; category: string; sku: string; size: string; flavor: string } | null };
 type Preview = { previewId: string; total: number; warnings: string[]; rows: PreviewRow[] };
 type Result = { row: number; status: 'IMPORTED' | 'UPDATED' | 'APPENDED' | 'FAILED' | 'SKIPPED'; reason?: string; productId?: string };
 type Tab = 'new' | 'appended' | 'updates' | 'skipped';

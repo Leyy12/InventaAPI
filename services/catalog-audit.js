@@ -1,5 +1,5 @@
 import { productIdentityKeys, projectProduct, normalizeSku, comparisonText } from './product-contract.js';
-import { brandNameKey, identityId, plainObject, reservationIntegrityProblems, strictPrice } from './catalog-contract.js';
+import { brandNameKey, identityId, plainObject, reservationIntegrityProblems } from './catalog-contract.js';
 
 // Per-product findings that depend only on that product's data. `facts` (optional) is a
 // WeakMap keyed by the data object; a caller that re-audits the same unchanged objects
@@ -19,9 +19,6 @@ function productFacts(data, facts) {
     if (variantKeys.has(key)) kinds.push('AMBIGUOUS_VARIANTS');
     variantKeys.add(key);
   }
-  // Missing/invalid prices are reported without inventing a price for a legacy record.
-  const prices = Array.isArray(data.variants) && data.variants.length ? data.variants.map(v => v?.price) : [data.price ?? data.attributes?.price];
-  for (const price of prices) { try { strictPrice(price); } catch { kinds.push('INVALID_OR_MISSING_PRICE'); break; } }
   const keys = productIdentityKeys(data);
   if (!keys.length) kinds.push('MISSING_IDENTITY');
   const result = { kinds, keys, group: brandNameKey(data) };

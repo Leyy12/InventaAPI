@@ -275,9 +275,6 @@ export function projectProduct(source, documentId = null) {
     category,
     categoryKey: comparisonText(category),
     segment,
-    price: baseVariant && optionalNumber(baseVariant.price) !== null
-      ? optionalNumber(baseVariant.price)
-      : rootPrice,
     size: firstText(baseVariant?.size, rootSize),
     capacity: firstText(source.capacity, attributes.capacity),
     image_url: hasOwn(source, 'image_url')
@@ -299,6 +296,23 @@ export function projectProduct(source, documentId = null) {
   canonical.identityKeys = identityKeysFromCanonical(canonical);
   canonical.identity = canonical.identityKeys[0] || null;
   return canonical;
+}
+
+// This system does not use product prices. Older documents may still store one;
+// this removes it from anything sent out (API responses and browser reads).
+const PRICE_KEYS = ['price', 'srp', 'msrp', 'retail_price', 'selling_price', 'unit_price', 'market_price'];
+const omitPrices = value => {
+  if (!plainObject(value)) return value;
+  const copy = { ...value };
+  for (const key of PRICE_KEYS) delete copy[key];
+  return copy;
+};
+export function withoutPrices(product) {
+  if (!plainObject(product)) return product;
+  const copy = omitPrices(product);
+  if (plainObject(copy.attributes)) copy.attributes = omitPrices(copy.attributes);
+  for (const list of ['variants', 'variantPayloads']) if (Array.isArray(copy[list])) copy[list] = copy[list].map(omitPrices);
+  return copy;
 }
 
 export function productIdentityKeys(product) {

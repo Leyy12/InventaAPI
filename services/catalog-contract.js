@@ -129,12 +129,13 @@ export function validateCatalogProduct(input, previous = null) {
   if (!['Active', 'Archived', 'Inactive'].includes(result.status)) throw catalogError(400, 'Invalid product status.');
   result.is_active = result.status === 'Active';
   const variants = input.variants ?? previous?.variants ?? old?.variantPayloads;
-  if (!Array.isArray(variants) || !variants.length || variants.length > 50) throw catalogError(400, 'Provide 1–50 priced variants.');
+  if (!Array.isArray(variants) || !variants.length || variants.length > 50) throw catalogError(400, 'Provide 1–50 variants.');
   result.variants = variants.map(variant => {
     if (!plainObject(variant)) throw catalogError(400, 'Invalid variant.');
     safePayload(variant);
     // Preserve arbitrary Phase 1 payload fields and valid existing value types.
-    strictPrice(variant.price);
+    // Prices are optional (the system does not use them); a stored one must still be valid.
+    if (variant.price !== undefined) strictPrice(variant.price);
     for (const key of ['flavor', 'size', 'dosage', 'form', 'specs', 'dimensions', 'value', 'variantName', 'sku', 'expirationDate']) {
       if (variant[key] !== undefined) text(variant[key], key, 200);
     }

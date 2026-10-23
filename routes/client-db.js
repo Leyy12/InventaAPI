@@ -2,6 +2,7 @@ import express from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, FieldPath } from '../database/firestore.js';
 import { rulesFor } from '../services/client-db-rules.js';
+import { withoutPrices } from '../services/product-contract.js';
 
 // Browser data access for the dashboard and admin panel. The browsers used to
 // read and write Firestore directly under firestore.rules; they now send the
@@ -51,6 +52,9 @@ function fromWire(value, forRules, now) {
     }
     return value;
 }
+
+// Product prices are never sent to the browsers (see withoutPrices).
+const outgoing = (collection, data) => toWire(collection === 'products' ? withoutPrices(data) : data);
 
 function toWire(value) {
     if (value instanceof Date) return { __ts: value.toISOString() };
@@ -132,14 +136,14 @@ async function readQuery(db, ctx, body) {
     const snapshot = await query.limit(limit).get();
     // Like Firestore, a query fails as a whole if any result is not readable.
     for (const doc of snapshot.docs) if (!(await rules.read(ctx, plainData(doc), doc.id))) throw denied();
-    return { docs: snapshot.docs.map(doc => ({ id: doc.id, data: toWire(doc.data()) })) };
+    return { docs: snapshot.docs.map(doc => ({ id: doc.id, data: outgoing(body.collection, doc.data()) })) };
 }
 
 async function readDoc(db, ctx, body) {
     const { collection, id, rules } = parsePath(body.path);
     const snap = await db.collection(collection).doc(id).get();
     if (!(await rules.read(ctx, snap.exists ? plainData(snap) : undefined, id))) throw denied();
-    return { id, exists: snap.exists, data: snap.exists ? toWire(snap.data()) : null };
+    return { id, exists: snap.exists, data: snap.exists ? outgoing(collection, snap.data()) : null };
 }
 
 // Checks one write against the rules inside a transaction and stages it.

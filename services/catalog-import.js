@@ -23,18 +23,6 @@ const money = value => typeof value === 'number' ? `₱${value.toFixed(2)}` : St
 const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
 const parts = value => String(value ?? '').split(/\s*,\s*/u).map(comparisonText).filter(Boolean);
 
-// Merge mode (the admin panel's importer) reads prices the way the catalog export
-// writes them: "12.50" or "₱12.50". Price is optional there: a blank price, or an
-// exported price range, keeps existing prices, and new products and sizes are
-// stored with price 0.
-function importPrice(text, merge) {
-  const value = String(text ?? '').trim();
-  if (!merge) return { price: strictPrice(value), missing: false };
-  const plain = value.replace(/^₱\s*/u, '').replace(/,/gu, '');
-  if (!plain || plain === '—' || /\d\s*[-–]\s*₱?\s*\d/u.test(value)) return { price: 0, missing: true };
-  return { price: strictPrice(plain), missing: false };
-}
-
 // Product-level fields a CSV row may change. With fillImageOnly an existing photo is
 // never replaced; a photo is only added where the product has none.
 function productFieldChanges(old, csv, fields, { fillImageOnly = false } = {}) {
@@ -112,7 +100,7 @@ export function planImportMerge(existing, csv, { keepPrice = false } = {}) {
   } else if (given.some(field => parts(row[field]).length > 1)) {
     throw catalogError(409, 'Lists several sizes or flavors that are not all on the existing product; edit it by hand.');
   } else {
-    const variant = { price: row.price };
+    const variant = row.price !== undefined ? { price: row.price } : {};
     for (const field of [...VARIANT_MATCH_FIELDS, 'sku', 'expirationDate']) if (row[field]) variant[field] = row[field];
     variants.push(variant); kind = 'append';
     changes.push(`adds ${[row.size, row.flavor].filter(Boolean).join(' ') || row.sku || 'a variant'}`);
@@ -159,11 +147,12 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
       const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
-      const { price, missing: noPrice } = importPrice(fields.price, merge);
-      row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
-        variants: [{ size, flavor, sku, expirationDate, price }] });
+      // Merge mode ignores prices: this system does not use them, and existing ones are kept.
+      const variant = { size, flavor, sku, expirationDate };
+      if (!merge) variant.price = strictPrice(fields.price);
+      row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url, variants: [variant] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
-      if (noPrice) row.keepPrice = true;
+      if (merge) row.keepPrice = true;
       if (requireImage && !row.product.image_url) {
         row.status = 'NO_IMAGE'; row.reason = 'No image link; skipped.';
         return row;

@@ -11,10 +11,9 @@ const COMMIT_BATCH_MAX = 200;
 const PREVIEW_TTL_MS = 2 * 60 * 60 * 1000;
 // Preview rows sent back to the browser: only what the importer shows, so a file of
 // thousands of rows stays well under the hosting response size limit.
-const slimRow = ({ row, status, reason, product, keepPrice }) => ({ row, status, reason,
+const slimRow = ({ row, status, reason, product }) => ({ row, status, reason,
   product: product && { name: product.name, brand: product.brand, segment: product.segment, category: product.category,
-    sku: product.sku, size: product.variants[0]?.size || '', flavor: product.variants[0]?.flavor || '',
-    price: keepPrice ? null : product.variants[0]?.price ?? null } });
+    sku: product.sku, size: product.variants[0]?.size || '', flavor: product.variants[0]?.flavor || '' } });
 
 // Preview chunks never change after the preview is written, so one commit request
 // reads each chunk once (chunkCache) instead of once per row.

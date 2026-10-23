@@ -33,7 +33,8 @@ test('signed-in preview returns only the selection, in catalog shape, with parti
   assert.deepEqual(result.body.products.map(product => product.id).sort(), ['hammer', 'paste', 'pop']);
   const paste = result.body.products.find(product => product.id === 'paste');
   assert.deepEqual(paste.variants.map(variant => variant.sku), ['L-700']);
-  assert.equal(paste.price, 70);
+  // Product prices are never sent out.
+  assert.equal(paste.price, undefined); assert.ok(paste.variants.every(variant => !('price' in variant)));
   assert.equal(result.body.products.find(product => product.id === 'pop').variants.length, 2);
   // Preview never issues keys, records usage or writes telemetry.
   for (const collection of ['api_keys', 'account_api_usage', 'api_telemetry', 'audit_logs']) {

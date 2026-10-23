@@ -59,13 +59,17 @@ test('Brand+Name same/different variant returns warning without merging', async 
   assert.equal(f.products().length, 2); assert.deepEqual(f.products()[0].data.variants, product.variants);
 });
 for (const [name, change] of Object.entries({ segment: { segment: 'Other' }, category: { category: '' }, name: { name: '' },
-  priceMissing: { variants: [{ size: '330ml' }] }, priceEmpty: { variants: [{ price: '' }] },
+  priceEmpty: { variants: [{ price: '' }] },
   priceMalformed: { variants: [{ price: '10abc' }] }, priceNegative: { variants: [{ price: -1 }] },
   priceNaN: { variants: [{ price: NaN }] }, priceInfinite: { variants: [{ price: Infinity }] },
   image: { image_url: 'javascript:alert(1)' }, credentials: { image_url: 'https://u:p@example.invalid/a' },
   unsupported: { role: 'Admin' }, duplicateVariants: { variants: [product.variants[0], product.variants[0]] } })) {
   test('invalid create ' + name, async () => { const f = fixture(); assert.equal((await f.create({ ...product, ...change })).statusCode, 400); assert.equal(f.products().length, 0); });
 }
+test('products without a price can be created (prices are optional)', async () => {
+  const f = fixture(), created = await f.create({ ...product, variants: [{ size: '330ml', sku: 'CAN-330' }] });
+  assert.equal(created.statusCode, 200); assert.deepEqual(f.products()[0].data.variants, [{ size: '330ml', sku: 'CAN-330' }]);
+});
 test('edit preserves arbitrary variant payload and siblings, and rejects stale revision', async () => {
   const f = fixture();
   const variants = [{ ...product.variants[0], custom: { active: true, bins: ['a', 'b'] } }, { price: '50', sku: 'BOTTLE-15', size: '1.5L', anyField: 42 }];
@@ -505,14 +509,15 @@ test('merge import: skips rows without images and existing rows, fills photos, a
   assert.equal(preview.statusCode, 200);
   assert.deepEqual(preview.body.rows.map(row => row.status), ['EXACT_EXISTING_MATCH', 'UPDATE', 'APPEND', 'NEW', 'APPEND', 'EXACT_EXISTING_MATCH', 'NO_IMAGE', 'NEW']);
   assert.deepEqual(Object.keys(preview.body.rows[1]).sort(), ['product', 'reason', 'row', 'status']);
-  assert.deepEqual(preview.body.rows[3].product, { name: 'Neozep', brand: 'Unilab', segment: 'Pharmacy', category: 'Cold', sku: '', size: '10mg', flavor: '', price: 8 });
+  assert.deepEqual(preview.body.rows[3].product, { name: 'Neozep', brand: 'Unilab', segment: 'Pharmacy', category: 'Cold', sku: '', size: '10mg', flavor: '' });
   const commit = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6, 9] });
   assert.deepEqual(commit.body.results.map(result => result.status), ['UPDATED', 'APPENDED', 'IMPORTED', 'APPENDED', 'IMPORTED']);
-  assert.deepEqual(f.products().find(product => product.data.name === 'Tempra').data.variants, [{ size: '120ml', flavor: '', sku: '', expirationDate: '', price: 0 }]);
+  assert.deepEqual(f.products().find(product => product.data.name === 'Tempra').data.variants, [{ size: '120ml', flavor: '', sku: '', expirationDate: '' }]);
   assert.equal(f.db.read('products/has').image_url, has.image_url);
   const alaxan = f.db.read('products/bare');
   assert.equal(alaxan.image_url, img);
-  assert.deepEqual(alaxan.variants, [{ size: '200mg', price: 7 }, { size: '400mg', price: 12.5 }]);
+  // The import ignores prices: the existing one stays, the new size gets none.
+  assert.deepEqual(alaxan.variants, [{ size: '200mg', price: 7 }, { size: '400mg' }]);
   const neozep = f.products().find(product => product.data.name === 'Neozep');
   assert.deepEqual(neozep.data.variants.map(variant => variant.size), ['10mg', '20mg']);
   assert.equal(f.products().length, 4);

@@ -1,6 +1,7 @@
 import {
   comparisonText,
   projectProduct,
+  withoutPrices,
 } from './product-contract.js';
 
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
@@ -91,9 +92,6 @@ function lowestPricedVariant(variants) {
   }, null);
 }
 
-function basePrice(value) {
-  return typeof value === 'number' ? value : parseFloat(value) || null;
-}
 
 function availabilityIso(value) {
   if (!value) return null;
@@ -118,14 +116,13 @@ export function formatDaaSProduct(product, {
     : [...variantPayloads];
   const baseVariant = lowestPricedVariant(variants);
 
-  return {
+  return withoutPrices({
     id: product.id,
     sku: baseVariant?.sku || null,
     name: product.name,
     description: product.description || '',
     category: product.category,
     segment: product.segment,
-    price: basePrice(baseVariant?.price),
     size: baseVariant?.size || null,
     image_url: product.image_url || '',
     metadata: product.metadata || {},
@@ -133,5 +130,5 @@ export function formatDaaSProduct(product, {
     variants,
     expirationDate: baseVariant?.expirationDate || null,
     availableToConsumerSince: availabilityIso(availability?.availableSince),
-  };
+  });
 }
