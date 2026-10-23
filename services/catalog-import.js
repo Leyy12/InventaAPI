@@ -24,8 +24,9 @@ const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
 const parts = value => String(value ?? '').split(/\s*,\s*/u).map(comparisonText).filter(Boolean);
 
 // Merge mode (the admin panel's importer) reads prices the way the catalog export
-// writes them: "12.50" or "₱12.50". A blank price, or an exported price range,
-// means "no price given": existing prices are kept and new products need one.
+// writes them: "12.50" or "₱12.50". Price is optional there: a blank price, or an
+// exported price range, keeps existing prices, and new products and sizes are
+// stored with price 0.
 function importPrice(text, merge) {
   const value = String(text ?? '').trim();
   if (!merge) return { price: strictPrice(value), missing: false };
@@ -111,7 +112,6 @@ export function planImportMerge(existing, csv, { keepPrice = false } = {}) {
   } else if (given.some(field => parts(row[field]).length > 1)) {
     throw catalogError(409, 'Lists several sizes or flavors that are not all on the existing product; edit it by hand.');
   } else {
-    if (keepPrice) throw catalogError(400, 'Add a price to add this size to the existing product.');
     const variant = { price: row.price };
     for (const field of [...VARIANT_MATCH_FIELDS, 'sku', 'expirationDate']) if (row[field]) variant[field] = row[field];
     variants.push(variant); kind = 'append';
@@ -208,7 +208,6 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
         }
         row.matches = chosen && !chosen.error ? [chosen.id] : [];
       }
-      if (merge && row.status === 'NEW' && row.keepPrice) { row.status = 'INVALID'; row.reason = 'Add a price to create this product.'; }
     } catch (error) { row.status = 'INVALID'; row.reason = error.message; row.product = null; }
     return row;
   });

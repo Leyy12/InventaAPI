@@ -49,11 +49,11 @@ Data saved while on Supabase stays only in Supabase.
 3. Drop the CSV on the window (any size, any column order). Your catalog export format
    (Name, Brand, Segment, Category, Flavors, Specs, Pricing, image_url) works as is.
 4. Read the four tabs. Nothing is saved yet.
-   - **New**: products that will be created (each needs a price).
+   - **New**: products that will be created. Price is not needed.
    - **Appended**: a new size of a product that already exists; added to that product.
    - **Updates**: existing products that get something new, usually a missing photo.
      Existing photos are never replaced.
-   - **Skipped**: already in the catalog, no image, no price for a new product, repeated
+   - **Skipped**: already in the catalog, no image, repeated
      rows, or rows that cannot be matched safely. The reason is under each name.
 5. Click **Confirm Import**. Rows are saved in batches of 100 with a progress bar. Keep the
    window open. **Stop** pauses after the current batch; **Continue Import** carries on.

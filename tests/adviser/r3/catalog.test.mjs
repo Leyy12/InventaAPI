@@ -499,26 +499,27 @@ test('merge import: skips rows without images and existing rows, fills photos, a
     ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '20mg', '9', img],            // 6 new size of row 5: appended
     ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '10mg', '8', img],            // 7 repeat of row 5: skipped
     ['Decolgen', 'Unilab', 'Pharmacy', 'Cold', '25mg', '6', ''],           // 8 no image: skipped
-    ['Tempra', 'Taisho', 'Pharmacy', 'Fever', '120ml', '', img],           // 9 new without price: invalid
+    ['Tempra', 'Taisho', 'Pharmacy', 'Fever', '120ml', '', img],           // 9 new without price: added with price 0
   ];
   const preview = await f.call('preview', { rows, options: { merge: true, requireImage: true } });
   assert.equal(preview.statusCode, 200);
-  assert.deepEqual(preview.body.rows.map(row => row.status), ['EXACT_EXISTING_MATCH', 'UPDATE', 'APPEND', 'NEW', 'APPEND', 'EXACT_EXISTING_MATCH', 'NO_IMAGE', 'INVALID']);
+  assert.deepEqual(preview.body.rows.map(row => row.status), ['EXACT_EXISTING_MATCH', 'UPDATE', 'APPEND', 'NEW', 'APPEND', 'EXACT_EXISTING_MATCH', 'NO_IMAGE', 'NEW']);
   assert.deepEqual(Object.keys(preview.body.rows[1]).sort(), ['product', 'reason', 'row', 'status']);
   assert.deepEqual(preview.body.rows[3].product, { name: 'Neozep', brand: 'Unilab', segment: 'Pharmacy', category: 'Cold', sku: '', size: '10mg', flavor: '', price: 8 });
-  const commit = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6] });
-  assert.deepEqual(commit.body.results.map(result => result.status), ['UPDATED', 'APPENDED', 'IMPORTED', 'APPENDED']);
+  const commit = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6, 9] });
+  assert.deepEqual(commit.body.results.map(result => result.status), ['UPDATED', 'APPENDED', 'IMPORTED', 'APPENDED', 'IMPORTED']);
+  assert.deepEqual(f.products().find(product => product.data.name === 'Tempra').data.variants, [{ size: '120ml', flavor: '', sku: '', expirationDate: '', price: 0 }]);
   assert.equal(f.db.read('products/has').image_url, has.image_url);
   const alaxan = f.db.read('products/bare');
   assert.equal(alaxan.image_url, img);
   assert.deepEqual(alaxan.variants, [{ size: '200mg', price: 7 }, { size: '400mg', price: 12.5 }]);
   const neozep = f.products().find(product => product.data.name === 'Neozep');
   assert.deepEqual(neozep.data.variants.map(variant => variant.size), ['10mg', '20mg']);
-  assert.equal(f.products().length, 3);
+  assert.equal(f.products().length, 4);
   // Retrying the same rows replays receipts and writes nothing twice.
-  const again = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6] });
+  const again = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6, 9] });
   assert.ok(again.body.results.every(result => result.replayed));
-  assert.equal(f.products().length, 3);
+  assert.equal(f.products().length, 4);
   // A fresh import of the same file now has nothing left to do.
   const second = await f.call('preview', { rows, options: { merge: true, requireImage: true } });
   assert.deepEqual(second.body.rows.map(row => row.status).filter(status => ['NEW', 'UPDATE', 'APPEND'].includes(status)), []);
