@@ -905,14 +905,14 @@ DAAS_API_KEY=${generatedKey}
                 aria-label={`${product.name}${isIncluded ? ', Included' : isSelected ? ', Selected' : ''}`}
                 style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : '#334155',
                   boxShadow: isSelected ? '0 0 0 1px #818cf8, 0 4px 20px rgb(99 102 241 / 0.2)' : undefined }}
-                className={`glass-card rounded-xl transition-all overflow-hidden flex flex-col ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
+                className={`glass-card rounded-xl transition-all overflow-hidden flex h-[24rem] flex-col ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
                   isSelected
                     ? "border-2 border-indigo-500 shadow-lg shadow-indigo-500/20"
                     : "border border-slate-700 hover:border-slate-600"
                 }`}
               >
                 {/* Image Area */}
-                <div key={productImageSource(variantPhoto(product, productVars))} className="relative w-full h-44 bg-slate-800 overflow-hidden">
+                <div key={productImageSource(variantPhoto(product, productVars))} className="relative w-full h-44 shrink-0 bg-slate-800 overflow-hidden">
                   {productImageSource(variantPhoto(product, productVars)) ? (
                     <img
                       src={productImageSource(variantPhoto(product, productVars))}
@@ -947,8 +947,9 @@ DAAS_API_KEY=${generatedKey}
                   )}
                 </div>
 
-                {/* Card Body: the variant footer is pinned to the bottom so rows line up. */}
-                <div className="p-4 flex flex-1 flex-col min-w-0">
+                {/* Card Body: every card has the same height; a long variant list scrolls
+                    inside its card instead of stretching the whole row. */}
+                <div className="p-4 flex flex-1 flex-col min-w-0 min-h-0">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
                   {keyNames.has(product.id!) && <p className="flex items-center gap-1 text-xs text-emerald-300 mb-1 min-w-0">
@@ -959,7 +960,7 @@ DAAS_API_KEY=${generatedKey}
 
                   {/* Variant chips */}
                   {product.variants && product.variants.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5 mt-2" onClick={e => e.stopPropagation() /* Prevent double toggle if clicking container */}>
+                    <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 mt-2 overflow-y-auto pr-1" onClick={e => e.stopPropagation() /* Prevent double toggle if clicking container */}>
                       {product.variants.map((v, i) => {
                         const variantId = `${v.flavor || ''}|${v.size || ''}`;
                         const isVarSelected = productVars.has(variantId);
@@ -1000,7 +1001,7 @@ DAAS_API_KEY=${generatedKey}
                   )}
 
                   <div aria-hidden="true" className="h-3 shrink-0" />
-                  <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-700/60">
+                  <div className="flex shrink-0 items-center justify-between mt-auto pt-3 border-t border-slate-700/60">
                     <span className="text-xs text-slate-500">
                       {product.variants && product.variants.length > 0
                         ? `${product.variants.length} variant${product.variants.length !== 1 ? 's' : ''}`
