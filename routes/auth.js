@@ -1,20 +1,16 @@
 import express from 'express';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { getFirestore } from '../database/firestore.js';
 import { createIpRateLimiter } from '../services/rate-limit-client-ip.js';
 import { createEmailSender } from '../services/email-delivery.js';
 import { createEmailVerificationHandlers, createPasswordResetHandlers } from '../services/email-verification.js';
 
-// Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
-// No re-initialization needed here — getAuth() can be imported and used directly when needed.
+// Sign-in accounts live in Supabase Auth (services/supabase-auth.js).
 
 const router = express.Router();
 
-// NOTE: Token bridge endpoint removed - admin panel now uses direct Firebase authentication
-// If you need to restore the token bridge functionality in the future, check git history
-
-// Signup email verification and password reset codes. Admin SDK calls stay lazy so
-// loading routes never touches Firebase.
+// Signup email verification and password reset codes. Auth calls stay lazy so
+// loading routes never contacts Supabase.
 const sendEmail = createEmailSender();
 const accountByEmail = email => getAuth().getUserByEmail(email).catch(error => {
   if (error?.code === 'auth/user-not-found') return null;
@@ -38,6 +34,7 @@ const verification = createEmailVerificationHandlers({
   },
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked),
   markEmailVerified: uid => getAuth().updateUser(uid, { emailVerified: true }),
+  createAccount: ({ email, password }) => getAuth().createUser({ email, password, emailVerified: true }),
   sendEmail,
 });
 const passwordReset = createPasswordResetHandlers({
@@ -59,6 +56,7 @@ router.post('/email-verification/send', verifyClientIp, limiter, verification.se
 router.post('/email-verification/verify', verification.verify);
 router.post('/email-verification/confirm', verification.confirm);
 router.post('/email-verification/reclaim', verification.reclaim);
+router.post('/email-verification/register', verification.register);
 router.post('/password-reset/send', verifyClientIp, limiter, passwordReset.send);
 router.post('/password-reset/confirm', passwordReset.confirm);
 

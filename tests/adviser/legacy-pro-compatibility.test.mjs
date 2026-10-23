@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
 import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../../functions/request-contract-evidence.mjs';
 import { evaluateEntitlement, normalizeExpiredAccount } from '../../functions/subscription-lifecycle.mjs';
@@ -12,6 +10,7 @@ import { createPaymentHandlers } from '../../services/payment-checkout.js';
 import { issueCredential } from '../../services/api-key-security.js';
 import { consumeAccountQuota } from '../../services/account-quota.js';
 import { createPaymentWebhook } from '../../services/payment-webhook.js';
+import { downgradeExpiredSubscriptions } from '../../services/scheduled-jobs.js';
 
 const NOW = new Date('2026-10-15T12:00:00.000Z');
 const OLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -163,18 +162,11 @@ test('historical entitlement expires exactly at recorded end without normalizer 
   assert.deepEqual(f.db.dump(), before);
 });
 
-test('actual scheduled Function preserves active and expired demonstration profiles without snapshots', async () => {
-  const f = fixture(), before = f.db.dump(), exports = {}, diagnostics = [];
+test('actual scheduled job preserves active and expired demonstration profiles without snapshots', async () => {
+  const f = fixture(), before = f.db.dump(), diagnostics = [];
   let at = NOW;
-  const source = readFileSync(new URL('../../functions/index.js', import.meta.url), 'utf8')
-    .replace("await import('./subscription-lifecycle.mjs')", 'await loadLifecycle()');
-  const imports = { 'firebase-functions/v2/scheduler': { onSchedule: (_options, callback) => callback },
-    'firebase-admin/app': { initializeApp() {} }, 'firebase-admin/firestore': { getFirestore: () => f.db },
-    'firebase-functions/params': { defineSecret: () => ({ value: () => '' }), defineString: (_, options) => ({ value: () => options?.default ?? '' }) } };
-  runInNewContext(source, { exports, require: name => { assert.ok(Object.hasOwn(imports, name)); return imports[name]; },
-    loadLifecycle: async () => ({ normalizeExpiredAccount: (db, uid) => normalizeExpiredAccount(db, uid, () => at) }),
-    console: { log() {}, error: (...args) => diagnostics.push(args) } }, { filename: 'functions/index.js' });
-  await exports.downgradeExpiredSubscriptions(); at = new Date(f.end); await exports.downgradeExpiredSubscriptions();
+  const run = () => downgradeExpiredSubscriptions(f.db, (db, uid) => normalizeExpiredAccount(db, uid, () => at), { error: (...args) => diagnostics.push(args) });
+  await run(); at = new Date(f.end); await run();
   assert.deepEqual(diagnostics, []); assert.deepEqual(f.db.dump(), before);
 });
 

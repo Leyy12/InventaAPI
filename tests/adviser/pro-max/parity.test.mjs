@@ -146,7 +146,7 @@ test('Customer routes and API Playground expose paid sales without removed recom
   assert.doesNotMatch(routes, /recommendations/u);
   assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence\.feed\)/u);
   assert.match(source('server.js'), /app\.use\('\/api\/v1\/customer\/insights', customerInsightsRouter\)/u);
-  assert.match(source('functions/index.js'), /'Pro Max', 'pro max'/u);
+  assert.match(source('services/scheduled-jobs.js'), /'Pro Max', 'pro max'/u);
   assert.equal(existsSync(new URL('../../../dashboard/src/app/dashboard/recommendations/page.tsx', import.meta.url)), false);
   assert.match(source('dashboard/src/app/dashboard/analytics/page.tsx'), /SalesAnalyticsPanel/u);
   assert.match(source('dashboard/src/components/reports/SalesAnalyticsPanel.tsx'), /customer\/insights\/sales-feed/u);

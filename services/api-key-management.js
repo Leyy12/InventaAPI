@@ -46,7 +46,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     try {
       const match = typeof req.headers.authorization === 'string'
         ? /^Bearer ([^\s]+)$/u.exec(req.headers.authorization) : null;
-      if (!match) throw new ApiSecurityError(401, 'UNAUTHENTICATED', 'A Firebase ID token is required.');
+      if (!match) throw new ApiSecurityError(401, 'UNAUTHENTICATED', 'A sign-in token is required.');
       let actor;
       try { actor = await verifyIdToken(match[1], true); } catch {
         throw new ApiSecurityError(401, 'UNAUTHENTICATED', 'Invalid or expired authentication.');

@@ -5,8 +5,7 @@ import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts 
 import { createDaaSSecurity } from '../services/daas-security.js';
 import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 
-// Firebase Admin SDK is initialized centrally in database/firebase.js via service-account.json.
-// server.js imports database/firebase.js first, so getDb() is always ready here.
+// Data lives in the Supabase database (database/firestore.js).
 let adminDb = null;
 function getDb() {
   if (!adminDb) {
@@ -24,7 +23,7 @@ router.get('/health', (req, res) => {
     res.json({
         status: "operational",
         service: "Mobile Computing Sales & Inventory DaaS Engine",
-        database: "Firebase Firestore",
+        database: "Supabase Postgres",
         timestamp: new Date().toISOString(),
         version: "1.0.0"
     });

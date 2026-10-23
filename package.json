@@ -7,6 +7,7 @@
   "scripts": {
     "test:adviser:segment-catalog": "node scripts/run-segment-catalog-tests.mjs",
     "test:adviser:playground-preview": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/playground-preview/preview.test.mjs",
+    "test:supabase": "node --test --test-reporter=spec tests/supabase/auth.test.mjs tests/supabase/storage.test.mjs tests/supabase/cron.test.mjs tests/supabase/postgres-firestore.test.mjs",
     "test:rate-limit": "node --test --test-reporter=spec tests/rate-limit/client-ip.test.mjs",
     "test:adviser:free-trial": "node scripts/run-adviser-free-trial-tests.mjs",
     "test:adviser:pro-max": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/pro-max/*.test.mjs",
@@ -49,8 +50,6 @@
     "dotenv": "^16.6.1",
     "express": "^4.21.1",
     "express-rate-limit": "^7.1.5",
-    "firebase": "^10.12.2",
-    "firebase-admin": "^11.11.1",
     "google-auth-library": "^11.0.0",
     "googleapis": "^173.0.0",
     "helmet": "^8.0.0",
@@ -62,6 +61,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "firebase": "^10.12.2",
+    "firebase-admin": "^11.11.1",
     "playwright": "^1.62.1"
   }
 }

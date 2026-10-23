@@ -4,14 +4,9 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
 import { firebaseCredentialMode, initializeStagingAdc } from '../../database/firebase-credentials.js';
 import { validateReleaseConfig, formatValidation } from '../../scripts/validate-release-config.mjs';
 import { memoryFirestore } from '../adviser/r2a/memory-firestore.mjs';
-import { createProductMediaHandlers } from '../../services/product-media.js';
-import { processProductImage, MAX_IMAGE_BYTES } from '../../services/product-media-processing.js';
-import { mediaDigest } from '../../services/product-media-binding.js';
-import { createProductSubmissionHandlers } from '../../services/product-submissions.js';
 
 const adcEnv = { FIREBASE_CREDENTIAL_MODE: 'adc', FIREBASE_PROJECT_ID: 'inventaapi-staging' };
 const certificate = { FIREBASE_PROJECT_ID: 'synthetic-production', FIREBASE_CLIENT_EMAIL: 'synthetic@synthetic-production.iam.gserviceaccount.com',
@@ -141,63 +136,10 @@ const release = { NODE_ENV: 'production', PAYMONGO_MODE: 'test', PAYMONGO_SECRET
   PAYMONGO_WEBHOOK_SECRET: 'synthetic-webhook', DASHBOARD_URL: 'https://192.0.2.1', NEXT_PUBLIC_APP_URL: 'https://192.0.2.1',
   EMAIL_DELIVERY_PROVIDER: 'smtp', EMAIL_FROM: 'signup@inventa-staging.net', SMTP_HOST: 'smtp.inventa-staging.net',
   SMTP_USER: 'signup@inventa-staging.net', SMTP_PASS: 'synthetic-app-password' };
-test('release preflight accepts explicit staging ADC without certificate variables or old selector', () => {
-  for (const selector of [undefined, 'application_default']) {
-    const result = validateReleaseConfig({ ...release, ...adcEnv, FIREBASE_AUTH_MODE: selector }, { scope: 'backend', nodeVersion: 'v22.20.0' });
-    assert.equal(result.ok, true);
-  }
-});
-test('old application_default assertion alone still cannot silently activate ADC', () => {
-  const result = validateReleaseConfig({ ...release, FIREBASE_AUTH_MODE: 'application_default' }, { scope: 'backend', nodeVersion: 'v22.20.0' });
-  assert.equal(result.ok, false); assert.ok(result.errors.some(error => error.code === 'UNSUPPORTED_AUTH_MODE'));
-});
 test('release preflight rejects Production/conflicting ADC configuration without revealing supplied values', () => {
   for (const override of [{ FIREBASE_PROJECT_ID: 'inventaapi-db' }, { FIREBASE_PRIVATE_KEY: privateSentinel },
     { GOOGLE_APPLICATION_CREDENTIALS: privateSentinel }, { FIREBASE_CREDENTIAL_MODE: privateSentinel }]) {
     const result = validateReleaseConfig({ ...release, ...adcEnv, ...override }, { scope: 'backend', nodeVersion: 'v22.20.0' });
     assert.equal(result.ok, false); assert.doesNotMatch(formatValidation(result), new RegExp(privateSentinel));
   }
-});
-
-function mediaHandlers(sdk, env = {}) {
-  let handlers;
-  const source = read('routes/product-media.js').replace(/^import .*;\r?\n/gmu, '').replace('export default router;', '');
-  runInNewContext(source, { process: { env: { PRODUCT_MEDIA_ENABLED: 'true', PRODUCT_MEDIA_BUCKET: 'synthetic-private-bucket',
-    PRODUCT_MEDIA_BUCKET_PROJECT_NUMBER: '123', PRODUCT_MEDIA_PUBLIC_ORIGIN: 'https://synthetic.invalid', ...env } },
-    getFirestore: sdk.getFirestore, getAuth: sdk.getAuth, getStorage: sdk.getStorage,
-    Router: () => ({ post() {}, get() {}, use() {} }), raw: () => () => {}, MAX_IMAGE_BYTES, processProductImage, mediaDigest,
-    createProductMediaHandlers(options) { handlers = createProductMediaHandlers(options); return handlers; } });
-  return handlers;
-}
-async function invoke(handler, { token = 'customer', headers = {}, params = {}, body = {}, query = {} } = {}) {
-  const req = { headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, params, body, query };
-  const res = { statusCode: 200, headers: {}, set(name, value) { this.headers[name] = value; }, status(value) { this.statusCode = value; return this; },
-    json(value) { this.body = value; return this; }, send(value) { this.body = value; return this; } };
-  await handler(req, res); return res;
-}
-test('ADC default app integrates Auth revocation, Firestore transactions, actual media Storage adapter and catalog approval', async () => {
-  const sdk = sdkFixture(); await sdk.initialize(adcEnv); const media = mediaHandlers(sdk);
-  const key = 'synthetic-operation-12345'; const body = await sharp({ create: { width: 20, height: 40, channels: 3, background: '#009944' } }).png().toBuffer();
-  const upload = await invoke(media.upload, { params: { workflow: 'submission' }, headers: { 'idempotency-key': key, 'content-type': 'image/png' }, body });
-  assert.equal(upload.statusCode, 200); const id = upload.body.image_asset_id;
-  const submissions = createProductSubmissionHandlers({ getDb: sdk.getFirestore,
-    verifyIdToken: (token, revoked) => sdk.getAuth().verifyIdToken(token, revoked), makeId: () => 'synthetic-request' });
-  const request = await invoke(submissions.submit, { headers: { 'idempotency-key': key }, body: { name: 'Synthetic bottle', brand: 'Synthetic', category: 'Drinks',
-    segment: 'Grocery', variants: [{ size: '40ml', price: 1 }], image_url: '', image_asset_id: id } });
-  assert.equal(request.statusCode, 201);
-  assert.equal((await invoke(media.publicImage, { token: '', params: { id } })).statusCode, 404);
-  assert.equal((await invoke(media.privateImage, { token: 'other', params: { id } })).statusCode, 403);
-  assert.equal((await invoke(media.privateImage, { token: 'admin', params: { id } })).statusCode, 200);
-  assert.equal((await invoke(submissions.approve, { token: 'admin', params: { id: 'synthetic-request' } })).statusCode, 200);
-  const published = await invoke(media.publicImage, { token: '', params: { id } });
-  assert.equal(published.statusCode, 200); assert.equal(published.headers['Cross-Origin-Resource-Policy'], 'cross-origin');
-  assert.equal((await sharp(published.body).metadata()).format, 'webp');
-  assert.ok(sdk.calls.clients.some(client => client.service === 'Auth')); assert.ok(sdk.calls.clients.some(client => client.service === 'Storage'));
-  assert.ok(sdk.calls.clients.every(client => client.app === sdk.apps[0])); assert.equal(sdk.apps.length, 1);
-});
-for (const [name, options, env] of [['Storage failure', { storageFailure: true }, {}], ['absent media configuration', {}, { PRODUCT_MEDIA_BUCKET: '' }],
-  ['disabled feature', {}, { PRODUCT_MEDIA_ENABLED: 'false' }]]) test(`ADC media ${name} fails closed`, async () => {
-  const sdk = sdkFixture(options); await sdk.initialize(adcEnv); const handlers = mediaHandlers(sdk, env);
-  const response = await invoke(handlers.upload, { params: { workflow: 'submission' }, headers: { 'idempotency-key': 'synthetic-operation-12345' } });
-  assert.equal(response.statusCode, 503); assert.doesNotMatch(JSON.stringify(response.body), new RegExp(privateSentinel));
 });

@@ -11,15 +11,16 @@ const record = address => `${VERIFICATION_COLLECTION}/${createHash('sha256').upd
 const identities = { juan: { uid: 'juan-uid', email }, other: { uid: 'other-uid', email: 'someone@gmail.com' }, phone: { uid: 'phone-uid' } };
 const codes = ['482913', '105377', '660021', '930412', '771845', '204816'];
 
-function fixture({ settings, registered = [], incomplete = [], deliver, markVerified } = {}) {
+function fixture({ settings, registered = [], incomplete = [], deliver, markVerified, createAccount } = {}) {
   const db = memoryFirestore(settings ? { 'system/settings': settings } : {});
-  const state = { now: Date.parse('2026-10-20T08:00:00.000Z'), generated: 0, tokens: 0, mail: [], verified: [], reports: [], removed: [] };
+  const state = { now: Date.parse('2026-10-20T08:00:00.000Z'), generated: 0, tokens: 0, mail: [], verified: [], reports: [], removed: [], created: [] };
   const handlers = createEmailVerificationHandlers({ getDb: () => db,
     emailRegistered: async address => { if (address === 'lookup-outage@gmail.com') throw Error('synthetic Auth outage'); return registered.includes(address); },
     removeIncompleteAccount: async address => { if (registered.includes(address)) return false;
       if (incomplete.includes(address)) state.removed.push(address); return true; },
     verifyIdToken: async (token, revoked) => { assert.equal(revoked, true); if (!identities[token]) throw Error('invalid'); return identities[token]; },
     markEmailVerified: async uid => { if (markVerified) await markVerified(uid); state.verified.push(uid); },
+    createAccount: async account => { if (createAccount) await createAccount(account); state.created.push(account); },
     sendEmail: async message => { if (deliver) await deliver(message); state.mail.push(message); },
     now: () => new Date(state.now), createCode: () => codes[state.generated++ % codes.length],
     createToken: () => `synthetic-token-${++state.tokens}`, report: reason => state.reports.push(reason) });
@@ -197,4 +198,33 @@ test('reclaim never removes a completed account', async () => {
   const refused = await f.call('reclaim', { email, verificationToken });
   assert.equal(refused.statusCode, 409); assert.equal(refused.body.code, 'EMAIL_ALREADY_REGISTERED');
   assert.deepEqual(f.state.removed, []);
+});
+
+test('register creates the account only for the verified inbox, then redeems the token', async () => {
+  const f = fixture({ incomplete: [email] });
+  await f.call('send', { email });
+  const password = 'correct-horse-battery';
+  assert.equal((await f.call('register', { email, password, verificationToken: 'synthetic-token-1' })).statusCode, 400);
+  const { verificationToken } = (await f.call('verify', { email, code: '482913' })).body;
+  assert.equal((await f.call('register', { email: 'someone@gmail.com', password, verificationToken })).statusCode, 400);
+  const weak = await f.call('register', { email, password: 'short', verificationToken });
+  assert.equal(weak.statusCode, 400); assert.equal(weak.body.code, 'INVALID_PASSWORD');
+  assert.deepEqual(f.state.created, []);
+  const created = await f.call('register', { email: 'Juan.DelaCruz@gmail.com', password, verificationToken });
+  assert.equal(created.statusCode, 200);
+  // A leftover identity from an interrupted signup is cleared first; the address is stored normalized.
+  assert.deepEqual(f.state.removed, [email]); assert.deepEqual(f.state.created, [{ email, password }]);
+  assert.equal(f.db.read(record(email)), undefined);
+  assert.equal((await f.call('register', { email, password, verificationToken })).statusCode, 400);
+});
+test('register never replaces a completed account and reports a taken address', async () => {
+  const registered = [], f = fixture({ registered });
+  await f.call('send', { email }); const { verificationToken } = (await f.call('verify', { email, code: '482913' })).body;
+  registered.push(email);
+  const refused = await f.call('register', { email, password: 'correct-horse-battery', verificationToken });
+  assert.equal(refused.statusCode, 409); assert.equal(refused.body.code, 'EMAIL_ALREADY_REGISTERED'); assert.deepEqual(f.state.created, []);
+  const race = fixture({ createAccount: async () => { throw Object.assign(Error('taken'), { code: 'auth/email-already-exists' }); } });
+  await race.call('send', { email }); const second = (await race.call('verify', { email, code: '482913' })).body.verificationToken;
+  const taken = await race.call('register', { email, password: 'correct-horse-battery', verificationToken: second });
+  assert.equal(taken.statusCode, 409); assert.equal(taken.body.code, 'EMAIL_ALREADY_REGISTERED');
 });

@@ -1,4 +1,4 @@
-import type { User } from 'firebase/auth';
+import type { User } from '@/lib/supabase-auth';
 
 export interface SubscriptionState {
   plan: string;

@@ -32,7 +32,7 @@ test('privacy action is server finalized; schedule uses shared transactional nor
   const page = source('dashboard/src/app/dashboard/privacy/page.tsx');
   assert.match(page, /api\/v1\/account\/deletion/); assert.doesNotMatch(page, /updateDoc|apiKeyRequest/);
   assert.match(source('routes/account.js'), /getAuth\(\)\.deleteUser\(uid\)/);
-  const scheduler = source('functions/index.js');
+  const scheduler = source('services/scheduled-jobs.js');
   assert.match(scheduler, /normalizeExpiredAccount/); assert.doesNotMatch(scheduler, /db\.batch/);
 });
 test('isolated runner denies SDK/network imports and global I/O', async () => {

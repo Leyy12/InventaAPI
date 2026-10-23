@@ -1,4 +1,4 @@
-# Setup guide: deploy, move data to Supabase, import products
+# Setup guide: deploy, move to Supabase, import products
 
 Do the parts in order. Each step says where to click and what you should see.
 
@@ -12,38 +12,21 @@ Do the parts in order. Each step says where to click and what you should see.
 4. Check: open the admin panel → **Products**. The **Bulk Images** button is gone and
    **Import CSV** opens the new window.
 
-## Part 2: Move all data to Supabase
+## Part 2: Move everything to Supabase
 
-Sign-in and uploaded photo files stay on Firebase. Everything else moves.
+Data, sign-in, photos and the daily jobs all move to Supabase. Follow
+[supabase-switch.md](supabase-switch.md) step by step. In short:
 
-1. Admin panel → **Settings** → **Copy to Supabase** → start the copy.
-   Keep the page open until it says it is done. It only reads Firebase; nothing is deleted.
-2. On the same card, check the counts. Every collection must show the same number for
-   Firebase and Supabase. If not, run the copy again (it is safe to repeat).
-3. Vercel → **inventa-api** → **Settings** → **Environment Variables** → **Add**:
-   - Key: `DATA_BACKEND`
-   - Value: `supabase`
-   - Environments: **Production** and **Preview**
-4. **Deployments** → newest → **⋯** → **Redeploy**. Wait for **Ready**.
-5. Check: log in to the dashboard and the admin panel. Products, API keys and users
-   should all still be there.
-6. Scheduled jobs (subscription expiry and trial-warning emails) run as Firebase Cloud
-   Functions. Point them at Supabase too, from the project folder on your computer:
-   ```
-   cd functions
-   echo "DATA_BACKEND=supabase" >> .env
-   firebase functions:secrets:set SUPABASE_DB_URL      # paste the same value as on Vercel
-   firebase deploy --only functions
-   ```
-
-Anything saved in Firebase between step 1 and step 4 is not copied. Do this at a quiet
-time, or run the copy once more just before step 3.
+1. On the **current** live admin panel: **Settings** → **Copy to Supabase**, run it until
+   done, and check every count matches. (This button goes away with the switch.)
+2. Add the Supabase settings on Vercel (listed in supabase-switch.md).
+3. Merge the switch. Wait until the three Vercel projects show **Ready**.
+4. Delete the old Firebase Cloud Functions in the Firebase console.
+5. Everyone, admins included, sets a new password once with **Forgot password** on the
+   customer login page. Accounts, plans and API keys stay the same.
 
 Products have no price. The copy leaves behind any prices old products still hold
 in Firebase, so Supabase starts without them.
-
-**To undo:** delete `DATA_BACKEND` on Vercel (or set it to `firebase`) and redeploy.
-Data saved while on Supabase stays only in Supabase.
 
 ## Part 3: Import products and photos with a CSV
 
@@ -68,7 +51,8 @@ Data saved while on Supabase stays only in Supabase.
 
 Products have no price, and none is ever shown, sent or saved again. Products created
 before this change may still hold one in the database. Moving to Supabase (Part 2)
-leaves them behind. To delete them where the data is now, from the project folder:
+leaves them behind. To delete any left in Supabase, from the project folder
+(with `SUPABASE_DB_URL` set):
 
 ```
 node scripts/backup-products.mjs              # optional: save a copy first

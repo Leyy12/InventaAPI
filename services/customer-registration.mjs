@@ -61,6 +61,13 @@ export async function reclaimSignupEmail({ base, email, verificationToken, reque
   return { ok: result.ok, message: result.message };
 }
 
+// Creates the sign-in account for a verified address (the server confirms the email).
+// "Already registered" keeps the code the signup flow checks for.
+export async function registerSignupAccount({ base, email, password, verificationToken, request = globalThis.fetch }) {
+  const result = await verificationCall(request, `${base}/api/v1/auth/email-verification/register`, { email, password, verificationToken });
+  if (!result.ok) throw Object.assign(new Error(result.message), { code: /already registered/iu.test(result.message) ? 'auth/email-already-in-use' : 'auth/internal-error' });
+}
+
 // The backend marks the new identity email_verified. Firestore evaluates the ID token,
 // so the profile write must wait for a refreshed token that carries that claim.
 export async function confirmSignupEmail({ base, user, verificationToken, request = globalThis.fetch }) {

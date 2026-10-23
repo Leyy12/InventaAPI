@@ -16,7 +16,7 @@ for (const pendingPlan of [null, 'free', 'pro', 'pro_max']) {
   test(`real inline card is plan-neutral without discarding ${pendingPlan} continuation`, () => {
     const h = hooks();
     const component = load('dashboard/src/components/auth/LoginForm.tsx', 'exports.default', h, {
-      'next/image': 'Image', 'next/link': 'Link', 'firebase/auth': {}, '@/lib/data/firestore-client': {},
+      'next/image': 'Image', 'next/link': 'Link', '@/lib/supabase-auth': {}, '@/lib/data/firestore-client': {},
       '@/lib/firebase/config': { auth: {}, db: {} },
       'next/navigation': { useRouter: () => ({}) },
       '@/lib/firebase/auth-context': { useAuth: () => ({ refreshUserDoc() {} }) },
@@ -77,7 +77,7 @@ test('Pricing navbar remains heading navigation; all three signup destinations r
 test('real signup retains every input, consent and both footer/submit actions', () => {
   const h = hooks();
   const component = load('dashboard/src/app/signup/page.tsx', 'SignupPageInner', h, {
-    'firebase/auth': {}, '@/lib/data/firestore-client': {}, '@/lib/firebase/config': { auth: {}, db: {} },
+    '@/lib/supabase-auth': {}, '@/lib/data/firestore-client': {}, '@/lib/firebase/config': { auth: {}, db: {} },
     'next/navigation': { useRouter: () => ({}), useSearchParams: () => new URLSearchParams() },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,
@@ -106,8 +106,8 @@ test('signup still validates consent, provisions and signs out, then signs in fo
   assert.match(signup, /if \(!formData\.termsAccepted\)/);
   assert.match(signup, /await completeCustomerSignup\(\{/u);
   assert.match(signup, /canRegister: readRegistrationPolicy/u);
-  assert.match(signup, /confirmEmail: \(user: User\) => confirmSignupEmail/u);
-  assert.match(signup, /createUserWithEmailAndPassword\(auth, codeSentTo,/u);
+  // The server creates the account once the emailed code is proven; this browser then signs in.
+  assert.match(signup, /await registerSignupAccount\(\{ base: API_BASE, email: codeSentTo, password: formData\.password, verificationToken \}\)/u);
   assert.match(signup, /writeProfile: \(user: User\) => setDoc/u);
   assert.match(signup, /signOut: \(\) => signOut\(auth\)/u);
   assert.ok(signup.indexOf('router.push(redirectUrl)') > signup.indexOf('if (!result.ok)'));

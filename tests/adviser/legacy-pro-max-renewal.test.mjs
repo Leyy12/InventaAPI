@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { runInNewContext } from 'node:vm';
 import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
 import { createApiKeyHandlers } from '../../services/api-key-management.js';
 import { createPaymentHandlers } from '../../services/payment-checkout.js';
 import { fulfillPayment } from '../../services/payment-webhook.js';
 import * as lifecycle from '../../functions/subscription-lifecycle.mjs';
+import { downgradeExpiredSubscriptions } from '../../services/scheduled-jobs.js';
 import * as policy from '../../functions/request-limit-policy.mjs';
 import { consumeAccountQuota } from '../../services/account-quota.js';
 import { issueCredential } from '../../services/api-key-security.js';
@@ -290,16 +289,8 @@ test('normalization followed by Customer session establishment cannot grant a ne
 });
 
 test('actual scheduled downgrade callback preserves legacy evidence; a racing renewal wins its transaction retry', async () => {
-  const f = fixture(), exports = {};
-  const source = readFileSync(new URL('../../functions/index.js', import.meta.url), 'utf8')
-    .replace("await import('./subscription-lifecycle.mjs')", 'await loadLifecycle()');
-  const imports = { 'firebase-functions/v2/scheduler': { onSchedule: (_options, callback) => callback },
-    'firebase-admin/app': { initializeApp() {} }, 'firebase-admin/firestore': { getFirestore: () => f.db },
-    'firebase-functions/params': { defineSecret: () => ({ value: () => '' }), defineString: (_, options) => ({ value: () => options?.default ?? '' }) } };
-  runInNewContext(source, { exports, require: name => { assert.ok(Object.hasOwn(imports, name)); return imports[name]; },
-    loadLifecycle: async () => ({ normalizeExpiredAccount: (db, uid) => lifecycle.normalizeExpiredAccount(db, uid, () => NOW) }),
-    console: { log() {}, error() {} } }, { filename: 'functions/index.js' });
-  await exports.downgradeExpiredSubscriptions();
+  const f = fixture();
+  await downgradeExpiredSubscriptions(f.db, (db, uid) => lifecycle.normalizeExpiredAccount(db, uid, () => NOW), { error() {} });
   assert.equal(f.db.read('users/customer').plan, 'Free'); assert.equal(f.db.read('account_request_contracts/customer').plans.pro_max.limit, null);
   const raced = fixture(); raced.db.beforeCommit = () => {
     raced.db.beforeCommit = null;

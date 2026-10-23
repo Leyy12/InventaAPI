@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import type { User } from 'firebase/auth';
+import type { User } from '@/lib/supabase-auth';
 import Link from 'next/link';
 import { Zap } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';

@@ -1,16 +1,19 @@
 import { pathToFileURL } from 'node:url';
 import { globalTestBillingConfiguration } from '../services/payment-contract.js';
-import { firebaseCredentialMode } from '../database/firebase-credentials.js';
 import { EMAIL_DELIVERY_PROVIDERS, senderAddress, validSmtpHost, validSmtpPort } from '../services/email-delivery.js';
 
 const NODE_MAJOR = 22;
-const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin', 'functions']);
+const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin']);
 const MODES = new Set(['production', 'test']);
+// Data identity labels ("inventaapi-db" = production). FIREBASE_PROJECT_ID keeps its old name.
 const DEPLOYMENT_FIREBASE_PROJECTS = new Set(['inventaapi-db', 'inventaapi-staging']);
+const supabaseOrigin = value => /^https:\/\/[a-z0-9]{20}\.supabase\.co$/u.test(value);
+const supabasePublishableKey = value => /^sb_publishable_\S{10,}$/u.test(value) || /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value);
+const supabaseSecretKey = value => /^sb_secret_\S{10,}$/u.test(value) || /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value);
 
-const loopbackEmulator = value => {
-  const match = /^(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]+)$/u.exec(value || '');
-  return !!match && Number(match[1]) > 0 && Number(match[1]) <= 65535;
+// A database on this machine (local tests), never a hosted one.
+const loopbackDatabase = value => {
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname); } catch { return false; }
 };
 
 const isPresent = value => typeof value === 'string' && value.trim().length > 0;
@@ -77,74 +80,41 @@ export function validateReleaseConfig(env, {
   const dashboard = scope === 'all' || scope === 'dashboard';
   const admin = scope === 'all' || scope === 'admin';
   // Deployment checks never trust an escape flag. demo-* is confined to the
-  // explicit local test mode with BOTH emulators bound to loopback and no LIVE payments.
-  const isolatedLocal = mode === 'test' && env.PAYMONGO_MODE !== 'live'
-    && loopbackEmulator(env.FIRESTORE_EMULATOR_HOST) && loopbackEmulator(env.FIREBASE_AUTH_EMULATOR_HOST);
+  // explicit local test mode with a database on this machine and no LIVE payments.
+  const isolatedLocal = mode === 'test' && env.PAYMONGO_MODE !== 'live' && loopbackDatabase(env.SUPABASE_DB_URL);
   const authorizedProject = value => DEPLOYMENT_FIREBASE_PROJECTS.has(value)
     || isolatedLocal && /^demo-[a-z0-9-]{1,24}[a-z0-9]$/u.test(value);
   if (backend || dashboard || admin) {
-    const primary = backend ? 'FIREBASE_PROJECT_ID' : 'NEXT_PUBLIC_FIREBASE_PROJECT_ID';
-    for (const name of ['FIREBASE_PROJECT_ID', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'GCLOUD_PROJECT', 'GOOGLE_CLOUD_PROJECT']) {
+    const primary = 'FIREBASE_PROJECT_ID';
+    for (const name of ['DATA_PROJECT_ID']) {
       if (name !== primary && isPresent(env[name]) && isPresent(env[primary]) && env[name] !== env[primary]) {
-        add(errors, 'FIREBASE_PROJECT_CONFLICT', name, 'must match the explicitly selected Firebase project');
+        add(errors, 'FIREBASE_PROJECT_CONFLICT', name, 'must match FIREBASE_PROJECT_ID (the data identity label)');
       }
     }
-    if (mode === 'production' && [env.FIRESTORE_EMULATOR_HOST, env.FIREBASE_AUTH_EMULATOR_HOST].some(isPresent)) {
-      add(errors, 'EMULATOR_DEPLOYMENT_CONFLICT', 'FIREBASE_PROJECT_ID', 'deployment validation does not permit Firebase emulator routing');
+    if (mode === 'production' && loopbackDatabase(env.SUPABASE_DB_URL)) {
+      add(errors, 'LOCAL_DATABASE_DEPLOYMENT', 'SUPABASE_DB_URL', 'a deployment cannot use a database on localhost');
     }
-  }
-
-  if (scope === 'functions') {
-    required('TRIAL_WARNING_FROM_EMAIL', {
-      valid: value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value) && notPlaceholder(value),
-      expectation: 'a verified sender email address',
-    });
-    required('RESEND_API_KEY', {
-      secret: true, valid: value => /^re_\S+$/u.test(value) && notPlaceholder(value),
-      expectation: 'a non-placeholder Resend secret (bound through Firebase Secret Manager)',
-    });
   }
 
   if (backend) {
     required('NODE_ENV', { valid: value => value === mode, expectation: mode });
-    let credentialMode;
-    try { credentialMode = firebaseCredentialMode(env); }
-    catch (error) { add(errors, 'INVALID_CREDENTIAL_CONFIG', error.configurationName, error.message); }
-    if (credentialMode !== 'adc') required('FIREBASE_AUTH_MODE', {
-      valid: value => ['service_account_env', 'application_default'].includes(value),
-      expectation: 'service_account_env or application_default',
-    });
-    if (credentialMode === 'legacy' && env.FIREBASE_AUTH_MODE === 'service_account_env') {
-      required('FIREBASE_PROJECT_ID', {
-        valid: authorizedProject,
-        expectation: 'the authorized Production or staging Firebase project (or an isolated local test project)',
-      });
-      required('FIREBASE_CLIENT_EMAIL', {
-        valid: value => /^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/u.test(value),
-        expectation: 'a service-account email address',
-      });
-      required('FIREBASE_PRIVATE_KEY', {
-        secret: true,
-        valid: value => {
-          const normalized = value.replace(/\\n/gu, '\n');
-          return normalized.includes('-----BEGIN PRIVATE KEY-----')
-            && normalized.includes('-----END PRIVATE KEY-----') && notPlaceholder(normalized);
-        },
-        expectation: 'a PEM private key',
-      });
-    } else if (credentialMode === 'legacy' && env.FIREBASE_AUTH_MODE === 'application_default') {
-      add(errors, 'UNSUPPORTED_AUTH_MODE', 'FIREBASE_AUTH_MODE',
-        'root backend ADC requires explicit FIREBASE_CREDENTIAL_MODE=adc and the approved staging project');
-      for (const name of ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY']) {
-        if (isPresent(env[name])) add(errors, name === 'FIREBASE_PRIVATE_KEY' ? 'MALFORMED_SECRET' : 'MALFORMED_PUBLIC', name,
-          'must be omitted when FIREBASE_AUTH_MODE=application_default; use the managed runtime identity');
-      }
+    // Data, sign-in and photo storage are Supabase.
+    required('SUPABASE_DB_URL', { secret: true, valid: value => /^postgres(?:ql)?:\/\/\S+$/u.test(value) && notPlaceholder(value),
+      expectation: 'the Supabase Postgres connection string' });
+    required('SUPABASE_URL', { valid: supabaseOrigin, expectation: 'the Supabase project URL (https://<ref>.supabase.co)' });
+    required('SUPABASE_PUBLISHABLE_KEY', { valid: supabasePublishableKey, expectation: 'the Supabase publishable (or anon) key' });
+    required('SUPABASE_SECRET_KEY', { secret: true, valid: value => supabaseSecretKey(value) && notPlaceholder(value),
+      expectation: 'a Supabase secret (or service_role) key' });
+    required('FIREBASE_PROJECT_ID', { valid: authorizedProject,
+      expectation: 'the data identity label: inventaapi-db (Production) or inventaapi-staging' });
+    if (!isPresent(env.CRON_SECRET) || env.CRON_SECRET.length < 16) {
+      add(warnings, 'OPTIONAL_MISSING', 'CRON_SECRET', 'not set (or under 16 characters); the daily subscription and Trial jobs stay off');
     }
     required('PAYMONGO_MODE', {
       valid: value => ['test', 'live'].includes(value), expectation: 'test or live',
     });
     if (env.FIREBASE_PROJECT_ID === 'inventaapi-db' && env.PAYMONGO_MODE !== 'live') {
-      add(errors, 'PAYMENT_MODE_ISOLATION', 'PAYMONGO_MODE', 'Production Firebase requires LIVE payments.');
+      add(errors, 'PAYMENT_MODE_ISOLATION', 'PAYMONGO_MODE', 'Production data requires LIVE payments.');
     }
     if (env.PAYMENT_CHECKOUT_INITIATION_HOLD !== undefined && !['true', 'false'].includes(env.PAYMENT_CHECKOUT_INITIATION_HOLD)) {
       add(errors, 'INVALID_CHECKOUT_HOLD', 'PAYMENT_CHECKOUT_INITIATION_HOLD', 'must be absent, true, or false');
@@ -233,28 +203,11 @@ export function validateReleaseConfig(env, {
     required('NEXT_PUBLIC_API_URL', {
       valid: value => validReleaseOrigin(value, mode), expectation: `a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} backend origin`,
     });
-    required('NEXT_PUBLIC_FIREBASE_API_KEY', {
-      valid: value => noWhitespace(value) && value.length >= 20 && notPlaceholder(value),
-      expectation: 'a non-placeholder Firebase web API key',
-    });
-    required('NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', {
-      valid: value => /^[A-Za-z0-9.-]+$/u.test(value) && value.includes('.'), expectation: 'a hostname without a URL path',
-    });
-    required('NEXT_PUBLIC_FIREBASE_PROJECT_ID', {
-      valid: authorizedProject,
-      expectation: 'the authorized Production or staging Firebase project (or an isolated local test project)',
-    });
-    // URL-only product images do not require Storage. Validate an optional value
-    // without making bucket configuration or uploads a release prerequisite.
-    if (env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET !== undefined && env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET !== '') required('NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET', {
-      valid: value => /^[A-Za-z0-9.-]+$/u.test(value) && value.includes('.'), expectation: 'a Storage bucket hostname',
-    });
-    required('NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID', {
-      valid: value => /^\d+$/u.test(value), expectation: 'a numeric Firebase sender ID',
-    });
-    required('NEXT_PUBLIC_FIREBASE_APP_ID', {
-      valid: value => /^\d+:\d+:web:[A-Za-z0-9]+$/u.test(value), expectation: 'a Firebase web app ID',
-    });
+    required('NEXT_PUBLIC_SUPABASE_URL', { valid: supabaseOrigin, expectation: 'the Supabase project URL (https://<ref>.supabase.co)' });
+    required('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', { valid: supabasePublishableKey, expectation: 'the Supabase publishable (or anon) key' });
+    for (const name of ['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY']) {
+      if (isPresent(env[name]) && /^sb_secret_/u.test(env[name])) add(errors, 'SECRET_IN_PUBLIC', name, 'must never be a secret key');
+    }
   }
 
   if (dashboard) {

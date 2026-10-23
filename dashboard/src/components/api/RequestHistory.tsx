@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
-import type { User } from 'firebase/auth';
+import type { User } from '@/lib/supabase-auth';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { apiKeyRequest } from '@/lib/api-keys';
 import { createHistoryRefresh, historyDate, requestStatus, type HistoryState } from '@/lib/api-history';

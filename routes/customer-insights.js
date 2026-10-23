@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getFirestore } from '../database/firestore.js';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { createCustomerIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 
 const router = Router();

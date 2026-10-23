@@ -13,18 +13,17 @@ const silent = { log() {}, error() {}, warn() {} };
 const details = { fullName: 'Synthetic Fixture', email: ' Fixture@Example.Invalid ', password: 'synthetic-password',
   confirmPassword: 'synthetic-password', businessName: 'Synthetic', businessSegment: 'Grocery', termsAccepted: true, privacyConsent: true };
 const sent = { ok: true, message: '', retryAfterSeconds: 0, resendAvailableInSeconds: 60 };
-// The committed account signs out, then signs in again to choose a plan; no navigation yet.
-const success = ['account', 'confirm', 'profile', 'signout', 'signin'];
+// The server creates the account; this browser signs in, saves the profile, signs out,
+// then signs in again to choose a plan; no navigation yet.
+const success = ['account', 'signin', 'profile', 'signout', 'signin'];
 
 function page({ send = () => sent, canRegister = async () => true, query = '',
   verify = ({ code }) => code === '123456' ? { ok: true, message: '', verificationToken: 'synthetic-token' }
     : { ok: false, message: 'Incorrect code. 4 attempts remaining.', verificationToken: '' } } = {}) {
   const h = hooks(), time = clock(), events = [], calls = [];
   const component = load('dashboard/src/app/signup/page.tsx', 'SignupPageInner', h, {
-    'firebase/auth': {
-      createUserWithEmailAndPassword: async (_, email, password) => { events.push('account'); calls.push(['account', email, password]);
-        return { user: { uid: 'synthetic', email } }; },
-      signOut: async () => { events.push('signout'); }, deleteUser: async () => { events.push('delete'); },
+    '@/lib/supabase-auth': {
+      signOut: async () => { events.push('signout'); },
       signInWithEmailAndPassword: async (_, email, password) => { events.push('signin'); calls.push(['signin', email, password]);
         return { user: { uid: 'synthetic', email } }; },
     },
@@ -37,7 +36,7 @@ function page({ send = () => sent, canRegister = async () => true, query = '',
     '../../../../services/customer-registration.mjs': { ...registration, readRegistrationPolicy: canRegister,
       sendSignupCode: async request => { events.push('code'); calls.push(['send', request.base, request.email]); return send(request); },
       verifySignupCode: async request => { events.push('verify'); calls.push(['verify', request.email, request.code]); return verify(request); },
-      confirmSignupEmail: async request => { events.push('confirm'); calls.push(['confirm', request.user.email, request.verificationToken]); },
+      registerSignupAccount: async request => { events.push('account'); calls.push(['account', request.email, request.password, request.verificationToken]); },
     },
   }, { console: silent, setTimeout: time.schedule, clearTimeout: time.cancel });
   h.mount(component);
@@ -121,8 +120,8 @@ test('the code field keeps six digits only and a wrong code creates no account',
   await fixture.enter('123456'); await fixture.submit();
   assert.deepEqual(fixture.events, ['code', 'verify', 'verify', ...success]);
   assert.deepEqual(fixture.calls.filter(call => call[0] !== 'verify').slice(1),
-    [['account', 'fixture@example.invalid', 'synthetic-password'], ['confirm', 'fixture@example.invalid', 'synthetic-token'],
-      ['signin', 'fixture@example.invalid', 'synthetic-password']]);
+    [['account', 'fixture@example.invalid', 'synthetic-password', 'synthetic-token'],
+      ['signin', 'fixture@example.invalid', 'synthetic-password'], ['signin', 'fixture@example.invalid', 'synthetic-password']]);
   fixture.h.stop();
 });
 for (const [query, initialPlan] of [['', null], ['pendingPlan=free', null], ['pendingPlan=pro', 'pro'], ['pendingPlan=pro_max', 'pro_max'], ['pendingPlan=evil', null]]) {
@@ -165,7 +164,7 @@ test('editing details keeps entries; the same address reuses its pending code, a
   await fixture.click('Edit details'); await fixture.fill({ email: 'other@example.invalid' }); await fixture.submit();
   assert.deepEqual(fixture.calls.map(call => call[2]), ['fixture@example.invalid', 'other@example.invalid']);
   await fixture.enter('123456'); await fixture.submit();
-  assert.deepEqual(fixture.calls.find(call => call[0] === 'account'), ['account', 'other@example.invalid', 'synthetic-password']);
+  assert.deepEqual(fixture.calls.find(call => call[0] === 'account'), ['account', 'other@example.invalid', 'synthetic-password', 'synthetic-token']);
   fixture.h.stop();
 });
 const closedOnce = () => { let checks = 0; return async () => ++checks > 1; };

@@ -8,16 +8,16 @@ const DAAS_API_KEY = process.env.DAAS_API_KEY || 'daas_fallback_key';
 
 
 
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { getFirestore } from '../database/firestore.js';
 
-// Firebase ID Token verification middleware
+// Sign-in token verification middleware (Supabase Auth)
 export const verifyFirebaseToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-        return res.status(401).json({ error: "Access token missing. Firebase verification failed." });
+        return res.status(401).json({ error: "Access token missing. Please sign in." });
     }
 
     try {
@@ -25,8 +25,8 @@ export const verifyFirebaseToken = async (req, res, next) => {
         req.firebaseUser = decodedToken;
         next();
     } catch (error) {
-        console.error("[Auth] Firebase token verification failed:", error);
-        return res.status(403).json({ error: "Invalid or expired Firebase token." });
+        console.error("[Auth] Token verification failed:", error);
+        return res.status(403).json({ error: "Invalid or expired session. Please sign in again." });
     }
 };
 

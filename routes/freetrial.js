@@ -1,6 +1,6 @@
 import express from 'express';
 import { getFirestore } from '../database/firestore.js';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { createFreeTrialHandlers } from '../services/free-trial.js';
 
 const router = express.Router();

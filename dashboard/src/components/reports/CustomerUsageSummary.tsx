@@ -1,7 +1,7 @@
 "use client";
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from "@/lib/trial-display.mjs";
 import { useEffect, useState } from "react";
-import type { User } from "firebase/auth";
+import type { User } from "@/lib/supabase-auth";
 import Link from "next/link";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { useAuth } from "@/lib/firebase/auth-context";

@@ -5,7 +5,7 @@
  * documents still store (root price fields, attributes.price, and the price on
  * every variant). Nothing else on a product changes.
  *
- * Works on whichever database the API uses (DATA_BACKEND=supabase or Firebase).
+ * Runs against the Supabase database (SUPABASE_DB_URL).
  * Run `node scripts/backup-products.mjs` first if you want a copy.
  *
  * Usage:
@@ -13,7 +13,7 @@
  *   node scripts/remove-product-prices.mjs --apply   # delete the prices
  */
 
-import { getFirestore, FieldValue, FieldPath, usesSupabase } from '../database/firestore.js';
+import { getFirestore, FieldValue, FieldPath } from '../database/firestore.js';
 import { withoutPrices } from '../services/product-contract.js';
 
 const apply = process.argv.includes('--apply');
@@ -31,8 +31,6 @@ export function priceRemoval(data) {
 }
 
 async function main() {
-  // Firebase credentials are only needed while the data still lives in Firebase.
-  if (!usesSupabase) await import('../database/firebase.js');
   const db = getFirestore();
   let cursor = null, scanned = 0, withPrices = 0;
   console.log(apply ? 'Deleting product prices…' : 'Report only (add --apply to delete). Checking products…');

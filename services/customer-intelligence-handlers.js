@@ -57,7 +57,7 @@ export function createCustomerIntelligenceHandlers({ getDb, verifyIdToken, clock
     try {
       const authorization = req.headers?.authorization;
       const token = typeof authorization === 'string' ? /^Bearer (\S+)$/u.exec(authorization)?.[1] : null;
-      if (!token) throw new IntelligenceError(401, 'UNAUTHENTICATED', 'Firebase authentication is required.');
+      if (!token) throw new IntelligenceError(401, 'UNAUTHENTICATED', 'Sign-in is required.');
       let identity;
       try { identity = await verifyIdToken(token, true); }
       catch { throw new IntelligenceError(401, 'UNAUTHENTICATED', 'Invalid or revoked authentication.'); }

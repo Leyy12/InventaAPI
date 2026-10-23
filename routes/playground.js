@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getFirestore } from '../database/firestore.js';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { createPlaygroundPreviewHandler } from '../services/playground-preview.js';
 
 const router = Router();

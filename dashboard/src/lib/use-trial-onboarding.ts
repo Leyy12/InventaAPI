@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import type { User } from 'firebase/auth';
+import type { User } from '@/lib/supabase-auth';
 
 type TrialOnboarding = { eligible: boolean; status: string };
 
