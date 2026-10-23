@@ -11,6 +11,12 @@ const SEGMENT_ALIASES = new Map([
   ['hardware', 'Hardware'],
   ['tool', 'Hardware'],
   ['tools', 'Hardware'],
+  // Store-type wording some older profiles carry ("Hardware Store").
+  ['grocery store', 'Grocery'],
+  ['pharmacy store', 'Pharmacy'],
+  ['drugstore', 'Pharmacy'],
+  ['drug store', 'Pharmacy'],
+  ['hardware store', 'Hardware'],
 ]);
 
 const NEGATIVE_STATUSES = new Set([

@@ -32,7 +32,7 @@ export async function loadSegmentCatalog(read: (offset: number, signal: AbortSig
     if (!page || !Array.isArray(page.products) || page.availability?.segment !== expectedSegment
       || !Number.isSafeInteger(page.availability.total) || page.availability.total < 0
       || page.pagination?.total !== page.availability.total || page.pagination.offset !== offset
-      || !Number.isSafeInteger(page.pagination.limit) || page.pagination.limit < 1 || page.pagination.limit > 500
+      || !Number.isSafeInteger(page.pagination.limit) || page.pagination.limit < 1 || page.pagination.limit > 1000
       || page.pagination.returned !== page.products.length || page.products.length > page.pagination.limit
       || (total !== undefined && total !== page.availability.total)) throw new Error('Catalog totals could not be verified.');
     total = page.availability.total;
@@ -85,7 +85,8 @@ export function createCatalogRefresh({ segment, read, onState, schedule = setTim
       onState({ segment, status: 'error', products: [], total: 0 });
       timer = undefined;
     };
-    timer = schedule(fail, 15000);
+    // Large catalogs (5,000+ products) load in several pages; allow time for all of them.
+    timer = schedule(fail, 45000);
     void Promise.resolve().then(() => { if (!stopped && generation === request) return read(active.signal); }).then(result => {
       if (stopped || generation !== request || !result) return;
       if (timer !== undefined) cancel(timer);

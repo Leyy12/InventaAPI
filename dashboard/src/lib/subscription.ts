@@ -35,5 +35,8 @@ export async function establishCustomerTrial(user: User): Promise<void> {
   const response = await fetch(`${base}/api/v1/free-trial/session`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
   });
-  if (!response.ok) throw Object.assign(new Error('Customer Trial verification unavailable.'), { status: response.status });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw Object.assign(new Error('Customer Trial verification unavailable.'), { status: response.status, reason: body?.error });
+  }
 }

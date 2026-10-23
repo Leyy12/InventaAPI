@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";
 import type { PlanId } from "@/config/plans";
 import { profileRole, adminLoginDestination, rememberCustomerLoginEntry, customerSignupDestination } from '../../../../services/auth-navigation';
-import { readSubscription } from '@/lib/subscription';
+import { establishCustomerTrial, readSubscription } from '@/lib/subscription';
 import { sendPasswordResetCode, resetPasswordWithCode, normalizeSignupEmail, validSignupEmail, validNewPassword,
   PASSWORD_MIN_LENGTH, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
 
@@ -99,6 +99,19 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
 
       // Normal customer login. The business segment is chosen once at signup; catalog
       // scope always comes from the stored profile on the server, never from this form.
+      // The dashboard runs this same account check right after login; run it here first so a
+      // failure shows its reason instead of "Login successful" followed by a bounce.
+      try {
+        await establishCustomerTrial(user);
+      } catch (cause) {
+        if (auth.currentUser === user) await signOut(auth);
+        const reason = cause && typeof cause === 'object' && 'reason' in cause ? cause.reason : undefined;
+        setError(reason === 'PLAN_SEGMENT_RESTRICTION' ? 'Your account\'s business type needs review. Please contact support.'
+          : reason === 'ACCOUNT_UNAVAILABLE' ? 'Account unavailable. Please contact support.'
+          : 'We could not verify your account right now. Please try again.');
+        setLoading(false);
+        return;
+      }
       const effective = await readSubscription(user);
       if (auth.currentUser !== user) throw new Error('Session ended during login.');
       const plan = effective.plan;

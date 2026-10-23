@@ -532,14 +532,17 @@ async function exerciseLoginEntry({ pendingPlan = null, failure = null } = {}) {
       if (failure === 'profile') throw Error('synthetic profile failure');
       return { data: () => failure === 'missing' ? undefined : profile };
     }, doc: () => ({}), db: {}, profileRole,
-    signOut: async () => { auth.currentUser = null; },
+    signOut: async () => { auth.currentUser = null; events.push('signed-out'); },
+    establishCustomerTrial: async () => {
+      if (failure === 'trial') throw Object.assign(Error('synthetic trial failure'), { reason: 'PLAN_SEGMENT_RESTRICTION' });
+    },
     readSubscription: async () => {
       if (failure === 'subscription') throw Error('synthetic verification failure');
       if (failure === 'switch') auth.currentUser = { uid: 'another-customer' };
       return effective;
     },
     rememberCustomerLoginEntry: entry => { events.push(entry); rememberCustomerLoginEntry(entry); },
-    pendingPlan, setError() {}, setLoading() {},
+    pendingPlan, setError(message) { if (message) events.push(`error:${message}`); }, setLoading() {},
     console: { log() {}, error() {} },
   };
   try {
@@ -558,10 +561,15 @@ for (const [pendingPlan, expected] of [['free', 'free'], [null, 'free'], ['pro',
     assert.deepEqual(result.events, [expected]); assert.equal(result.stored, expected);
   });
 }
+test('free entry: a failed account check signs out and explains instead of reporting success', async () => {
+  const result = await exerciseLoginEntry({ pendingPlan: 'free', failure: 'trial' });
+  assert.deepEqual(result.events, ['signed-out', "error:Your account's business type needs review. Please contact support."]);
+  assert.equal(result.stored, undefined);
+});
 for (const failure of ['firebase', 'profile', 'missing', 'subscription', 'switch']) {
   test(`free entry: actual ${failure} failure cannot commit Free login context`, async () => {
     const result = await exerciseLoginEntry({ pendingPlan: 'free', failure });
-    assert.deepEqual(result.events, []); assert.equal(result.stored, undefined);
+    assert.deepEqual(result.events.filter(event => event !== 'signed-out' && !event.startsWith('error:')), []); assert.equal(result.stored, undefined);
   });
 }
 

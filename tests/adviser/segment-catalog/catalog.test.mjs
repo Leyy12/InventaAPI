@@ -81,7 +81,7 @@ test('canonicalization uses the existing segment contract, not fuzzy/substring m
   assert.throws(() => catalogQuery({ businessSegment: 'Hardware', segment: 'Grocery' }));
 });
 
-for (const query of [{ limit: '0' }, { limit: '-1' }, { limit: '501' }, { offset: '1x' }, { search: ['x'] }])
+for (const query of [{ limit: '0' }, { limit: '-1' }, { limit: '1001' }, { offset: '1x' }, { search: ['x'] }])
   test(`malformed pagination/search rejected: ${JSON.stringify(query)}`, () => assert.throws(() => catalogQuery(query)));
 
 test('All/default preserves explicit paid all-categories discovery, excludes hidden/unassigned records', async () => {
@@ -108,6 +108,21 @@ test('newly approved visible Hardware product increases only Hardware, no persis
   assert.equal(await count('Hardware'), 124); assert.equal(await count('Grocery'), 82);
 });
 
+test('page cache reuses one read per segment until the writer revision changes or it expires', async () => {
+  const db = memoryFirestore(fixtureRecords());
+  let clock = 0;
+  const handler = createCustomerCatalogHandler({ getDb: () => db, cacheMs: 30000, now: () => clock });
+  const count = async segment => (await invoke(handler, { query: { segment } })).body.availability.total;
+  assert.equal(await count('Hardware'), 123);
+  await db.collection('products').doc('submission_cached').set({ name: 'Cached', category: 'Synthetic', segment: 'Hardware', status: 'Active', is_active: true });
+  assert.equal(await count('Hardware'), 123, 'same revision within the window reuses the read');
+  await db.collection('catalog_control').doc('writer').set({ revision: 1 });
+  assert.equal(await count('Hardware'), 124, 'a catalog write (revision bump) is seen at once');
+  await db.collection('products').doc('submission_cached_2').set({ name: 'Cached 2', category: 'Synthetic', segment: 'Hardware', status: 'Active', is_active: true });
+  clock = 30001;
+  assert.equal(await count('Hardware'), 125, 'expired entries are read again');
+});
+
 test('database failure is not a fabricated zero availability', async () => {
   const result = await invoke(createCustomerCatalogHandler({ getDb: () => { throw new Error('unavailable'); } }));
   assert.equal(result.statusCode, 500); assert.equal(result.body.availability, undefined);
@@ -125,7 +140,7 @@ test('historical missing/alternate/alias-only stored segment is not guessed into
 
 test('actual mounted public route reuses scoped handler; no duplicate catalog endpoint', () => {
   const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
-  assert.match(read('routes/products.js'), /router.get\('\/', createCustomerCatalogHandler\(\{ getDb: getFirestore \}\)\)/);
+  assert.match(read('routes/products.js'), /router.get\('\/', createCustomerCatalogHandler\(\{ getDb: getFirestore, cacheMs: \d+ \}\)\)/);
   assert.match(read('server.js'), /app.use\('\/api\/v1\/products', productsRouter\)/);
   assert.match(read('services/product-submissions.js'), /productId = `submission_\$\{ref.id\}`/);
   assert.match(read('services/catalog-contract.js'), /result.segment = normalizeSegment/);

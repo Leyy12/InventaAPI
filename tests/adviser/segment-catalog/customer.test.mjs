@@ -105,7 +105,7 @@ test('explicit refresh observes changed catalog with atomic grid/count updates a
 test('timeout fails visibly with no stale/global fallback and late success ignored', async () => {
   let resolve, source; const clock = scheduler();
   const refresh = createCatalogRefresh({ segment: 'Grocery', read: () => new Promise(done => { resolve = done; }), onState: value => { source = value; }, ...clock });
-  refresh.refresh(); await flush(); [...clock.timers.values()].find(value => value.delay === 15000).callback();
+  refresh.refresh(); await flush(); [...clock.timers.values()].find(value => value.delay === 45000).callback();
   assert.equal(source.status, 'error'); assert.deepEqual(source.products, []);
   resolve(await load('Grocery')); await flush(); assert.equal(source.status, 'error'); refresh.stop();
 });
@@ -189,7 +189,7 @@ test('Customer wiring uses same response for grid/count, safe segment identity, 
   const source = readFileSync(new URL('../../../dashboard/src/app/dashboard/products/page.tsx', import.meta.url), 'utf8');
   assert.match(source, /key=\{user\?\.uid/);
   assert.match(source, /isFreePlan\(appUser\?\.plan\) \? activeCustomerSegment\(appUser\)/);
-  assert.match(source, /businessSegment: activeSegment, limit: '200'/);
+  assert.match(source, /businessSegment: activeSegment, limit: '1000'/);
   assert.match(source, /catalogSource\?\.segment === activeSegment/);
   assert.match(source, /currentCatalog\.total/);
   assert.match(source, /catalogPresentationState\(currentCatalog, searchedProducts\.length, searchQuery\)/);
