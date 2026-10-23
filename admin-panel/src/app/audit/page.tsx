@@ -2,29 +2,52 @@
 
 import { useState, useEffect } from "react";
 import { ShieldAlert, Search, Clock, User, FileText } from "lucide-react";
-import { collection, getDocs, query, orderBy, limit } from "@/lib/data/firestore-client";
+import { collection, getDocs, query, orderBy, limit, where } from "@/lib/data/firestore-client";
 import { db } from "@/lib/firebase/config";
 import { auditAction, auditActor, auditDetails, auditMatches, auditTimestamp, type AuditLogRecord } from "@/lib/audit-log-display";
+
+const LOGS_PER_PAGE = 50;
+// Where a page starts: logs at or before `at`, minus the ones with exactly that time
+// already shown on the previous page (several logs can share one timestamp).
+type PageStart = { at: unknown; shown: string[] } | null;
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLogRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // starts[i] is where page i begins; page 0 is the newest logs.
+  const [starts, setStarts] = useState<PageStart[]>([null]);
+  const [page, setPage] = useState(0);
+  const [nextStart, setNextStart] = useState<PageStart>(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    void fetchLogs(starts[page] ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
-  const fetchLogs = async () => {
-    setLoading(true);
+  const fetchLogs = async (start: PageStart) => {
+    setLoading(true); setLoadError(false);
     try {
-      // First try to fetch from an audit_logs collection
-      const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(50));
+      const extra = start ? start.shown.length : 0;
+      const q = start
+        ? query(collection(db, "audit_logs"), where("timestamp", "<=", start.at), orderBy("timestamp", "desc"), limit(LOGS_PER_PAGE + extra + 1))
+        : query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(LOGS_PER_PAGE + 1));
       const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        setLogs(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const skip = new Set(start?.shown ?? []);
+      const rows: AuditLogRecord[] = querySnapshot.docs.filter(doc => !skip.has(doc.id)).map(doc => ({ id: doc.id, ...doc.data() }));
+
+      if (rows.length || start) {
+        const pageRows = rows.slice(0, LOGS_PER_PAGE);
+        setLogs(pageRows);
+        const last = pageRows.at(-1);
+        if (rows.length > LOGS_PER_PAGE && last) {
+          const sameTime = (value: unknown) => JSON.stringify(value) === JSON.stringify(last.timestamp);
+          const carried = start && sameTime(start.at) ? start.shown : [];
+          setNextStart({ at: last.timestamp, shown: [...carried, ...pageRows.filter(row => sameTime(row.timestamp)).map(row => row.id)] });
+        } else setNextStart(null);
       } else {
+        setNextStart(null);
         // Fallback: fetch from transactions if audit_logs is empty
         const tq = query(collection(db, "transactions"), orderBy("createdAt", "desc"), limit(50));
         const tSnapshot = await getDocs(tq);
@@ -38,12 +61,18 @@ export default function AuditLogsPage() {
       }
     } catch (error) {
       console.error("Error fetching audit logs:", error);
+      setLogs([]); setNextStart(null); setLoadError(true);
     } finally {
       setLoading(false);
     }
   };
 
   const filteredLogs = logs.filter(log => auditMatches(log, search));
+  const goNext = () => {
+    if (!nextStart) return;
+    setStarts(previous => [...previous.slice(0, page + 1), nextStart]);
+    setPage(page + 1);
+  };
 
   return (
     <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
@@ -63,7 +92,7 @@ export default function AuditLogsPage() {
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
               type="text" 
-              placeholder="Search logs by action or user email..."
+              placeholder="Search this page by action or user email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-md pl-9 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
@@ -126,6 +155,19 @@ export default function AuditLogsPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-4 py-3">
+          <p className="text-[11px] text-slate-500">
+            {loadError ? <span className="text-rose-300">Logs could not be loaded. Try again.</span>
+              : <>Newest first · {LOGS_PER_PAGE} per page{page > 0 ? <> · entries {(page * LOGS_PER_PAGE + 1).toLocaleString()}–{(page * LOGS_PER_PAGE + logs.length).toLocaleString()}</> : null}</>}
+          </p>
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <button type="button" onClick={() => setPage(page - 1)} disabled={loading || page === 0}
+              className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40">Previous</button>
+            <span>Page {page + 1}</span>
+            <button type="button" onClick={goNext} disabled={loading || !nextStart}
+              className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40">Next</button>
+          </div>
         </div>
       </div>
     </div>
