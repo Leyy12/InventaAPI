@@ -18,6 +18,15 @@ const aliases = {
   // Column names of the admin panel's own catalog export.
   specs: 'size', flavors: 'flavor', sizes: 'size',
 };
+// A link to a web page (search results, a product page) is not a photo: it would show
+// as a broken image. Picture links usually end in .jpg/.png/.webp or have no page suffix.
+export function webPageLink(value) {
+  let url;
+  try { url = new URL(value); } catch { return false; }
+  const path = url.pathname.toLowerCase();
+  return /\.(?:pl|php|html?|aspx?|jsp|cgi)$/u.test(path) || /(?:^|\/)search(?:\/|$)/u.test(path)
+    || ['search_terms', 'q', 'query', 'search'].some(key => url.searchParams.has(key));
+}
 // Products have no price: price columns are dropped without a warning.
 // Product names from scraped files often carry HTML escapes (&quot;) or stray
 // punctuation in front. Those are cleaned; a name that is only a barcode, a
@@ -113,6 +122,9 @@ export function planImportMerge(existing, csv) {
   }
   if (matches.length > 1) throw catalogError(409, 'Matches more than one size of the existing product; edit it by hand.');
   let kind = 'update';
+  // A new size/flavor whose photo differs from the product's keeps it on that variant,
+  // so each flavor shows its own photo (the product photo is the first row's).
+  const ownPhoto = csv.image_url && csv.image_url !== old.image_url && !input.image_url ? csv.image_url : '';
   if (matches.length === 1) applyVariantChanges(matches[0], row, changes);
   else if (!sku && (!given.length || given.every(field => {
     const known = new Set(variants.map(variant => comparisonText(variant[field])).filter(Boolean));
@@ -124,6 +136,7 @@ export function planImportMerge(existing, csv) {
   } else {
     const variant = {};
     for (const field of [...VARIANT_MATCH_FIELDS, 'sku', 'expirationDate']) if (row[field]) variant[field] = row[field];
+    if (ownPhoto) variant.image_url = ownPhoto;
     variants.push(variant); kind = 'append';
     changes.push(`adds ${[row.size, row.flavor].filter(Boolean).join(' ') || row.sku || 'a variant'}`);
   }
@@ -168,7 +181,9 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
       if (values.length !== headers.length) throw catalogError(400, 'Column count does not match header.');
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
-      const { brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
+      const { brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '' } = fields;
+      const pageLink = Boolean(fields.image_url) && webPageLink(fields.image_url);
+      const image_url = pageLink ? '' : fields.image_url ?? '';
       const name = cleanProductName(fields.name);
       if (fields.name && !properProductName(name)) {
         throw catalogError(400, 'No proper product name (only a barcode, number or size); skipped.');
@@ -177,7 +192,8 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
         variants: [{ size, flavor, sku, expirationDate }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
       if (requireImage && !row.product.image_url) {
-        row.status = 'NO_IMAGE'; row.reason = 'No image link; skipped.';
+        row.status = 'NO_IMAGE';
+        row.reason = pageLink ? 'The image link is a web page (search results), not a photo; skipped.' : 'No image link; skipped.';
         return row;
       }
       const keys = new Set(productIdentityKeys(row.product));
