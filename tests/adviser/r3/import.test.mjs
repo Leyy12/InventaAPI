@@ -156,3 +156,35 @@ test('merge mode: same brand and name on several products is skipped, never gues
   const result = previewCatalogImport([['name', 'brand', 'segment', 'category', 'size', 'price'], ['Evap', 'Alaska', 'Grocery', 'Canned', '1L', '5']], records, { merge: true });
   assert.equal(result.rows[0].status, 'POSSIBLE_DUPLICATE'); assert.match(result.rows[0].reason, /Several products share/u);
 });
+
+test('merge mode: one product per brand + name, each flavor keeps its own photo', () => {
+  const head = ['name', 'brand', 'segment', 'category', 'size', 'flavor', 'sku', 'image_url'];
+  const row = (size, flavor, sku, photo) => ['Century Tuna', 'Century', 'Grocery', 'Canned Goods', size, flavor, sku, `https://x.invalid/${photo}.jpg`];
+  const result = previewCatalogImport([head,
+    row('155g', 'Flaked in Oil', 'A1', 'oil'), row('180g', 'Flaked in Oil', 'A2', 'oil'),
+    row('155g', 'Hot & Spicy', 'B1', 'hot'), row('180g', 'Hot & Spicy', 'B2', 'hot'),
+  ], [], { merge: true, requireImage: true });
+  assert.deepEqual(result.rows.map(item => item.status), ['NEW', 'APPEND', 'APPEND', 'APPEND']);
+  // Commit replays each appended row on the product as it now is.
+  let product = { ...result.rows[0].product, status: 'Active' };
+  for (const item of result.rows.slice(1)) {
+    const plan = planImportMerge(product, item.product);
+    product = { ...product, ...plan.input };
+  }
+  assert.equal(product.image_url, 'https://x.invalid/oil.jpg');
+  assert.deepEqual(product.variants.map(variant => [variant.flavor, variant.size, variant.image_url ?? null]), [
+    ['Flaked in Oil', '155g', null], ['Flaked in Oil', '180g', null],
+    ['Hot & Spicy', '155g', 'https://x.invalid/hot.jpg'], ['Hot & Spicy', '180g', 'https://x.invalid/hot.jpg']]);
+});
+test('a link to a web page (search results) is not taken as a photo', () => {
+  const head = ['name', 'brand', 'segment', 'category', 'size', 'image_url'];
+  const page = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=Century+Tuna';
+  const strict = previewCatalogImport([head, ['Century Tuna', 'Century', 'Grocery', 'Canned', '155g', page]], [], { merge: true, requireImage: true });
+  assert.equal(strict.rows[0].status, 'NO_IMAGE'); assert.match(strict.rows[0].reason, /web page/u);
+  const loose = previewCatalogImport([head, ['Century Tuna', 'Century', 'Grocery', 'Canned', '155g', page]], [], { merge: true });
+  assert.equal(loose.rows[0].status, 'NEW'); assert.equal(loose.rows[0].product.image_url, '');
+  for (const photo of ['https://images.openfoodfacts.org/images/products/480/1.400.jpg', 'https://lh3.googleusercontent.com/abc=w800', 'https://x.invalid/p.webp?v=2']) {
+    const ok = previewCatalogImport([head, ['Tuna', 'C', 'Grocery', 'Canned', '155g', photo]], [], { merge: true, requireImage: true });
+    assert.equal(ok.rows[0].product.image_url, photo, photo);
+  }
+});
