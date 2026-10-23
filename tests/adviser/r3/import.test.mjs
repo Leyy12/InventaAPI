@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planImportUpdate, previewCatalogImport } from '../../../services/catalog-import.js';
+import { planImportMerge, planImportUpdate, previewCatalogImport } from '../../../services/catalog-import.js';
 import { productIdentityKeys } from '../../../services/product-contract.js';
 
 const headers = ['name', 'brand', 'segment', 'category', 'price', 'sku', 'size'];
@@ -108,4 +108,44 @@ test('files of any row count preview; malformed inputs are still rejected', () =
   assert.equal(previewCatalogImport([headers, ...many], []).total, 1000);
   assert.throws(() => previewCatalogImport([headers], []), /at least 1 row/);
   assert.throws(() => previewCatalogImport([headers, [1]], []), /at least 1 row/);
+});
+
+test('merge mode reads the catalog export columns and its price formats', () => {
+  const head = ['Name', 'Brand', 'Segment', 'Category', 'Flavors', 'Specs', 'Pricing', 'Status', 'image_url'];
+  const result = previewCatalogImport([head,
+    ['Coke', 'Coca-Cola', 'Grocery', 'Drinks', 'Regular', '330ml', '₱25.50', 'Active', 'https://x.invalid/a.jpg'],
+    ['Sprite', 'Coca-Cola', 'Grocery', 'Drinks', '', '1L', '₱20.00 – ₱45.00', 'Active', 'https://x.invalid/b.jpg'],
+  ], [], { merge: true });
+  assert.equal(result.rows[0].status, 'NEW');
+  assert.deepEqual(result.rows[0].product.variants[0], { size: '330ml', flavor: 'Regular', sku: '', expirationDate: '', price: 25.5 });
+  assert.equal(result.rows[1].status, 'INVALID');
+  assert.match(result.rows[1].reason, /Add a price/u);
+  assert.deepEqual(result.warnings, ['Ignored unknown column: Status']);
+});
+test('merge mode: an exported row listing every size only fills the photo; unknown listed sizes are skipped', () => {
+  const existing = { id: 'p', data: { name: 'Milo', brand: 'Nestle', segment: 'Grocery', category: 'Drinks', status: 'Active', is_active: true,
+    variants: [{ size: '22g', price: 8 }, { size: '300g', price: 99 }] } };
+  const head = ['name', 'brand', 'segment', 'category', 'size', 'price', 'image_url'];
+  const result = previewCatalogImport([head,
+    ['Milo', 'Nestle', 'Grocery', 'Drinks', '22g, 300g', '', 'https://x.invalid/m.jpg'],
+    ['Milo', 'Nestle', 'Grocery', 'Drinks', '22g, 1kg', '', 'https://x.invalid/m.jpg'],
+  ], [existing], { merge: true, requireImage: true });
+  assert.equal(result.rows[0].status, 'UPDATE'); assert.equal(result.rows[0].reason, 'photo added');
+  assert.equal(result.rows[1].status, 'INVALID'); assert.match(result.rows[1].reason, /not all on the existing product/u);
+  const update = planImportMerge(existing.data, result.rows[0].product, { keepPrice: true });
+  assert.deepEqual(update.input, { image_url: 'https://x.invalid/m.jpg' });
+});
+test('merge mode never replaces an existing photo and keeps prices when the row has none', () => {
+  const old = { name: 'Coke', brand: 'Coca-Cola', segment: 'Grocery', category: 'Drinks', image_url: 'https://x.invalid/old.jpg', variants: [{ sku: 'A', price: 10, size: '330ml' }] };
+  const result = previewCatalogImport([[...headers, 'image_url'], ['Coke', 'Coca-Cola', 'Grocery', 'Drinks', '', 'A', '330ml', 'https://x.invalid/new.jpg']],
+    [{ id: 'existing', data: old }], { merge: true });
+  assert.equal(result.rows[0].status, 'EXACT_EXISTING_MATCH');
+  assert.equal(result.rows[0].reason, 'Already in the catalog; skipped.');
+});
+test('merge mode: same brand and name on several products is skipped, never guessed', () => {
+  const base = { brand: 'Alaska', segment: 'Grocery', status: 'Active', is_active: true };
+  const records = [{ id: 'a', data: { ...base, name: 'Evap', category: 'Milk', variants: [{ size: '370ml', price: 1 }] } },
+    { id: 'b', data: { ...base, name: 'Evap', category: 'Dairy', variants: [{ size: '154ml', price: 1 }] } }];
+  const result = previewCatalogImport([['name', 'brand', 'segment', 'category', 'size', 'price'], ['Evap', 'Alaska', 'Grocery', 'Canned', '1L', '5']], records, { merge: true });
+  assert.equal(result.rows[0].status, 'POSSIBLE_DUPLICATE'); assert.match(result.rows[0].reason, /Several products share/u);
 });

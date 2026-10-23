@@ -1,143 +1,293 @@
 "use client";
 
-import { useRef, useState } from 'react';
-import { Upload, Download, X, Loader2 } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, Square, Upload, X } from 'lucide-react';
 import Papa from 'papaparse';
 import { catalogRequest } from '@/lib/catalog-client';
 import { extractTemplateRows, fitsTemplate } from '@/lib/csv-extract';
-import ProductImagePreview from '@/components/products/ProductImagePreview';
 
-type Status = 'NEW' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT';
-type Row = { row: number; status: Status; reason: string; matches: string[]; possibleDuplicates: string[];
-  product: { name: string; brand: string; segment: string; category: string; sku: string; image_url?: string;
-    variants: { size?: string; flavor?: string; price: number }[] } | null };
-type Preview = { previewId: string; total: number; counts: Record<Status, number>; warnings: string[]; rows: Row[] };
-type Result = { row: number; status: 'IMPORTED' | 'UPDATED' | 'FAILED' | 'SKIPPED'; reason?: string; productId?: string; replayed?: boolean };
-// Rows per commit request; large files are sent as several requests.
-const COMMIT_BATCH = 25;
-// Rows of these statuses can be selected and written.
-const WRITABLE: Status[] = ['NEW', 'UPDATE', 'POSSIBLE_DUPLICATE'];
-const labels: Record<Status, string> = { NEW: 'New', UPDATE: 'Update', EXACT_EXISTING_MATCH: 'No changes / skipped',
-  POSSIBLE_DUPLICATE: 'Possible duplicate', INVALID: 'Invalid', CONFLICT: 'Conflict' };
+// Server statuses (services/catalog-import.js). The window groups them into four tabs.
+type Status = 'NEW' | 'APPEND' | 'UPDATE' | 'EXACT_EXISTING_MATCH' | 'POSSIBLE_DUPLICATE' | 'INVALID' | 'CONFLICT' | 'NO_IMAGE';
+type PreviewRow = { row: number; status: Status; reason: string;
+  product: { name: string; brand: string; segment: string; category: string; sku: string; size: string; flavor: string; price: number | null } | null };
+type Preview = { previewId: string; total: number; warnings: string[]; rows: PreviewRow[] };
+type Result = { row: number; status: 'IMPORTED' | 'UPDATED' | 'APPENDED' | 'FAILED' | 'SKIPPED'; reason?: string; productId?: string };
+type Tab = 'new' | 'appended' | 'updates' | 'skipped';
+
+// Rows sent per commit request; the whole file is sent batch after batch until done.
+const COMMIT_BATCH = 100;
+const PAGE_SIZE = 50;
+const TAB_OF: Record<Status, Tab> = { NEW: 'new', APPEND: 'appended', UPDATE: 'updates', EXACT_EXISTING_MATCH: 'skipped',
+  POSSIBLE_DUPLICATE: 'skipped', INVALID: 'skipped', CONFLICT: 'skipped', NO_IMAGE: 'skipped' };
+const TABS: { id: Tab; label: string }[] = [{ id: 'new', label: 'New' }, { id: 'appended', label: 'Appended' },
+  { id: 'updates', label: 'Updates' }, { id: 'skipped', label: 'Skipped' }];
+const SEGMENT_PILL: Record<string, string> = {
+  Pharmacy: 'border-sky-500/40 bg-sky-500/10 text-sky-300',
+  Grocery: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+  Hardware: 'border-orange-500/40 bg-orange-500/10 text-orange-300',
+};
+const peso = (value: number | null | undefined) => typeof value === 'number' ? `₱${value.toFixed(2)}` : '—';
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [selected, setSelected] = useState<number[]>([]);
-  const [results, setResults] = useState<Result[]>([]);
   const [fileName, setFileName] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [acknowledge, setAcknowledge] = useState(false);
-  const [progress, setProgress] = useState('');
+  const [parsedRows, setParsedRows] = useState(0);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [tab, setTab] = useState<Tab>('new');
+  const [page, setPage] = useState(0);
   const [segment, setSegment] = useState('Grocery');
+  const [requireImage, setRequireImage] = useState(true);
+  const [checking, setChecking] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState('');
+  const [results, setResults] = useState<Map<number, Result>>(new Map());
+  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [dragging, setDragging] = useState(false);
   const locked = useRef(false);
-  const handleFile = async (file: File) => {
-    if (locked.current) return;
-    locked.current = true; setBusy(true); setError(''); setNotice(''); setPreview(null); setResults([]); setSelected([]); setAcknowledge(false);
+  const stopRequested = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+
+  const reset = () => { setPreview(null); setResults(new Map()); setError(''); setNotice(''); setFileName(''); setParsedRows(0); setProgress(''); };
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file || locked.current) return;
+    locked.current = true; reset(); setChecking(true);
     try {
       if (!file.name.toLowerCase().endsWith('.csv')) throw new Error('Choose a .csv file.');
       setFileName(file.name);
-      // Header:false retains duplicate columns for the authoritative alias checks.
+      // Header:false keeps duplicate columns visible to the server's alias checks.
       const parsed = Papa.parse<string[]>(await file.text(), { header: false, skipEmptyLines: 'greedy' });
-      if (parsed.errors.length) throw new Error(parsed.errors.map(e => 'CSV row ' + ((e.row ?? 0) + 1) + ': ' + e.message).join('; '));
+      if (parsed.errors.length) throw new Error(parsed.errors.slice(0, 3).map(e => 'CSV row ' + ((e.row ?? 0) + 1) + ': ' + e.message).join('; '));
       let rows = parsed.data;
-      // Files in another layout (e.g. an Open Food Facts export) are reduced to
-      // the template columns here, so only the needed details are uploaded.
+      setParsedRows(Math.max(0, rows.length - 1));
+      // Other layouts (for example an Open Food Facts export) are reduced to the template columns.
       if (!fitsTemplate(rows[0] ?? [])) {
         const extracted = extractTemplateRows(rows, { segment, category: 'Uncategorized' });
         if (!extracted.used.name) throw new Error('Could not find a product name column in this file.');
         rows = extracted.rows;
-        setNotice(`Not in the template layout, so only the needed details were taken: ${Object.entries(extracted.used).map(([field, source]) => `${field} ← ${source}`).join(', ')}. `
-          + `${rows.length - 1} products kept, ${extracted.dropped} without a name left out. Missing segment uses ${segment}; missing category uses "Uncategorized".`
-          + (extracted.missingPrice ? ` ${extracted.missingPrice} rows have no price and will show as Invalid until one is added.` : ''));
+        setNotice(`Columns read: ${Object.entries(extracted.used).map(([field, source]) => `${field} ← ${source}`).join(', ')}.`);
       }
       // Vercel rejects request bodies over 4.5 MB before the API sees them.
       if (new Blob([JSON.stringify({ rows })]).size > 4 * 1024 * 1024) {
-        throw new Error('This file is too large to preview in one go (over about 4 MB of product details). Split it into smaller files.');
+        throw new Error('This file has too much product detail to check in one go (over about 4 MB). Split it into two files.');
       }
-      const next = await catalogRequest<Preview>('/import/preview', 'POST', { rows });
-      setPreview(next); setSelected(next.rows.filter(row => row.status === 'NEW' || row.status === 'UPDATE').map(row => row.row));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to preview CSV.'); }
-    finally { locked.current = false; setBusy(false); }
+      const next = await catalogRequest<Preview>('/import/preview', 'POST', { rows, options: { merge: true, requireImage } });
+      setPreview(next);
+      const counts = countTabs(next.rows);
+      setTab(TABS.find(item => counts[item.id] > 0)?.id ?? 'new'); setPage(0);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to check this CSV.');
+    } finally { locked.current = false; setChecking(false); }
   };
+
+  const counts = useMemo(() => countTabs(preview?.rows ?? []), [preview]);
+  const writable = useMemo(() => (preview?.rows ?? []).filter(row => TAB_OF[row.status] !== 'skipped').map(row => row.row), [preview]);
+  const remaining = writable.filter(row => !results.has(row) || results.get(row)!.status === 'FAILED');
+  const done = results.size > 0 && remaining.length === 0;
+  const summary = useMemo(() => {
+    const tally = { IMPORTED: 0, UPDATED: 0, APPENDED: 0, FAILED: 0, SKIPPED: 0 };
+    for (const result of results.values()) tally[result.status]++;
+    return tally;
+  }, [results]);
+
+  // Sends every writable row, a batch at a time. Rate limits wait a minute; network
+  // errors retry. Each row is committed once on the server, so retries never duplicate.
   const commit = async () => {
-    if (locked.current || !preview || !selected.length) return;
-    locked.current = true; setBusy(true); setError(''); setResults([]);
-    const done: Result[] = [];
-    const rows = [...selected].sort((a, b) => a - b);
+    if (locked.current || !preview || !remaining.length) return;
+    locked.current = true; stopRequested.current = false; setImporting(true); setError('');
+    const collected = new Map(results);
+    let wrote = false;
     try {
-      for (let i = 0; i < rows.length; i += COMMIT_BATCH) {
-        setProgress(`Importing ${Math.min(i + COMMIT_BATCH, rows.length)} of ${rows.length} rows…`);
-        const result = await catalogRequest<{ results: Result[] }>('/import/commit', 'POST', {
-          previewId: preview.previewId, rows: rows.slice(i, i + COMMIT_BATCH), acknowledgePossible: acknowledge,
-        });
-        done.push(...result.results); setResults([...done]);
+      for (let i = 0; i < remaining.length && !stopRequested.current; i += COMMIT_BATCH) {
+        const batch = remaining.slice(i, i + COMMIT_BATCH);
+        setProgress(`Importing ${Math.min(i + batch.length, remaining.length).toLocaleString()} of ${remaining.length.toLocaleString()} rows…`);
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const response = await catalogRequest<{ results: Result[] }>('/import/commit', 'POST', { previewId: preview.previewId, rows: batch });
+            for (const result of response.results) collected.set(result.row, result);
+            if (response.results.some(result => ['IMPORTED', 'UPDATED', 'APPENDED'].includes(result.status))) wrote = true;
+            setResults(new Map(collected));
+            break;
+          } catch (cause) {
+            const status = (cause as { status?: number }).status;
+            if (status === 429) { setProgress('The server is busy. Continuing in 1 minute…'); await wait(60000); continue; }
+            if ((status === undefined || status >= 500) && attempt < 3) { setProgress('Connection problem. Retrying…'); await wait(2000 * 2 ** attempt); continue; }
+            throw cause;
+          }
+        }
       }
-    } catch (cause) { setError((cause instanceof Error ? cause.message : 'Import response unavailable.') + ' Retry this same preview to recover row results.'); }
-    finally {
-      if (done.some(row => row.status === 'IMPORTED' || row.status === 'UPDATED')) onImported();
-      locked.current = false; setBusy(false); setProgress('');
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Import stopped.';
+      setError(/expired/iu.test(message) ? 'This check expired. Choose the file again to continue; rows already imported are skipped.' : message + ' Press Continue import to retry.');
+    } finally {
+      if (wrote) onImported();
+      locked.current = false; setImporting(false); setProgress('');
     }
   };
+
+  const reportRows = useMemo(() => (preview?.rows ?? []).flatMap(row => {
+    const result = results.get(row.row);
+    if (TAB_OF[row.status] === 'skipped') return [[row.row, row.product?.name ?? '', row.product?.brand ?? '', 'Skipped', row.reason]];
+    if (result?.status === 'FAILED' || result?.status === 'SKIPPED') return [[row.row, row.product?.name ?? '', row.product?.brand ?? '', result.status === 'FAILED' ? 'Failed' : 'Skipped', result.reason ?? '']];
+    return [];
+  }), [preview, results]);
+  const downloadReport = () => {
+    const csv = Papa.unparse({ fields: ['row', 'name', 'brand', 'result', 'reason'], data: reportRows }, { escapeFormulae: true });
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), { href: url, download: fileName.replace(/\.csv$/iu, '') + '_not_imported.csv' }).click();
+    URL.revokeObjectURL(url);
+  };
   const downloadTemplate = () => {
-    const csv = 'name,brand,segment,category,size,price,sku,expiration_date,description,image_url\n"Sample Item","Sample Brand","Grocery","Food","330ml","0","SAMPLE-330","","Example only",""';
+    const csv = 'name,brand,segment,category,size,flavor,price,sku,image_url\n'
+      + '"Sample Item","Sample Brand","Grocery","Snacks","330ml","Original","25.00","SAMPLE-330","https://example.com/sample.jpg"';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     Object.assign(document.createElement('a'), { href: url, download: 'import_template.csv' }).click();
     URL.revokeObjectURL(url);
   };
-  const hasSelectedPossible = preview?.rows.some(row => selected.includes(row.row) && row.status === 'POSSIBLE_DUPLICATE');
-  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-    <div className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-2xl border border-slate-700/80 bg-slate-900 text-slate-200 shadow-2xl">
-      <div className="flex justify-between items-center px-6 py-4 border-b border-slate-800">
-        <div><h2 className="font-semibold">Import CSV</h2><p className="text-xs text-slate-400">Preview first. New products are added; existing products are updated only where the CSV has different values.</p></div>
-        <div className="flex gap-3"><button onClick={downloadTemplate} className="text-xs text-indigo-300"><Download className="inline w-4 h-4" /> Template</button>
-          <button onClick={onClose} disabled={busy} aria-label="Close importer"><X className="w-5 h-5" /></button></div>
+
+  const shown = (preview?.rows ?? []).filter(row => TAB_OF[row.status] === tab);
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const visible = shown.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
+  const busy = checking || importing;
+  const writtenCount = summary.IMPORTED + summary.UPDATED + summary.APPENDED;
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+    <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700/70 bg-[#0d1424] text-slate-200 shadow-2xl">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 border-b border-slate-800 px-6 py-5">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-indigo-400/30 bg-indigo-500/15 text-indigo-300"><Upload className="h-5 w-5" /></div>
+          <div className="min-w-0"><h2 className="text-lg font-bold text-white">Import CSV</h2>
+            <p className="text-sm text-slate-400">Upload a CSV file to add or update products.</p></div>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <button onClick={downloadTemplate} aria-label="Download template" className="flex items-center gap-2 rounded-xl border border-indigo-400/40 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20">
+            <Download className="h-4 w-4" /><span className="hidden sm:inline">Template</span></button>
+          <button onClick={onClose} disabled={importing} aria-label="Close importer" className="rounded-lg p-1.5 text-slate-400 hover:text-white disabled:opacity-40"><X className="h-5 w-5" /></button>
+        </div>
       </div>
-      <div className="p-6 space-y-4 overflow-y-auto">
-        <label className="block rounded-xl border border-dashed border-slate-600 p-5 text-sm">
-          <Upload className="inline w-4 h-4 mr-2" /> {fileName || 'Choose CSV'}
-          <input type="file" accept=".csv" disabled={busy} className="block mt-3 text-xs"
-            onChange={event => { const file = event.target.files?.[0]; if (file) void handleFile(file); event.target.value = ''; }} />
-        </label>
-        <label className="block text-xs text-slate-400">Segment for rows that have none:{' '}
-          <select value={segment} disabled={busy} onChange={event => setSegment(event.target.value)} className="ml-1 rounded bg-slate-800 px-2 py-1 text-slate-200">
-            {['Grocery', 'Pharmacy', 'Hardware'].map(option => <option key={option}>{option}</option>)}
-          </select></label>
-        <p className="text-xs text-slate-400">Any CSV layout works: the needed details (name, brand, category, size, price, barcode/SKU…) are picked out. Every product needs a price. No row limit. Optional image_url accepts HTTPS URLs, not image files. Column order does not matter.</p>
-        {notice && <p role="status" className="text-xs text-sky-300">{notice}</p>}
-        {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-        {preview && <>
-          <p className="text-sm">Total rows: {preview.total}</p>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">{(Object.keys(labels) as Status[]).map(status =>
-            <div key={status} className="rounded-lg bg-slate-800 p-3 text-xs"><strong className="block text-lg">{preview.counts[status]}</strong>{labels[status]}</div>)}</div>
-          {preview.warnings.map((warning, index) => <p key={index} className="text-xs text-amber-300">{warning}</p>)}
-          <div className="overflow-auto max-h-80 border border-slate-700 rounded-lg"><table className="w-full text-xs">
-            <thead className="bg-slate-800 sticky top-0"><tr>{['Select', 'Row', 'Product / brand', 'Segment / category', 'Variant / price', 'Image', 'Classification / reason'].map(label => <th key={label} className="p-2 text-left">{label}</th>)}</tr></thead>
-            <tbody>{preview.rows.map(row => <tr key={row.row} className="border-t border-slate-800">
-              <td className="p-2"><input type="checkbox" aria-label={'Select row ' + row.row} checked={selected.includes(row.row)}
-                disabled={busy || !WRITABLE.includes(row.status)} onChange={event => setSelected(previous => event.target.checked ? [...previous, row.row] : previous.filter(value => value !== row.row))} /></td>
-              <td className="p-2">{row.row}</td><td className="p-2">{row.product?.name || 'Invalid row'}<br />{row.product?.brand}</td>
-              <td className="p-2">{row.product?.segment}<br />{row.product?.category}</td>
-              <td className="p-2">{row.product?.variants[0]?.size} {row.product?.variants[0]?.flavor}<br />{row.product?.variants[0]?.price}</td>
-              <td className="p-2">{row.product?.image_url ? <><ProductImagePreview url={row.product.image_url} name={row.product.name} /><span className="block max-w-40 truncate" title={row.product.image_url}>HTTPS image URL</span></> : 'None'}</td>
-              <td className="p-2">{labels[row.status]}<br />{row.reason}{[...row.matches, ...row.possibleDuplicates].length > 0 && <p>Catalog IDs: {[...row.matches, ...row.possibleDuplicates].join(', ')}</p>}</td>
-            </tr>)}</tbody>
-          </table></div>
-          <label className="block text-xs text-amber-200"><input type="checkbox" checked={acknowledge} disabled={busy} onChange={event => setAcknowledge(event.target.checked)} /> I reviewed selected possible duplicates and intend to create separate variants/products.</label>
-          <p className="text-xs text-slate-400">Rows commit independently. A failure does not undo successful rows. Retrying this preview recovers successful results without creating copies.</p>
-        </>}
-        {results.length > 0 && <div role="status" className="rounded-lg bg-slate-800 p-3 text-xs">
-          <p>{results.filter(row => row.status === 'IMPORTED').length} imported/recovered; {results.filter(row => row.status === 'UPDATED').length} updated; {results.filter(row => row.status === 'FAILED').length} failed; {results.filter(row => row.status === 'SKIPPED').length} skipped.</p>
-          {results.map(row => <p key={row.row}>Row {row.row}: {row.status} {row.replayed ? '(previously committed)' : ''} {row.reason} {row.productId}</p>)}
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        {/* File */}
+        {!preview && !checking ? <>
+          <label onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
+            onDrop={event => { event.preventDefault(); setDragging(false); void handleFile(event.dataTransfer.files?.[0]); }}
+            className={'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-12 text-center transition-colors '
+              + (dragging ? 'border-indigo-400 bg-indigo-500/10' : 'border-slate-700 bg-slate-800/30 hover:border-slate-500')}>
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-slate-800 text-slate-300"><FileText className="h-6 w-6" /></div>
+            <p className="font-semibold text-white">Drop a CSV file here, or click to choose one</p>
+            <p className="max-w-lg text-sm text-slate-400">Any size works. New products are added, a new size of an existing product is appended to it, and existing products get a missing photo. Rows already in the catalog are skipped.</p>
+            <input ref={input} type="file" accept=".csv" className="hidden" onChange={event => { void handleFile(event.target.files?.[0]); event.target.value = ''; }} />
+          </label>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={requireImage} onChange={event => setRequireImage(event.target.checked)} className="h-4 w-4 accent-indigo-500" />
+              Skip rows without an image</label>
+            <label className="flex items-center gap-2">Segment for rows without one
+              <select value={segment} onChange={event => setSegment(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-slate-200">
+                {['Grocery', 'Pharmacy', 'Hardware'].map(option => <option key={option}>{option}</option>)}
+              </select></label>
+          </div>
+        </> : <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-700/60 bg-slate-800/30 px-5 py-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-700 bg-slate-800 text-indigo-300"><FileText className="h-5 w-5" /></div>
+            <div className="min-w-0"><p className="truncate font-semibold text-white">{fileName}</p>
+              <p className="text-xs text-slate-400">{checking ? 'Checking rows against the catalog…' : `${parsedRows.toLocaleString()} rows parsed${requireImage ? ' · rows without an image are skipped' : ''}`}</p></div>
+          </div>
+          {checking ? <Loader2 className="h-5 w-5 animate-spin text-indigo-300" />
+            : <button onClick={() => { reset(); setTimeout(() => input.current?.click()); }} disabled={importing}
+              className="shrink-0 text-sm font-medium text-indigo-300 hover:text-indigo-200 disabled:opacity-40">Change File</button>}
         </div>}
+
+        {error && <p role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>}
+        {notice && <p className="text-xs text-sky-300">{notice}</p>}
+        {preview?.warnings.length ? <p className="text-xs text-amber-300/90">{preview.warnings.join(' · ')}</p> : null}
+
+        {results.size > 0 && <div className={'flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm '
+          + (summary.FAILED ? 'border-amber-500/30 bg-amber-500/10 text-amber-100' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100')}>
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />
+            {done ? 'Import finished' : 'Import paused'}: {summary.IMPORTED.toLocaleString()} added · {summary.APPENDED.toLocaleString()} appended · {summary.UPDATED.toLocaleString()} updated
+            {summary.SKIPPED ? ` · ${summary.SKIPPED.toLocaleString()} already up to date` : ''}{summary.FAILED ? ` · ${summary.FAILED.toLocaleString()} failed` : ''}</span>
+        </div>}
+
+        {/* Tabs */}
+        {preview && <>
+          <div role="tablist" className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-700/60 bg-slate-800/20 p-2 sm:grid-cols-4">
+            {TABS.map(item => <button key={item.id} role="tab" aria-selected={tab === item.id} onClick={() => { setTab(item.id); setPage(0); }}
+              className={'rounded-xl px-4 py-3 text-center transition-colors '
+                + (tab === item.id ? 'bg-slate-700/50 text-white ring-2 ring-slate-200/80' : 'text-slate-400 hover:bg-slate-800/60')}>
+              <strong className={'block text-2xl font-bold ' + (tab === item.id ? 'text-white' : 'text-slate-300')}>{counts[item.id].toLocaleString()}</strong>
+              <span className="text-sm">{item.label}</span>
+            </button>)}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-2xl border border-slate-700/60">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead><tr className="text-left text-[11px] uppercase tracking-wider text-slate-400">
+                  {['#', 'Name', 'Brand', 'Segment', 'Category', 'Size', 'Price', 'SKU'].map(label => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}
+                </tr></thead>
+                <tbody>
+                  {visible.map(row => {
+                    const result = results.get(row.row), product = row.product;
+                    const note = result?.status === 'FAILED' ? result.reason : tab === 'new' ? '' : row.reason;
+                    return <tr key={row.row} className="border-t border-slate-800/80 align-top hover:bg-slate-800/30">
+                      <td className="px-4 py-3 font-mono text-slate-500">{row.row}</td>
+                      <td className="max-w-[220px] px-4 py-3">
+                        <span className="block truncate font-semibold text-white" title={product?.name}>{product?.name || 'Invalid row'}</span>
+                        {note && <span className={'block truncate text-xs ' + (result?.status === 'FAILED' ? 'text-rose-300' : tab === 'skipped' ? 'text-amber-300/90' : 'text-slate-400')} title={note}>{note}</span>}
+                        {result && result.status !== 'FAILED' && <span className="block text-xs text-emerald-300">{{ IMPORTED: 'Added', UPDATED: 'Updated', APPENDED: 'Appended', SKIPPED: 'Already up to date' }[result.status]}</span>}
+                      </td>
+                      <td className="max-w-[140px] truncate px-4 py-3 text-slate-300">{product?.brand}</td>
+                      <td className="px-4 py-3">{product?.segment && <span className={'rounded-full border px-2.5 py-0.5 text-xs ' + (SEGMENT_PILL[product.segment] ?? 'border-slate-600 text-slate-300')}>{product.segment}</span>}</td>
+                      <td className="max-w-[170px] truncate px-4 py-3 text-slate-300" title={product?.category}>{product?.category}</td>
+                      <td className="max-w-[110px] truncate px-4 py-3 font-mono text-slate-300" title={[product?.size, product?.flavor].filter(Boolean).join(' · ')}>{product?.size || product?.flavor}</td>
+                      <td className={'px-4 py-3 font-mono font-semibold ' + (typeof product?.price === 'number' ? 'text-emerald-400' : 'text-slate-500')}>{peso(product?.price)}</td>
+                      <td className="max-w-[130px] truncate px-4 py-3 font-mono text-slate-400">{product?.sku}</td>
+                    </tr>;
+                  })}
+                  {!visible.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">No rows in this tab.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {pages > 1 && <div className="flex items-center justify-end gap-3 border-t border-slate-800 px-4 py-2 text-xs text-slate-400">
+              <span>Rows {(current * PAGE_SIZE + 1).toLocaleString()}–{Math.min((current + 1) * PAGE_SIZE, shown.length).toLocaleString()} of {shown.length.toLocaleString()}</span>
+              <button onClick={() => setPage(current - 1)} disabled={current === 0} className="rounded-lg border border-slate-700 px-3 py-1 disabled:opacity-40">Previous</button>
+              <button onClick={() => setPage(current + 1)} disabled={current >= pages - 1} className="rounded-lg border border-slate-700 px-3 py-1 disabled:opacity-40">Next</button>
+            </div>}
+          </div>
+        </>}
       </div>
-      <div className="px-6 py-4 border-t border-slate-800 flex justify-between text-xs">
-        <span>{selected.length} selected</span>
-        <button onClick={() => void commit()} disabled={busy || !selected.length || (!!hasSelectedPossible && !acknowledge)} className="rounded-lg px-4 py-2 bg-indigo-600 disabled:opacity-40">
-          {busy ? <><Loader2 className="inline w-4 h-4 animate-spin" /> {progress || 'Working…'}</> : 'Confirm selected import / retry'}
-        </button>
+
+      {/* Footer */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-6 py-4">
+        <div className="min-w-0 flex-1 text-sm text-slate-400">
+          {importing ? <div className="max-w-sm space-y-1.5">
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-indigo-500 transition-all"
+              style={{ width: `${writable.length ? Math.round((writtenCount + summary.SKIPPED + summary.FAILED) / writable.length * 100) : 0}%` }} /></div>
+            <p>{progress}</p></div>
+            : preview ? <span>{done ? `${writtenCount.toLocaleString()} rows written` : `${remaining.length.toLocaleString()} rows will be written`} · {(counts.skipped + summary.SKIPPED).toLocaleString()} skipped
+              {reportRows.length > 0 && <button onClick={downloadReport} className="ml-3 text-indigo-300 hover:text-indigo-200"><Download className="mr-1 inline h-3.5 w-3.5" />Download skipped rows</button>}</span>
+            : <span>Choose a file to see what will be imported before anything is saved.</span>}
+        </div>
+        <div className="flex gap-3">
+          {importing ? <button onClick={() => { stopRequested.current = true; setProgress('Stopping after this batch…'); }}
+            className="flex items-center gap-2 rounded-xl border border-slate-600 px-5 py-2.5 text-sm font-medium text-slate-200 hover:bg-slate-800"><Square className="h-3.5 w-3.5" /> Stop</button>
+            : <button onClick={onClose} className="rounded-xl border border-slate-600 px-5 py-2.5 text-sm font-medium text-slate-200 hover:bg-slate-800">{done ? 'Close' : 'Cancel'}</button>}
+          {!done && <button onClick={() => void commit()} disabled={busy || !remaining.length}
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-900/40 hover:bg-indigo-500 disabled:opacity-40">
+            {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {importing ? 'Importing…' : results.size ? 'Continue Import' : 'Confirm Import'}</button>}
+        </div>
       </div>
     </div>
   </div>;
+}
+
+function countTabs(rows: PreviewRow[]): Record<Tab, number> {
+  const counts: Record<Tab, number> = { new: 0, appended: 0, updates: 0, skipped: 0 };
+  for (const row of rows) counts[TAB_OF[row.status]]++;
+  return counts;
 }

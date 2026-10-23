@@ -9,7 +9,6 @@ const router = Router();
 router.post('/', handlers.create);
 router.post('/import/preview', handlers.preview);
 router.post('/import/commit', handlers.commit);
-router.post('/images', handlers.images);
 router.patch('/:id', handlers.edit);
 router.post('/:id/archive', handlers.archive);
 router.post('/:id/restore', handlers.restore);

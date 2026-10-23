@@ -1,26 +1,33 @@
 import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
 import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
-import { planImportUpdate, previewCatalogImport } from './catalog-import.js';
-import { normalizeProductImageUrl } from './product-submission-contract.js';
+import { planImportMerge, planImportUpdate, previewCatalogImport } from './catalog-import.js';
 
 // Firestore documents max out at 1 MiB; leave headroom for field overhead.
 const PREVIEW_CHUNK_BYTES = 700000;
 // Rows per commit request. The admin panel sends a large import as several batches.
 const COMMIT_BATCH_MAX = 200;
-// Products per bulk image request. The admin panel sends a large CSV as several batches.
-export const IMAGE_BATCH_MAX = 100;
-const PRODUCT_ID = /^[a-zA-Z0-9_-]{1,180}$/u;
-const hasPhoto = product => [product.image_url, product.image, product.image_asset_id]
-  .some(value => typeof value === 'string' && value.trim() !== '');
+// How long an import preview can be committed. Large files take a while to write.
+const PREVIEW_TTL_MS = 2 * 60 * 60 * 1000;
+// Preview rows sent back to the browser: only what the importer shows, so a file of
+// thousands of rows stays well under the hosting response size limit.
+const slimRow = ({ row, status, reason, product, keepPrice }) => ({ row, status, reason,
+  product: product && { name: product.name, brand: product.brand, segment: product.segment, category: product.category,
+    sku: product.sku, size: product.variants[0]?.size || '', flavor: product.variants[0]?.flavor || '',
+    price: keepPrice ? null : product.variants[0]?.price ?? null } });
 
-async function findPreviewRow(tx, db, previewId, plan, rowNumber, uid) {
+// Preview chunks never change after the preview is written, so one commit request
+// reads each chunk once (chunkCache) instead of once per row.
+async function findPreviewRow(tx, db, previewId, plan, rowNumber, uid, chunkCache = new Map()) {
   if (Array.isArray(plan.rows)) return plan.rows.find(item => item.row === rowNumber);
   const index = (plan.chunks || []).findIndex(chunk => rowNumber >= chunk.first && rowNumber <= chunk.last);
   if (index < 0) return undefined;
-  const chunk = (await tx.get(db.collection('catalog_import_previews').doc(`${previewId}_chunk${index}`))).data();
-  if (!chunk || chunk.uid !== uid) throw catalogError(403, 'Import preview unavailable to this account.');
-  return chunk.rows.find(item => item.row === rowNumber);
+  if (!chunkCache.has(index)) {
+    const chunk = (await tx.get(db.collection('catalog_import_previews').doc(`${previewId}_chunk${index}`))).data();
+    if (!chunk || chunk.uid !== uid) throw catalogError(403, 'Import preview unavailable to this account.');
+    chunkCache.set(index, chunk.rows);
+  }
+  return chunkCache.get(index).find(item => item.row === rowNumber);
 }
 
 export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID, deriveReservationId, previewChunkBytes = PREVIEW_CHUNK_BYTES }) {
@@ -68,11 +75,13 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     return result;
   });
   const preview = wrap(async (req, db, uid) => {
-    onlyFields(req.body, ['rows']);
+    onlyFields(req.body, ['rows', 'options']);
+    const { merge = false, requireImage = false } = req.body.options ?? {};
+    if (typeof merge !== 'boolean' || typeof requireImage !== 'boolean') throw catalogError(400, 'Invalid import options.');
     const previewId = makeId();
-    return db.runTransaction(async tx => {
+    const result = await db.runTransaction(async tx => {
       await requireCatalogAdmin(tx, db, uid);
-      const plan = previewCatalogImport(req.body.rows, await readCatalog(tx, db));
+      const plan = previewCatalogImport(req.body.rows, await readCatalog(tx, db), { merge, requireImage });
       const ref = db.collection('catalog_import_previews').doc(previewId);
       if ((await tx.get(ref)).exists) throw catalogError(409, 'Preview ID collision. Retry.');
       // Rows are split across chunk documents so files of any length stay under
@@ -85,11 +94,12 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
         else { last.rows.push(row); last.bytes += bytes; }
       }
       const { rows, ...summary } = plan;
-      tx.set(ref, { ...summary, uid, expiresAt: new Date(now().getTime() + 30 * 60 * 1000).toISOString(),
+      tx.set(ref, { ...summary, uid, merge, expiresAt: new Date(now().getTime() + (merge ? PREVIEW_TTL_MS : 30 * 60 * 1000)).toISOString(),
         chunks: chunks.map(chunk => ({ first: chunk.rows[0].row, last: chunk.rows[chunk.rows.length - 1].row })) });
       chunks.forEach((chunk, index) => tx.set(db.collection('catalog_import_previews').doc(`${previewId}_chunk${index}`), { uid, rows: chunk.rows }));
       return { ...plan, previewId };
     });
+    return merge ? { ...result, rows: result.rows.map(slimRow) } : result;
   });
   const commit = wrap(async (req, db, uid, actor) => {
     onlyFields(req.body, ['previewId', 'rows', 'acknowledgePossible']);
@@ -101,7 +111,10 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     }
     const results = [];
     await db.runTransaction(tx => requireCatalogAdmin(tx, db, uid));
+    // One catalog read serves every row in this request; see prepareCatalogWrite.
+    const catalog = {}, chunkCache = new Map();
     for (const rowNumber of rows) {
+      let nextCatalog = null;
       try {
         const { activity, ...result } = await db.runTransaction(async tx => {
           await requireCatalogAdmin(tx, db, uid);
@@ -111,38 +124,47 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
           const receipt = (await tx.get(receiptRef)).data();
           if (receipt) return { ...receipt, replayed: true };
           if (!Number.isFinite(Date.parse(plan.expiresAt)) || Date.parse(plan.expiresAt) <= now().getTime()) throw catalogError(409, 'Preview expired; parse and preview again.');
-          const row = await findPreviewRow(tx, db, previewId, plan, rowNumber, uid);
-          if (!row || !['NEW', 'POSSIBLE_DUPLICATE', 'UPDATE'].includes(row.status)) {
+          const row = await findPreviewRow(tx, db, previewId, plan, rowNumber, uid, chunkCache);
+          if (!row || !['NEW', 'POSSIBLE_DUPLICATE', 'UPDATE', 'APPEND'].includes(row.status)) {
             return { row: rowNumber, status: 'SKIPPED', reason: row?.reason || 'Not a valid new row.' };
           }
-          if (row.status === 'UPDATE') {
+          if (row.status === 'UPDATE' || row.status === 'APPEND') {
             // Re-plan against the product as it is now, so several rows for one
             // product (different variants) each apply on top of the last.
-            const { productId } = row.update;
+            let productId = row.update?.productId;
+            if (!productId && row.appendTo?.row) {
+              const root = (await tx.get(db.collection('catalog_import_results').doc(catalogDigest([previewId, row.appendTo.row])))).data();
+              if (!root?.productId || !['IMPORTED', 'UPDATED'].includes(root.status)) {
+                return { row: rowNumber, status: 'FAILED', reason: `Row ${row.appendTo.row} was not added, so this size was not added either.` };
+              }
+              productId = root.productId;
+            }
             const current = (await tx.get(db.collection('products').doc(productId))).data();
             if (!current) throw catalogError(404, 'Product was removed after preview.');
-            const update = planImportUpdate(current, row.product);
+            const flags = plan.merge ? { keepPrice: !!row.keepPrice, fillImageOnly: true } : {};
+            const update = plan.merge && (row.update?.merge || row.appendTo) ? planImportMerge(current, row.product, flags) : planImportUpdate(current, row.product, flags);
             if (!update) {
               const saved = { row: rowNumber, status: 'SKIPPED', reason: 'Already up to date.', productId, replayed: false };
               tx.set(receiptRef, saved);
               return saved;
             }
             const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'edit', productId, input: update.input,
-              expectedRevision: current.catalogRevision ?? 0, at: now().toISOString(), deriveReservationId });
-            const saved = { row: rowNumber, status: 'UPDATED', productId, reason: update.changes.join('; '), replayed: false };
-            prepared.apply(); tx.set(receiptRef, saved);
+              expectedRevision: current.catalogRevision ?? 0, at: now().toISOString(), deriveReservationId, catalog });
+            const saved = { row: rowNumber, status: update.kind === 'append' ? 'APPENDED' : 'UPDATED', productId, reason: update.changes.join('; '), replayed: false };
+            prepared.apply(); tx.set(receiptRef, saved); nextCatalog = prepared.nextCatalog;
             return { ...saved, activity: prepared.activity };
           }
           if (row.status === 'POSSIBLE_DUPLICATE' && !acknowledgePossible) throw catalogError(409, 'Review and acknowledge possible duplicates.');
           const prepared = await prepareCatalogWrite({ tx, db, uid, actor, action: 'create',
-            productId: `import_${previewId}_${rowNumber}`, input: row.product, at: now().toISOString(), deriveReservationId });
+            productId: `import_${previewId}_${rowNumber}`, input: row.product, at: now().toISOString(), deriveReservationId, catalog });
           // Other selected rows can add the same Brand+Name after preview; explicit
           // acknowledgement covers these, but never overrides canonical conflicts.
           if (prepared.possibleDuplicates.length && !acknowledgePossible) throw catalogError(409, 'Possible duplicates changed; refresh preview and review.');
           const saved = { row: rowNumber, status: 'IMPORTED', productId: prepared.product.id, replayed: false };
-          prepared.apply(); tx.set(receiptRef, saved);
+          prepared.apply(); tx.set(receiptRef, saved); nextCatalog = prepared.nextCatalog;
           return { ...saved, activity: prepared.activity };
         });
+        if (nextCatalog) Object.assign(catalog, nextCatalog);
         if (activity) await appendActivityAudit(db, activity);
         results.push(result);
       } catch (error) {
@@ -151,46 +173,5 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     }
     return { results };
   });
-  // Adds photo links to products that have none. A photo never changes a product's
-  // name, brand or SKU, so unlike other writes this skips the full-catalog duplicate
-  // scan, and one transaction covers the whole batch. Products that already have a
-  // photo (or appear twice in the batch) are skipped, never overwritten.
-  const images = wrap(async (req, db, uid, actor) => {
-    onlyFields(req.body, ['items']);
-    const { items } = req.body;
-    if (!Array.isArray(items) || !items.length || items.length > IMAGE_BATCH_MAX) {
-      throw catalogError(400, `Send between 1 and ${IMAGE_BATCH_MAX} image links per request.`);
-    }
-    const at = now().toISOString();
-    const results = await db.runTransaction(async tx => {
-      await requireCatalogAdmin(tx, db, uid);
-      const controlRef = db.collection('catalog_control').doc('writer');
-      const control = (await tx.get(controlRef)).data();
-      if (control?.frozen) throw catalogError(409, 'Catalog is frozen for operator maintenance.');
-      const seen = new Set(), staged = [], outcome = [];
-      for (const item of items) {
-        const productId = item?.productId;
-        if (typeof productId !== 'string' || !PRODUCT_ID.test(productId)) { outcome.push({ productId: String(productId ?? ''), status: 'FAILED', reason: 'Invalid product ID.' }); continue; }
-        if (seen.has(productId)) { outcome.push({ productId, status: 'SKIPPED', reason: 'Another link in this batch is for the same product.' }); continue; }
-        seen.add(productId);
-        let url;
-        try { url = normalizeProductImageUrl(item.image_url); } catch { url = ''; }
-        if (!url) { outcome.push({ productId, status: 'FAILED', reason: 'Image link must be an HTTPS URL.' }); continue; }
-        const ref = db.collection('products').doc(productId);
-        const product = (await tx.get(ref)).data();
-        if (!product) { outcome.push({ productId, status: 'SKIPPED', reason: 'Product not found.' }); continue; }
-        if (hasPhoto(product)) { outcome.push({ productId, status: 'SKIPPED', reason: 'Product already has a photo.' }); continue; }
-        const next = { ...product, image_url: url, updatedAt: at, catalogRevision: (product.catalogRevision ?? 0) + 1 };
-        staged.push({ ref, next });
-        outcome.push({ productId, status: 'SAVED', product: { ...next, id: productId } });
-      }
-      for (const { ref, next } of staged) tx.set(ref, next);
-      if (staged.length) tx.set(controlRef, { ...control, version: 1, revision: (control?.revision ?? 0) + 1, updatedAt: at });
-      return outcome;
-    });
-    const saved = results.filter(result => result.status === 'SAVED').length;
-    if (saved) await appendActivityAudit(db, { uid, actor, action: 'Product Images Added', entityType: 'product', entityId: `${saved} products`, at });
-    return { results };
-  });
-  return { images, create: mutate('create'), edit: mutate('edit'), archive: mutate('archive'), restore: mutate('restore'), delete: mutate('delete'), preview, commit };
+  return { create: mutate('create'), edit: mutate('edit'), archive: mutate('archive'), restore: mutate('restore'), delete: mutate('delete'), preview, commit };
 }

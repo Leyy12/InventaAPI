@@ -17,8 +17,11 @@ test('PapaParse errors block preview and duplicate headers survive for server va
   const source = read('admin-panel/src/components/admin/ImportCsvModal.tsx');
   assert.match(source, /header: false/u); assert.match(source, /parsed.errors.length/u);
   assert.match(source, /\/import\/preview/u); assert.match(source, /\/import\/commit/u);
-  assert.match(source, /previewId: preview.previewId/u); assert.match(source, /acknowledgePossible: acknowledge/u);
-  assert.match(source, /row.status === 'NEW'/u);
+  assert.match(source, /previewId: preview.previewId/u);
+  // The admin importer previews in merge mode and only ever sends New / Appended / Updates rows.
+  assert.match(source, /options: \{ merge: true, requireImage \}/u);
+  assert.match(source, /TAB_OF\[row.status\] !== 'skipped'/u);
+  assert.doesNotMatch(source, /acknowledgePossible/u);
 });
 test('submission approval delegates product mutation while keeping final decision in its transaction', () => {
   const source = read('services/product-submissions.js');
