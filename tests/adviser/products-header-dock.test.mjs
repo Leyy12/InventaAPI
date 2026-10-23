@@ -15,14 +15,18 @@ function observerFixture() {
   const summary = {closest: name => { assert.equal(name,'main'); return main; }, scrollIntoView: options=>returns.push(options)};
   return { Observer, observers, main, summary, returns };
 }
-const inline = f => f.find(n=>n.props['aria-label']==='Product selection summary');
+// The page's own action row (Generate / Add Product / Clear / Playground) is observed;
+// the compact copy docks only once that row has scrolled out of view.
+const inline = f => f.find(n=>n.props['aria-label']==='Catalog actions');
+const inlineClear = f => nodes(inline(f),n=>n.type==='button'&&/^Clear/.test(n.props['aria-label']||''))[0];
+const inlineGenerate = f => nodes(inline(f),n=>n.type==='button'&&/Generate API Key|Add Selected Products/.test(text(n)))[0];
 const dock = f => f.find(n=>n.props['aria-label']==='Docked product selections');
 const buttons = tree => nodes(tree,n=>n.type==='button');
 
 for (const options of [{}, {included:2}, {trial:false}]) {
   test(`zero pending selections have no inline/dock/observer: ${JSON.stringify(options)}`, async()=>{
     const io=observerFixture(), f=await productsFixture({...options,headerTarget:{},Observer:io.Observer});
-    try { assert.equal(inline(f),undefined);assert.equal(dock(f),undefined);assert.equal(io.observers.length,0); }
+    try { assert.equal(inlineClear(f),undefined);assert.equal(dock(f),undefined);assert.equal(io.observers.length,0); }
     finally {f.stop();}
   });
 }
@@ -38,11 +42,10 @@ for (const options of [{}, {included:2}, {trial:false}]) {
       await observer.position(1200); assert.equal(dock(f),undefined,'initially below viewport must not dock');
       await observer.position(90); assert.equal(dock(f),undefined,'partial inline visibility must not duplicate controls');
       await observer.position(64); assert.match(text(dock(f)),/4\s+selected/);
-      const inButtons=buttons(inline(f)), dockButtons=buttons(dock(f));
-      assert.equal(dockButtons[1].props.onClick,inButtons[0].props.onClick);
-      assert.equal(dockButtons[1].props.disabled,inButtons[0].props.disabled);
-      assert.equal(dockButtons[2].props.onClick,inButtons[1].props.onClick);
-      assert.equal(dockButtons[2].props.disabled,inButtons[1].props.disabled);
+      const dockButtons=buttons(dock(f));
+      assert.equal(dockButtons[1].props.disabled,inlineGenerate(f).props.disabled);
+      assert.equal(dockButtons[2].props.onClick,inlineClear(f).props.onClick);
+      assert.equal(dockButtons[2].props.disabled,inlineClear(f).props.disabled);
       assert.equal(nodes(dock(f),n=>n.type==='a')[0].props.href,nodes(inline(f),n=>n.type==='a')[0].props.href);
       dockButtons[0].props.onClick(); assert.equal(io.returns.length,1); assert.equal(io.returns[0].block,'center');
       for (const filter of ['selected','not-selected','all']) {
@@ -52,9 +55,8 @@ for (const options of [{}, {included:2}, {trial:false}]) {
       assert.equal(io.observers.length,1,'filters do not recreate the observer or poll');
       await observer.position(200); assert.equal(dock(f),undefined);
       await observer.position(0); assert.ok(dock(f));
-      const oldRef=inline(f).props.ref;
-      await f.click(buttons(dock(f))[2]); oldRef(null); await flush();
-      assert.equal(inline(f),undefined);assert.equal(dock(f),undefined);assert.equal(observer.disconnected,true);
+      await f.click(buttons(dock(f))[2]); await flush();
+      assert.equal(inlineClear(f),undefined);assert.equal(dock(f),undefined);assert.equal(observer.disconnected,true);
       if (options.included) {
         assert.equal(f.card('grocery-0').props['aria-disabled'],true);
         assert.match(text(f.card('grocery-0')),/Included/);
