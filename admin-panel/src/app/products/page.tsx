@@ -12,7 +12,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { collection, getDocs } from "@/lib/data/firestore-client";
-import { catalogRequest, catalogPrice, brandNameWarning } from "@/lib/catalog-client";
+import { catalogRequest, brandNameWarning } from "@/lib/catalog-client";
 import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
 
@@ -24,7 +24,6 @@ export interface ProductVariant {
   form?: string;
   specs?: string;
   dimensions?: string;
-  price?: number | string;
   value?: string;
   sku?: string;
   expirationDate?: string; // YYYY-MM-DD
@@ -61,7 +60,6 @@ export interface Product {
   product?: string;
   category?: string;
   segment?: string;
-  price?: number | string;
   size?: string;
   flavor?: string;
   dosage?: string;
@@ -78,7 +76,7 @@ export interface Product {
   updatedAt?: any;
   variants?: ProductVariant[];
   sku?: string;
-  attributes?: { brand?: string; flavor?: string; size?: string; variant?: string; price?: number | string };
+  attributes?: { brand?: string; flavor?: string; size?: string; variant?: string };
 }
 
 type VariantFieldKey = "flavor" | "size" | "dosage" | "form" | "specs" | "dimensions";
@@ -174,33 +172,7 @@ const getSizes = (p: Product): string[] => {
   return [...new Set(list.filter(Boolean))];
 };
 
-const parseNum = (val: any): number | null => {
-  if (typeof val === 'number') return val;
-  if (typeof val === 'string') {
-    const parsed = parseFloat(val.replace(/[^0-9.]/g, ''));
-    if (!isNaN(parsed)) return parsed;
-  }
-  return null;
-};
 
-const getPricing = (p: Product): string => {
-  const prices: number[] = [];
-  if (p.variants?.length) {
-    p.variants.forEach(v => {
-      const num = parseNum(v.price);
-      if (num !== null) prices.push(num);
-    });
-  } else {
-    const num = parseNum(p.price) ?? parseNum(p.attributes?.price);
-    if (num !== null) prices.push(num);
-  }
-
-  if (prices.length) {
-    const mn = Math.min(...prices);
-    return `₱${mn.toFixed(2)}`;
-  }
-  return "—";
-};
 
 const categoryStyle = (cat?: string) => {
   if (!cat) return "bg-slate-700/60 text-slate-400 border-slate-600/60";
@@ -225,7 +197,7 @@ const segmentStyle = (seg?: string) => {
 const exportCSV = (data: Product[]) => {
   if (!data.length) return;
   const csv = catalogCsv(data.map(p => [getProductName(p), getBrand(p), p.segment || '', p.category || '',
-    getFlavors(p).join(', '), getSizes(p).join(', '), String(getPricing(p)), getStatus(p), productImageSource(p)]));
+    getFlavors(p).join(', '), getSizes(p).join(', '), getStatus(p), productImageSource(p)]));
   const a = Object.assign(document.createElement("a"), {
     href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
     download: "master_catalog.csv"
@@ -318,7 +290,6 @@ function ViewModal({ product, onClose }: { product: Product; onClose: () => void
           <div className="grid grid-cols-2 gap-2.5">
             {[
               ["Category", product.category, false],
-              ["Pricing", getPricing(product), true],
               ["Variants", `${product.variants?.length ?? 0}`, false],
               ["SKU", product.sku, false],
             ].map(([l, v, green]) => (
@@ -357,7 +328,6 @@ function ViewModal({ product, onClose }: { product: Product; onClose: () => void
                       <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">{FIELD_META[attr2Key].label}</th>
                       <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">SKU</th>
                       <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-left">Exp. Date</th>
-                      <th className="px-3 py-2 text-slate-500 font-semibold uppercase tracking-wider text-right">Price</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
@@ -378,9 +348,6 @@ function ViewModal({ product, onClose }: { product: Product; onClose: () => void
                                 {v.expirationDate}
                               </span>
                             ) : <span className="text-slate-600">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right text-emerald-400 font-bold">
-                            {parseNum(v.price) != null ? `₱${parseNum(v.price)!.toFixed(2)}` : "—"}
                           </td>
                         </tr>
                       );
@@ -408,7 +375,7 @@ function EditModal({
 }) {
   const seedVariants = (): ProductVariant[] => {
     if (product.variants?.length) return product.variants.map(v => ({ ...v }));
-    if (product.flavor || product.size || product.dosage || product.form || product.specs || product.dimensions || product.price != null) {
+    if (product.flavor || product.size || product.dosage || product.form || product.specs || product.dimensions) {
       return [{
         flavor: product.flavor || "",
         size: product.size || "",
@@ -416,10 +383,9 @@ function EditModal({
         form: product.form || "",
         specs: product.specs || "",
         dimensions: product.dimensions || "",
-        price: product.price ?? "",
       }];
     }
-    return [{ flavor: "", size: "", price: 0 }];
+    return [{ flavor: "", size: "" }];
   };
 
   const [name, setName] = useState(getProductName(product));
@@ -446,13 +412,13 @@ function EditModal({
 
   const updateVariant = (i: number, field: keyof ProductVariant, val: string) => {
     setVariants(prev => prev.map((v, idx) =>
-      idx === i ? { ...v, [field]: field === "price" ? (val === "" ? "" : val) : val } : v
+      idx === i ? { ...v, [field]: val } : v
     ));
   };
 
   const addVariant = () => {
     const f = getSegmentFields(segment);
-    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "", price: 0 }]);
+    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "" }]);
   };
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
 
@@ -462,7 +428,7 @@ function EditModal({
     savingRef.current = true;
     setSaving(true); setError("");
     try {
-      const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+      const cleaned = variants;
       let imageFields: { image_url?: string; image_asset_id?: string } = {};
       if (imageFile) {
         const user = auth.currentUser;
@@ -562,8 +528,8 @@ function EditModal({
             </div>
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
-              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
-                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price", ""].map(h => (
+              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
+                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>
@@ -573,7 +539,7 @@ function EditModal({
                   <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
                 )}
                 {variants.map((v, i) => (
-                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
+                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
                     <input value={v[segFields.field1.key] || ""} onChange={e => updateVariant(i, segFields.field1.key, e.target.value)}
                       placeholder={segFields.field1.placeholder} className={inputCls + " py-1.5 text-xs"} />
                     <input value={v[segFields.field2.key] || ""} onChange={e => updateVariant(i, segFields.field2.key, e.target.value)}
@@ -585,10 +551,6 @@ function EditModal({
                         onChange={e => updateVariant(i, "expirationDate", e.target.value)}
                         className={inputCls + " py-1.5 text-xs"} />
                     )}
-                    <input type="number" min="0" step="0.01"
-                      value={v.price !== undefined && v.price !== "" ? v.price : ""}
-                      onChange={e => updateVariant(i, "price", e.target.value)}
-                      placeholder="0.00" className={inputCls + " py-1.5 text-xs"} />
                     <button onClick={() => removeVariant(i)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
@@ -645,7 +607,7 @@ function AddProductModal({
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
   const [segment, setSegment] = useState("");
-  const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "", price: 0 }]);
+  const [variants, setVariants] = useState<ProductVariant[]>([{ flavor: "", size: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -660,13 +622,13 @@ function AddProductModal({
 
   const updateVariant = (i: number, field: keyof ProductVariant, val: string) => {
     setVariants(prev => prev.map((v, idx) =>
-      idx === i ? { ...v, [field]: field === "price" ? (val === "" ? "" : val) : val } : v
+      idx === i ? { ...v, [field]: val } : v
     ));
   };
 
   const addVariant = () => {
     const f = getSegmentFields(segment);
-    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "", price: 0 }]);
+    setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "" }]);
   };
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
 
@@ -681,7 +643,7 @@ function AddProductModal({
       if (createAttempt.current && createAttempt.current.uid !== user.uid) throw new Error('Sign back into the creating account to retry.');
       if (!createAttempt.current) {
         const image_url = normalizeProductImageUrl(imageUrl);
-        const cleaned = variants.map(v => ({ ...v, price: catalogPrice(v.price) }));
+        const cleaned = variants;
         const key = crypto.randomUUID();
         createAttempt.current = { uid: user.uid, key,
           product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },
@@ -791,8 +753,8 @@ function AddProductModal({
             </div>
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
-              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
-                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), "Price", ""].map(h => (
+              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
+                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>
@@ -801,7 +763,7 @@ function AddProductModal({
                   <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
                 )}
                 {variants.map((v, i) => (
-                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_90px_32px]" : "grid-cols-[1fr_90px_100px_90px_32px]"}`}>
+                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
                     <input value={v[segFields.field1.key] || ""} onChange={e => updateVariant(i, segFields.field1.key, e.target.value)}
                       placeholder={segFields.field1.placeholder} className={inputCls + " py-1.5 text-xs"} />
                     <input value={v[segFields.field2.key] || ""} onChange={e => updateVariant(i, segFields.field2.key, e.target.value)}
@@ -813,10 +775,6 @@ function AddProductModal({
                         onChange={e => updateVariant(i, "expirationDate", e.target.value)}
                         className={inputCls + " py-1.5 text-xs"} />
                     )}
-                    <input type="number" min="0" step="0.01"
-                      value={v.price !== undefined && v.price !== "" ? v.price : ""}
-                      onChange={e => updateVariant(i, "price", e.target.value)}
-                      placeholder="0.00" className={inputCls + " py-1.5 text-xs"} />
                     <button onClick={() => removeVariant(i)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1093,7 +1051,6 @@ export default function MasterProductCatalogPage() {
                 <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">PRODUCT</th>
                 <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">{tableHeaders[0]}</th>
                 <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">{tableHeaders[1]}</th>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-right select-none">PRICING</th>
                 <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center select-none">VARIANTS</th>
                 <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center select-none">STATUS</th>
                 <th className="sticky top-0 right-0 z-30 bg-[#111827]/95 backdrop-blur-md pl-4 pr-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center select-none border-l border-slate-800">
@@ -1104,14 +1061,14 @@ export default function MasterProductCatalogPage() {
             <tbody className="divide-y divide-slate-800/40">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-500">
+                  <td colSpan={7} className="py-16 text-center text-slate-500">
                     <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2.5" />
                     <p className="text-xs">Loading catalog…</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-500">
+                  <td colSpan={7} className="py-16 text-center text-slate-500">
                     <Package className="w-10 h-10 text-slate-700 mx-auto mb-2.5" />
                     <p className="text-sm font-medium text-slate-400">No products match your criteria</p>
                     <p className="text-xs mt-1">Adjust filters or clear the search</p>
@@ -1122,12 +1079,11 @@ export default function MasterProductCatalogPage() {
                   const globalIndex = index + 1;
                   const attrs1 = getAttr1(product);
                   const attrs2 = getAttr2(product);
-                  const pricing = getPricing(product);
                   const status = getStatus(product);
                   const isArchived = status === "Archived";
                   const expiryWarn = hasExpiryWarning(product);
                   const variantCount = product.variants?.length
-                    ?? ((attrs1.length || attrs2.length) || pricing !== "—" ? 1 : 0);
+                    ?? ((attrs1.length || attrs2.length) ? 1 : 0);
 
                   const ATTR1_MAX = 2;
                   const shownAttrs1 = attrs1.slice(0, ATTR1_MAX);
@@ -1207,15 +1163,6 @@ export default function MasterProductCatalogPage() {
                             </p>
                             {extraAttrs2 > 0 && <ExpandMore items={attrs2.slice(ATTR2_MAX)} label={`+${extraAttrs2}`} />}
                           </div>
-                        ) : (
-                          <span className="text-[13px] text-slate-600">—</span>
-                        )}
-                      </td>
-
-                      {/* Pricing */}
-                      <td className={`px-4 py-3 align-middle text-right ${isArchived ? "opacity-50" : ""}`}>
-                        {pricing !== "—" ? (
-                          <span className="whitespace-nowrap font-mono text-[13px] font-semibold text-emerald-400 tabular-nums">{pricing}</span>
                         ) : (
                           <span className="text-[13px] text-slate-600">—</span>
                         )}

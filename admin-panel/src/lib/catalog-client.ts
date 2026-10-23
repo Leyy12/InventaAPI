@@ -14,13 +14,6 @@ export async function catalogRequest<T>(path: string, method: string, body: unkn
   return result as T;
 }
 
-export function catalogPrice(value: unknown): number {
-  const number = typeof value === 'number' ? value
-    : typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : NaN;
-  if (!Number.isFinite(number) || number < 0 || number > 1e9) throw new Error('Each variant needs a valid non-negative price.');
-  return number;
-}
-
 // Secondary display warning only; authoritative identity comes from the backend.
 export function brandNameWarning(brand: string, name: string): string {
   const normalize = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');

@@ -39,6 +39,9 @@ Sign-in and uploaded photo files stay on Firebase. Everything else moves.
 Anything saved in Firebase between step 1 and step 4 is not copied. Do this at a quiet
 time, or run the copy once more just before step 3.
 
+Products have no price. The copy leaves behind any prices old products still hold
+in Firebase, so Supabase starts without them.
+
 **To undo:** delete `DATA_BACKEND` on Vercel (or set it to `firebase`) and redeploy.
 Data saved while on Supabase stays only in Supabase.
 
@@ -47,9 +50,9 @@ Data saved while on Supabase stays only in Supabase.
 1. Admin panel → **Products** → **Import CSV**.
 2. Leave **Skip rows without an image** ticked if you only want rows that have a photo link.
 3. Drop the CSV on the window (any size, any column order). Your catalog export format
-   (Name, Brand, Segment, Category, Flavors, Specs, Pricing, image_url) works as is.
+   (Name, Brand, Segment, Category, Flavors, Specs, image_url) works as is.
 4. Read the four tabs. Nothing is saved yet.
-   - **New**: products that will be created. Price is not needed.
+   - **New**: products that will be created. Products have no price; a price column is dropped.
    - **Appended**: a new size of a product that already exists; added to that product.
    - **Updates**: existing products that get something new, usually a missing photo.
      Existing photos are never replaced.
@@ -60,3 +63,15 @@ Data saved while on Supabase stays only in Supabase.
    Rows already saved are never saved twice.
 6. When it finishes, click **Download skipped rows** for a list of everything not imported
    and why. Fix those rows in the file and import it again; finished rows are skipped.
+
+## Removing old prices that are still stored
+
+Products have no price, and none is ever shown, sent or saved again. Products created
+before this change may still hold one in the database. Moving to Supabase (Part 2)
+leaves them behind. To delete them where the data is now, from the project folder:
+
+```
+node scripts/backup-products.mjs              # optional: save a copy first
+node scripts/remove-product-prices.mjs        # shows how many products have a price
+node scripts/remove-product-prices.mjs --apply
+```

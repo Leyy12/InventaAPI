@@ -11,10 +11,9 @@ const COMMIT_BATCH_MAX = 200;
 const PREVIEW_TTL_MS = 2 * 60 * 60 * 1000;
 // Preview rows sent back to the browser: only what the importer shows, so a file of
 // thousands of rows stays well under the hosting response size limit.
-const slimRow = ({ row, status, reason, product, keepPrice }) => ({ row, status, reason,
+const slimRow = ({ row, status, reason, product }) => ({ row, status, reason,
   product: product && { name: product.name, brand: product.brand, segment: product.segment, category: product.category,
-    sku: product.sku, size: product.variants[0]?.size || '', flavor: product.variants[0]?.flavor || '',
-    price: keepPrice ? null : product.variants[0]?.price ?? null } });
+    sku: product.sku, size: product.variants[0]?.size || '', flavor: product.variants[0]?.flavor || '' } });
 
 // Preview chunks never change after the preview is written, so one commit request
 // reads each chunk once (chunkCache) instead of once per row.
@@ -141,8 +140,8 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
             }
             const current = (await tx.get(db.collection('products').doc(productId))).data();
             if (!current) throw catalogError(404, 'Product was removed after preview.');
-            const flags = plan.merge ? { keepPrice: !!row.keepPrice, fillImageOnly: true } : {};
-            const update = plan.merge && (row.update?.merge || row.appendTo) ? planImportMerge(current, row.product, flags) : planImportUpdate(current, row.product, flags);
+            const update = plan.merge && (row.update?.merge || row.appendTo) ? planImportMerge(current, row.product)
+              : planImportUpdate(current, row.product, plan.merge ? { fillImageOnly: true } : {});
             if (!update) {
               const saved = { row: rowNumber, status: 'SKIPPED', reason: 'Already up to date.', productId, replayed: false };
               tx.set(receiptRef, saved);

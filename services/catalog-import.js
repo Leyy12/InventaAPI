@@ -1,5 +1,5 @@
 import { comparisonText, normalizeSku, productIdentityKeys, projectProduct } from './product-contract.js';
-import { brandNameKey, catalogDigest, catalogError, strictPrice, validateCatalogProduct } from './catalog-contract.js';
+import { brandNameKey, catalogDigest, catalogError, validateCatalogProduct } from './catalog-contract.js';
 
 // Preserve recognized legacy aliases. No filename/semantic guessing or manual map existed.
 const aliases = {
@@ -10,30 +10,18 @@ const aliases = {
   category: 'category', drug_category: 'category', subcategory: 'category', sub_category: 'category',
   product_category: 'category', class: 'category', therapeutic_class: 'category', drug_class: 'category',
   sku: 'sku', barcode: 'sku', item_code: 'sku', product_code: 'sku', code: 'sku', item_id: 'sku', upc: 'sku',
-  price: 'price', srp: 'price', retail_price: 'price', unit_price: 'price', selling_price: 'price', market_price: 'price', msrp: 'price',
   size: 'size', dosage: 'size', unit: 'size', packaging: 'size', form: 'size', strength: 'size',
   pack_size: 'size', weight: 'size', volume: 'size', net_weight: 'size',
   flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expirationDate',
   expiry: 'expirationDate', expiry_date: 'expirationDate', exp_date: 'expirationDate', expirationdate: 'expirationDate',
   image_url: 'image_url', imageurl: 'image_url',
   // Column names of the admin panel's own catalog export.
-  pricing: 'price', specs: 'size', flavors: 'flavor', sizes: 'size',
+  specs: 'size', flavors: 'flavor', sizes: 'size',
 };
-const money = value => typeof value === 'number' ? `₱${value.toFixed(2)}` : String(value ?? '');
+// Products have no price: price columns are dropped without a warning.
+const PRICE_COLUMNS = new Set(['price', 'pricing', 'srp', 'retail_price', 'unit_price', 'selling_price', 'market_price', 'msrp']);
 const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
 const parts = value => String(value ?? '').split(/\s*,\s*/u).map(comparisonText).filter(Boolean);
-
-// Merge mode (the admin panel's importer) reads prices the way the catalog export
-// writes them: "12.50" or "₱12.50". Price is optional there: a blank price, or an
-// exported price range, keeps existing prices, and new products and sizes are
-// stored with price 0.
-function importPrice(text, merge) {
-  const value = String(text ?? '').trim();
-  if (!merge) return { price: strictPrice(value), missing: false };
-  const plain = value.replace(/^₱\s*/u, '').replace(/,/gu, '');
-  if (!plain || plain === '—' || /\d\s*[-–]\s*₱?\s*\d/u.test(value)) return { price: 0, missing: true };
-  return { price: strictPrice(plain), missing: false };
-}
 
 // Product-level fields a CSV row may change. With fillImageOnly an existing photo is
 // never replaced; a photo is only added where the product has none.
@@ -51,8 +39,7 @@ function productFieldChanges(old, csv, fields, { fillImageOnly = false } = {}) {
   }
   return { input, changes };
 }
-function applyVariantChanges(variant, row, changes, keepPrice) {
-  if (!keepPrice && variant.price !== row.price) { changes.push(`price: ${money(variant.price)} → ${money(row.price)}`); variant.price = row.price; }
+function applyVariantChanges(variant, row, changes) {
   for (const field of [...VARIANT_MATCH_FIELDS, 'expirationDate']) {
     if (row[field] && row[field] !== (variant[field] ?? '')) { changes.push(`${field}: "${variant[field] || ''}" → "${row[field]}"`); variant[field] = row[field]; }
   }
@@ -62,7 +49,7 @@ function applyVariantChanges(variant, row, changes, keepPrice) {
 // the CSV fills in are compared; blank CSV cells never clear existing data.
 // Returns { input, changes } for an edit, or null when there is nothing to change.
 // Throws when the CSV row cannot be tied to exactly one existing variant.
-export function planImportUpdate(existing, csv, { keepPrice = false, fillImageOnly = false } = {}) {
+export function planImportUpdate(existing, csv, { fillImageOnly = false } = {}) {
   const old = projectProduct(existing);
   if (!old) throw catalogError(409, 'Existing product could not be read.');
   const { input, changes } = productFieldChanges({ ...old, image_asset_id: existing.image_asset_id },
@@ -76,7 +63,7 @@ export function planImportUpdate(existing, csv, { keepPrice = false, fillImageOn
     if (matches.length !== 1 && variants.length === 1) matches = variants;
   }
   if (matches.length !== 1) throw catalogError(409, 'Matches an existing product but not exactly one of its variants; edit it by hand.');
-  applyVariantChanges(matches[0], row, changes, keepPrice);
+  applyVariantChanges(matches[0], row, changes);
   if (!changes.length) return null;
   input.variants = variants;
   return { input, changes };
@@ -90,7 +77,7 @@ export function planImportUpdate(existing, csv, { keepPrice = false, fillImageOn
 //   fields only, i.e. add a missing photo.
 // - Otherwise it is one new size/flavor: append it as a new variant.
 // Category, segment, name and brand of the existing product are never changed here.
-export function planImportMerge(existing, csv, { keepPrice = false } = {}) {
+export function planImportMerge(existing, csv) {
   const old = projectProduct(existing);
   if (!old) throw catalogError(409, 'Existing product could not be read.');
   const { input, changes } = productFieldChanges({ ...old, image_asset_id: existing.image_asset_id }, csv, ['image_url'], { fillImageOnly: true });
@@ -103,7 +90,7 @@ export function planImportMerge(existing, csv, { keepPrice = false } = {}) {
   }
   if (matches.length > 1) throw catalogError(409, 'Matches more than one size of the existing product; edit it by hand.');
   let kind = 'update';
-  if (matches.length === 1) applyVariantChanges(matches[0], row, changes, keepPrice);
+  if (matches.length === 1) applyVariantChanges(matches[0], row, changes);
   else if (!sku && (!given.length || given.every(field => {
     const known = new Set(variants.map(variant => comparisonText(variant[field])).filter(Boolean));
     return parts(row[field]).every(part => known.has(part));
@@ -112,7 +99,7 @@ export function planImportMerge(existing, csv, { keepPrice = false } = {}) {
   } else if (given.some(field => parts(row[field]).length > 1)) {
     throw catalogError(409, 'Lists several sizes or flavors that are not all on the existing product; edit it by hand.');
   } else {
-    const variant = { price: row.price };
+    const variant = {};
     for (const field of [...VARIANT_MATCH_FIELDS, 'sku', 'expirationDate']) if (row[field]) variant[field] = row[field];
     variants.push(variant); kind = 'append';
     changes.push(`adds ${[row.size, row.flavor].filter(Boolean).join(' ') || row.sku || 'a variant'}`);
@@ -124,7 +111,7 @@ export function planImportMerge(existing, csv, { keepPrice = false } = {}) {
 
 // options.merge: the admin panel's importer. Rows equal to a catalog product are
 // skipped, existing photos are never replaced, a new size of an existing product
-// (same Brand + Name) is appended to it, and blank prices keep existing ones.
+// (same Brand + Name) is appended to it.
 // options.requireImage: rows without an image link are skipped.
 export function previewCatalogImport(matrix, records, { merge = false, requireImage = false } = {}) {
   // No row-count cap: large files are stored in chunks by the preview handler.
@@ -136,12 +123,12 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
   const headers = matrix[0].map(raw => {
     const key = raw.replace(/^\uFEFF/u, '').trim().toLowerCase().replace(/\s+/gu, '_');
     const field = Object.hasOwn(aliases, key) ? aliases[key] : null;
-    if (!field) warnings.push(`Ignored unknown column: ${raw || '(blank)'}`);
+    if (!field && !PRICE_COLUMNS.has(key)) warnings.push(`Ignored unknown column: ${raw || '(blank)'}`);
     else if (seen.has(field)) throw catalogError(400, `Duplicate column mapping for ${field}.`);
     if (field) seen.add(field);
     return field;
   });
-  const missing = ['name', 'category', 'segment', ...(merge ? [] : ['price'])].filter(field => !seen.has(field));
+  const missing = ['name', 'category', 'segment'].filter(field => !seen.has(field));
   if (missing.length) throw catalogError(400, `Missing required columns: ${missing.join(', ')}.`);
   // Index the catalog once so each row looks up matches instead of rescanning
   // every product (thousands of rows x thousands of products otherwise).
@@ -159,11 +146,9 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
       const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
-      const { price, missing: noPrice } = importPrice(fields.price, merge);
       row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
-        variants: [{ size, flavor, sku, expirationDate, price }] });
+        variants: [{ size, flavor, sku, expirationDate }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.
-      if (noPrice) row.keepPrice = true;
       if (requireImage && !row.product.image_url) {
         row.status = 'NO_IMAGE'; row.reason = 'No image link; skipped.';
         return row;
@@ -177,7 +162,7 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
         : row.possibleDuplicates.length ? 'POSSIBLE_DUPLICATE' : 'NEW';
       row.reason = row.matches.length > 1 ? 'Matches more than one existing product; skipped.'
         : row.possibleDuplicates.length ? 'Brand + Product Name matches different canonical identities; review before creation.' : '';
-      const flags = merge ? { keepPrice: !!row.keepPrice, fillImageOnly: true } : {};
+      const flags = merge ? { fillImageOnly: true } : {};
       if (row.matches.length === 1) {
         const record = byId.get(row.matches[0]);
         try {

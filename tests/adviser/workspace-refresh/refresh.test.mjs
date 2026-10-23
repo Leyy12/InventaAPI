@@ -285,7 +285,7 @@ test('Admin catalog search/segment/status remain stable with one Firestore load 
     '@/lib/product-media-client': { uploadProductImage: stub },
     '@/lib/data/firestore-client': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
       { id: 'product', data: () => ({ name: 'Synthetic Rice', brand: 'Brand', segment: 'Grocery', status: 'Active', variants: [] }) }] }; } },
-    '@/lib/catalog-client': { catalogRequest: stub, catalogPrice: () => 1, brandNameWarning: () => '' },
+    '@/lib/catalog-client': { catalogRequest: stub, brandNameWarning: () => '' },
     '@/lib/firebase/config': { db: {}, auth: {} }, '@/components/admin/ImportCsvModal': { default: stub },
   }, { ...b, setTimeout: c.schedule, clearTimeout: c.cancel });
   h.mount(Page); await flush(); assert.equal(reads, 1);

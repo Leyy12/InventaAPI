@@ -29,7 +29,7 @@ test.before(async () => {
     await db._run(client => client.query('truncate public.users, public.notifications, public.products, public.audit_logs, public.system, public.api_keys'));
     await db.collection('users').doc('admin1').set({ uid: 'admin1', role: 'Admin' });
     await db.collection('users').doc('bob').set({ uid: 'bob', role: 'Developer', plan: 'Free', apiRequestLimit: 50, email: 'bob@example.com' });
-    await db.collection('products').doc('p1').set({ name: 'Coke', segment: 'Grocery' });
+    await db.collection('products').doc('p1').set({ name: 'Coke', segment: 'Grocery', price: 10, variants: [{ size: '1L', price: 10 }] });
     await db.collection('api_keys').doc('k1').set({ userId: 'bob', status: 'active', key: 'secret' });
     handler = createClientDbHandler({ getDb: () => db, verifyIdToken: async token => {
         if (!tokens[token]) throw new Error('bad token');
@@ -107,4 +107,11 @@ test('field names cannot reach the shared Object prototype', { skip }, async () 
         assert.equal(result.status, 400);
         assert.equal(({}).polluted, undefined);
     }
+});
+
+test('product prices are never sent to the browsers', { skip }, async () => {
+    const [doc] = (await call(null, { op: 'query', collection: 'products' })).docs;
+    assert.equal(doc.data.price, undefined);
+    assert.deepEqual(doc.data.variants, [{ size: '1L' }]);
+    assert.equal((await call(null, { op: 'get', path: 'products/p1' })).data.price, undefined);
 });

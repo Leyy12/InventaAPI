@@ -1,6 +1,7 @@
 import {
   comparisonText,
   projectProduct,
+  withoutPrices,
 } from './product-contract.js';
 
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
@@ -79,21 +80,6 @@ function variantIdentifier(variant) {
   return `${variant.flavor || ''}|${variant.size || ''}`;
 }
 
-function lowestPricedVariant(variants) {
-  if (!variants.length) return null;
-  return variants.reduce((best, candidate) => {
-    if (!best) return candidate;
-    const bestPrice = typeof best.price === 'number' ? best.price : parseFloat(best.price) || Number.POSITIVE_INFINITY;
-    const candidatePrice = typeof candidate.price === 'number'
-      ? candidate.price
-      : parseFloat(candidate.price) || Number.POSITIVE_INFINITY;
-    return candidatePrice < bestPrice ? candidate : best;
-  }, null);
-}
-
-function basePrice(value) {
-  return typeof value === 'number' ? value : parseFloat(value) || null;
-}
 
 function availabilityIso(value) {
   if (!value) return null;
@@ -116,16 +102,15 @@ export function formatDaaSProduct(product, {
   const variants = hasPartialSelection
     ? variantPayloads.filter(variant => selectedVariants.includes(variantIdentifier(variant)))
     : [...variantPayloads];
-  const baseVariant = lowestPricedVariant(variants);
+  const baseVariant = variants[0] ?? null;
 
-  return {
+  return withoutPrices({
     id: product.id,
     sku: baseVariant?.sku || null,
     name: product.name,
     description: product.description || '',
     category: product.category,
     segment: product.segment,
-    price: basePrice(baseVariant?.price),
     size: baseVariant?.size || null,
     image_url: product.image_url || '',
     metadata: product.metadata || {},
@@ -133,5 +118,5 @@ export function formatDaaSProduct(product, {
     variants,
     expirationDate: baseVariant?.expirationDate || null,
     availableToConsumerSince: availabilityIso(availability?.availableSince),
-  };
+  });
 }

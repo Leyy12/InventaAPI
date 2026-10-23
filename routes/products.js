@@ -1,7 +1,7 @@
 import express from 'express';
 import { getFirestore } from '../database/firestore.js';
 import { createCustomerCatalogHandler } from '../services/customer-catalog.js';
-import { projectProduct } from '../services/product-contract.js';
+import { projectProduct, withoutPrices } from '../services/product-contract.js';
 
 const router = express.Router();
 
@@ -15,7 +15,7 @@ router.get('/:id', async (req, res) => {
     if (!doc.exists || !projectProduct(doc.data(), doc.id)?.visibility.visible) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json({ product: { id: doc.id, ...doc.data() } });
+    res.json({ product: withoutPrices({ id: doc.id, ...doc.data() }) });
   } catch (error) {
     console.error('Error fetching product:', error);
     res.status(500).json({ error: 'Failed to fetch product' });

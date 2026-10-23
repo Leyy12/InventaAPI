@@ -63,11 +63,15 @@ test('deletion starting during submit retries transaction and denies new record'
   const f = fixture(); f.db.beforeCommit = () => { f.db.beforeCommit = null; f.db.seed('users/customer', { accountState: 'deleting' }); };
   assert.equal((await f.submit()).statusCode, 403); assert.equal(f.submissions().length, 0);
 });
+test('a price sent with a submission is dropped, never stored', () => {
+  for (const price of [25, -1, '10', null]) {
+    assert.deepEqual(validateSubmissionContent({ ...content, variants: [{ size: '50g', price }] }).variants, [{ size: '50g' }]);
+  }
+});
 for (const segment of ['Grocery', 'Pharmacy', 'Hardware', 'medicine', 'tools']) test(`canonical segment ${segment}`, () => {
   assert.ok(['Grocery', 'Pharmacy', 'Hardware'].includes(validateSubmissionContent({ ...content, segment }).segment));
 });
-for (const change of [{ segment: 'Other' }, { name: '' }, { category: '' }, { variants: [{ price: -1 }] },
-  { variants: [{ price: '10' }] }, { variants: [{ price: Infinity }] }, { variants: [{ status: 'Active' }] },
+for (const change of [{ segment: 'Other' }, { name: '' }, { category: '' }, { variants: [{ status: 'Active' }] },
   { variants: Array(51).fill({}) }, { name: 'x'.repeat(161) }, { description: 'x'.repeat(4001) }]) {
   test(`invalid content ${Object.keys(change)[0]} ${JSON.stringify(change).slice(0, 70)}`, async () => {
     assert.equal((await fixture().submit({ body: { ...content, ...change } })).statusCode, 400);
@@ -133,7 +137,7 @@ test('approval creates canonical visible DaaS-compatible product and review meta
   assert.equal(result.statusCode, 200); assert.equal(f.products().length, 1);
   const product = f.products()[0][1], projection = projectProduct(product);
   assert.equal(projection.visibility.visible, true); assert.deepEqual(projection.identityKeys, ['sku:ABC-123']);
-  assert.equal(projection.image_url, content.image_url.trim()); assert.equal(projection.price, 25);
+  assert.equal(projection.image_url, content.image_url.trim()); assert.equal(projection.price, undefined);
   const row = f.db.read(`product_requests/${created.body.id}`);
   assert.equal(row.status, 'approved'); assert.equal(row.reviewedBy, 'admin'); assert.equal(row.reviewedAt, at);
   assert.equal(row.productId, result.body.productId); assert.equal((await f.review(created.body.id)).body.replayed, true);

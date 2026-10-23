@@ -52,15 +52,10 @@ export function validateSubmissionContent(input) {
     sku: text(input.sku, 120), image_url,
     ...(input.image_asset_id ? { image_asset_id: input.image_asset_id } : {}),
     variants: variants.map(variant => {
+      // Products have no price: an old client may still send one; it is dropped, never stored.
       object(variant, [...fields, 'price']);
       const result = {};
       for (const field of fields) if (variant[field] !== undefined) result[field] = text(variant[field], 200);
-      if (variant.price !== undefined) {
-        if (typeof variant.price !== 'number' || !Number.isFinite(variant.price) || variant.price < 0 || variant.price > 1e9) {
-          throw submissionError(400, 'Variant price must be a finite non-negative number.');
-        }
-        result.price = variant.price;
-      }
       return result;
     }),
   };
