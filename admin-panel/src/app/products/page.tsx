@@ -15,6 +15,7 @@ import { collection, getDocs } from "@/lib/data/firestore-client";
 import { catalogRequest, brandNameWarning } from "@/lib/catalog-client";
 import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
+import MergeDuplicatesModal from "@/components/admin/MergeDuplicatesModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface ProductVariant {
@@ -879,6 +880,7 @@ export default function MasterProductCatalogPage() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
   const [page, setPage] = useState(0);
   const [importNotice, setImportNotice] = useState("");
   const query = search;
@@ -982,6 +984,11 @@ export default function MasterProductCatalogPage() {
           <button onClick={() => exportCSV(filtered, imageFilter === "missing" ? "products_missing_images.csv" : "master_catalog.csv")}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
             <Download className="w-3.5 h-3.5" /> Export CSV
+          </button>
+          <button onClick={() => setShowMergeModal(true)}
+            title="Combine products that are only different sizes of one product"
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
+            <Layers className="w-3.5 h-3.5" /> Merge duplicates
           </button>
           <button onClick={() => setShowImportModal(true)}
             className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white border border-blue-500/50 flex items-center gap-1.5 transition-colors shadow-sm shadow-blue-900/30">
@@ -1281,6 +1288,14 @@ export default function MasterProductCatalogPage() {
           onClose={() => setShowAddModal(false)}
           onAdded={handleAdded}
           existingProducts={products}
+        />
+      )}
+
+      {/* Merge Duplicates Modal */}
+      {showMergeModal && (
+        <MergeDuplicatesModal
+          onClose={() => setShowMergeModal(false)}
+          onFinished={message => { setShowMergeModal(false); setImportNotice(message); void fetchProducts(); }}
         />
       )}
 

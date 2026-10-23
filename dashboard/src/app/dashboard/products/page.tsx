@@ -51,6 +51,8 @@ function isFreePlan(plan: string | undefined): boolean {
 
 // ==================== MAIN COMPONENT ====================
 
+const PRODUCTS_PER_PAGE = 60;
+
 export default function ProductCatalogPage() {
   const { user } = useAuth();
   return <CustomerCatalogSession key={user?.uid ?? 'unauthenticated'} />;
@@ -242,6 +244,18 @@ function CustomerCatalogSession() {
     return matchesCategory(product, activeCategory) && (isPicked
       || (selectionFilter !== 'selected' && matchesKeyUsage(product.id!, activeKeyUsageFilter, keyUsage, keyNames)));
   });
+  // Only one page of cards is drawn; thousands of cards at once made the page lag.
+  // Search, filters and Select All still cover every matching product.
+  const [productPage, setProductPage] = useState(0);
+  const productPageCount = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+  const currentProductPage = Math.min(productPage, productPageCount - 1);
+  const pageStart = currentProductPage * PRODUCTS_PER_PAGE;
+  const pageProducts = filteredProducts.slice(pageStart, pageStart + PRODUCTS_PER_PAGE);
+  useEffect(() => { setProductPage(0); }, [searchQuery, selectionFilter, productCategory, keyUsageFilter, paidSegment]);
+  const goToProductPage = (next: number) => {
+    setProductPage(next);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const selectionPlaygroundHref = playgroundHref(products, selectedProducts, selectedVariants);
   const presentationFiltered = selectionFilter !== 'all' || activeCategory !== ALL_CATEGORIES || activeKeyUsageFilter !== 'all';
   const resetPresentationFilters = () => { setSelectionFilter('all'); setProductCategory(ALL_CATEGORIES); setKeyUsageFilter('all'); };
@@ -861,7 +875,7 @@ DAAS_API_KEY=${generatedKey}
         </div>
       ) : (
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
-          {filteredProducts.map((product) => {
+          {pageProducts.map((product) => {
             const isIncluded = activeTrial && trialState.included.has(product.id!);
             // A new Trial key may reuse included products; only new products need a free slot.
             const selectionDisabled = upgradeRequired || !trialReady || generating || (activeTrial && (!trialState.canToggle
@@ -990,6 +1004,18 @@ DAAS_API_KEY=${generatedKey}
             );
           })}
         </div>
+      )}
+      {productPageCount > 1 && (
+        <nav aria-label="Product pages" className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+          <span>Showing {(pageStart + 1).toLocaleString()}–{(pageStart + pageProducts.length).toLocaleString()} of {filteredProducts.length.toLocaleString()} products</span>
+          <span className="flex items-center gap-2">
+            <button type="button" onClick={() => goToProductPage(currentProductPage - 1)} disabled={currentProductPage === 0}
+              className="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800 disabled:opacity-40">Previous</button>
+            <span>Page {currentProductPage + 1} of {productPageCount}</span>
+            <button type="button" onClick={() => goToProductPage(currentProductPage + 1)} disabled={currentProductPage >= productPageCount - 1}
+              className="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800 disabled:opacity-40">Next</button>
+          </span>
+        </nav>
       )}
       </div>
       </section>

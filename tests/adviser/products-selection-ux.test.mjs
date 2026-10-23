@@ -92,8 +92,9 @@ test('search composes with selection; selection empty and search empty are disti
 }));
 
 test('paid selection composes with verified current segment; full segment availability remains authoritative', () => using({ trial: false }, async f => {
-  await f.click(f.card('hardware-0')); await f.click(f.card('grocery-0'));
-  await f.segment('Grocery'); await f.filter('selected');
+  // 60 cards per page: open each segment to reach its first card.
+  await f.segment('Hardware'); await f.click(f.card('hardware-0'));
+  await f.segment('Grocery'); await f.click(f.card('grocery-0')); await f.filter('selected');
   assert.deepEqual(ids(f), ['grocery-0']); assert.match(text(f.find(n => n.props['aria-label'] === 'Catalog availability')), /60\s+Grocery/);
   await f.filter('not-selected'); await f.search('milk');
   assert.equal(f.cards().length, 30); assert.ok(ids(f).every(id => id.startsWith('grocery-')));
@@ -101,7 +102,8 @@ test('paid selection composes with verified current segment; full segment availa
   await f.search(''); await f.segment('Hardware'); await f.filter('selected');
   assert.deepEqual(ids(f), ['hardware-0']);
   await f.click(f.button('Clear All')); assert.equal(f.cards().length, 0);
-  assert.equal(f.calls.length, 3); assert.equal(f.keyCalls.length, 1); // One read labels products already in a key.
+  // One catalog read per view opened (start, Hardware, Grocery, Hardware again); one read labels products already in a key.
+  assert.equal(f.calls.length, 4); assert.equal(f.keyCalls.length, 1);
 }));
 
 test('full Trial: disabled but unselected products remain in Not Selected; Select All cannot bypass capacity', () => using({ included: 50 }, async f => {
