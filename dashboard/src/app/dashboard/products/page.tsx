@@ -185,7 +185,7 @@ function CustomerCatalogSession() {
     if (!user || !activeSegment) return;
     const refresh = createCatalogRefresh({ segment: activeSegment,
       read: signal => loadSegmentCatalog(async (offset, pageSignal) => {
-        const query = new URLSearchParams({ businessSegment: activeSegment, limit: '200', offset: String(offset) });
+        const query = new URLSearchParams({ businessSegment: activeSegment, limit: '1000', offset: String(offset) });
         const response = await fetch(`${API_URL}/api/v1/products?${query}`, { signal: pageSignal, cache: 'no-store' });
         if (!response.ok) throw new Error('Catalog unavailable.');
         return await response.json() as CatalogPage;

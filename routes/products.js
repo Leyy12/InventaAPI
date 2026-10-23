@@ -5,7 +5,7 @@ import { projectProduct, withoutPrices } from '../services/product-contract.js';
 
 const router = express.Router();
 
-router.get('/', createCustomerCatalogHandler({ getDb: getFirestore }));
+router.get('/', createCustomerCatalogHandler({ getDb: getFirestore, cacheMs: 30000 }));
 
 router.get('/:id', async (req, res) => {
   try {

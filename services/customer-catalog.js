@@ -16,7 +16,7 @@ export function catalogQuery(query = {}) {
   if (query.businessSegment !== undefined && query.segment !== undefined
     && normalizeSegment(query.segment) !== segment) throw badQuery('Conflicting business segments.');
   if (query.search !== undefined && (typeof query.search !== 'string' || query.search.length > 200)) throw badQuery('Invalid catalog search.');
-  const limit = integer(query.limit, null, 500);
+  const limit = integer(query.limit, null, 1000);
   if (limit === 0) throw badQuery('Invalid catalog pagination.');
   return { segment, search: comparisonText(query.search), limit, offset: integer(query.offset, 0, Number.MAX_SAFE_INTEGER) };
 }
@@ -41,17 +41,33 @@ export function catalogResult(documents, { segment, search = '', limit = null, o
     pagination: { total: matching.length, offset, limit: limit ?? matching.length, returned: products.length } };
 }
 
-export function createCustomerCatalogHandler({ getDb }) {
+// `cacheMs` (off by default): a page request reuses the catalog read by the previous
+// page of the same segment for that long, while the catalog writer's revision is
+// unchanged. A client loads a segment in several pages; without this each page read
+// every product again (5,000+), and the full load ran out of time.
+export function createCustomerCatalogHandler({ getDb, cacheMs = 0, now = () => Date.now() }) {
+  const cache = new Map();
   return async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
       const filter = catalogQuery(req.query);
-      let query = getDb().collection('products');
-      // Canonical `segment` is already persisted by the catalog writer and
-      // submission approval. Single-field equality needs no composite index.
-      if (filter.segment) query = query.where('segment', '==', filter.segment);
-      const snapshot = await query.get();
-      return res.json(catalogResult(snapshot.docs, filter));
+      const db = getDb();
+      const key = filter.segment ?? '*';
+      let revision = null, docs = null;
+      if (cacheMs > 0) {
+        revision = (await db.collection('catalog_control').doc('writer').get()).data()?.revision ?? 0;
+        const hit = cache.get(key);
+        if (hit && hit.revision === revision && now() - hit.at < cacheMs) docs = hit.docs;
+      }
+      if (!docs) {
+        let query = db.collection('products');
+        // Canonical `segment` is already persisted by the catalog writer and
+        // submission approval. Single-field equality needs no composite index.
+        if (filter.segment) query = query.where('segment', '==', filter.segment);
+        docs = (await query.get()).docs;
+        if (cacheMs > 0) cache.set(key, { revision, docs, at: now() });
+      }
+      return res.json(catalogResult(docs, filter));
     } catch (error) {
       return res.status(error.status === 400 ? 400 : 500).json({
         error: error.status === 400 ? error.message : 'Failed to fetch products',
