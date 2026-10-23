@@ -960,7 +960,7 @@ DAAS_API_KEY=${generatedKey}
 
                   {/* Variant chips */}
                   {product.variants && product.variants.length > 0 ? (
-                    <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 mt-2 overflow-y-auto pr-1" onClick={e => e.stopPropagation() /* Prevent double toggle if clicking container */}>
+                    <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 mt-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" onClick={e => e.stopPropagation() /* Prevent double toggle if clicking container */}>
                       {product.variants.map((v, i) => {
                         const variantId = `${v.flavor || ''}|${v.size || ''}`;
                         const isVarSelected = productVars.has(variantId);
