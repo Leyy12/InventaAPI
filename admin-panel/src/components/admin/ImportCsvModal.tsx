@@ -26,7 +26,6 @@ const SEGMENT_PILL: Record<string, string> = {
   Grocery: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
   Hardware: 'border-orange-500/40 bg-orange-500/10 text-orange-300',
 };
-const peso = (value: number | null | undefined) => typeof value === 'number' ? `₱${value.toFixed(2)}` : '—';
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
@@ -139,8 +138,8 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
     URL.revokeObjectURL(url);
   };
   const downloadTemplate = () => {
-    const csv = 'name,brand,segment,category,size,flavor,price,sku,image_url\n'
-      + '"Sample Item","Sample Brand","Grocery","Snacks","330ml","Original","25.00","SAMPLE-330","https://example.com/sample.jpg"';
+    const csv = 'name,brand,segment,category,size,flavor,sku,image_url\n'
+      + '"Sample Item","Sample Brand","Grocery","Snacks","330ml","Original","SAMPLE-330","https://example.com/sample.jpg"';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     Object.assign(document.createElement('a'), { href: url, download: 'import_template.csv' }).click();
     URL.revokeObjectURL(url);
@@ -225,9 +224,9 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border border-slate-700/60">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[680px] text-sm">
                 <thead><tr className="text-left text-[11px] uppercase tracking-wider text-slate-400">
-                  {['#', 'Name', 'Brand', 'Segment', 'Category', 'Size', 'Price', 'SKU'].map(label => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}
+                  {['#', 'Name', 'Brand', 'Segment', 'Category', 'Size', 'SKU'].map(label => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}
                 </tr></thead>
                 <tbody>
                   {visible.map(row => {
@@ -244,11 +243,10 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
                       <td className="px-4 py-3">{product?.segment && <span className={'rounded-full border px-2.5 py-0.5 text-xs ' + (SEGMENT_PILL[product.segment] ?? 'border-slate-600 text-slate-300')}>{product.segment}</span>}</td>
                       <td className="max-w-[170px] truncate px-4 py-3 text-slate-300" title={product?.category}>{product?.category}</td>
                       <td className="max-w-[110px] truncate px-4 py-3 font-mono text-slate-300" title={[product?.size, product?.flavor].filter(Boolean).join(' · ')}>{product?.size || product?.flavor}</td>
-                      <td className={'px-4 py-3 font-mono font-semibold ' + (typeof product?.price === 'number' ? 'text-emerald-400' : 'text-slate-500')}>{peso(product?.price)}</td>
                       <td className="max-w-[130px] truncate px-4 py-3 font-mono text-slate-400">{product?.sku}</td>
                     </tr>;
                   })}
-                  {!visible.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">No rows in this tab.</td></tr>}
+                  {!visible.length && <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No rows in this tab.</td></tr>}
                 </tbody>
               </table>
             </div>

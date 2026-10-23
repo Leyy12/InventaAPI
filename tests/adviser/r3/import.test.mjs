@@ -110,7 +110,7 @@ test('files of any row count preview; malformed inputs are still rejected', () =
   assert.throws(() => previewCatalogImport([headers, [1]], []), /at least 1 row/);
 });
 
-test('merge mode reads the catalog export columns and its price formats', () => {
+test('merge mode reads the catalog export columns; price is optional', () => {
   const head = ['Name', 'Brand', 'Segment', 'Category', 'Flavors', 'Specs', 'Pricing', 'Status', 'image_url'];
   const result = previewCatalogImport([head,
     ['Coke', 'Coca-Cola', 'Grocery', 'Drinks', 'Regular', '330ml', '₱25.50', 'Active', 'https://x.invalid/a.jpg'],
@@ -118,8 +118,8 @@ test('merge mode reads the catalog export columns and its price formats', () => 
   ], [], { merge: true });
   assert.equal(result.rows[0].status, 'NEW');
   assert.deepEqual(result.rows[0].product.variants[0], { size: '330ml', flavor: 'Regular', sku: '', expirationDate: '', price: 25.5 });
-  assert.equal(result.rows[1].status, 'INVALID');
-  assert.match(result.rows[1].reason, /Add a price/u);
+  assert.equal(result.rows[1].status, 'NEW');
+  assert.equal(result.rows[1].product.variants[0].price, 0);
   assert.deepEqual(result.warnings, ['Ignored unknown column: Status']);
 });
 test('merge mode: an exported row listing every size only fills the photo; unknown listed sizes are skipped', () => {
