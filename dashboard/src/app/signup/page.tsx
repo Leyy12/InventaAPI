@@ -18,6 +18,12 @@ const BUSINESS_SEGMENTS = [
   "Pharmacy",
   "Hardware"
 ];
+// Business Name example that matches the chosen segment.
+const BUSINESS_NAME_EXAMPLES: Record<string, string> = {
+  Grocery: "e.g. JD Grocery",
+  Pharmacy: "e.g. JD Pharmacy",
+  Hardware: "e.g. JD Hardware",
+};
 
 // Verification calls the API origin directly so per-IP limits see the real client.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5002";
@@ -350,7 +356,7 @@ function SignupPageInner() {
                   onChange={handleChange}
                   required
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
-                  placeholder="e.g. JD Hardware"
+                  placeholder={BUSINESS_NAME_EXAMPLES[formData.businessSegment] ?? "e.g. JD Store"}
                 />
               </div>
             </div>
