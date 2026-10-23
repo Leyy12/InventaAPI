@@ -22,7 +22,8 @@ import { readCatalog, requireCatalogAdmin } from './catalog-writer.js';
 
 const SIZE = /\b\d+(?:[.,]\d+)?\s*(?:ml|l|ltr|g|gm|gms|grams?|kg|kgs|mg|oz|pcs?|s)\b/giu;
 const words = value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/gu, ' ').trim();
-export const nameKey = name => words(String(name ?? '').toLowerCase().replace(SIZE, ' '));
+// Word order and capitals do not matter: "100% Pure Tuna" = "pure tuna 100%".
+export const nameKey = name => [...new Set(words(String(name ?? '').toLowerCase().replace(SIZE, ' ')).split(' ').filter(Boolean))].sort().join(' ');
 const brandKey = brand => String(brand ?? '').toLowerCase().replace(/[^a-z0-9]+/gu, '');
 const isGeneric = brand => ['', 'generic'].includes(brandKey(brand));
 // Name shown for the merged product: the kept name without its size.
@@ -42,7 +43,7 @@ export function planSizeMerges(records) {
     const key = nameKey(data.name);
     if (!key) continue;
     const first = words(data.brand).split(' ')[0];
-    const part = isGeneric(data.brand) ? '*' : ` ${key} `.includes(` ${first} `) ? 'in-name' : brandKey(data.brand);
+    const part = isGeneric(data.brand) ? '*' : key.split(' ').includes(first) ? 'in-name' : brandKey(data.brand);
     const groupKey = `${data.segment}\u0000${key}`;
     if (!byName.has(groupKey)) byName.set(groupKey, []);
     byName.get(groupKey).push({ id: record.id, data, part });
@@ -75,30 +76,38 @@ export function planSizeMerges(records) {
   return groups.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// The kept product with every size, and how each removed size maps onto it.
-export function mergeProductData(keeper, duplicates, { name, brand }) {
-  const variants = keeper.variants.map(variant => ({ ...variant }));
-  const seen = new Map(variants.map(variant => [variantKey(variant), variant]));
-  const selectionMap = new Map(); // `${productId}\u0000${flavor|size}` -> kept product's flavor|size
-  for (const { id, data } of duplicates) {
+// The kept product with every size, and how each old size maps onto it.
+// `flavors` ({ productId: "Adobo" }) names the kind each product becomes, for its
+// sizes that have no flavor yet. A merged product's own photo stays on its sizes.
+export function mergeProductData(keeper, duplicates, { name, brand, keeperId = 'keeper', flavors = {} }) {
+  const photoDonor = [keeper, ...duplicates.map(item => item.data)].find(item => item.image_url);
+  const mainImage = keeper.image_url || (keeper.image_asset_id ? '' : photoDonor?.image_url || '');
+  const variants = [], seen = new Map();
+  const selectionMap = new Map(); // `${productId}\u0000${flavor|size}` -> merged product's flavor|size
+  for (const { id, data } of [{ id: keeperId, data: keeper }, ...duplicates]) {
+    const flavor = typeof flavors[id] === 'string' ? flavors[id].trim() : '';
     for (const variant of data.variants || []) {
-      const key = variantKey(variant);
+      const next = { ...variant, ...(flavor && !String(variant.flavor ?? '').trim() ? { flavor } : {}) };
+      if (!next.image_url && data.image_url && data.image_url !== mainImage) next.image_url = data.image_url;
+      const key = variantKey(next);
       let target = seen.get(key);
-      if (!target) { target = { ...variant }; variants.push(target); seen.set(key, target); }
+      if (!target) { target = next; variants.push(target); seen.set(key, target); }
+      else if (!target.image_url && next.image_url) target.image_url = next.image_url; // e.g. the Adobo can's photo onto "Adobo · 155g"
       selectionMap.set(`${id}\u0000${selectionKey(variant)}`, selectionKey(target));
     }
   }
   if (variants.length > 50) throw catalogError(409, 'Merged product would have more than 50 sizes.');
-  const photoDonor = [keeper, ...duplicates.map(item => item.data)].find(item => item.image_url);
   const input = { name, brand, segment: keeper.segment, category: keeper.category, description: keeper.description ?? '',
-    sku: keeper.sku ?? '', variants, image_url: keeper.image_url || (keeper.image_asset_id ? '' : photoDonor?.image_url || '') };
+    sku: keeper.sku ?? '', variants, image_url: mainImage };
   if (keeper.image_asset_id) input.image_asset_id = keeper.image_asset_id;
   if (keeper.status) input.status = keeper.status;
   return { input, selectionMap };
 }
 
 // Merges one group in one transaction. Returns what happened for the report.
-export async function mergeCatalogGroup({ db, uid, keeperId, duplicateIds, at, deriveReservationId = identityId }) {
+// `manual` merges are chosen by an Admin (any products of one segment, a name of their
+// choice, a flavor per product); otherwise the group must still be in the automatic plan.
+export async function mergeCatalogGroup({ db, uid, keeperId, duplicateIds, at, manual = null, deriveReservationId = identityId }) {
   return db.runTransaction(async tx => {
     await requireCatalogAdmin(tx, db, uid);
     const controlRef = db.collection('catalog_control').doc('writer');
@@ -107,12 +116,24 @@ export async function mergeCatalogGroup({ db, uid, keeperId, duplicateIds, at, d
     const records = await readCatalog(tx, db);
     const audit = auditCatalog(records, [], { deriveReservationId });
     if (!audit.ok) throw catalogError(409, 'Catalog audit required: historical collision or malformed product.');
-    // The plan is re-derived inside the transaction: only a still-valid group is merged.
-    const group = planSizeMerges(records).find(item => item.keeperId === keeperId
-      && item.duplicateIds.length === duplicateIds.length && item.duplicateIds.every(id => duplicateIds.includes(id)));
-    if (!group) throw catalogError(409, 'These products changed; refresh the list and try again.');
     const byId = new Map(records.map(record => [record.id, record.data]));
     const keeper = byId.get(keeperId), duplicates = duplicateIds.map(id => ({ id, data: byId.get(id) }));
+    let group;
+    if (manual) {
+      if (!keeper || duplicates.some(item => !item.data) || new Set([keeperId, ...duplicateIds]).size !== duplicateIds.length + 1) {
+        throw catalogError(409, 'These products changed; refresh the catalog and try again.');
+      }
+      if (duplicates.some(item => item.data.segment !== keeper.segment)) throw catalogError(400, 'Only products of one segment can be merged.');
+      const brands = [keeper, ...duplicates.map(item => item.data)].map(item => item.brand).filter(brand => !isGeneric(brand));
+      group = { name: manual.name, brand: keeper.brand && !isGeneric(keeper.brand) ? keeper.brand : brands[0] ?? keeper.brand ?? '',
+        keeperId, flavors: manual.flavors || {} };
+    } else {
+      // The plan is re-derived inside the transaction: only a still-valid group is merged.
+      group = planSizeMerges(records).find(item => item.keeperId === keeperId
+        && item.duplicateIds.length === duplicateIds.length && item.duplicateIds.every(id => duplicateIds.includes(id)));
+      if (!group) throw catalogError(409, 'These products changed; refresh the list and try again.');
+      group = { ...group, keeperId };
+    }
     const { input, selectionMap } = mergeProductData(keeper, duplicates, group);
     const product = { ...withoutPrices({ ...keeper, ...validateCatalogProduct(input, keeper) }), updatedAt: at,
       catalogRevision: (keeper.catalogRevision ?? 0) + 1 };
@@ -161,15 +182,15 @@ export async function remapApiKeys(db, { keeperId, removed, selectionMap }) {
     const full = Array.isArray(data.linkedProductIds) ? data.linkedProductIds : [];
     const partial = data.linkedVariantSelections && typeof data.linkedVariantSelections === 'object' && !Array.isArray(data.linkedVariantSelections)
       ? data.linkedVariantSelections : {};
-    if (!full.some(id => removedSet.has(id)) && !Object.keys(partial).some(id => removedSet.has(id))) continue;
+    if (!full.some(id => removedSet.has(id)) && !Object.keys(partial).some(id => removedSet.has(id) || id === keeperId)) continue;
     const ref = db.collection('api_keys').doc(doc.id);
     await db.runTransaction(async tx => {
       const current = (await tx.get(ref)).data() || {};
       const ids = Array.isArray(current.linkedProductIds) ? [...current.linkedProductIds] : [];
       const selections = { ...(current.linkedVariantSelections && typeof current.linkedVariantSelections === 'object' ? current.linkedVariantSelections : {}) };
       const keeperFull = ids.includes(keeperId);
-      const picked = new Set(Array.isArray(selections[keeperId]) ? selections[keeperId] : []);
       const mapped = (id, key) => selectionMap[`${id}\u0000${key}`];
+      const picked = new Set((Array.isArray(selections[keeperId]) ? selections[keeperId] : []).map(key => mapped(keeperId, key) ?? key));
       for (const id of removed) {
         if (ids.includes(id)) {
           // A whole removed product = all of its sizes on the kept product.
