@@ -40,11 +40,13 @@ test('actual product pages mount managed pickers and retain HTTPS compatibility 
 });
 for (const app of frontends) test(`${app}: image markup wires validated URL, local fallback and reset on URL changes`, () => {
   const page = read(app + '/src/app/' + (app === 'dashboard' ? 'dashboard/' : '') + 'products/page.tsx');
-  assert.match(page, /<div key=\{productImageSource\(product\)\}/u);
-  assert.match(page, /<img\s+src=\{productImageSource\(product\)\}/u);
+  // The customer card may show the photo of a picked variant; it is validated the same way.
+  const image = String.raw`productImageSource\((?:product|variantPhoto\(product, productVars\))\)`;
+  assert.match(page, new RegExp(String.raw`<div key=\{` + image + String.raw`\}`, 'u'));
+  assert.match(page, new RegExp(String.raw`<img\s+src=\{` + image + String.raw`\}`, 'u'));
   assert.match(page, /onError=\{showProductImageFallback\}/u);
   assert.match(page, /referrerPolicy="no-referrer"/u);
-  assert.match(page, /productImageSource\(product\) \? 'hidden' : ''/u);
+  assert.match(page, new RegExp(image + String.raw` \? 'hidden' : ''`, 'u'));
   assert.doesNotMatch(page, /dangerouslySetInnerHTML|next\/image|src=\{product\.image/u);
   assert.doesNotMatch(read(app + '/next.config.ts'), /remotePatterns|domains\s*:/u);
 });

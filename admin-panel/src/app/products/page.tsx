@@ -16,6 +16,7 @@ import { catalogRequest, brandNameWarning } from "@/lib/catalog-client";
 import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
 import MergeDuplicatesModal from "@/components/admin/MergeDuplicatesModal";
+import ManualMergeModal from "@/components/admin/ManualMergeModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface ProductVariant {
@@ -881,6 +882,14 @@ export default function MasterProductCatalogPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  // Products ticked for "Merge selected" (kept while paging and searching).
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [showManualMerge, setShowManualMerge] = useState(false);
+  const togglePicked = (id: string) => setPicked(previous => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [page, setPage] = useState(0);
   const [importNotice, setImportNotice] = useState("");
   const query = search;
@@ -985,6 +994,16 @@ export default function MasterProductCatalogPage() {
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
             <Download className="w-3.5 h-3.5" /> Export CSV
           </button>
+          {picked.size > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <button onClick={() => setShowManualMerge(true)} disabled={picked.size < 2}
+                title={picked.size < 2 ? "Tick at least two products" : "Merge the ticked products into one product"}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white border border-indigo-500/50 flex items-center gap-1.5 transition-colors disabled:opacity-50">
+                <Layers className="w-3.5 h-3.5" /> Merge selected ({picked.size})
+              </button>
+              <button onClick={() => setPicked(new Set())} className="px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">Clear</button>
+            </span>
+          )}
           <button onClick={() => setShowMergeModal(true)}
             title="Combine products that are only different sizes of one product"
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
@@ -1142,7 +1161,11 @@ export default function MasterProductCatalogPage() {
 
                       {/* Number Column */}
                       <td className={`pl-6 pr-4 py-3 align-middle text-[13px] font-medium text-slate-400 ${isArchived ? "opacity-50" : ""} ${expiryWarn ? "border-l-2 border-amber-500/60" : ""}`}>
-                        {globalIndex}
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={picked.has(product.id)} onChange={() => togglePicked(product.id)}
+                            aria-label={`Select ${getProductName(product)} to merge`} className="h-3.5 w-3.5 accent-indigo-500" />
+                          {globalIndex}
+                        </label>
                       </td>
 
                       {/* Product Column */}
@@ -1288,6 +1311,16 @@ export default function MasterProductCatalogPage() {
           onClose={() => setShowAddModal(false)}
           onAdded={handleAdded}
           existingProducts={products}
+        />
+      )}
+
+      {/* Merge Selected Modal */}
+      {showManualMerge && (
+        <ManualMergeModal
+          items={products.filter(p => picked.has(p.id)).map(p => ({ id: p.id, name: getProductName(p), brand: getBrand(p),
+            segment: p.segment, image_url: productImageSource(p), variants: p.variants }))}
+          onClose={() => setShowManualMerge(false)}
+          onFinished={message => { setShowManualMerge(false); setPicked(new Set()); setImportNotice(message); void fetchProducts(); }}
         />
       )}
 

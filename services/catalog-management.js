@@ -191,8 +191,14 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     onlyFields(req.body, ['groups']);
     const groups = req.body.groups;
     const validId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,180}$/u.test(id);
+    // A manual merge names the product and, per product, the flavor it becomes.
+    const validManual = group => group.manual === true && typeof group.name === 'string' && group.name.trim().length >= 1
+      && group.name.trim().length <= 160 && (group.flavors === undefined || (group.flavors && typeof group.flavors === 'object'
+        && !Array.isArray(group.flavors) && Object.entries(group.flavors).every(([id, flavor]) => [group.keeperId, ...group.duplicateIds].includes(id)
+          && typeof flavor === 'string' && flavor.length <= 80)));
     if (!Array.isArray(groups) || !groups.length || groups.length > 20 || groups.some(group => !group || !validId(group.keeperId)
-      || !Array.isArray(group.duplicateIds) || !group.duplicateIds.length || group.duplicateIds.length > 49 || !group.duplicateIds.every(validId))) {
+      || !Array.isArray(group.duplicateIds) || !group.duplicateIds.length || group.duplicateIds.length > 49 || !group.duplicateIds.every(validId)
+      || (group.manual !== undefined && !validManual(group)))) {
       throw catalogError(400, 'Invalid merge selection.');
     }
     await db.runTransaction(tx => requireCatalogAdmin(tx, db, uid));
@@ -200,7 +206,8 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     for (const group of groups) {
       try {
         const at = now().toISOString();
-        const done = await mergeCatalogGroup({ db, uid, keeperId: group.keeperId, duplicateIds: group.duplicateIds, at, deriveReservationId });
+        const done = await mergeCatalogGroup({ db, uid, keeperId: group.keeperId, duplicateIds: group.duplicateIds, at, deriveReservationId,
+          manual: group.manual ? { name: group.name.trim(), flavors: group.flavors || {} } : null });
         const keys = await remapApiKeys(db, done);
         await appendActivityAudit(db, { uid, actor, action: 'Product Updated', entityType: 'product', entityId: done.keeperId, at });
         for (const id of done.removed) await appendActivityAudit(db, { uid, actor, action: 'Product Deleted', entityType: 'product', entityId: id, at });

@@ -30,10 +30,10 @@ function fixture() {
   return { db, call: (name, body, token = 'admin') => invoke(handlers[name], { body, token }) };
 }
 
-test('names compare without sizes and one-letter tags', () => {
-  assert.equal(nameKey('555 TUNA AFRITADA 110G'), '555 tuna afritada');
-  assert.equal(nameKey('century tuna 1.5 L'), 'century tuna');
-  assert.equal(nameKey('century tuna (p) 155g'), 'century tuna p'); // tags may mean different kinds
+test('names compare without sizes; tags such as (p) are kept', () => {
+  assert.equal(nameKey('555 TUNA AFRITADA 110G'), nameKey('555 tuna afritada'));
+  assert.equal(nameKey('century tuna 1.5 L'), nameKey('Century Tuna'));
+  assert.notEqual(nameKey('century tuna (p) 155g'), nameKey('century tuna (h) 155g')); // tags may mean different kinds
   assert.equal(mergedName('555 TUNA AFRITADA 110G'), '555 TUNA AFRITADA');
 });
 test('plan groups sizes of one product; different real brands stay apart', () => {
@@ -75,4 +75,39 @@ test('a stale selection is refused without changing anything', async () => {
   assert.equal(result.body.results[0].status, 'FAILED');
   assert.equal(JSON.stringify(f.db.dump()), before);
   assert.equal((await f.call('merge', { groups: [] })).statusCode, 400);
+});
+
+test('word order and capitals do not matter for matching', () => {
+  assert.equal(nameKey('100% Pure Tuna 150g'), nameKey('pure tuna 100%'));
+});
+test('manual merge: Admin picks the name; each product becomes a flavor and keeps its photo on its sizes', async () => {
+  const f = fixture();
+  f.db.seed('products/f', tuna('155 TUNA CALDERETA 155G', 'Generic', '155g', { image_url: 'https://img.example.net/caldereta.jpg' }));
+  f.db.seed('products/g', tuna('555 tuna adobo 155g', '555', '155g', { image_url: 'https://img.example.net/adobo.jpg' }));
+  const result = await f.call('merge', { groups: [{ keeperId: 'g', duplicateIds: ['f'], manual: true, name: '555 Tuna',
+    flavors: { g: 'Adobo', f: 'Caldereta' } }] });
+  assert.equal(result.body.results[0].status, 'MERGED', JSON.stringify(result.body));
+  const kept = f.db.read('products/g');
+  assert.equal(kept.name, '555 Tuna'); assert.equal(kept.brand, '555');
+  assert.deepEqual(kept.variants.map(variant => [variant.flavor, variant.size, variant.image_url ?? '']),
+    [['Adobo', '155g', ''], ['Caldereta', '155g', 'https://img.example.net/caldereta.jpg']]);
+  assert.equal(kept.image_url, 'https://img.example.net/adobo.jpg');
+  assert.equal(f.db.read('products/f'), undefined);
+});
+test('manual merge refuses mixed segments and bad input', async () => {
+  const f = fixture();
+  const mixed = await f.call('merge', { groups: [{ keeperId: 'a', duplicateIds: ['d'], manual: true, name: 'Mixed' }] });
+  assert.equal(mixed.body.results[0].status, 'FAILED'); assert.match(mixed.body.results[0].reason, /one segment/u);
+  assert.equal((await f.call('merge', { groups: [{ keeperId: 'a', duplicateIds: ['b'], manual: true, name: '' }] })).statusCode, 400);
+  assert.equal((await f.call('merge', { groups: [{ keeperId: 'a', duplicateIds: ['b'], manual: true, name: 'X', flavors: { zz: 'Nope' } }] })).statusCode, 400);
+});
+test('a merged product photo fills an existing size of the same flavor', async () => {
+  const f = fixture();
+  f.db.seed('products/h', tuna('Century Tuna', 'Century', '155g', { image_url: 'https://img.example.net/flakes.jpg',
+    variants: [{ flavor: 'Flakes in Oil', size: '155g' }, { flavor: 'Adobo', size: '155g' }] }));
+  f.db.seed('products/i', tuna('CENTURY TUNA ADOBO 155G', 'Century-Tuna', '155 g', { image_url: 'https://img.example.net/adobo.jpg' }));
+  const result = await f.call('merge', { groups: [{ keeperId: 'h', duplicateIds: ['i'], manual: true, name: 'Century Tuna', flavors: { i: 'Adobo' } }] });
+  assert.equal(result.body.results[0].status, 'MERGED', JSON.stringify(result.body));
+  assert.deepEqual(f.db.read('products/h').variants.map(variant => [variant.flavor, variant.size, variant.image_url ?? '']),
+    [['Flakes in Oil', '155g', ''], ['Adobo', '155g', 'https://img.example.net/adobo.jpg']]);
 });

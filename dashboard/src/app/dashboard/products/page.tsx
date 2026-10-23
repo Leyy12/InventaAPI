@@ -51,6 +51,15 @@ function isFreePlan(plan: string | undefined): boolean {
 
 // ==================== MAIN COMPONENT ====================
 
+// When only some sizes/flavors are picked and one has its own photo (kept from a merged
+// product, e.g. "Adobo"), the card shows that photo instead of the product's.
+function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?: unknown[] }, picked: Set<string>) {
+  const variants = (product.variants ?? []) as { flavor?: string; size?: string; image_url?: unknown }[];
+  if (!picked.size || picked.size >= variants.length) return product;
+  const variant = variants.find(item => picked.has(`${item.flavor || ''}|${item.size || ''}`) && typeof item.image_url === 'string' && item.image_url);
+  return variant ? { image_url: variant.image_url } : product;
+}
+
 const PRODUCTS_PER_PAGE = 60;
 
 export default function ProductCatalogPage() {
@@ -903,10 +912,10 @@ DAAS_API_KEY=${generatedKey}
                 }`}
               >
                 {/* Image Area */}
-                <div key={productImageSource(product)} className="relative w-full h-44 bg-slate-800 overflow-hidden">
-                  {productImageSource(product) ? (
+                <div key={productImageSource(variantPhoto(product, productVars))} className="relative w-full h-44 bg-slate-800 overflow-hidden">
+                  {productImageSource(variantPhoto(product, productVars)) ? (
                     <img
-                      src={productImageSource(product)}
+                      src={productImageSource(variantPhoto(product, productVars))}
                       alt={product.name}
                       className="w-full h-full object-contain p-5 pt-9"
                       loading="lazy"
@@ -916,7 +925,7 @@ DAAS_API_KEY=${generatedKey}
                     />
                   ) : null}
                   {/* Fallback icon (shown if image fails or missing) */}
-                  <div className={`absolute inset-0 flex items-center justify-center ${productImageSource(product) ? 'hidden' : ''}`}>
+                  <div className={`absolute inset-0 flex items-center justify-center ${productImageSource(variantPhoto(product, productVars)) ? 'hidden' : ''}`}>
                     <Database className="w-14 h-14 text-slate-600" />
                   </div>
 
