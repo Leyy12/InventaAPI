@@ -64,7 +64,12 @@ export function createAdminKeyInventoryHandler({ getDb, verifyIdToken, documentI
       if (Buffer.byteLength(JSON.stringify(response), 'utf8') > INVENTORY_MAX_BYTES) throw new Error('Inventory response size exceeded');
       return res.json(response);
     } catch (error) {
-      if (error instanceof InventoryError) return res.status(error.status).json({ success: false, code: error.code, error: error.message });
+      if (error instanceof InventoryError) {
+        console.warn('[Admin inventory]', error.status, error.code);
+        return res.status(error.status).json({ success: false, code: error.code, error: error.message });
+      }
+      // Logged (message only, never key data) so a failed inventory can be diagnosed.
+      console.error('[Admin inventory] unavailable:', error?.message || error);
       return res.status(503).json({ success: false, code: 'ADMIN_INVENTORY_UNAVAILABLE', error: 'Complete inventory is unavailable. Retry later.' });
     }
   };
