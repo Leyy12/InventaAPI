@@ -559,3 +559,18 @@ test('rows written in one request see each other, and later writes still see the
   const repeat = await f.call('preview', { rows: [rows[0], rows[1]] });
   assert.equal(repeat.body.rows[0].status, 'EXACT_EXISTING_MATCH');
 });
+
+test('import skips rows whose name is only a barcode, number or size, and cleans stray characters', () => {
+  const header = ['name', 'brand', 'category', 'segment', 'size', 'image_url'];
+  const row = name => [name, 'Generic', 'Snacks', 'Grocery', '100g', 'https://example.invalid/p.jpg'];
+  const names = ['0&quot;667548 099233', '0748485100425', '1000mL', '15 ml', '&quot;AVON ULTRA RADIANCE', ',prochef cooking baking spray',
+    '100% Lychee Juice', 'C2'];
+  const plan = previewCatalogImport([header, ...names.map(row)], [], { merge: true });
+  const byName = plan.rows.map(item => [item.status, item.product?.name ?? null, item.reason]);
+  for (const index of [0, 1, 2, 3]) {
+    assert.equal(byName[index][0], 'INVALID', names[index]);
+    assert.match(byName[index][2], /No proper product name/u);
+  }
+  assert.deepEqual(byName.slice(4).map(([status, name]) => [status, name]), [['NEW', 'AVON ULTRA RADIANCE'],
+    ['NEW', 'prochef cooking baking spray'], ['NEW', '100% Lychee Juice'], ['NEW', 'C2']]);
+});

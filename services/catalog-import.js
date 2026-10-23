@@ -19,6 +19,29 @@ const aliases = {
   specs: 'size', flavors: 'flavor', sizes: 'size',
 };
 // Products have no price: price columns are dropped without a warning.
+// Product names from scraped files often carry HTML escapes (&quot;) or stray
+// punctuation in front. Those are cleaned; a name that is only a barcode, a
+// number or a size ("1000mL", "15 ml") is not a product name and is skipped.
+const ENTITIES = { quot: '"', amp: '&', apos: "'", lt: '<', gt: '>', nbsp: ' ' };
+export function cleanProductName(value) {
+  let name = String(value ?? '');
+  for (let pass = 0; pass < 2; pass += 1) {
+    name = name.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/giu, (whole, code) => {
+      const lower = code.toLowerCase();
+      if (lower.startsWith('#x')) return String.fromCodePoint(Number.parseInt(lower.slice(2), 16) || 32);
+      if (lower.startsWith('#')) return String.fromCodePoint(Number(lower.slice(1)) || 32);
+      return ENTITIES[lower] ?? whole;
+    });
+  }
+  return name.replace(/[\u0000-\u001f\u007f]/gu, ' ').replace(/\s+/gu, ' ').trim()
+    .replace(/^[\s"'`,.;:!?*_|\\/~^=-]+/u, '').replace(/[\s,;:|\\/~^=-]+$/u, '').trim();
+}
+const SIZE = /\d+(?:[.,]\d+)?\s*(?:%|ml|millilit(?:er|re)s?|l|lt|ltr|lit(?:er|re)s?|cl|cc|g|gm|gms|grams?|kg|kgs|mg|mcg|oz|lbs?|pcs?|pieces?|packs?|tabs?|caps?|x|s)?(?![\p{L}])/giu;
+export function properProductName(name) {
+  const words = String(name ?? '').replace(SIZE, ' ').replace(/[^\p{L}]+/gu, '');
+  return words.length > 0;
+}
+
 const PRICE_COLUMNS = new Set(['price', 'pricing', 'srp', 'retail_price', 'unit_price', 'selling_price', 'market_price', 'msrp']);
 const VARIANT_MATCH_FIELDS = ['size', 'flavor'];
 const parts = value => String(value ?? '').split(/\s*,\s*/u).map(comparisonText).filter(Boolean);
@@ -145,7 +168,11 @@ export function previewCatalogImport(matrix, records, { merge = false, requireIm
       if (values.length !== headers.length) throw catalogError(400, 'Column count does not match header.');
       const fields = {};
       headers.forEach((field, i) => { if (field) fields[field] = values[i].trim(); });
-      const { name, brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
+      const { brand = '', category, segment, description = '', sku = '', size = '', flavor = '', expirationDate = '', image_url = '' } = fields;
+      const name = cleanProductName(fields.name);
+      if (fields.name && !properProductName(name)) {
+        throw catalogError(400, 'No proper product name (only a barcode, number or size); skipped.');
+      }
       row.product = validateCatalogProduct({ name, brand, category, segment, description, sku, image_url,
         variants: [{ size, flavor, sku, expirationDate }] });
       delete row.product.is_active; // Re-derived by the writer, never a client input.

@@ -39,9 +39,10 @@ in Firebase, so Supabase starts without them.
    - **Appended**: a new size of a product that already exists; added to that product.
    - **Updates**: existing products that get something new, usually a missing photo.
      Existing photos are never replaced.
-   - **Skipped**: already in the catalog, no image, repeated
-     rows, or rows that cannot be matched safely. The reason is under each name.
-5. Click **Confirm Import**. Rows are saved in batches of 100 with a progress bar. Keep the
+   - **Skipped**: already in the catalog, no image, repeated rows, rows whose name is
+     only a barcode, number or size, or rows that cannot be matched safely. The reason is
+     under each name. Stray characters such as `&quot;` at the start of a name are removed.
+5. Click **Confirm Import**. Rows are saved in batches of 50 with a progress bar. Keep the
    window open. **Stop** pauses after the current batch; **Continue Import** carries on.
    Rows already saved are never saved twice.
 6. When it finishes, click **Download skipped rows** for a list of everything not imported

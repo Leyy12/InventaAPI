@@ -15,7 +15,7 @@ type Result = { row: number; status: 'IMPORTED' | 'UPDATED' | 'APPENDED' | 'FAIL
 type Tab = 'new' | 'appended' | 'updates' | 'skipped';
 
 // Rows sent per commit request; the whole file is sent batch after batch until done.
-const COMMIT_BATCH = 100;
+const COMMIT_BATCH = 50;
 const PAGE_SIZE = 50;
 const TAB_OF: Record<Status, Tab> = { NEW: 'new', APPEND: 'appended', UPDATE: 'updates', EXACT_EXISTING_MATCH: 'skipped',
   POSSIBLE_DUPLICATE: 'skipped', INVALID: 'skipped', CONFLICT: 'skipped', NO_IMAGE: 'skipped' };

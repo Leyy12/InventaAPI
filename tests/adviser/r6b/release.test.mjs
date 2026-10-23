@@ -207,7 +207,10 @@ test('R6D index set has no semantic duplicates, including implicit document-name
 
 test('scheduled jobs run on Vercel Cron, not Firebase Functions', () => {
   assert.equal(existsSync(new URL('../../../functions/index.js', import.meta.url)), false);
-  assert.deepEqual(JSON.parse(read('vercel.json')).crons.map(cron => cron.path), ['/api/v1/cron/subscriptions', '/api/v1/cron/trial-warnings']);
+  const vercel = JSON.parse(read('vercel.json'));
+  assert.deepEqual(vercel.crons.map(cron => cron.path), ['/api/v1/cron/subscriptions', '/api/v1/cron/trial-warnings']);
+  // The API runs next to the Supabase database (Singapore); far away, every query pays the distance.
+  assert.deepEqual(vercel.regions, ['sin1']);
   assert.match(read('server.js'), /app\.use\('\/api\/v1\/cron', cronRouter\)/); assert.equal(read('.nvmrc').trim(), '22');
 });
 test('frontend build configs invoke release guard and preserve repository resolution root', () => {
