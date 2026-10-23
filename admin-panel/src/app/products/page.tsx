@@ -194,13 +194,13 @@ const segmentStyle = (seg?: string) => {
   return "bg-slate-700/50 text-slate-400 border-slate-600/50";
 };
 
-const exportCSV = (data: Product[]) => {
+const exportCSV = (data: Product[], fileName = "master_catalog.csv") => {
   if (!data.length) return;
   const csv = catalogCsv(data.map(p => [getProductName(p), getBrand(p), p.segment || '', p.category || '',
     getFlavors(p).join(', '), getSizes(p).join(', '), getStatus(p), productImageSource(p)]));
   const a = Object.assign(document.createElement("a"), {
     href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
-    download: "master_catalog.csv"
+    download: fileName
   });
   a.click();
   URL.revokeObjectURL(a.href);
@@ -863,6 +863,8 @@ function TooltipButton({
 }
 
 const PRODUCTS_PER_PAGE = 50;
+// A photo link, or a photo uploaded through the site.
+const hasImage = (p: Product) => !!productImageSource(p) || !!(p as { image_asset_id?: string }).image_asset_id;
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MasterProductCatalogPage() {
@@ -871,6 +873,8 @@ export default function MasterProductCatalogPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Active");
   const [segmentFilter, setSegmentFilter] = useState("All");
+  // "missing": products without a photo, to export, fill image_url and import again.
+  const [imageFilter, setImageFilter] = useState<"all" | "missing">("all");
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -881,7 +885,7 @@ export default function MasterProductCatalogPage() {
 
   useEffect(() => { fetchProducts(); }, []);
   // Any new search or filter starts again from the first page.
-  useEffect(() => { setPage(0); }, [query, statusFilter, segmentFilter]);
+  useEffect(() => { setPage(0); }, [query, statusFilter, segmentFilter, imageFilter]);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -932,8 +936,10 @@ export default function MasterProductCatalogPage() {
       (p.category || "").toLowerCase().includes(q);
     const matchStatus = statusFilter === "All" || getStatus(p) === statusFilter;
     const matchSeg = segmentFilter === "All" || p.segment === segmentFilter;
-    return matchSearch && matchStatus && matchSeg;
-  }), [products, query, statusFilter, segmentFilter]);
+    const matchImage = imageFilter === "all" || !hasImage(p);
+    return matchSearch && matchStatus && matchSeg && matchImage;
+  }), [products, query, statusFilter, segmentFilter, imageFilter]);
+  const missingImages = useMemo(() => products.filter(p => !hasImage(p)).length, [products]);
 
   // Only one page of rows is drawn; drawing thousands at once made the page lag.
   const pageCount = Math.max(1, Math.ceil(filtered.length / PRODUCTS_PER_PAGE));
@@ -973,7 +979,7 @@ export default function MasterProductCatalogPage() {
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white border border-emerald-500/50 transition-colors shadow-sm shadow-emerald-900/30">
             <Plus className="w-3.5 h-3.5" /> Add Product
           </button>
-          <button onClick={() => exportCSV(filtered)}
+          <button onClick={() => exportCSV(filtered, imageFilter === "missing" ? "products_missing_images.csv" : "master_catalog.csv")}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
             <Download className="w-3.5 h-3.5" /> Export CSV
           </button>
@@ -1041,6 +1047,14 @@ export default function MasterProductCatalogPage() {
               </select>
               <ChevronDown className="w-3 h-3 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
+            {/* Products without a photo */}
+            <button onClick={() => setImageFilter(imageFilter === "missing" ? "all" : "missing")}
+              title="Show products without a photo. Export them, add image_url links, then Import CSV to fill them in."
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${imageFilter === "missing"
+                ? "bg-amber-500/15 text-amber-300 border border-amber-500/40"
+                : "text-slate-500 hover:text-slate-300 border border-transparent hover:border-slate-700"}`}>
+              No image ({missingImages.toLocaleString()})
+            </button>
             {/* Status pills */}
             {["All", "Active", "Archived"].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}

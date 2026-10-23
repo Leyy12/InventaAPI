@@ -55,10 +55,20 @@ export const auth = {
 if (typeof window !== "undefined") void auth.authStateReady();
 export type Auth = typeof auth;
 
-/** Calls next with the signed-in user (or null) now and after every sign-in, sign-out or token renewal. */
+/** Calls next with the signed-in user (or null) now and whenever a different person signs in or out. */
 export function onIdTokenChanged(_auth: Auth, next: (user: User | null) => void, error?: (error: Error) => void): () => void {
+  // Supabase repeats SIGNED_IN / TOKEN_REFRESHED whenever the tab regains focus. Passing
+  // those on made the apps re-check the account and swap the page for a loading screen,
+  // losing open windows (for example a running CSV import). Same person: no event.
+  let last: string | null | undefined;
   const { data } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
-    try { auth.currentUser = toUser(session?.user); next(auth.currentUser); }
+    try {
+      auth.currentUser = toUser(session?.user);
+      const key = auth.currentUser ? auth.currentUser.uid : null;
+      if (key === last) return;
+      last = key;
+      next(auth.currentUser);
+    }
     catch (cause) { error?.(cause instanceof Error ? cause : new Error("Sign-in state unavailable.")); }
   });
   return () => data.subscription.unsubscribe();
