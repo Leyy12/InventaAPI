@@ -112,7 +112,7 @@ export default function ConsumersPage() {
             <thead>
               <tr className="bg-slate-900/30 border-b border-slate-800/60">
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Customer Info</th>
-                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">API Key & Plan</th>
+                <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">API Key Name &amp; Plan</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Plan Usage & Limits</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Linked Products</th>
                 <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeline</th>
