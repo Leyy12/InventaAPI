@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
 import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
 import { planImportMerge, planImportUpdate, previewCatalogImport } from './catalog-import.js';
+import { mergeCatalogGroup, planSizeMerges, remapApiKeys } from './catalog-merge.js';
 
 // Firestore documents max out at 1 MiB; leave headroom for field overhead.
 const PREVIEW_CHUNK_BYTES = 700000;
@@ -178,5 +179,38 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     }
     return { results };
   });
-  return { create: mutate('create'), edit: mutate('edit'), archive: mutate('archive'), restore: mutate('restore'), delete: mutate('delete'), preview, commit };
+  // Products that are only different sizes of one product: the plan, then the merge.
+  const mergePlan = wrap(async (req, db, uid) => {
+    const groups = await db.runTransaction(async tx => {
+      await requireCatalogAdmin(tx, db, uid);
+      return planSizeMerges(await readCatalog(tx, db));
+    });
+    return { groups, products: groups.reduce((total, group) => total + group.duplicateIds.length + 1, 0) };
+  });
+  const merge = wrap(async (req, db, uid, actor) => {
+    onlyFields(req.body, ['groups']);
+    const groups = req.body.groups;
+    const validId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,180}$/u.test(id);
+    if (!Array.isArray(groups) || !groups.length || groups.length > 20 || groups.some(group => !group || !validId(group.keeperId)
+      || !Array.isArray(group.duplicateIds) || !group.duplicateIds.length || group.duplicateIds.length > 49 || !group.duplicateIds.every(validId))) {
+      throw catalogError(400, 'Invalid merge selection.');
+    }
+    await db.runTransaction(tx => requireCatalogAdmin(tx, db, uid));
+    const results = [];
+    for (const group of groups) {
+      try {
+        const at = now().toISOString();
+        const done = await mergeCatalogGroup({ db, uid, keeperId: group.keeperId, duplicateIds: group.duplicateIds, at, deriveReservationId });
+        const keys = await remapApiKeys(db, done);
+        await appendActivityAudit(db, { uid, actor, action: 'Product Updated', entityType: 'product', entityId: done.keeperId, at });
+        for (const id of done.removed) await appendActivityAudit(db, { uid, actor, action: 'Product Deleted', entityType: 'product', entityId: id, at });
+        results.push({ keeperId: done.keeperId, status: 'MERGED', name: done.name, sizes: done.sizes, removed: done.removed.length, apiKeysUpdated: keys });
+      } catch (error) {
+        if (!Number.isInteger(error.status)) console.error('[Catalog merge]', error.message);
+        results.push({ keeperId: group.keeperId, status: 'FAILED', reason: Number.isInteger(error.status) ? error.message : 'Merge unavailable; retry.' });
+      }
+    }
+    return { results };
+  });
+  return { create: mutate('create'), edit: mutate('edit'), archive: mutate('archive'), restore: mutate('restore'), delete: mutate('delete'), preview, commit, mergePlan, merge };
 }
