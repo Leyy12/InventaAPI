@@ -51,7 +51,7 @@ function isFreePlan(plan: string | undefined): boolean {
 
 // ==================== MAIN COMPONENT ====================
 
-const PRODUCTS_PER_PAGE = 40;
+const PRODUCTS_PER_PAGE = 60;
 
 export default function ProductCatalogPage() {
   const { user } = useAuth();
