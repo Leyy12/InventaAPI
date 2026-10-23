@@ -33,7 +33,8 @@ export function createAdminEntitlements({ getDb, verifyIdToken, clock = () => ne
         const monthly = effective.level === 0 ? await tx.get(db.collection('account_free_monthly_usage').doc(id)) : null;
         const usage = effective.upgradeRequired ? null : effective.activeTrial && promisedRequestAllowance(requestContracts, 'free_trial') === null ? trialQuota : effective.level === 0
           ? freeMonthlyUsage(monthly.exists ? monthly.data() : null, accountDoc, now, monthlyCutoverAt)
-          : storedUsage ? usageForToday(storedUsage, now) : null;
+          // No counter yet means no request today: 0 used, not "unavailable".
+          : usageForToday(storedUsage ?? null, now);
         return { plan: effective.plan, status: effective.status, limit: effective.limit,
           used: usage?.holdUntil ? null : usage?.used ?? null, active: true,
           period: effective.upgradeRequired ? 'upgrade_required' : usage?.period || 'daily',

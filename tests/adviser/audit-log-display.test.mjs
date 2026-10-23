@@ -66,6 +66,7 @@ function pageFixture(records = [], failure = false) {
       collection: (_db, name) => { calls.push(['collection', name]); return name; },
       orderBy: (...args) => { calls.push(['orderBy', ...args]); return args; },
       limit: n => { calls.push(['limit', n]); return n; }, query: (...args) => args,
+      where: (...args) => { calls.push(['where', ...args]); return args; },
       getDocs: async query => {
         calls.push(['read', query[0]]);
         if (failure) throw Error('synthetic permission denied');
@@ -77,7 +78,7 @@ function pageFixture(records = [], failure = false) {
   h.mount(page);
   return { h, calls };
 }
-test('real reader preserves newest-first latest-50 query, layout and search across event formats', async () => {
+test('real reader reads newest-first pages of 50 (one extra row tells whether a next page exists), layout and search across event formats', async () => {
   const f = pageFixture([
     { action: 'Product Submission Approved', userEmail: 'admin@example.test', entityId: 'submission-123', timestamp: '2026-10-13', details: 'Approved submission' },
     { action: 'API Request', email: 'legacy@example.test', timestamp: { seconds: 1 }, endpoint: '/catalog' },
@@ -88,7 +89,9 @@ test('real reader preserves newest-first latest-50 query, layout and search acro
   assert.match(text, /Timestamp|Action|User|Details|admin@example.test|legacy@example.test|logout-uid/);
   assert.doesNotMatch(text, /Invalid Date|"\{\}"/);
   assert.deepEqual(f.calls.filter(([kind]) => kind === 'orderBy'), [['orderBy', 'timestamp', 'desc']]);
-  assert.deepEqual(f.calls.filter(([kind]) => kind === 'limit'), [['limit', 50]]);
+  assert.deepEqual(f.calls.filter(([kind]) => kind === 'limit'), [['limit', 51]]);
+  const next = nodes(f.h.output, node => node.type === 'button' && JSON.stringify(node.props.children) === '"Next"')[0];
+  assert.equal(next.props.disabled, true, 'three logs fit on one page');
   const search = nodes(f.h.output, node => node.type === 'input')[0];
   search.props.onChange({ target: { value: 'legacy@example.test' } }); await flush();
   assert.match(JSON.stringify(f.h.output), /legacy@example.test/); assert.doesNotMatch(JSON.stringify(f.h.output), /admin@example.test|logout-uid/);
@@ -111,4 +114,17 @@ test('audit restrictions and existing login/logout/auth-failure/request writers 
   assert.match(auth, /action: 'Customer Login'/); assert.match(auth, /action: 'Customer Logout'/);
   assert.match(source('services/daas-security.js'), /action: 'Authentication Failure'/);
   assert.match(source('routes/daas.js'), /action: 'API Request'/);
+});
+
+test('audit pages: Next loads older logs from where the page ended', async () => {
+  const rows = Array.from({ length: 60 }, (_, i) => ({ action: `Event ${i}`, userEmail: `u${i}@example.test`, timestamp: `2026-10-${String(30 - Math.floor(i / 2)).padStart(2, '0')}` }));
+  const f = pageFixture(rows); await flush();
+  const button = label => nodes(f.h.output, node => node.type === 'button' && JSON.stringify(node.props.children) === JSON.stringify(label))[0];
+  assert.match(JSON.stringify(f.h.output), /u49@example.test/); assert.doesNotMatch(JSON.stringify(f.h.output), /u50@example.test/);
+  assert.equal(button('Next').props.disabled, false);
+  button('Next').props.onClick(); await flush(); await flush();
+  const where = f.calls.filter(([kind]) => kind === 'where');
+  assert.deepEqual(where.at(-1), ['where', 'timestamp', '<=', rows[49].timestamp]);
+  assert.equal(button('Previous').props.disabled, false);
+  f.h.stop();
 });

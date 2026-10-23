@@ -10,12 +10,14 @@ import { LinkedProducts, useLinkedProductNames } from "@/components/admin/Linked
 import { activeAccountProductCounts } from "@/lib/api-key-inventory";
 import { InventoryPlanBadge, InventoryPlanUsage, InventoryTimeline } from "@/components/admin/InventoryDetails";
 
+const KEYS_PER_PAGE = 25;
 type OwnerRow = { id: string; businessName?: string; fullName?: string; email?: string };
 export default function ConsumersPage() {
   const [usersMap, setUsersMap] = useState<Record<string, OwnerRow>>({});
   const [readError, setReadError] = useState(false);
   const [usersReady, setUsersReady] = useState(false);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
 
   const [refreshVersion, setRefreshVersion] = useState(0);
   const { records: apiKeys, status: inventoryState } = useAdminKeyInventory(refreshVersion);
@@ -52,6 +54,12 @@ export default function ConsumersPage() {
       );
     });
   }, [apiKeys, usersMap, search]);
+  // 25 keys per page; a new search starts from the first page.
+  useEffect(() => { setPage(0); }, [search]);
+  const pageCount = Math.max(1, Math.ceil(filteredKeys.length / KEYS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageStart = currentPage * KEYS_PER_PAGE;
+  const pageKeys = filteredKeys.slice(pageStart, pageStart + KEYS_PER_PAGE);
 
   if (readError) return <p role="alert" className="p-6 text-rose-300">API key inventory could not be verified. Reload to retry; previous rows have been cleared.</p>;
   if (inventoryState === 'unavailable') return <div role="alert" className="p-6 text-rose-300">
@@ -127,7 +135,7 @@ export default function ConsumersPage() {
                   </td>
                 </tr>
               ) : (
-                filteredKeys.map((k) => {
+                pageKeys.map((k) => {
                   // Authoritative join: api_key.userId → users/{userId}
                   const user = usersMap[k.userId] || {};
                   const entitlement = entitlements[k.userId];
@@ -202,6 +210,23 @@ export default function ConsumersPage() {
             </tbody>
           </table>
         </div>
+        {!loading && filteredKeys.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-4 py-3">
+            <p className="text-[11px] text-slate-500">
+              Showing <span className="font-semibold text-slate-300">{pageStart + 1}–{pageStart + pageKeys.length}</span> of{" "}
+              <span className="font-semibold text-slate-300">{filteredKeys.length}</span> keys
+            </p>
+            {pageCount > 1 && (
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0}
+                  className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40">Previous</button>
+                <span>Page {currentPage + 1} of {pageCount}</span>
+                <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}
+                  className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40">Next</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
