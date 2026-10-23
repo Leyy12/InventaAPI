@@ -215,3 +215,13 @@ test('product category filter lists the categories in view and composes with sea
   assert.equal(f.find(n => n.props.id === 'product-category-filter').props.value, 'All');
   assert.equal(f.cards().length, 60);
 }));
+
+test('clicking a flavor shows that flavor\'s photo; a flavor without its own photo shows the product photo', () => using({}, async f => {
+  const photo = () => nodes(f.card('grocery-0'), n => n.type === 'img')[0]?.props.src;
+  const chip = label => nodes(f.card('grocery-0'), n => n.type === 'button' && n.props.title === label)[0];
+  assert.equal(photo(), 'https://x.invalid/Grocery-main.jpg');
+  await f.click(chip('b · each'));
+  assert.equal(photo(), 'https://x.invalid/Grocery-b.jpg');
+  await f.click(chip('a · each'));
+  assert.equal(photo(), 'https://x.invalid/Grocery-main.jpg');
+}));

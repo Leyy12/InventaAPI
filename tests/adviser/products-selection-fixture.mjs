@@ -18,7 +18,8 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
   const products = ['Grocery', 'Hardware', 'Pharmacy'].flatMap(s => Array.from({ length: count }, (_, i) => ({
     id: s.toLowerCase() + '-' + i, name: `${s} ${i % 2 ? 'Rice' : 'Milk'} ${i}`,
     sku: `${s}-SKU-${i}`, description: 'Synthetic catalog fixture only', segment: s, category: i % 2 ? 'Rice' : 'Dairy',
-    variants: [{ flavor: 'a', size: 'each' }, { flavor: 'b', size: 'each' }],
+    variants: [{ flavor: 'a', size: 'each' }, { flavor: 'b', size: 'each', ...(i === 0 ? { image_url: `https://x.invalid/${s}-b.jpg` } : {}) }],
+    ...(i === 0 ? { image_url: `https://x.invalid/${s}-main.jpg` } : {}),
   })));
   const includedIds = Array.from({ length: included }, (_, i) => 'grocery-' + i);
   const evidence = { keys: included ? [{ id: 'fixture-key', name: 'Fixture POS', scopeVersion: 3, linkedProductIds: includedIds,
@@ -36,7 +37,7 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
     '@/components/product-request/ProductNotFound': { __esModule: true, default: 'fixture-empty-catalog' },
     '../../../../../services/customer-segment.js': segment,
     '@/components/products/AddProductModal': { __esModule: true, default: stub },
-    '@/lib/product-image-url': { productImageSource: () => '', showProductImageFallback: stub },
+    '@/lib/product-image-url': { productImageSource: p => typeof p?.image_url === 'string' ? p.image_url : '', showProductImageFallback: stub },
     '@/lib/firebase/auth-context': { useAuth: () => state },
     '@/lib/firebase/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,

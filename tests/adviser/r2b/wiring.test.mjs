@@ -41,7 +41,7 @@ test('actual product pages mount managed pickers and retain HTTPS compatibility 
 for (const app of frontends) test(`${app}: image markup wires validated URL, local fallback and reset on URL changes`, () => {
   const page = read(app + '/src/app/' + (app === 'dashboard' ? 'dashboard/' : '') + 'products/page.tsx');
   // The customer card may show the photo of a picked variant; it is validated the same way.
-  const image = String.raw`productImageSource\((?:product|variantPhoto\(product, productVars\))\)`;
+  const image = String.raw`productImageSource\((?:product|variantPhoto\(product, productVars(?:, clickedVariant\[product\.id!\])?\))\)`;
   assert.match(page, new RegExp(String.raw`<div key=\{` + image + String.raw`\}`, 'u'));
   assert.match(page, new RegExp(String.raw`<img\s+src=\{` + image + String.raw`\}`, 'u'));
   assert.match(page, /onError=\{showProductImageFallback\}/u);
