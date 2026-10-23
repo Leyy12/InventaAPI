@@ -309,9 +309,13 @@ function table(collectionId) {
 
 // ─── SQL ───────────────────────────────────────────────────────────────────
 function fieldSql(field, params) {
-    if (field === DOCUMENT_ID || field === '__name__') return { sql: 'id', isId: true };
+    // Document ids sort by their bytes, as in Firestore. The database's default text
+    // order ignores case ("d5a3" before "DJ87"), so ordering and range comparisons
+    // use the "C" collation; equality keeps plain `id` so the primary key is used.
+    if (field === DOCUMENT_ID || field === '__name__') return { sql: 'id', ordered: 'id collate "C"', isId: true };
     params.push(splitPath(field));
-    return { sql: `(data #> $${params.length}::text[])`, isId: false };
+    const sql = `(data #> $${params.length}::text[])`;
+    return { sql, ordered: sql, isId: false };
 }
 
 function valueParam(value, isId, params) {
@@ -334,7 +338,7 @@ function filterSql({ field, op, value }, params) {
     if (op === '!=') return `${f.sql} is not null and ${f.sql} <> ${valueParam(value, f.isId, params)}`;
     if (RANGE[op]) {
         const v = valueParam(value, f.isId, params);
-        return f.isId ? `${f.sql} ${RANGE[op]} ${v}` : `jsonb_typeof(${f.sql}) = jsonb_typeof(${v}) and ${f.sql} ${RANGE[op]} ${v}`;
+        return f.isId ? `${f.ordered} ${RANGE[op]} ${v}` : `jsonb_typeof(${f.sql}) = jsonb_typeof(${v}) and ${f.sql} ${RANGE[op]} ${v}`;
     }
     if (op === 'in' || op === 'not-in') {
         const list = (value || []).map(item => (f.isId ? (item instanceof DocumentReference ? item.id : String(item)) : JSON.stringify(encode(item, new Date()))));
@@ -384,7 +388,7 @@ function cursorSql(state, orders, params) {
         const f = fieldSql(used[i].field, params);
         const last = i === used.length - 1;
         const op = used[i].desc ? (last && inclusive ? '<=' : '<') : (last && inclusive ? '>=' : '>');
-        parts.push(`${f.sql} ${op} ${valueParam(cursorValues[i], f.isId, params)}`);
+        parts.push(`${f.ordered} ${op} ${valueParam(cursorValues[i], f.isId, params)}`);
         terms.push(`(${parts.join(' and ')})`);
     }
     return terms.length ? `(${terms.join(' or ')})` : 'true';
@@ -405,7 +409,7 @@ function buildSelect(query, mode = 'rows') {
         const inner = `select 1 from ${table(query._collectionId)}${whereSql}${state.limit != null ? ` limit ${Number(state.limit)}` : ''}`;
         return { text: `select count(*) as count from (${inner}) q`, params };
     }
-    const orderSql = orders.map(o => `${fieldSql(o.field, params).sql} ${o.desc ? 'desc' : 'asc'}`).join(', ');
+    const orderSql = orders.map(o => `${fieldSql(o.field, params).ordered} ${o.desc ? 'desc' : 'asc'}`).join(', ');
     let text = `select id, data, created_at, updated_at from ${table(query._collectionId)}${whereSql} order by ${orderSql}`;
     if (state.limit != null) text += ` limit ${Number(state.limit)}`;
     if (state.offset) text += ` offset ${Number(state.offset)}`;

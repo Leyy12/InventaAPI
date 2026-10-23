@@ -122,3 +122,25 @@ test('batch writes commit together', { skip }, async () => {
 });
 
 
+
+test('document ids order and page by their bytes, whatever the database collation', { skip }, async () => {
+    await db._run(client => client.query('truncate public.contact_inquiries'));
+    const ids = ['dcabbc', 'DJ875a', '8eff0b', 'e87dd9', 'Zeta', 'alpha'];
+    for (const id of ids) await db.collection('contact_inquiries').doc(id).set({ n: id });
+    const expected = [...ids].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+    const all = await db.collection('contact_inquiries').orderBy(FieldPath.documentId()).get();
+    assert.deepEqual(all.docs.map(doc => doc.id), expected);
+    const paged = [];
+    let cursor = null;
+    for (;;) {
+        let query = db.collection('contact_inquiries').orderBy(FieldPath.documentId()).limit(2);
+        if (cursor) query = query.startAfter(cursor);
+        const page = await query.get();
+        paged.push(...page.docs.map(doc => doc.id));
+        if (page.docs.length < 2) break;
+        cursor = page.docs.at(-1).id;
+    }
+    assert.deepEqual(paged, expected);
+    const after = await db.collection('contact_inquiries').where(FieldPath.documentId(), '>', 'DJ875a').orderBy(FieldPath.documentId()).get();
+    assert.deepEqual(after.docs.map(doc => doc.id), expected.slice(expected.indexOf('DJ875a') + 1));
+});
