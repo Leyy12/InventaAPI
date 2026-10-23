@@ -147,7 +147,7 @@ test('legitimate empty verified catalog still uses segment empty state under eit
   }
 }));
 
-test('full-width catalog has no empty selection area; compact upper summary and cards stay in normal page flow', () => using({}, async f => {
+test('full-width catalog has no selection bar at the top; selection actions sit beside Generate and Add Product', () => using({}, async f => {
   assert.equal(f.find(n => n.type === 'aside'), undefined);
   assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
   const workspace = f.find(n => n.props['aria-label'] === 'Product catalog workspace');
@@ -157,22 +157,21 @@ test('full-width catalog has no empty selection area; compact upper summary and 
   assert.equal(list.props.tabIndex, undefined);
   const gridBefore = nodes(list, n => n.props.style?.gridTemplateColumns)[0];
   assert.equal(gridBefore.props.style.gridTemplateColumns, 'repeat(auto-fill, minmax(min(100%, 15rem), 1fr))');
+  const actions = () => f.find(n => n.props['aria-label'] === 'Catalog actions');
+  assert.equal(nodes(actions(), n => n.type === 'a' && n.props.href?.startsWith('/dashboard/api-playground')).length, 0);
   await f.click(f.card('grocery-0'));
-  const summary = f.find(n => n.props['aria-label'] === 'Product selection summary');
-  assert.equal(summary.type, 'section');
-  assert.match(summary.props.className, /px-4 py-3/);
-  assert.doesNotMatch(summary.props.className, /sticky|fixed|z-10|top-4/);
-  assert.ok(nodes(summary, n => n.props.className?.includes('flex flex-wrap items-center justify-between')).length);
-  assert.equal(nodes(summary, n => n.props.id === 'selection-filter' || n.props.id === 'product-search' || n.props.onClick && n.props.className?.includes('glass-card')).length, 0);
-  assert.ok(f.button('Generate API Key')); assert.ok(f.button('Clear New Selections'));
-  assert.ok(nodes(summary, n => n.type === 'a' && n.props.href?.startsWith('/dashboard/api-playground')).length);
-  assert.match(text(summary), /Grocery\s*:\s+1/);
+  // No selection bar in the page at the top; it only docks into the top bar after scrolling.
+  assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
+  assert.doesNotMatch(actions().props.className, /sticky|fixed/);
+  assert.ok(nodes(actions(), n => n.type === 'button' && /Generate API Key/.test(text(n))).length);
+  assert.ok(nodes(actions(), n => n.type === 'button' && /Add Product/.test(text(n))).length);
+  assert.ok(nodes(actions(), n => n.type === 'button' && /Clear New Selections/.test(text(n))).length);
+  assert.ok(nodes(actions(), n => n.type === 'a' && n.props.href?.startsWith('/dashboard/api-playground')).length);
   const listAfter = f.find(n => n.props['aria-label'] === 'Product list');
   assert.equal(listAfter.props.className, list.props.className);
   assert.deepEqual(nodes(listAfter, n => n.props.style?.gridTemplateColumns)[0].props.style, gridBefore.props.style);
-  assert.equal(nodes(listAfter, n => n.props['aria-label'] === 'Product selection summary').length, 0);
   await f.click(f.button('Clear New Selections'));
-  assert.equal(f.find(n => n.props['aria-label'] === 'Product selection summary'), undefined);
+  assert.equal(nodes(actions(), n => n.type === 'a' && n.props.href?.startsWith('/dashboard/api-playground')).length, 0);
 }));
 
 test('products already in a key stay listed and labelled; filter by one key name', () => using({ trial: false, included: 5 }, async f => {
