@@ -1,6 +1,6 @@
 import express from 'express';
 import { getFirestore, FieldPath } from '../database/firestore.js';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { createApiKeyHandlers } from '../services/api-key-management.js';
 import { createApiHistoryHandler } from '../services/api-history.js';
 

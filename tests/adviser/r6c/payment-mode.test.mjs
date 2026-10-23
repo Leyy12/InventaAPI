@@ -14,9 +14,9 @@ const dashboardUrl = 'https://customer.r6c-fixture.net';
 const credentials = mode => ({ mode, secretKey: `sk_${mode}_SYNTHETIC_ONLY`, webhookSecret: 'synthetic-opaque-secret', dashboardUrl });
 const backend = (mode, nodeEnv) => ({ NODE_ENV: nodeEnv, PAYMONGO_MODE: mode,
   PAYMONGO_SECRET_KEY: credentials(mode).secretKey, PAYMONGO_WEBHOOK_SECRET: credentials(mode).webhookSecret,
-  FIREBASE_AUTH_MODE: 'service_account_env', FIREBASE_PROJECT_ID: 'inventaapi-staging',
-  FIREBASE_CLIENT_EMAIL: 'fixture@inventaapi-staging.iam.gserviceaccount.com',
-  FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_ONLY\n-----END PRIVATE KEY-----',
+  FIREBASE_PROJECT_ID: 'inventaapi-staging',
+  SUPABASE_DB_URL: 'postgresql://synthetic@db.fixture.net:5432/postgres', SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
+  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_ONLY', SUPABASE_SECRET_KEY: 'sb_secret_SYNTHETIC_ONLY',
   DASHBOARD_URL: dashboardUrl, NEXT_PUBLIC_APP_URL: dashboardUrl, TZ: 'UTC',
   EMAIL_DELIVERY_PROVIDER: 'resend', EMAIL_FROM: 'InventaAPI <signup@r6c-fixture.net>', RESEND_API_KEY: 're_SYNTHETIC_ONLY' });
 const validate = env => validateReleaseConfig(env, { scope: 'backend', mode: env.NODE_ENV, nodeVersion: 'v22.20.0', now });

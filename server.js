@@ -11,10 +11,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ⚠️  IMPORTANT: Import Firebase initialization FIRST before any routes.
-// Route files call getFirestore() at module load time, so Firebase must
-// be initialized (via database/firebase.js) before any route is imported.
-import './database/firebase.js';
+// Data (Supabase Postgres) and sign-in (Supabase Auth) connect on first use; nothing to start here.
 
 // Import routers
 import authRouter from './routes/auth.js';
@@ -35,6 +32,7 @@ import customerInsightsRouter from './routes/customer-insights.js';
 import reportsRouter from './routes/reports.js';
 import playgroundRouter from './routes/playground.js';
 import clientDbRouter from './routes/client-db.js';
+import cronRouter from './routes/cron.js';
 
 
 
@@ -171,6 +169,7 @@ app.use('/api/v1/customer/insights', customerInsightsRouter);
 app.use('/api/v1/reports', reportsRouter);
 app.use('/api/v1/playground', playgroundRouter);
 app.use('/api/v1/client-db', clientDbRouter);
+app.use('/api/v1/cron', cronRouter);
 
 // --- Webhook Routes (raw body required — mounted BEFORE express.json above) ---
 app.use('/api/webhooks', webhooksRouter);

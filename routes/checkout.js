@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { getFirestore } from '../database/firestore.js';
 import { createPaymentHandlers } from '../services/payment-checkout.js';
 import { createPaymongoCheckout, expirePaymongoCheckout } from '../services/paymongo-checkout.js';

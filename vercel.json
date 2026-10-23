@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/v1/cron/subscriptions", "schedule": "0 16 * * *" },
+    { "path": "/api/v1/cron/trial-warnings", "schedule": "30 16 * * *" }
+  ]
+}

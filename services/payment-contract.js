@@ -96,7 +96,7 @@ export function authenticatedPayment({ getDb, verifyIdToken }, operation) {
     res.set('Cache-Control', 'no-store');
     try {
       const match = typeof req.headers.authorization === 'string' && /^Bearer ([^\s]+)$/u.exec(req.headers.authorization);
-      requirePayment(match, 'UNAUTHENTICATED', 'A Firebase ID token is required.', 401);
+      requirePayment(match, 'UNAUTHENTICATED', 'A sign-in token is required.', 401);
       let actor;
       try { actor = await verifyIdToken(match[1], true); } catch { /* Uniform authentication failure. */ }
       requirePayment(validDocumentId(actor?.uid), 'UNAUTHENTICATED', 'Invalid or expired authentication.', 401);

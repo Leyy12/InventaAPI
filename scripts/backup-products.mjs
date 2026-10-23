@@ -1,15 +1,14 @@
 /**
  * backup-products.mjs
  *
- * Exports all documents from the Firestore "products" collection
+ * Exports all documents from the "products" collection (Supabase database, SUPABASE_DB_URL)
  * to a local JSON file: backups/products-backup-[timestamp].json
  *
  * Usage:
  *   node scripts/backup-products.mjs
  */
 
-import '../database/firebase.js';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from '../database/firestore.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -49,4 +48,4 @@ async function backup() {
   console.log(`   Saved to                  : ${outFile}\n`);
 }
 
-backup().catch(e => { console.error('Backup failed:', e); process.exit(1); });
+backup().then(() => process.exit(0), e => { console.error('Backup failed:', e); process.exit(1); });

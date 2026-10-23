@@ -15,7 +15,8 @@ const dormant = ['dashboard/src/app/dashboard/products/page.tsx.backup'];
 const storage = /firebase\/storage|uploadBytes|uploadBytesResumable|getDownloadURL|deleteObject|getStorage/u;
 test('Storage references are confined to initialization and the dormant backup source', () => {
   const found = frontends.flatMap(app => files(app + '/src')).filter(path => storage.test(read(path))).sort();
-  assert.deepEqual(found, [...dormant, ...frontends.map(app => app + '/src/lib/firebase/config.ts')].sort());
+  // Browsers never touch photo storage: uploads go through the API.
+  assert.deepEqual(found, dormant);
   for (const app of frontends) {
     for (const path of files(app + '/src').filter(path => !dormant.includes(path))) {
       assert.doesNotMatch(read(path), /AdminProductTable|page\.tsx\.backup|\.storage\s*\(|\.bucket\s*\(|\b(?:uploadString|uploadBytes|uploadBytesResumable|deleteObject)\s*\(/u, path);
@@ -57,12 +58,13 @@ test('only the managed adapter handles object bytes; URL metadata is never fetch
       assert.doesNotMatch(source, /\bfetch\s*\(|\baxios\b|https?\.(?:get|request)|\bsharp\s*\(/u, path);
     }
   }
-  const adapter = read('routes/product-media.js');
-  assert.match(adapter, /PRODUCT_MEDIA_ENABLED === 'true'/u);
-  assert.match(adapter, /ifGenerationMatch: 0/u);
-  assert.match(adapter, /publicAccessPrevention/u);
-  assert.doesNotMatch(adapter, /makePublic\s*\(|getSignedUrl\s*\(/u);
-  assert.match(adapter, /if \(metadata\.metadata\?\.firebaseStorageDownloadTokens\) throw/u);
+  const route = read('routes/product-media.js'), adapter = read('services/supabase-storage.js');
+  assert.match(route, /PRODUCT_MEDIA_ENABLED === 'true'/u); assert.match(route, /createSupabaseStorage\(/u);
+  // Write once, never overwrite; private bucket only; no public or signed links.
+  assert.match(adapter, /'x-upsert': 'false'/u);
+  assert.match(adapter, /meta\.public !== false\) throw/u);
+  assert.doesNotMatch(route + adapter, /\/object\/public\/|\/object\/sign\/|createSignedUrl|getPublicUrl/u);
+  assert.match(adapter, /mediaDigest\(await read\(path\)\) !== digest\) throw/u);
   assert.match(read('product-media.storage.rules'), /allow read, write: if false/u);
 });
 test('Storage remains absent from deployment/emulators, with explicit non-deployment documentation', () => {

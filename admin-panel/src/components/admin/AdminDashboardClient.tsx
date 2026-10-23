@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { User } from "firebase/auth";
+import type { User } from "@/lib/supabase-auth";
 import { collection, query, onSnapshot, orderBy, limit } from "@/lib/data/firestore-client";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { auth, db } from "@/lib/firebase/config";

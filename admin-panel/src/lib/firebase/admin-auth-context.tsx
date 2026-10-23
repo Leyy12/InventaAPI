@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onIdTokenChanged, User } from 'firebase/auth';
+import { onIdTokenChanged, User } from '@/lib/supabase-auth';
 import { doc, getDocFromServer } from '@/lib/data/firestore-client';
 import { auth, db } from './config';
 import { useRouter } from 'next/navigation';

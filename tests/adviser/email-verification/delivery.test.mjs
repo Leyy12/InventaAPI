@@ -63,9 +63,9 @@ test('sender addresses allow display names but never header injection', () => {
     'a b@inventa.com', 'A <<a@inventa.com>>', 42, undefined]) assert.equal(senderAddress(value), null, String(value));
 });
 
-const backend = { NODE_ENV: 'production', FIREBASE_AUTH_MODE: 'service_account_env', FIREBASE_PROJECT_ID: 'inventaapi-staging',
-  FIREBASE_CLIENT_EMAIL: 'synthetic@inventaapi-staging.iam.gserviceaccount.com',
-  FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_ONLY\n-----END PRIVATE KEY-----',
+const backend = { NODE_ENV: 'production', FIREBASE_PROJECT_ID: 'inventaapi-staging',
+  SUPABASE_DB_URL: 'postgresql://synthetic@db.fixture.net:5432/postgres', SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
+  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_ONLY', SUPABASE_SECRET_KEY: 'sb_secret_SYNTHETIC_ONLY',
   PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_SYNTHETIC_ONLY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_SIGNING_SECRET',
   DASHBOARD_URL: 'https://customer.signup-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.signup-fixture.net' };
 const validate = env => validateReleaseConfig(env, { scope: 'backend', nodeVersion: 'v22.20.0' });

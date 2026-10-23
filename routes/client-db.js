@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { getFirestore, FieldValue, FieldPath } from '../database/firestore.js';
 import { rulesFor } from '../services/client-db-rules.js';
 import { withoutPrices } from '../services/product-contract.js';
@@ -8,7 +8,7 @@ import { withoutPrices } from '../services/product-contract.js';
 // read and write Firestore directly under firestore.rules; they now send the
 // same operations here (see src/lib/data/firestore-client.ts in each app), and
 // services/client-db-rules.js applies those rules before touching the database.
-// This works the same whether the API stores data in Firebase or Supabase.
+// Data is stored in Supabase.
 
 const MAX_RESULTS = 10000;
 const FILTER_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', 'in', 'not-in', 'array-contains', 'array-contains-any']);

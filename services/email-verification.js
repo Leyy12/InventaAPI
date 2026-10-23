@@ -127,7 +127,7 @@ function redeemCode(db, ref, at, code, matched) {
 // `emailRegistered` is true only for a completed account (an Auth identity with a profile).
 // `removeIncompleteAccount` deletes an Auth identity left without a profile by an
 // interrupted signup, and resolves to false when the address has a completed account.
-export function createEmailVerificationHandlers({ getDb, emailRegistered, removeIncompleteAccount, verifyIdToken, markEmailVerified, sendEmail,
+export function createEmailVerificationHandlers({ getDb, emailRegistered, removeIncompleteAccount, verifyIdToken, markEmailVerified, sendEmail, createAccount,
   now = () => new Date(), createCode = sixDigitCode,
   createToken = () => randomBytes(32).toString('base64url'),
   report = reportDeliveryFailure }) {
@@ -189,7 +189,29 @@ export function createEmailVerificationHandlers({ getDb, emailRegistered, remove
     return res.json({ success: true });
   });
 
-  return { send, verify, confirm, reclaim };
+  // Creates the sign-in account for a verified inbox, email already confirmed. A leftover
+  // account without a profile (an interrupted signup) is cleared first. The browser then
+  // signs in with the same password and saves the profile.
+  const register = respond(async (req, res) => {
+    if (!createAccount) throw new VerificationError(503, 'VERIFICATION_UNAVAILABLE', UNAVAILABLE);
+    const email = requestedEmail(req.body), token = req.body?.verificationToken, password = req.body?.password;
+    if (typeof token !== 'string' || token.length > 128) throw new VerificationError(400, 'VERIFICATION_TOKEN_INVALID', TOKEN_INVALID);
+    if (!validNewPassword(password)) throw new VerificationError(400, 'INVALID_PASSWORD', `Choose a password with at least ${PASSWORD_MIN_LENGTH} characters.`);
+    const db = getDb(), ref = recordRef(db, email), record = (await ref.get()).data();
+    if (!same(sha256(token), record?.tokenHash) || !(millis(record.tokenExpiresAt) > now().getTime())) {
+      throw new VerificationError(400, 'VERIFICATION_TOKEN_INVALID', TOKEN_INVALID);
+    }
+    if (!await removeIncompleteAccount(email)) throw new VerificationError(409, 'EMAIL_ALREADY_REGISTERED', 'This email is already registered. Please sign in.');
+    try { await createAccount({ email, password }); } catch (error) {
+      if (error?.code === 'auth/email-already-exists') throw new VerificationError(409, 'EMAIL_ALREADY_REGISTERED', 'This email is already registered. Please sign in.');
+      if (PASSWORD_REJECTED.includes(error?.code)) throw new VerificationError(400, 'PASSWORD_REJECTED', 'That password cannot be used. Choose a different password.');
+      throw error;
+    }
+    try { await db.runTransaction(async tx => { tx.delete(ref); }); } catch { /* bounded by tokenExpiresAt */ }
+    return res.json({ success: true });
+  });
+
+  return { send, verify, confirm, reclaim, register };
 }
 
 // Password recovery by emailed code. An unknown or disabled address gets the same reply and

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, Suspense } from "react";
-import { createUserWithEmailAndPassword, deleteUser, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, type User } from "@/lib/supabase-auth";
 import { doc, getDocFromServer, setDoc, serverTimestamp } from "@/lib/data/firestore-client";
 import { auth, db } from "@/lib/firebase/config";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,7 +10,7 @@ import Link from "next/link";
 import Image from "next/image";
 import PostSignupPlans from "@/components/subscription/PostSignupPlans";
 import { customerLoginEntryDestination, rememberCustomerLoginEntry } from '../../../../services/auth-navigation';
-import { completeCustomerSignup, readRegistrationPolicy, sendSignupCode, verifySignupCode, confirmSignupEmail, reclaimSignupEmail,
+import { completeCustomerSignup, readRegistrationPolicy, sendSignupCode, verifySignupCode, registerSignupAccount, reclaimSignupEmail,
   normalizeSignupEmail, validSignupEmail, PASSWORD_MIN_LENGTH, TERMS_VERSION, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
 
 const BUSINESS_SEGMENTS = [
@@ -137,12 +137,17 @@ function SignupPageInner() {
       }
       const result = await completeCustomerSignup({
         canRegister: readRegistrationPolicy,
-        createUser: async () => (await createUserWithEmailAndPassword(auth, codeSentTo, formData.password)).user,
-        confirmEmail: (user: User) => confirmSignupEmail({ base: API_BASE, user, verificationToken }),
+        // The server creates the account (email already confirmed by the code), then this browser signs in.
+        createUser: async () => {
+          await registerSignupAccount({ base: API_BASE, email: codeSentTo, password: formData.password, verificationToken });
+          return (await signInWithEmailAndPassword(auth, codeSentTo, formData.password)).user;
+        },
+        confirmEmail: undefined,
         // A previous attempt that stopped after creating the identity is cleared, then retried.
         reclaimEmail: () => reclaimSignupEmail({ base: API_BASE, email: codeSentTo, verificationToken }),
         profileExists: async (user: User) => (await getDocFromServer(doc(db, 'users', user.uid))).exists(),
-        deleteUser,
+        // An account left without a profile is cleared by the server on the next attempt.
+        deleteUser: async () => {},
         signOut: () => signOut(auth),
         writeProfile: (user: User) => setDoc(doc(db, "users", user.uid), {
         uid: user.uid,

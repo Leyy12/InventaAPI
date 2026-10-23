@@ -199,11 +199,12 @@ test('Customer API Keys no longer exposes replacement, without changing the back
   assert.match(page, /method: "DELETE"/u);
   assert.match(backend, /router\.post\('\/:id\/replace', handlers\.replace\)/u);
 });
-test('scheduled Function is UTC, paged, index-light and not entitlement authority', () => {
-  const source = readFileSync(new URL('../../../functions/index.js', import.meta.url), 'utf8');
+test('scheduled job is UTC, paged, index-light and not entitlement authority', () => {
+  const source = readFileSync(new URL('../../../services/scheduled-jobs.js', import.meta.url), 'utf8');
+  const schedule = JSON.parse(readFileSync(new URL('../../../vercel.json', import.meta.url), 'utf8'));
   const rules = readFileSync(new URL('../../../firestore.rules', import.meta.url), 'utf8');
-  assert.match(source, /exports\.monitorFreeTrials = onSchedule/u);
-  assert.match(source, /schedule: '0 \*\/6 \* \* \*', timeZone: 'UTC', region: 'asia-southeast1'/u);
+  assert.match(source, /export async function sendTrialWarnings/u);
+  assert.deepEqual(schedule.crons.find(cron => cron.path === '/api/v1/cron/trial-warnings'), { path: '/api/v1/cron/trial-warnings', schedule: '30 16 * * *' });
   assert.match(source, /\.where\('trialExpiresAt', '>', now\.toISOString\(\)\)/u);
   assert.match(source, /\.orderBy\('trialExpiresAt'\)\.limit\(200\)/u);
   assert.match(source, /query = query\.startAfter\(page\.docs\.at\(-1\)\)/u);

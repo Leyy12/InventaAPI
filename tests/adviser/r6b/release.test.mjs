@@ -6,28 +6,20 @@ import cors from 'cors';
 import { frontendReleaseConfig } from '../../../scripts/frontend-release-config.mjs';
 import { validateReleaseConfig, validReleaseOrigin, formatValidation } from '../../../scripts/validate-release-config.mjs';
 
-test('Trial warning Functions release requires a verified sender and server-only Resend secret', () => {
-  const options = { scope: 'functions', nodeVersion: 'v22.20.0' };
-  const missing = validateReleaseConfig({}, options);
-  assert.equal(missing.ok, false);
-  assert.ok(missing.errors.some(issue => issue.name === 'TRIAL_WARNING_FROM_EMAIL'));
-  assert.ok(missing.errors.some(issue => issue.name === 'RESEND_API_KEY'));
-  assert.equal(validateReleaseConfig({ TRIAL_WARNING_FROM_EMAIL: 'trial@verified.test', RESEND_API_KEY: 're_synthetic' }, options).ok, true);
+test('Firebase Cloud Functions are gone: there is no functions release scope', () => {
+  assert.throws(() => validateReleaseConfig({}, { scope: 'functions', nodeVersion: 'v22.20.0' }), /Unsupported scope/);
 });
 
 const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
 const frontend = {
   NODE_ENV: 'production', NEXT_PUBLIC_API_URL: 'https://api.r6b-fixture.net',
   NEXT_PUBLIC_ADMIN_APP_ORIGIN: 'https://admin.r6b-fixture.net',
-  NEXT_PUBLIC_FIREBASE_API_KEY: 'synthetic-public-web-key-for-build',
-  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'demo-r6b-validation.firebaseapp.com',
-  NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'inventaapi-staging',
-  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-r6b-validation.firebasestorage.app',
-  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '1234567890', NEXT_PUBLIC_FIREBASE_APP_ID: '1:1234567890:web:abcdef123456',
+  NEXT_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_PUBLIC_KEY',
 };
-const backend = { NODE_ENV: 'production', FIREBASE_AUTH_MODE: 'service_account_env',
-  FIREBASE_PROJECT_ID: 'inventaapi-staging', FIREBASE_CLIENT_EMAIL: 'synthetic@inventaapi-staging.iam.gserviceaccount.com',
-  FIREBASE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nSYNTHETIC_NOT_A_KEY\n-----END PRIVATE KEY-----',
+const backend = { NODE_ENV: 'production', FIREBASE_PROJECT_ID: 'inventaapi-staging',
+  SUPABASE_DB_URL: 'postgresql://synthetic@db.r6b-fixture.net:5432/postgres', SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
+  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_PUBLIC_KEY', SUPABASE_SECRET_KEY: 'sb_secret_SYNTHETIC_NOT_A_KEY',
   PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
   DASHBOARD_URL: 'https://customer.r6b-fixture.net', NEXT_PUBLIC_APP_URL: 'https://customer.r6b-fixture.net',
   EMAIL_DELIVERY_PROVIDER: 'smtp', EMAIL_FROM: 'InventaAPI <signup@r6b-fixture.net>', SMTP_HOST: 'smtp.r6b-fixture.net',
@@ -65,55 +57,27 @@ test('production Customer builds require the R5A Admin origin, Admin builds do n
   assert.throws(() => frontendReleaseConfig(env, 'dashboard', 'v22.20.0'), /NEXT_PUBLIC_ADMIN_APP_ORIGIN/);
   assert.equal(frontendReleaseConfig(env, 'admin', 'v22.20.0').length, 1);
 });
-test('production build still requires every non-Storage Firebase field', () => {
+test('production build requires the Supabase URL and publishable key, never a secret key', () => {
   for (const scope of ['dashboard', 'admin']) {
-    for (const name of Object.keys(frontend).filter(key => key.startsWith('NEXT_PUBLIC_FIREBASE_') && key !== 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET')) {
+    for (const name of ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY']) {
       const env = { ...frontend }; delete env[name];
       assert.throws(() => frontendReleaseConfig(env, scope, 'v22.20.0'), new RegExp(name));
     }
+    assert.throws(() => frontendReleaseConfig({ ...frontend, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_secret_LEAKED_KEY' }, scope, 'v22.20.0'),
+      /NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/);
+    assert.throws(() => frontendReleaseConfig({ ...frontend, NEXT_PUBLIC_SUPABASE_URL: 'https://evil.example.net' }, scope, 'v22.20.0'),
+      /NEXT_PUBLIC_SUPABASE_URL/);
   }
 });
 
-for (const scope of ['dashboard', 'admin']) {
-  test(scope + ' production config and rewrites pass without a Storage bucket', () => {
-    for (const bucket of [undefined, '']) {
-      const env = { ...frontend, NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: bucket };
-      assert.equal(validateReleaseConfig(env, { scope, nodeVersion: 'v22.20.0' }).ok, true);
-      assert.deepEqual(frontendReleaseConfig(env, scope, 'v22.20.0'), frontendReleaseConfig(frontend, scope, 'v22.20.0'));
-    }
-  });
-  test(scope + ' optional bucket accepts existing hostnames and preserves shape validation', () => {
-    for (const bucket of ['demo-r6b-validation.firebasestorage.app', 'demo-r6b-validation.appspot.com']) {
-      assert.equal(validateReleaseConfig({ ...frontend, NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: bucket }, { scope, nodeVersion: 'v22.20.0' }).ok, true);
-    }
-    for (const bucket of ['   ', 'gs://bucket', 'bucket/path', 'not a hostname']) {
-      assert.throws(() => frontendReleaseConfig({ ...frontend, NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: bucket }, scope, 'v22.20.0'), /NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET/);
-    }
-  });
-}
 
-for (const app of ['dashboard', 'admin-panel']) test(app + ' Web SDK initialization omits absent bucket and retains Auth/Firestore', () => {
-  // Execute the actual initializer with isolated SDK doubles: no SDK/network I/O.
-  const source = read(app + '/src/lib/firebase/config.ts')
-    .replace(/^import .*;\r?$/gm, '')
-    .replace(/^export default .*;\r?$/gm, '')
-    .replace(/^export \{.*\};\r?$/gm, '')
-    .replace(/\bexport const /g, 'const ');
-  for (const bucket of [undefined, '', 'demo-r6b-validation.appspot.com']) {
-    const calls = []; let configuration;
-    runInNewContext(source, {
-      process: { env: { ...frontend, NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: bucket } },
-      getApps: () => [],
-      initializeApp: config => { configuration = config; calls.push('app'); return { options: config }; },
-      getAuth: app => { calls.push('auth'); return { app }; },
-      getFirestore: () => { calls.push('firestore'); return {}; },
-      getStorage: () => { calls.push('existing-storage-handle'); return {}; },
-    });
-    assert.deepEqual(calls, ['app', 'auth', 'firestore', 'existing-storage-handle']);
-    assert.equal(Object.hasOwn(configuration, 'storageBucket'), Boolean(bucket));
-    assert.equal(configuration.storageBucket, bucket || undefined);
-    assert.equal(configuration.projectId, frontend.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
-  }
+for (const app of ['dashboard', 'admin-panel']) test(app + ' sign-in is Supabase Auth; no Firebase SDK remains in the browser', () => {
+  const config = read(app + '/src/lib/firebase/config.ts');
+  assert.match(config, /import \{ auth \} from "\.\.\/supabase-auth"/);
+  assert.doesNotMatch(config, /firebase\//);
+  const client = read(app + '/src/lib/supabase-auth.ts');
+  assert.match(client, /NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/); assert.doesNotMatch(client, /SECRET/u);
+  assert.equal(JSON.parse(read(app + '/package.json')).dependencies.firebase, undefined);
 });
 
 test('URL-only release has no active product upload/delete implementation', () => {
@@ -170,9 +134,9 @@ test('obsolete Superadmin UID is not an authority or release requirement', () =>
 test('Node 20 cannot pass the production frontend build contract', () => {
   assert.throws(() => frontendReleaseConfig(frontend, 'admin', 'v20.20.2'), /NODE_RUNTIME/);
 });
-test('unsupported root ADC does not receive a false-positive readiness pass', () => {
-  const result = validateReleaseConfig({ ...backend, FIREBASE_AUTH_MODE: 'application_default' }, options);
-  assert.ok(result.errors.some(issue => issue.code === 'UNSUPPORTED_AUTH_MODE'));
+test('backend requires every Supabase setting; a malformed secret key never passes', () => {
+  const result = validateReleaseConfig({ ...backend, SUPABASE_SECRET_KEY: 'replace-with-secret' }, options);
+  assert.ok(result.errors.some(issue => issue.name === 'SUPABASE_SECRET_KEY' && issue.code === 'MALFORMED_SECRET'));
 });
 test('Customer origins must agree across payment and DaaS links', () => {
   assert.ok(validateReleaseConfig({ ...backend, NEXT_PUBLIC_APP_URL: 'https://other.r6b-fixture.net' }, options).errors
@@ -183,17 +147,17 @@ test('backend production validation does not depend on reserved ambient TZ', () 
   for (const TZ of ['UTC', 'Asia/Manila', 'America/New_York', 'not-a-zone']) {
     assert.equal(validateReleaseConfig({ ...backend, TZ }, options).ok, true);
   }
-  for (const name of ['FIREBASE_AUTH_MODE', 'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL',
-    'FIREBASE_PRIVATE_KEY', 'PAYMONGO_MODE', 'PAYMONGO_SECRET_KEY', 'PAYMONGO_WEBHOOK_SECRET',
+  for (const name of ['FIREBASE_PROJECT_ID', 'SUPABASE_DB_URL', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_SECRET_KEY', 'PAYMONGO_MODE', 'PAYMONGO_SECRET_KEY', 'PAYMONGO_WEBHOOK_SECRET',
     'DASHBOARD_URL', 'NEXT_PUBLIC_APP_URL']) {
     const invalid = { ...backend }; delete invalid[name];
     assert.ok(validateReleaseConfig(invalid, options).errors.some(issue => issue.name === name), name);
   }
 });
 test('redacted failure messages contain variable names, never supplied credentials', () => {
-  const text = formatValidation(validateReleaseConfig({ ...backend, FIREBASE_PRIVATE_KEY: 'PRIVATE_SENTINEL',
+  const text = formatValidation(validateReleaseConfig({ ...backend, SUPABASE_SECRET_KEY: 'PRIVATE_SENTINEL',
     PAYMONGO_SECRET_KEY: 'SECRET_SENTINEL' }, options));
-  assert.match(text, /FIREBASE_PRIVATE_KEY/); assert.doesNotMatch(text, /PRIVATE_SENTINEL|SECRET_SENTINEL/);
+  assert.match(text, /SUPABASE_SECRET_KEY/); assert.doesNotMatch(text, /PRIVATE_SENTINEL|SECRET_SENTINEL/);
 });
 test('PayMongo mode contract rejects credentials that mismatch explicit payment mode', () => {
   assert.ok(validateReleaseConfig({ ...backend, PAYMONGO_SECRET_KEY: 'sk_test_SYNTHETIC' }, options).errors.some(issue => issue.name === 'PAYMONGO_SECRET_KEY'));
@@ -241,11 +205,10 @@ test('R6D index set has no semantic duplicates, including implicit document-name
   assert.equal(new Set(signatures).size, config.indexes.length);
 });
 
-test('Firebase deploy config includes rules/indexes/Functions but neither Hosting nor Storage', () => {
-  const config = JSON.parse(read('firebase.json'));
-  assert.deepEqual(config.firestore, { rules: 'firestore.rules', indexes: 'firestore.indexes.json' });
-  assert.equal(config.functions[0].source, 'functions'); assert.equal(config.storage, undefined); assert.equal(config.hosting, undefined);
-  assert.equal(JSON.parse(read('functions/package.json')).engines.node, '22'); assert.equal(read('.nvmrc').trim(), '22');
+test('scheduled jobs run on Vercel Cron, not Firebase Functions', () => {
+  assert.equal(existsSync(new URL('../../../functions/index.js', import.meta.url)), false);
+  assert.deepEqual(JSON.parse(read('vercel.json')).crons.map(cron => cron.path), ['/api/v1/cron/subscriptions', '/api/v1/cron/trial-warnings']);
+  assert.match(read('server.js'), /app\.use\('\/api\/v1\/cron', cronRouter\)/); assert.equal(read('.nvmrc').trim(), '22');
 });
 test('frontend build configs invoke release guard and preserve repository resolution root', () => {
   for (const [app, scope] of [['dashboard', 'dashboard'], ['admin-panel', 'admin']]) {

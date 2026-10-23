@@ -1,6 +1,6 @@
 // Keep this file identical in dashboard/ and admin-panel/.
 import { useEffect, useState } from "react";
-import type { User } from "firebase/auth";
+import type { User } from "@/lib/supabase-auth";
 import type { CategoryUsage, ReportSelection } from "@/lib/reports";
 
 export type CategoryUsageState = { status: "loading" | "ready" | "error"; segments: Partial<Record<ReportSelection, CategoryUsage[]>> };

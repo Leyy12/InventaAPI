@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth } from '../services/supabase-auth.js';
 import { getFirestore } from '../database/firestore.js';
 import { createCategoryUsageHandler } from '../services/category-usage.js';
 
