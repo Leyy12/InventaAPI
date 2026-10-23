@@ -16,7 +16,9 @@ type Row = { key: string; label: string; file?: File; url?: string; preview: str
 
 const MAX_BYTES = 3 * 1024 * 1024;
 // Rows loaded from one CSV; bigger files are uploaded in parts.
-const MAX_CSV_ROWS = 2000;
+const MAX_CSV_ROWS = 500;
+// Rows drawn at once. Only this page is rendered, so large batches stay responsive.
+const PAGE_SIZE = 50;
 const OTHER = '__other__';
 const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const nameOf = (p: BulkProduct) => [p.brand || p.attributes?.brand, p.name || p.product || 'Unnamed Product'].filter(Boolean).join(' · ');
@@ -47,6 +49,7 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
   // Rows whose product list shows the whole catalog. Others list only their matches,
   // so a large CSV does not render thousands of full catalog lists at once.
   const [browsing, setBrowsing] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(0);
   const latest = useRef(new Map(products.map(p => [p.id, p])));
   const locked = useRef(false);
   // A retried photo reuses its upload key, so the server returns the same stored image.
@@ -69,6 +72,7 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
     setError(''); setNotice(''); setMode('files');
     const files = [...list].filter(file => file.type.startsWith('image/') || /\.(jpe?g|png|webp)$/iu.test(file.name));
     if (!files.length) { setError('No photos found. Choose JPEG, PNG or WebP files.'); return; }
+    setPage(0);
     setRows(previous => [...previous.filter(row => row.file), ...files.map(file => {
       const preview = URL.createObjectURL(file);
       previews.current.push(preview);
@@ -98,7 +102,7 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
     if (withUrl.length > MAX_CSV_ROWS) {
       setNotice(`Only the first ${MAX_CSV_ROWS} of ${withUrl.length} image links were loaded. Save these, then upload a CSV with the remaining ${withUrl.length - MAX_CSV_ROWS} rows.`);
     }
-    setBrowsing(new Set());
+    setBrowsing(new Set()); setPage(0);
     setRows(next);
   };
   const downloadMissing = () => {
@@ -147,6 +151,9 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
 
   const counts = { done: rows.filter(r => r.state === 'done').length, failed: rows.filter(r => r.state === 'failed').length,
     skipped: rows.filter(r => r.state === 'skipped').length, unmatched: rows.filter(r => !r.productId && r.state === 'ready').length };
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const shown = Math.min(page, pages - 1);
+  const visible = rows.slice(shown * PAGE_SIZE, (shown + 1) * PAGE_SIZE);
   const tone: Record<RowState, string> = { ready: 'text-slate-400', working: 'text-indigo-300', done: 'text-emerald-300', failed: 'text-rose-300', skipped: 'text-amber-300' };
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
@@ -189,10 +196,11 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
           <p className="text-xs text-slate-400">{rows.length} {mode === 'files' ? 'photos' : 'links'} · {pending.length} ready · {counts.unmatched} need a product picked · {counts.done} saved · {counts.skipped} skipped · {counts.failed} failed</p>
           <div className="overflow-auto max-h-[45vh] border border-slate-700 rounded-lg"><table className="w-full text-xs">
             <thead className="bg-slate-800 sticky top-0"><tr>{['Photo', 'From', 'Product', 'Status'].map(label => <th key={label} className="p-2 text-left">{label}</th>)}</tr></thead>
-            <tbody>{rows.map(row => {
+            <tbody>{visible.map(row => {
               const target = row.productId ? byId.get(row.productId) : undefined;
               const matched = row.match.productIds.map(id => byId.get(id)).filter((p): p is BulkProduct => !!p);
-              const full = !matched.length || browsing.has(row.key);
+              // The whole catalog list is built only after the admin asks for it on this row.
+              const full = browsing.has(row.key);
               const options = full ? sorted : matched;
               return <tr key={row.key} className="border-t border-slate-800 align-middle">
                 <td className="p-2">{/* eslint-disable-next-line @next/next/no-img-element */}
@@ -206,13 +214,18 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
                   className="w-full max-w-72 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5">
                   <option value="">{row.match.productIds.length > 1 ? 'Pick the right product…' : 'Not matched: pick a product…'}</option>
                   {options.map(p => <option key={p.id} value={p.id}>{nameOf(p)}{hasImage(p) ? ' (has photo)' : ''}</option>)}
-                  {!full && <option value={OTHER}>Other product…</option>}
+                  {!full && <option value={OTHER}>{matched.length ? 'Other product…' : 'Choose from all products…'}</option>}
                 </select>{target && hasImage(target) && row.state === 'ready' && <span className="block text-amber-300">{skipWithImage ? 'Has a photo; will be skipped' : 'Will replace the current photo'}</span>}</td>
                 <td className={'p-2 ' + tone[row.state]}>{row.state === 'working' ? <Loader2 className="inline w-4 h-4 animate-spin" /> : row.state === 'ready' ? (row.productId ? 'Ready' : '') : row.message || row.state}
                   {row.state === 'ready' || row.state === 'failed' ? <button disabled={busy} className="ml-2 text-slate-500" onClick={() => setRows(previous => previous.filter(r => r.key !== row.key))}>Remove</button> : null}</td>
               </tr>;
             })}</tbody>
           </table></div>
+          {pages > 1 && <div className="flex items-center justify-end gap-2 text-xs">
+            <button onClick={() => setPage(shown - 1)} disabled={shown === 0} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 disabled:opacity-40">Previous</button>
+            <span className="text-slate-400">Page {shown + 1} of {pages} · rows {shown * PAGE_SIZE + 1}–{Math.min((shown + 1) * PAGE_SIZE, rows.length)}</span>
+            <button onClick={() => setPage(shown + 1)} disabled={shown >= pages - 1} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 disabled:opacity-40">Next</button>
+          </div>}
         </>}
       </div>
       <div className="px-6 py-4 border-t border-slate-800 flex justify-between items-center text-xs">
