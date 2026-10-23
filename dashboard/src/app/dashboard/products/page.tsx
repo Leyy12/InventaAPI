@@ -53,8 +53,14 @@ function isFreePlan(plan: string | undefined): boolean {
 
 // When only some sizes/flavors are picked and one has its own photo (kept from a merged
 // product, e.g. "Adobo"), the card shows that photo instead of the product's.
-function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?: unknown[] }, picked: Set<string>) {
+// The card photo follows the flavor/size the customer last clicked: its own photo, or the
+// product photo when it has none (the product photo is the first flavor's).
+function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?: unknown[] }, picked: Set<string>, clicked?: string) {
   const variants = (product.variants ?? []) as { flavor?: string; size?: string; image_url?: unknown }[];
+  if (clicked) {
+    const variant = variants.find(item => `${item.flavor || ''}|${item.size || ''}` === clicked);
+    if (variant) return typeof variant.image_url === 'string' && variant.image_url ? { image_url: variant.image_url } : product;
+  }
   if (!picked.size || picked.size >= variants.length) return product;
   const variant = variants.find(item => picked.has(`${item.flavor || ''}|${item.size || ''}`) && typeof item.image_url === 'string' && item.image_url);
   return variant ? { image_url: variant.image_url } : product;
@@ -95,6 +101,8 @@ function CustomerCatalogSession() {
   const catalogRefresh = useRef<ReturnType<typeof createCatalogRefresh> | null>(null);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
+  // Last variant chip clicked on each card; the card photo shows that variant.
+  const [clickedVariant, setClickedVariant] = useState<Record<string, string>>({});
   const [paidSegment, setActiveSegment] = useState<string>("All");
   const activeSegment = isFreePlan(appUser?.plan) ? activeCustomerSegment(appUser) || '' : paidSegment;
   const currentCatalog = catalogSource?.segment === activeSegment ? catalogSource : null;
@@ -353,6 +361,7 @@ function CustomerCatalogSession() {
     if (upgradeRequired || !trialReady || generating) return;
     if (activeTrial && (!trialState.canToggle || (trialState.included.has(productId)
       ? !trialNewKey : !trialState.pending.has(productId) && !trialState.canSelect))) return;
+    setClickedVariant(previous => ({ ...previous, [productId]: variantId }));
     
     setSelectedVariants((prevVars) => {
       const newMap = { ...prevVars };
@@ -887,10 +896,10 @@ DAAS_API_KEY=${generatedKey}
                 }`}
               >
                 {/* Image Area */}
-                <div key={productImageSource(variantPhoto(product, productVars))} className="relative w-full h-44 shrink-0 bg-slate-800 overflow-hidden">
-                  {productImageSource(variantPhoto(product, productVars)) ? (
+                <div key={productImageSource(variantPhoto(product, productVars, clickedVariant[product.id!]))} className="relative w-full h-44 shrink-0 bg-slate-800 overflow-hidden">
+                  {productImageSource(variantPhoto(product, productVars, clickedVariant[product.id!])) ? (
                     <img
-                      src={productImageSource(variantPhoto(product, productVars))}
+                      src={productImageSource(variantPhoto(product, productVars, clickedVariant[product.id!]))}
                       alt={product.name}
                       className="w-full h-full object-contain p-5 pt-9"
                       loading="lazy"
@@ -900,7 +909,7 @@ DAAS_API_KEY=${generatedKey}
                     />
                   ) : null}
                   {/* Fallback icon (shown if image fails or missing) */}
-                  <div className={`absolute inset-0 flex items-center justify-center ${productImageSource(variantPhoto(product, productVars)) ? 'hidden' : ''}`}>
+                  <div className={`absolute inset-0 flex items-center justify-center ${productImageSource(variantPhoto(product, productVars, clickedVariant[product.id!])) ? 'hidden' : ''}`}>
                     <Database className="w-14 h-14 text-slate-600" />
                   </div>
 
