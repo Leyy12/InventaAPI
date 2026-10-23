@@ -2,11 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { catalogDigest, catalogError, onlyFields } from './catalog-contract.js';
 import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAdmin } from './catalog-writer.js';
 import { planImportUpdate, previewCatalogImport } from './catalog-import.js';
+import { normalizeProductImageUrl } from './product-submission-contract.js';
 
 // Firestore documents max out at 1 MiB; leave headroom for field overhead.
 const PREVIEW_CHUNK_BYTES = 700000;
 // Rows per commit request. The admin panel sends a large import as several batches.
 const COMMIT_BATCH_MAX = 200;
+// Products per bulk image request. The admin panel sends a large CSV as several batches.
+export const IMAGE_BATCH_MAX = 100;
+const PRODUCT_ID = /^[a-zA-Z0-9_-]{1,180}$/u;
+const hasPhoto = product => [product.image_url, product.image, product.image_asset_id]
+  .some(value => typeof value === 'string' && value.trim() !== '');
 
 async function findPreviewRow(tx, db, previewId, plan, rowNumber, uid) {
   if (Array.isArray(plan.rows)) return plan.rows.find(item => item.row === rowNumber);
@@ -145,5 +151,46 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
     }
     return { results };
   });
-  return { create: mutate('create'), edit: mutate('edit'), archive: mutate('archive'), restore: mutate('restore'), delete: mutate('delete'), preview, commit };
+  // Adds photo links to products that have none. A photo never changes a product's
+  // name, brand or SKU, so unlike other writes this skips the full-catalog duplicate
+  // scan, and one transaction covers the whole batch. Products that already have a
+  // photo (or appear twice in the batch) are skipped, never overwritten.
+  const images = wrap(async (req, db, uid, actor) => {
+    onlyFields(req.body, ['items']);
+    const { items } = req.body;
+    if (!Array.isArray(items) || !items.length || items.length > IMAGE_BATCH_MAX) {
+      throw catalogError(400, `Send between 1 and ${IMAGE_BATCH_MAX} image links per request.`);
+    }
+    const at = now().toISOString();
+    const results = await db.runTransaction(async tx => {
+      await requireCatalogAdmin(tx, db, uid);
+      const controlRef = db.collection('catalog_control').doc('writer');
+      const control = (await tx.get(controlRef)).data();
+      if (control?.frozen) throw catalogError(409, 'Catalog is frozen for operator maintenance.');
+      const seen = new Set(), staged = [], outcome = [];
+      for (const item of items) {
+        const productId = item?.productId;
+        if (typeof productId !== 'string' || !PRODUCT_ID.test(productId)) { outcome.push({ productId: String(productId ?? ''), status: 'FAILED', reason: 'Invalid product ID.' }); continue; }
+        if (seen.has(productId)) { outcome.push({ productId, status: 'SKIPPED', reason: 'Another link in this batch is for the same product.' }); continue; }
+        seen.add(productId);
+        let url;
+        try { url = normalizeProductImageUrl(item.image_url); } catch { url = ''; }
+        if (!url) { outcome.push({ productId, status: 'FAILED', reason: 'Image link must be an HTTPS URL.' }); continue; }
+        const ref = db.collection('products').doc(productId);
+        const product = (await tx.get(ref)).data();
+        if (!product) { outcome.push({ productId, status: 'SKIPPED', reason: 'Product not found.' }); continue; }
+        if (hasPhoto(product)) { outcome.push({ productId, status: 'SKIPPED', reason: 'Product already has a photo.' }); continue; }
+        const next = { ...product, image_url: url, updatedAt: at, catalogRevision: (product.catalogRevision ?? 0) + 1 };
+        staged.push({ ref, next });
+        outcome.push({ productId, status: 'SAVED', product: { ...next, id: productId } });
+      }
+      for (const { ref, next } of staged) tx.set(ref, next);
+      if (staged.length) tx.set(controlRef, { ...control, version: 1, revision: (control?.revision ?? 0) + 1, updatedAt: at });
+      return outcome;
+    });
+    const saved = results.filter(result => result.status === 'SAVED').length;
+    if (saved) await appendActivityAudit(db, { uid, actor, action: 'Product Images Added', entityType: 'product', entityId: `${saved} products`, at });
+    return { results };
+  });
+  return { images, create: mutate('create'), edit: mutate('edit'), archive: mutate('archive'), restore: mutate('restore'), delete: mutate('delete'), preview, commit };
 }

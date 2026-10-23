@@ -482,3 +482,30 @@ for (const failure of ['canonical', 'reservation-write', 'completion-write', 'co
     assert.deepEqual(f.db.dump(), before); assert.equal(f.db.read('catalog_control/writer').auditCompletedAt, undefined);
   });
 }
+
+test('bulk images fill only products without a photo, in one batch, and skip repeats', async () => {
+  const bare = { ...product, image_url: '' };
+  const f = fixture({
+    'products/a': { ...bare, name: 'A', catalogRevision: 3 },
+    'products/b': { ...bare, name: 'B' },
+    'products/has': { ...product, name: 'Has' },
+    'products/legacy': { ...bare, name: 'Legacy', image: 'https://example.invalid/old.jpg' },
+  });
+  const url = 'https://images.example.invalid/a.jpg';
+  const response = await f.call('images', { items: [
+    { productId: 'a', image_url: url }, { productId: 'a', image_url: 'https://images.example.invalid/again.jpg' },
+    { productId: 'has', image_url: url }, { productId: 'legacy', image_url: url }, { productId: 'missing', image_url: url },
+    { productId: 'b', image_url: 'http://insecure.invalid/b.jpg' }, { productId: '../x', image_url: url },
+  ] });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.results.map(result => [result.productId, result.status]), [
+    ['a', 'SAVED'], ['a', 'SKIPPED'], ['has', 'SKIPPED'], ['legacy', 'SKIPPED'], ['missing', 'SKIPPED'], ['b', 'FAILED'], ['../x', 'FAILED']]);
+  assert.equal(f.db.read('products/a').image_url, url);
+  assert.equal(f.db.read('products/a').catalogRevision, 4);
+  assert.equal(response.body.results[0].product.image_url, url);
+  assert.equal(f.db.read('products/has').image_url, product.image_url);
+  assert.equal(f.db.read('products/b').image_url, '');
+  assert.equal((await f.call('images', { items: [{ productId: 'b', image_url: url }] }, {}, 'customer')).statusCode, 403);
+  assert.equal((await f.call('images', { items: [] })).statusCode, 400);
+  assert.equal((await f.call('images', { items: Array.from({ length: 101 }, () => ({ productId: 'b', image_url: url })) })).statusCode, 400);
+});

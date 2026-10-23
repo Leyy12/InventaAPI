@@ -1313,6 +1313,10 @@ export default function MasterProductCatalogPage() {
           products={products}
           onClose={() => setShowBulkImages(false)}
           onSaved={updated => handleSaved(updated as Product)}
+          onSavedMany={list => {
+            const updated = new Map(list.map(p => [p.id, p as Product]));
+            setProducts(prev => prev.map(x => updated.get(x.id) ?? x));
+          }}
         />
       )}
     </div>
