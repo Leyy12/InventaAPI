@@ -28,7 +28,8 @@ const SEGMENT_PILL: Record<string, string> = {
 };
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export default function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+export default function ImportCsvModal({ onClose, onImported, onFinished }:
+  { onClose: () => void; onImported: () => void; onFinished?: (message: string) => void }) {
   const [fileName, setFileName] = useState('');
   const [parsedRows, setParsedRows] = useState(0);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -82,7 +83,9 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
 
   const counts = useMemo(() => countTabs(preview?.rows ?? []), [preview]);
   const writable = useMemo(() => (preview?.rows ?? []).filter(row => TAB_OF[row.status] !== 'skipped').map(row => row.row), [preview]);
-  const remaining = writable.filter(row => !results.has(row) || results.get(row)!.status === 'FAILED');
+  // A row that failed is reported, not retried forever: its reason (for example a
+  // size whose product row was skipped) does not change by sending it again.
+  const remaining = writable.filter(row => !results.has(row));
   const done = results.size > 0 && remaining.length === 0;
   const summary = useMemo(() => {
     const tally = { IMPORTED: 0, UPDATED: 0, APPENDED: 0, FAILED: 0, SKIPPED: 0 };
@@ -96,7 +99,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
     if (locked.current || !preview || !remaining.length) return;
     locked.current = true; stopRequested.current = false; setImporting(true); setError('');
     const collected = new Map(results);
-    let wrote = false;
+    let wrote = false, finished = false;
     try {
       for (let i = 0; i < remaining.length && !stopRequested.current; i += COMMIT_BATCH) {
         const batch = remaining.slice(i, i + COMMIT_BATCH);
@@ -116,6 +119,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
           }
         }
       }
+      finished = !stopRequested.current;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Import stopped.';
       setError(/expired/iu.test(message) ? 'This check expired. Choose the file again to continue; rows already imported are skipped.' : message + ' Press Continue import to retry.');
@@ -123,16 +127,32 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
       if (wrote) onImported();
       locked.current = false; setImporting(false); setProgress('');
     }
+    if (finished) finish(collected);
   };
 
-  const reportRows = useMemo(() => (preview?.rows ?? []).flatMap(row => {
-    const result = results.get(row.row);
+  // Closes the window and reports the outcome on the page. Rows that were not
+  // added (with their reasons) are downloaded first, so nothing is lost on close.
+  const finish = (collected: Map<number, Result>) => {
+    const tally = { IMPORTED: 0, UPDATED: 0, APPENDED: 0, FAILED: 0, SKIPPED: 0 };
+    for (const result of collected.values()) tally[result.status]++;
+    const failed = tally.FAILED;
+    if (failed) downloadReport(collected);
+    const parts = [`${tally.IMPORTED.toLocaleString()} added`, `${tally.APPENDED.toLocaleString()} sizes appended`,
+      `${tally.UPDATED.toLocaleString()} updated`];
+    const message = `Import finished: ${parts.join(' · ')}.`
+      + (failed ? ` ${failed.toLocaleString()} row${failed === 1 ? '' : 's'} could not be added; the list with reasons was downloaded.` : '');
+    if (onFinished) onFinished(message); else onClose();
+  };
+
+  const reportRowsFor = (outcomes: Map<number, Result>) => (preview?.rows ?? []).flatMap(row => {
+    const result = outcomes.get(row.row);
     if (TAB_OF[row.status] === 'skipped') return [[row.row, row.product?.name ?? '', row.product?.brand ?? '', 'Skipped', row.reason]];
     if (result?.status === 'FAILED' || result?.status === 'SKIPPED') return [[row.row, row.product?.name ?? '', row.product?.brand ?? '', result.status === 'FAILED' ? 'Failed' : 'Skipped', result.reason ?? '']];
     return [];
-  }), [preview, results]);
-  const downloadReport = () => {
-    const csv = Papa.unparse({ fields: ['row', 'name', 'brand', 'result', 'reason'], data: reportRows }, { escapeFormulae: true });
+  });
+  const reportRows = useMemo(() => reportRowsFor(results), [preview, results]); // eslint-disable-line react-hooks/exhaustive-deps
+  const downloadReport = (outcomes: Map<number, Result> = results) => {
+    const csv = Papa.unparse({ fields: ['row', 'name', 'brand', 'result', 'reason'], data: reportRowsFor(outcomes) }, { escapeFormulae: true });
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     Object.assign(document.createElement('a'), { href: url, download: fileName.replace(/\.csv$/iu, '') + '_not_imported.csv' }).click();
     URL.revokeObjectURL(url);
@@ -267,7 +287,7 @@ export default function ImportCsvModal({ onClose, onImported }: { onClose: () =>
               style={{ width: `${writable.length ? Math.round((writtenCount + summary.SKIPPED + summary.FAILED) / writable.length * 100) : 0}%` }} /></div>
             <p>{progress}</p></div>
             : preview ? <span>{done ? `${writtenCount.toLocaleString()} rows written` : `${remaining.length.toLocaleString()} rows will be written`} · {(counts.skipped + summary.SKIPPED).toLocaleString()} skipped
-              {reportRows.length > 0 && <button onClick={downloadReport} className="ml-3 text-indigo-300 hover:text-indigo-200"><Download className="mr-1 inline h-3.5 w-3.5" />Download skipped rows</button>}</span>
+              {reportRows.length > 0 && <button onClick={() => downloadReport()} className="ml-3 text-indigo-300 hover:text-indigo-200"><Download className="mr-1 inline h-3.5 w-3.5" />Download skipped rows</button>}</span>
             : <span>Choose a file to see what will be imported before anything is saved.</span>}
         </div>
         <div className="flex gap-3">

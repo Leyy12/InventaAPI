@@ -862,6 +862,8 @@ function TooltipButton({
   );
 }
 
+const PRODUCTS_PER_PAGE = 50;
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MasterProductCatalogPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -873,8 +875,13 @@ export default function MasterProductCatalogPage() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [page, setPage] = useState(0);
+  const [importNotice, setImportNotice] = useState("");
+  const query = search;
 
   useEffect(() => { fetchProducts(); }, []);
+  // Any new search or filter starts again from the first page.
+  useEffect(() => { setPage(0); }, [query, statusFilter, segmentFilter]);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -917,8 +924,8 @@ export default function MasterProductCatalogPage() {
   };
 
   const filtered = useMemo(() => products.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch = !search ||
+    const q = query.toLowerCase();
+    const matchSearch = !query ||
       getProductName(p).toLowerCase().includes(q) ||
       getBrand(p).toLowerCase().includes(q) ||
       (p.sku || "").toLowerCase().includes(q) ||
@@ -926,7 +933,15 @@ export default function MasterProductCatalogPage() {
     const matchStatus = statusFilter === "All" || getStatus(p) === statusFilter;
     const matchSeg = segmentFilter === "All" || p.segment === segmentFilter;
     return matchSearch && matchStatus && matchSeg;
-  }), [products, search, statusFilter, segmentFilter]);
+  }), [products, query, statusFilter, segmentFilter]);
+
+  // Only one page of rows is drawn; drawing thousands at once made the page lag.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PRODUCTS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageStart = currentPage * PRODUCTS_PER_PAGE;
+  const pageItems = filtered.slice(pageStart, pageStart + PRODUCTS_PER_PAGE);
+  const tableTop = useRef<HTMLDivElement>(null);
+  const goToPage = (next: number) => { setPage(next); tableTop.current?.scrollTo({ top: 0 }); };
 
   const total = products.length;
   const active = products.filter(p => getStatus(p) === "Active").length;
@@ -968,6 +983,13 @@ export default function MasterProductCatalogPage() {
           </button>
         </div>
       </div>
+
+      {importNotice && (
+        <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-100">
+          <span>{importNotice}</span>
+          <button onClick={() => setImportNotice("")} aria-label="Dismiss" className="text-emerald-300 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+      )}
 
       {/* ── Stats Row ── */}
       <div className="grid grid-cols-5 gap-3">
@@ -1033,7 +1055,7 @@ export default function MasterProductCatalogPage() {
         </div>
 
         {/* Table */}
-        <div className="overflow-auto max-h-[62vh] custom-scrollbar">
+        <div ref={tableTop} className="overflow-auto max-h-[62vh] custom-scrollbar">
           <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "960px" }}>
             <colgroup>
               <col style={{ width: "5%" }} />
@@ -1075,8 +1097,8 @@ export default function MasterProductCatalogPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((product, index) => {
-                  const globalIndex = index + 1;
+                pageItems.map((product, index) => {
+                  const globalIndex = pageStart + index + 1;
                   const attrs1 = getAttr1(product);
                   const attrs2 = getAttr2(product);
                   const status = getStatus(product);
@@ -1210,11 +1232,19 @@ export default function MasterProductCatalogPage() {
         {!loading && filtered.length > 0 && (
           <div className="px-4 py-3 border-t border-slate-800 bg-[#111827] flex items-center justify-between">
             <p className="text-[11px] text-slate-500">
-              Showing <span className="text-slate-300 font-semibold">{filtered.length.toLocaleString()}</span>
-              {filtered.length !== products.length && (
-                <> of <span className="text-slate-300 font-semibold">{products.length.toLocaleString()}</span></>
-              )}{" "}products
+              Showing <span className="text-slate-300 font-semibold">{(pageStart + 1).toLocaleString()}–{(pageStart + pageItems.length).toLocaleString()}</span>
+              {" "}of <span className="text-slate-300 font-semibold">{filtered.length.toLocaleString()}</span>
+              {filtered.length !== products.length && <> (from {products.length.toLocaleString()})</>}{" "}products
             </p>
+            {pageCount > 1 && (
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0}
+                  className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-40">Previous</button>
+                <span>Page {currentPage + 1} of {pageCount}</span>
+                <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}
+                  className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-40">Next</button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1245,6 +1275,7 @@ export default function MasterProductCatalogPage() {
         <ImportCsvModal
           onClose={() => setShowImportModal(false)}
           onImported={() => { void fetchProducts(); }}
+          onFinished={message => { setShowImportModal(false); setImportNotice(message); }}
         />
       )}
 
