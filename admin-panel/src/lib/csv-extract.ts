@@ -20,6 +20,7 @@ const API_ALIASES: Record<string, Field | 'description'> = {
   flavor: 'flavor', variant: 'flavor', formulation: 'flavor', expiration_date: 'expiration_date',
   expiry: 'expiration_date', expiry_date: 'expiration_date', exp_date: 'expiration_date', expirationdate: 'expiration_date',
   image_url: 'image_url', imageurl: 'image_url',
+  pricing: 'price', specs: 'size', flavors: 'flavor', sizes: 'size',
 };
 
 // Source columns to try for each field, best first. Open Food Facts names come first
@@ -29,9 +30,9 @@ const SOURCES: Record<Field, string[]> = {
   brand: ['brands', 'brand', 'brand_name', 'brand_owner', 'manufacturer', 'company'],
   segment: ['segment', 'department', 'dept', 'product_type', 'category_type'],
   category: ['category', 'main_category_en', 'categories_en', 'categories_tags', 'categories', 'product_category', 'subcategory', 'drug_category', 'therapeutic_class'],
-  size: ['size', 'quantity', 'pack_size', 'net_weight', 'weight', 'volume', 'dosage', 'strength'],
-  flavor: ['flavor', 'flavour', 'variant'],
-  price: ['price', 'srp', 'retail_price', 'selling_price', 'unit_price', 'market_price', 'msrp'],
+  size: ['size', 'specs', 'quantity', 'pack_size', 'net_weight', 'weight', 'volume', 'dosage', 'strength'],
+  flavor: ['flavor', 'flavors', 'flavour', 'variant'],
+  price: ['price', 'pricing', 'srp', 'retail_price', 'selling_price', 'unit_price', 'market_price', 'msrp'],
   sku: ['sku', 'code', 'barcode', 'upc', 'ean', 'item_code', 'product_code', 'item_id'],
   description: ['description', 'generic_name_en', 'generic_name'],
   expiration_date: ['expiration_date', 'expiry_date', 'expiry', 'exp_date'],
@@ -59,12 +60,12 @@ function clean(field: Field, source: string, value: string): string {
   return text;
 }
 
-// True when the API can read the file as it is: every required field has a
-// column it knows, and the file is not too wide.
+// True when the API can read the file as it is: name, category and segment each have
+// a column it knows (price is optional: existing prices are kept), and the file is not too wide.
 export function fitsTemplate(header: string[]): boolean {
   if (header.length > 64) return false;
   const mapped = new Set(header.map(column => API_ALIASES[key(column)]).filter(Boolean));
-  return ['name', 'category', 'segment', 'price'].every(field => mapped.has(field as Field));
+  return ['name', 'category', 'segment'].every(field => mapped.has(field as Field));
 }
 
 export type Extraction = { rows: string[][]; used: Partial<Record<Field, string>>; dropped: number; missingPrice: number };

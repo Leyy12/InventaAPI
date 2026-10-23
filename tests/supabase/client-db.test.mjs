@@ -100,3 +100,11 @@ test('products are public and read-only; admin-only collections stay admin-only'
     assert.equal((await call('ann', { op: 'add', collection: 'enterprise_inquiries', data: { fullName: 'A', email: 'a@b.c', company: 'C', message: 'Hi' } })).status, 200);
     assert.equal((await call('nobody', { op: 'query', collection: 'products' })).status, 401);
 });
+
+test('field names cannot reach the shared Object prototype', { skip }, async () => {
+    for (const data of [{ '__proto__.polluted': 'yes' }, { 'constructor.prototype.polluted': 'yes' }, { profile: { 'x.__proto__': 1 } }]) {
+        const result = await call('bob', { op: 'write', writes: [{ type: 'update', path: 'users/bob', data }] });
+        assert.equal(result.status, 400);
+        assert.equal(({}).polluted, undefined);
+    }
+});

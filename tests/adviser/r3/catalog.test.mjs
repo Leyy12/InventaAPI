@@ -482,3 +482,71 @@ for (const failure of ['canonical', 'reservation-write', 'completion-write', 'co
     assert.deepEqual(f.db.dump(), before); assert.equal(f.db.read('catalog_control/writer').auditCompletedAt, undefined);
   });
 }
+
+
+test('merge import: skips rows without images and existing rows, fills photos, appends sizes, writes in order', async () => {
+  const has = { name: 'Biogesic', brand: 'Unilab', category: 'Pain', segment: 'Pharmacy', image_url: 'https://x.invalid/b.jpg', variants: [{ size: '500mg', price: 5 }] };
+  const bare = { name: 'Alaxan', brand: 'Unilab', category: 'Pain', segment: 'Pharmacy', image_url: '', variants: [{ size: '200mg', price: 7 }] };
+  const f = fixture({ 'products/has': { ...has, status: 'Active', is_active: true, catalogRevision: 1 },
+    'products/bare': { ...bare, status: 'Active', is_active: true, catalogRevision: 1 } });
+  const head = ['Name', 'Brand', 'Segment', 'Category', 'Specs', 'Pricing', 'image_url'];
+  const img = 'https://images.invalid/new.jpg';
+  const rows = [head,
+    ['Biogesic', 'Unilab', 'Pharmacy', 'Pain', '500mg', '', img],          // 2 existing with photo: skipped
+    ['Alaxan', 'Unilab', 'Pharmacy', 'Pain', '200mg', '', img],            // 3 existing without photo: photo added
+    ['Alaxan', 'Unilab', 'Pharmacy', 'Pain', '400mg', '₱12.50', img],      // 4 new size of existing: appended
+    ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '10mg', '8', img],            // 5 new product
+    ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '20mg', '9', img],            // 6 new size of row 5: appended
+    ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '10mg', '8', img],            // 7 repeat of row 5: skipped
+    ['Decolgen', 'Unilab', 'Pharmacy', 'Cold', '25mg', '6', ''],           // 8 no image: skipped
+    ['Tempra', 'Taisho', 'Pharmacy', 'Fever', '120ml', '', img],           // 9 new without price: invalid
+  ];
+  const preview = await f.call('preview', { rows, options: { merge: true, requireImage: true } });
+  assert.equal(preview.statusCode, 200);
+  assert.deepEqual(preview.body.rows.map(row => row.status), ['EXACT_EXISTING_MATCH', 'UPDATE', 'APPEND', 'NEW', 'APPEND', 'EXACT_EXISTING_MATCH', 'NO_IMAGE', 'INVALID']);
+  assert.deepEqual(Object.keys(preview.body.rows[1]).sort(), ['product', 'reason', 'row', 'status']);
+  assert.deepEqual(preview.body.rows[3].product, { name: 'Neozep', brand: 'Unilab', segment: 'Pharmacy', category: 'Cold', sku: '', size: '10mg', flavor: '', price: 8 });
+  const commit = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6] });
+  assert.deepEqual(commit.body.results.map(result => result.status), ['UPDATED', 'APPENDED', 'IMPORTED', 'APPENDED']);
+  assert.equal(f.db.read('products/has').image_url, has.image_url);
+  const alaxan = f.db.read('products/bare');
+  assert.equal(alaxan.image_url, img);
+  assert.deepEqual(alaxan.variants, [{ size: '200mg', price: 7 }, { size: '400mg', price: 12.5 }]);
+  const neozep = f.products().find(product => product.data.name === 'Neozep');
+  assert.deepEqual(neozep.data.variants.map(variant => variant.size), ['10mg', '20mg']);
+  assert.equal(f.products().length, 3);
+  // Retrying the same rows replays receipts and writes nothing twice.
+  const again = await f.call('commit', { previewId: preview.body.previewId, rows: [3, 4, 5, 6] });
+  assert.ok(again.body.results.every(result => result.replayed));
+  assert.equal(f.products().length, 3);
+  // A fresh import of the same file now has nothing left to do.
+  const second = await f.call('preview', { rows, options: { merge: true, requireImage: true } });
+  assert.deepEqual(second.body.rows.map(row => row.status).filter(status => ['NEW', 'UPDATE', 'APPEND'].includes(status)), []);
+});
+
+test('merge import: a size added from a row that was not imported fails clearly', async () => {
+  const f = fixture();
+  const rows = [['name', 'brand', 'segment', 'category', 'size', 'price', 'image_url'],
+    ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '10mg', '8', 'https://x.invalid/a.jpg'],
+    ['Neozep', 'Unilab', 'Pharmacy', 'Cold', '20mg', '9', 'https://x.invalid/b.jpg']];
+  const preview = await f.call('preview', { rows, options: { merge: true, requireImage: true } });
+  const result = await f.call('commit', { previewId: preview.body.previewId, rows: [3] });
+  assert.equal(result.body.results[0].status, 'FAILED');
+  assert.match(result.body.results[0].reason, /Row 2 was not added/u);
+});
+
+test('rows written in one request see each other, and later writes still see them', async () => {
+  const f = fixture();
+  const rows = [['name', 'brand', 'segment', 'category', 'size', 'price'],
+    ...Array.from({ length: 5 }, (_, i) => [`Item ${i}`, 'Brand', 'Grocery', 'Food', '1kg', '1'])];
+  const preview = await f.call('preview', { rows });
+  const commit = await f.call('commit', { previewId: preview.body.previewId, rows: [2, 3, 4, 5, 6] });
+  assert.deepEqual(commit.body.results.map(result => result.status), Array(5).fill('IMPORTED'));
+  // An outside write between requests changes the revision, so the next request rescans.
+  const other = await f.create({ ...product, variants: [{ size: '330ml', sku: 'OTHER-1', price: 1 }] });
+  assert.equal(other.statusCode, 200);
+  assert.equal(f.products().length, 6);
+  // The cached scan saw every earlier row: a repeat of row 2 is still caught as existing.
+  const repeat = await f.call('preview', { rows: [rows[0], rows[1]] });
+  assert.equal(repeat.body.rows[0].status, 'EXACT_EXISTING_MATCH');
+});

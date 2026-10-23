@@ -2,7 +2,7 @@ import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { evaluateProductVisibility, productIdentityKeys } from './product-contract.js';
 import { normalizeProductImageUrl } from './product-submission-contract.js';
 import { catalogError, identityId, possibleDuplicates, reservationIntegrityError, reservationIntegrityProblems, validateCatalogProduct } from './catalog-contract.js';
-import { auditCatalog } from './catalog-audit.js';
+import { auditCatalog, catalogFacts } from './catalog-audit.js';
 import { prepareCatalogMedia } from './product-media-binding.js';
 
 // Best-effort append only after the business transaction has confirmed commit.
@@ -38,15 +38,27 @@ export async function requireCatalogAdmin(tx, db, uid) {
     throw catalogError(403, 'Admin access required.');
   }
 }
+const CATALOG_SCAN_LIMIT = 25000;
 export async function readCatalog(tx, db) {
-  const snapshot = await tx.get(db.collection('products').limit(5001));
-  if (snapshot.docs.length > 5000) throw catalogError(503, 'Catalog exceeds safe scan limit; operator migration required.');
+  const snapshot = await tx.get(db.collection('products').limit(CATALOG_SCAN_LIMIT + 1));
+  if (snapshot.docs.length > CATALOG_SCAN_LIMIT) throw catalogError(503, 'Catalog exceeds safe scan limit; operator migration required.');
   return snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
 }
 
 // Read/validate first; returned apply closure stages writes only after caller's other reads.
 // This enables submission finalization and import receipts in the SAME transaction.
-export async function prepareCatalogWrite({ tx, db, uid, actor, action, productId, input = {}, expectedRevision, at, deriveReservationId = identityId, submissionId }) {
+// Same result as possibleDuplicates(), using remembered per-product facts.
+function possibleDuplicatesFrom(product, records, excludedId, facts) {
+  const { keys, group } = catalogFacts(product, facts), own = new Set(keys);
+  return group ? records.filter(record => record.id !== excludedId && catalogFacts(record.data, facts).group === group
+    && !catalogFacts(record.data, facts).keys.some(key => own.has(key))).map(record => record.id).sort() : [];
+}
+
+// `catalog` (optional, one per request) caches the catalog scan between writes. Every
+// catalog write bumps the writer revision, so a cached scan is reused only while the
+// revision read in this transaction still equals the one it was taken at; after a
+// committed write the caller stores `nextCatalog` (the scan plus that write).
+export async function prepareCatalogWrite({ tx, db, uid, actor, action, productId, input = {}, expectedRevision, at, deriveReservationId = identityId, submissionId, catalog }) {
   await requireCatalogAdmin(tx, db, uid);
   if (typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,180}$/u.test(productId)) throw catalogError(400, 'Invalid product ID.');
   if (!['create', 'edit', 'archive', 'restore', 'delete'].includes(action)) throw catalogError(400, 'Invalid catalog action.');
@@ -59,8 +71,12 @@ export async function prepareCatalogWrite({ tx, db, uid, actor, action, productI
   if (action !== 'create' && !previous) throw catalogError(404, 'Product not found.');
   if (action !== 'create' && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0
     || expectedRevision !== (previous.catalogRevision ?? 0))) throw catalogError(409, 'Product changed; reload before editing.');
-  const records = await readCatalog(tx, db);
-  const audit = auditCatalog(records, [], { deriveReservationId });
+  const revision = control?.revision ?? 0;
+  const cached = catalog?.records && catalog.revision === revision;
+  const records = cached ? catalog.records : await readCatalog(tx, db);
+  const facts = catalog ? (catalog.facts ||= new WeakMap()) : undefined;
+  const audit = cached && catalog.audit ? catalog.audit : auditCatalog(records, [], { deriveReservationId, facts });
+  if (catalog) Object.assign(catalog, { revision, records, audit });
   const integrity = audit.problems.filter(problem => problem.kind.startsWith('RESERVATION_'));
   if (integrity.length) throw reservationIntegrityError(integrity);
   // Existing malformed catalogs/collisions require explicit offline operator resolution.
@@ -85,7 +101,7 @@ export async function prepareCatalogWrite({ tx, db, uid, actor, action, productI
   }
   const oldKeys = previous ? productIdentityKeys(previous) : [];
   const newKeys = action === 'delete' ? [] : productIdentityKeys(product);
-  if (records.some(record => record.id !== productId && productIdentityKeys(record.data).some(key => newKeys.includes(key)))) {
+  if (records.some(record => record.id !== productId && catalogFacts(record.data, facts).keys.some(key => newKeys.includes(key)))) {
     throw catalogError(409, 'Canonical catalog conflict; no product was overwritten.');
   }
   // Check the complete old/new union AND the existing catalog before any write.
@@ -107,8 +123,11 @@ export async function prepareCatalogWrite({ tx, db, uid, actor, action, productI
       state: newKeys.includes(key) ? 'bound' : action === 'delete' ? 'deleted' : 'retired', updatedAt: at } });
   }
   product = { ...product, createdAt: previous?.createdAt ?? at, updatedAt: at, catalogRevision: (previous?.catalogRevision ?? 0) + 1 };
-  const warnings = action === 'delete' ? [] : possibleDuplicates(product, records, productId);
+  const warnings = action === 'delete' ? [] : facts ? possibleDuplicatesFrom(product, records, productId, facts) : possibleDuplicates(product, records, productId);
+  const nextRecords = records.filter(record => record.id !== productId);
+  if (action !== 'delete') nextRecords.push({ id: productId, data: product });
   return { product: { ...product, id: productId }, possibleDuplicates: warnings,
+    nextCatalog: { revision: revision + 1, records: nextRecords, audit: null },
     // Approval's submission event also identifies its published product.
     activity: submissionId ? null : { uid, actor,
       action: { create: 'Product Created', edit: 'Product Updated', archive: 'Product Unpublished',

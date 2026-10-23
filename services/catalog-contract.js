@@ -3,14 +3,29 @@ import { comparisonText, normalizeDisplayText, normalizeSegment, normalizeSku, p
 import { normalizeProductImageUrl, submissionError } from './product-submission-contract.js';
 
 export const catalogError = (status, message) => submissionError(status, message);
-export const identityId = key => createHash('sha256').update(JSON.stringify(key)).digest('hex');
+// Pure functions of a string, called for every product on every catalog write:
+// remember results (bounded) so large catalogs are not re-hashed per write.
+function remembered(fn, limit = 200000) {
+  const cache = new Map();
+  return value => {
+    if (typeof value !== 'string') return fn(value);
+    if (cache.has(value)) return cache.get(value);
+    if (cache.size >= limit) cache.clear();
+    const result = fn(value);
+    cache.set(value, result);
+    return result;
+  };
+}
+const hashIdentity = remembered(key => createHash('sha256').update(JSON.stringify(key)).digest('hex'));
+export const identityId = key => hashIdentity(key);
 export const catalogDigest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 
 // Internal service/test dependency only. Production always defaults to identityId.
 // Evidence is compared byte-for-byte; the document ID is never proof of identity.
-function validIdentityEvidence(identity) {
+const validIdentityEvidence = remembered(identity => checkIdentityEvidence(identity));
+function checkIdentityEvidence(identity) {
   if (typeof identity !== 'string') return false;
   if (identity.startsWith('sku:')) return !!normalizeSku(identity.slice(4)) && normalizeSku(identity.slice(4)) === identity.slice(4);
   if (!identity.startsWith('fallback:')) return false;

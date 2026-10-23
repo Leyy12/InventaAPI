@@ -8,14 +8,13 @@ import { useState, useEffect, useMemo, useId, useRef } from "react";
 import {
   Package, Pencil, Search, Download, Upload,
   Eye, RotateCcw, X, ShoppingCart, Wrench, Pill, Layers,
-  FolderArchive, ImagePlus, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, ChevronRight, Archive,
+  FolderArchive, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, ChevronRight, Archive,
   type LucideIcon
 } from "lucide-react";
 import { collection, getDocs } from "@/lib/data/firestore-client";
 import { catalogRequest, catalogPrice, brandNameWarning } from "@/lib/catalog-client";
 import { db, auth } from "@/lib/firebase/config";
 import ImportCsvModal from "@/components/admin/ImportCsvModal";
-import BulkImagesModal from "@/components/admin/BulkImagesModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface ProductVariant {
@@ -916,7 +915,6 @@ export default function MasterProductCatalogPage() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showBulkImages, setShowBulkImages] = useState(false);
 
   useEffect(() => { fetchProducts(); }, []);
 
@@ -1009,10 +1007,6 @@ export default function MasterProductCatalogPage() {
           <button onClick={() => setShowImportModal(true)}
             className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white border border-blue-500/50 flex items-center gap-1.5 transition-colors shadow-sm shadow-blue-900/30">
             <Upload className="w-3.5 h-3.5" /> Import CSV
-          </button>
-          <button onClick={() => setShowBulkImages(true)} disabled={loading}
-            className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white border border-violet-500/50 flex items-center gap-1.5 transition-colors shadow-sm shadow-violet-900/30 disabled:opacity-40">
-            <ImagePlus className="w-3.5 h-3.5" /> Bulk Images
           </button>
         </div>
       </div>
@@ -1307,14 +1301,6 @@ export default function MasterProductCatalogPage() {
         />
       )}
 
-      {/* Bulk Images Modal */}
-      {showBulkImages && (
-        <BulkImagesModal
-          products={products}
-          onClose={() => setShowBulkImages(false)}
-          onSaved={updated => handleSaved(updated as Product)}
-        />
-      )}
     </div>
   );
 }

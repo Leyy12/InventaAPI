@@ -1,6 +1,7 @@
 import express from 'express';
 import { getFirestore } from '../database/firestore.js';
 import { createCustomerCatalogHandler } from '../services/customer-catalog.js';
+import { projectProduct } from '../services/product-contract.js';
 
 const router = express.Router();
 
@@ -10,7 +11,8 @@ router.get('/:id', async (req, res) => {
   try {
     const db = getFirestore();
     const doc = await db.collection('products').doc(req.params.id).get();
-    if (!doc.exists) {
+    // Same visibility as the public list: hidden, archived or draft products stay private.
+    if (!doc.exists || !projectProduct(doc.data(), doc.id)?.visibility.visible) {
       return res.status(404).json({ error: 'Product not found' });
     }
     res.json({ product: { id: doc.id, ...doc.data() } });

@@ -98,6 +98,7 @@ const splitPath = path => (typeof path === 'string' ? path.split('.') : path);
 
 // Applies one field write (value may be a FieldValue sentinel) at a dotted path.
 function applyField(target, segments, value, now) {
+    if (segments.some(segment => ['__proto__', 'constructor', 'prototype'].includes(segment))) throw new Error('Invalid field name.');
     let node = target;
     for (const segment of segments.slice(0, -1)) {
         if (!isPlainObject(node[segment])) node[segment] = {};
