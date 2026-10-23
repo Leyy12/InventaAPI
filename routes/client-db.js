@@ -16,6 +16,8 @@ const ID = /^[A-Za-z0-9_.@:+-]{1,200}$/u;
 class ClientDbError extends Error {
     constructor(status, code, message) { super(message); Object.assign(this, { status, code }); }
 }
+// Field names that would reach JavaScript's shared Object prototype.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const denied = () => new ClientDbError(403, 'permission-denied', 'Missing or insufficient permissions.');
 const invalid = message => new ClientDbError(400, 'invalid-argument', message);
 
@@ -41,7 +43,10 @@ function fromWire(value, forRules, now) {
         if (typeof value.__ts === 'string' && Object.keys(value).length === 1) return new Date(value.__ts);
         if (value.__fv === 'serverTimestamp' && Object.keys(value).length === 1) return forRules ? now : FieldValue.serverTimestamp();
         const out = {};
-        for (const [key, item] of Object.entries(value)) out[key] = fromWire(item, forRules, now);
+        for (const [key, item] of Object.entries(value)) {
+            if (key.split('.').some(part => UNSAFE_KEYS.has(part))) throw invalid('Invalid field name.');
+            out[key] = fromWire(item, forRules, now);
+        }
         return out;
     }
     return value;
@@ -64,6 +69,7 @@ function applyUpdate(before, fields) {
     const next = structuredClone(before);
     for (const [path, value] of Object.entries(fields)) {
         const segments = path.split('.');
+        if (segments.some(segment => UNSAFE_KEYS.has(segment))) throw invalid('Invalid field name.');
         let node = next;
         for (const segment of segments.slice(0, -1)) {
             if (!node[segment] || typeof node[segment] !== 'object') node[segment] = {};

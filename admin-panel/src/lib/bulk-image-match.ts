@@ -10,7 +10,8 @@ export function normalizeKey(value: string = ''): string {
   return value.normalize('NFKC').toLowerCase().replace(/&/gu, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 export function fileStem(fileName: string): string {
-  return fileName.replace(/\.[a-z0-9]{2,5}$/iu, '');
+  // Only real image extensions: names like "Zesto 1.5L" or "Mr.chips" keep their ending.
+  return fileName.replace(/\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif|avif)$/iu, '');
 }
 const words = (value: string) => normalizeKey(value).split(' ').filter(Boolean);
 const productName = (p: MatchableProduct) => p.name || p.product || '';

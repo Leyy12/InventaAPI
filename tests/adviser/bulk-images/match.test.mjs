@@ -14,6 +14,9 @@ const match = createImageMatcher(products);
 
 test('file names are normalized without their extension', () => {
   assert.equal(fileStem('555 Sardines.JPG'), '555 Sardines');
+  assert.equal(fileStem('Zesto Dalandan 1.5L'), 'Zesto Dalandan 1.5L');
+  assert.equal(fileStem('Mr.chips'), 'Mr.chips');
+  assert.equal(fileStem('Zesto Dalandan 1.5L.webp'), 'Zesto Dalandan 1.5L');
   assert.equal(normalizeKey('  Alaska_Evaporated-Milk & More '), 'alaska evaporated milk and more');
 });
 test('product ID and SKU win before names', () => {
@@ -33,4 +36,9 @@ test('extra words such as sizes still match, and the most specific product wins'
 test('ambiguous names are left for the admin and unknown names do not match', () => {
   assert.deepEqual(match('Evaporated Milk.jpg'), { productIds: ['p4', 'p5'], by: 'name' });
   assert.deepEqual(match('IMG_2041.jpg'), { productIds: [], by: 'none' });
+});
+test('CSV labels ending in a size or a dotted word still match', () => {
+  const sized = createImageMatcher([{ id: 'z1', name: 'Zesto Dalandan 1.5L' }, { id: 'm1', name: 'Mr.chips', brand: 'JACK n JILL' }]);
+  assert.deepEqual(sized('Zesto Dalandan 1.5L'), { productIds: ['z1'], by: 'name' });
+  assert.deepEqual(sized('JACK n JILL Mr.chips'), { productIds: ['m1'], by: 'name' });
 });

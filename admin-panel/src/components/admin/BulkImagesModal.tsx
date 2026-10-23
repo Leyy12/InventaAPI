@@ -15,6 +15,9 @@ type Row = { key: string; label: string; file?: File; url?: string; preview: str
   productId: string; state: RowState; message: string };
 
 const MAX_BYTES = 3 * 1024 * 1024;
+// Rows loaded from one CSV; bigger files are uploaded in parts.
+const MAX_CSV_ROWS = 2000;
+const OTHER = '__other__';
 const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const nameOf = (p: BulkProduct) => [p.brand || p.attributes?.brand, p.name || p.product || 'Unnamed Product'].filter(Boolean).join(' · ');
 export const hasImage = (p: BulkProduct) => !!(productImageSource(p) || p.image_asset_id);
@@ -40,6 +43,10 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
   const [skipWithImage, setSkipWithImage] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  // Rows whose product list shows the whole catalog. Others list only their matches,
+  // so a large CSV does not render thousands of full catalog lists at once.
+  const [browsing, setBrowsing] = useState<Set<string>>(new Set());
   const latest = useRef(new Map(products.map(p => [p.id, p])));
   const locked = useRef(false);
   // A retried photo reuses its upload key, so the server returns the same stored image.
@@ -59,7 +66,7 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
   };
   const addFiles = (list: FileList | null) => {
     if (!list?.length) return;
-    setError(''); setMode('files');
+    setError(''); setNotice(''); setMode('files');
     const files = [...list].filter(file => file.type.startsWith('image/') || /\.(jpe?g|png|webp)$/iu.test(file.name));
     if (!files.length) { setError('No photos found. Choose JPEG, PNG or WebP files.'); return; }
     setRows(previous => [...previous.filter(row => row.file), ...files.map(file => {
@@ -70,7 +77,7 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
   };
   const loadCsv = async (file: File | undefined) => {
     if (!file) return;
-    setError(''); setMode('csv');
+    setError(''); setNotice(''); setMode('csv');
     const parsed = Papa.parse<Record<string, string>>(await file.text(), { header: true, skipEmptyLines: 'greedy',
       transformHeader: header => header.replace(/^﻿/u, '').trim().toLowerCase().replace(/\s+/gu, '_') });
     const fields = parsed.meta.fields || [];
@@ -78,7 +85,8 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
       setError('The CSV needs an image_url column plus id, sku or name (brand is optional).'); return;
     }
     const next: Row[] = [];
-    for (const record of parsed.data.slice(0, 2000)) {
+    const withUrl = parsed.data.filter(record => (record.image_url || '').trim());
+    for (const record of withUrl.slice(0, MAX_CSV_ROWS)) {
       const url = (record.image_url || '').trim();
       if (!url) continue;
       const label = record.id || record.product_id || record.sku || [record.brand, record.name].filter(Boolean).join(' ');
@@ -87,6 +95,10 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
       next.push(makeRow((label || '').trim(), { url: clean || url, preview: clean, state, message }));
     }
     if (!next.length) { setError('No rows with an image_url were found.'); return; }
+    if (withUrl.length > MAX_CSV_ROWS) {
+      setNotice(`Only the first ${MAX_CSV_ROWS} of ${withUrl.length} image links were loaded. Save these, then upload a CSV with the remaining ${withUrl.length - MAX_CSV_ROWS} rows.`);
+    }
+    setBrowsing(new Set());
     setRows(next);
   };
   const downloadMissing = () => {
@@ -172,22 +184,29 @@ export default function BulkImagesModal({ products, onClose, onSaved }:
         <label className="block text-xs text-slate-300"><input type="checkbox" checked={skipWithImage} disabled={busy}
           onChange={event => setSkipWithImage(event.target.checked)} /> Skip products that already have a photo</label>
         {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+        {notice && <p role="status" className="text-sm text-amber-300">{notice}</p>}
         {rows.length > 0 && <>
           <p className="text-xs text-slate-400">{rows.length} {mode === 'files' ? 'photos' : 'links'} · {pending.length} ready · {counts.unmatched} need a product picked · {counts.done} saved · {counts.skipped} skipped · {counts.failed} failed</p>
           <div className="overflow-auto max-h-[45vh] border border-slate-700 rounded-lg"><table className="w-full text-xs">
             <thead className="bg-slate-800 sticky top-0"><tr>{['Photo', 'From', 'Product', 'Status'].map(label => <th key={label} className="p-2 text-left">{label}</th>)}</tr></thead>
             <tbody>{rows.map(row => {
               const target = row.productId ? byId.get(row.productId) : undefined;
-              const options = row.match.productIds.length > 1 ? row.match.productIds.map(id => byId.get(id)!).filter(Boolean) : sorted;
+              const matched = row.match.productIds.map(id => byId.get(id)).filter((p): p is BulkProduct => !!p);
+              const full = !matched.length || browsing.has(row.key);
+              const options = full ? sorted : matched;
               return <tr key={row.key} className="border-t border-slate-800 align-middle">
                 <td className="p-2">{/* eslint-disable-next-line @next/next/no-img-element */}
-                  {row.preview ? <img src={row.preview} alt="" referrerPolicy="no-referrer" className="h-12 w-12 rounded-lg bg-slate-800 object-contain" /> : <div className="h-12 w-12 rounded-lg bg-slate-800" />}</td>
+                  {row.preview ? <img src={row.preview} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-12 w-12 rounded-lg bg-slate-800 object-contain" /> : <div className="h-12 w-12 rounded-lg bg-slate-800" />}</td>
                 <td className="p-2 max-w-48"><span className="block truncate" title={row.label}>{row.label || '(blank)'}</span>
                   <span className="text-slate-500">{matchLabels[row.match.by]}{row.match.productIds.length > 1 ? ` · ${row.match.productIds.length} possible` : ''}</span></td>
-                <td className="p-2"><select value={row.productId} disabled={busy || row.state === 'done'} onChange={event => update(row.key, { productId: event.target.value, state: 'ready', message: '' })}
+                <td className="p-2"><select value={row.productId} disabled={busy || row.state === 'done'} onChange={event => {
+                    if (event.target.value === OTHER) { setBrowsing(previous => new Set(previous).add(row.key)); return; }
+                    update(row.key, { productId: event.target.value, state: 'ready', message: '' });
+                  }}
                   className="w-full max-w-72 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5">
                   <option value="">{row.match.productIds.length > 1 ? 'Pick the right product…' : 'Not matched: pick a product…'}</option>
                   {options.map(p => <option key={p.id} value={p.id}>{nameOf(p)}{hasImage(p) ? ' (has photo)' : ''}</option>)}
+                  {!full && <option value={OTHER}>Other product…</option>}
                 </select>{target && hasImage(target) && row.state === 'ready' && <span className="block text-amber-300">{skipWithImage ? 'Has a photo; will be skipped' : 'Will replace the current photo'}</span>}</td>
                 <td className={'p-2 ' + tone[row.state]}>{row.state === 'working' ? <Loader2 className="inline w-4 h-4 animate-spin" /> : row.state === 'ready' ? (row.productId ? 'Ready' : '') : row.message || row.state}
                   {row.state === 'ready' || row.state === 'failed' ? <button disabled={busy} className="ml-2 text-slate-500" onClick={() => setRows(previous => previous.filter(r => r.key !== row.key))}>Remove</button> : null}</td>

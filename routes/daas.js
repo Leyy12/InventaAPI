@@ -35,7 +35,9 @@ router.get('/health', (req, res) => {
 router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res) => {
     try {
         const linkedVariantSelections = req.apiKeyData.linkedVariantSelections || {};
-        const searchQuery = req.query.search || req.query.q || '';
+        // A repeated ?search= arrives as an array; use the first value so .trim() never throws.
+        const rawSearch = req.query.search || req.query.q || '';
+        const searchQuery = String(Array.isArray(rawSearch) ? rawSearch[0] ?? '' : rawSearch);
 
         // Combine current, partial-variant, and stable legacy product IDs.
         // Legacy embedded product fields never become catalog data.
@@ -263,7 +265,7 @@ router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res)
 
         res.status(500).json({
             error: 'Internal Server Error',
-            message: 'Failed to fetch catalog: ' + err.message
+            message: 'Failed to fetch catalog.'
         });
     }
 });
