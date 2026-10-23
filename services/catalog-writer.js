@@ -1,5 +1,5 @@
 import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
-import { evaluateProductVisibility, productIdentityKeys } from './product-contract.js';
+import { evaluateProductVisibility, productIdentityKeys, withoutPrices } from './product-contract.js';
 import { normalizeProductImageUrl } from './product-submission-contract.js';
 import { catalogError, identityId, possibleDuplicates, reservationIntegrityError, reservationIntegrityProblems, validateCatalogProduct } from './catalog-contract.js';
 import { auditCatalog, catalogFacts } from './catalog-audit.js';
@@ -83,7 +83,8 @@ export async function prepareCatalogWrite({ tx, db, uid, actor, action, productI
   if (!audit.ok) throw catalogError(409, 'Catalog audit required: historical collision or malformed product.');
   const payload = ['create', 'edit'].includes(action) ? validateCatalogProduct(input, previous) : {};
   const applyMedia = await prepareCatalogMedia({ tx, db, uid, productId, payload, previous, action, submissionId, at });
-  let product = { ...previous, ...payload };
+  // Products have no price: one left on an older document is dropped when it is saved.
+  let product = withoutPrices({ ...previous, ...payload });
   if (action === 'archive' || action === 'restore') {
     product = { ...product, status: action === 'archive' ? 'Archived' : 'Active', is_active: action === 'restore' };
   }

@@ -3,6 +3,7 @@
 // Rows are upserted by document id, so a copy can be re-run safely to pick up
 // anything that changed; Firestore itself is only read, never modified.
 import { encode } from '../database/postgres-firestore.js';
+import { withoutPrices } from './product-contract.js';
 
 const PAGE_SIZE = 400;
 
@@ -30,7 +31,8 @@ export function createSupabaseCopy({ source, target, documentId, enabled }) {
         if (snapshot.empty) return { copied: 0, nextCursor: null };
         const rows = snapshot.docs.map(doc => ({
             id: doc.id,
-            data: encode(doc.data()),
+            // Products have no price: copies arrive without the ones Firebase still holds.
+            data: encode(collection === 'products' ? withoutPrices(doc.data()) : doc.data()),
             created_at: iso(doc.createTime),
             updated_at: iso(doc.updateTime),
         }));

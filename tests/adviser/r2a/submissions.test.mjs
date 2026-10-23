@@ -63,11 +63,15 @@ test('deletion starting during submit retries transaction and denies new record'
   const f = fixture(); f.db.beforeCommit = () => { f.db.beforeCommit = null; f.db.seed('users/customer', { accountState: 'deleting' }); };
   assert.equal((await f.submit()).statusCode, 403); assert.equal(f.submissions().length, 0);
 });
+test('a price sent with a submission is dropped, never stored', () => {
+  for (const price of [25, -1, '10', null]) {
+    assert.deepEqual(validateSubmissionContent({ ...content, variants: [{ size: '50g', price }] }).variants, [{ size: '50g' }]);
+  }
+});
 for (const segment of ['Grocery', 'Pharmacy', 'Hardware', 'medicine', 'tools']) test(`canonical segment ${segment}`, () => {
   assert.ok(['Grocery', 'Pharmacy', 'Hardware'].includes(validateSubmissionContent({ ...content, segment }).segment));
 });
-for (const change of [{ segment: 'Other' }, { name: '' }, { category: '' }, { variants: [{ price: -1 }] },
-  { variants: [{ price: '10' }] }, { variants: [{ price: Infinity }] }, { variants: [{ status: 'Active' }] },
+for (const change of [{ segment: 'Other' }, { name: '' }, { category: '' }, { variants: [{ status: 'Active' }] },
   { variants: Array(51).fill({}) }, { name: 'x'.repeat(161) }, { description: 'x'.repeat(4001) }]) {
   test(`invalid content ${Object.keys(change)[0]} ${JSON.stringify(change).slice(0, 70)}`, async () => {
     assert.equal((await fixture().submit({ body: { ...content, ...change } })).statusCode, 400);

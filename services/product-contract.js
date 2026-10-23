@@ -93,8 +93,6 @@ function normalizeVariant(value) {
     const normalized = firstText(value[field]);
     if (normalized) variant[field] = normalized;
   }
-  const price = optionalNumber(value.price);
-  if (price !== null) variant.price = price;
   return Object.keys(variant).length ? variant : null;
 }
 
@@ -159,17 +157,6 @@ export function evaluateProductVisibility(product) {
   return { visible: false, reason: 'no_publication_signal' };
 }
 
-function lowestPricedVariant(variants) {
-  if (!variants.length) return null;
-  return variants.reduce((best, candidate) => {
-    if (!best) return candidate;
-    const bestPrice = optionalNumber(best.price);
-    const candidatePrice = optionalNumber(candidate.price);
-    if (candidatePrice === null) return best;
-    if (bestPrice === null || candidatePrice < bestPrice) return candidate;
-    return best;
-  }, null);
-}
 
 function identityKeysFromCanonical(product) {
   const skus = new Set();
@@ -225,7 +212,6 @@ export function projectProduct(source, documentId = null) {
   if (!plainObject(source)) return null;
   const attributes = clonePlainObject(source.attributes);
   const rootSku = firstText(source.sku, source.barcode, source.productCode, source.product_code);
-  const rootPrice = optionalNumber(source.price ?? attributes.price);
   const rootSize = firstText(source.size, attributes.size);
   const rootExpiration = firstText(source.expirationDate, source.expiration_date);
   const storedVariantPayloads = Array.isArray(source.variants)
@@ -234,10 +220,9 @@ export function projectProduct(source, documentId = null) {
   const variants = storedVariantPayloads.map(normalizeVariant).filter(Boolean);
   let variantPayloads = storedVariantPayloads;
 
-  if (!variants.length && (rootSku || rootPrice !== null || rootSize || rootExpiration)) {
+  if (!variants.length && (rootSku || rootSize || rootExpiration)) {
     const base = {};
     if (rootSku) base.sku = rootSku;
-    if (rootPrice !== null) base.price = rootPrice;
     if (rootSize) base.size = rootSize;
     if (rootExpiration) base.expirationDate = rootExpiration;
     const flavor = firstText(source.flavor, source.variant, attributes.flavor, attributes.variant);
@@ -246,7 +231,7 @@ export function projectProduct(source, documentId = null) {
     if (!storedVariantPayloads.length) variantPayloads = [{ ...base }];
   }
 
-  const baseVariant = lowestPricedVariant(variants);
+  const baseVariant = variants[0] ?? null;
   let visibility = evaluateProductVisibility(source);
   const category = normalizeCategory(firstText(
     source.category, source.productCategory, source.product_category, source.subcategory, source.sub_category,
@@ -298,8 +283,8 @@ export function projectProduct(source, documentId = null) {
   return canonical;
 }
 
-// This system does not use product prices. Older documents may still store one;
-// this removes it from anything sent out (API responses and browser reads).
+// Products have no price in this system. withoutPrices() removes any price an older
+// document still carries: from everything sent out, and from every product saved.
 const PRICE_KEYS = ['price', 'srp', 'msrp', 'retail_price', 'selling_price', 'unit_price', 'market_price'];
 const omitPrices = value => {
   if (!plainObject(value)) return value;

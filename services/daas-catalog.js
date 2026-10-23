@@ -80,18 +80,6 @@ function variantIdentifier(variant) {
   return `${variant.flavor || ''}|${variant.size || ''}`;
 }
 
-function lowestPricedVariant(variants) {
-  if (!variants.length) return null;
-  return variants.reduce((best, candidate) => {
-    if (!best) return candidate;
-    const bestPrice = typeof best.price === 'number' ? best.price : parseFloat(best.price) || Number.POSITIVE_INFINITY;
-    const candidatePrice = typeof candidate.price === 'number'
-      ? candidate.price
-      : parseFloat(candidate.price) || Number.POSITIVE_INFINITY;
-    return candidatePrice < bestPrice ? candidate : best;
-  }, null);
-}
-
 
 function availabilityIso(value) {
   if (!value) return null;
@@ -114,7 +102,7 @@ export function formatDaaSProduct(product, {
   const variants = hasPartialSelection
     ? variantPayloads.filter(variant => selectedVariants.includes(variantIdentifier(variant)))
     : [...variantPayloads];
-  const baseVariant = lowestPricedVariant(variants);
+  const baseVariant = variants[0] ?? null;
 
   return withoutPrices({
     id: product.id,

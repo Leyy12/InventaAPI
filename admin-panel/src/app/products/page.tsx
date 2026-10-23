@@ -24,7 +24,6 @@ export interface ProductVariant {
   form?: string;
   specs?: string;
   dimensions?: string;
-  price?: number | string;
   value?: string;
   sku?: string;
   expirationDate?: string; // YYYY-MM-DD
@@ -61,7 +60,6 @@ export interface Product {
   product?: string;
   category?: string;
   segment?: string;
-  price?: number | string;
   size?: string;
   flavor?: string;
   dosage?: string;
@@ -78,7 +76,7 @@ export interface Product {
   updatedAt?: any;
   variants?: ProductVariant[];
   sku?: string;
-  attributes?: { brand?: string; flavor?: string; size?: string; variant?: string; price?: number | string };
+  attributes?: { brand?: string; flavor?: string; size?: string; variant?: string };
 }
 
 type VariantFieldKey = "flavor" | "size" | "dosage" | "form" | "specs" | "dimensions";
@@ -430,7 +428,7 @@ function EditModal({
     savingRef.current = true;
     setSaving(true); setError("");
     try {
-      const cleaned = variants.map(({ price: _price, ...v }) => v);
+      const cleaned = variants;
       let imageFields: { image_url?: string; image_asset_id?: string } = {};
       if (imageFile) {
         const user = auth.currentUser;
@@ -645,7 +643,7 @@ function AddProductModal({
       if (createAttempt.current && createAttempt.current.uid !== user.uid) throw new Error('Sign back into the creating account to retry.');
       if (!createAttempt.current) {
         const image_url = normalizeProductImageUrl(imageUrl);
-        const cleaned = variants.map(({ price: _price, ...v }) => v);
+        const cleaned = variants;
         const key = crypto.randomUUID();
         createAttempt.current = { uid: user.uid, key,
           product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },

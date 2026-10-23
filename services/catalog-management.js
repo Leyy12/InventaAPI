@@ -140,8 +140,8 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
             }
             const current = (await tx.get(db.collection('products').doc(productId))).data();
             if (!current) throw catalogError(404, 'Product was removed after preview.');
-            const flags = plan.merge ? { keepPrice: !!row.keepPrice, fillImageOnly: true } : {};
-            const update = plan.merge && (row.update?.merge || row.appendTo) ? planImportMerge(current, row.product, flags) : planImportUpdate(current, row.product, flags);
+            const update = plan.merge && (row.update?.merge || row.appendTo) ? planImportMerge(current, row.product)
+              : planImportUpdate(current, row.product, plan.merge ? { fillImageOnly: true } : {});
             if (!update) {
               const saved = { row: rowNumber, status: 'SKIPPED', reason: 'Already up to date.', productId, replayed: false };
               tx.set(receiptRef, saved);

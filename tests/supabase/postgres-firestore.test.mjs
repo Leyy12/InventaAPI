@@ -159,3 +159,15 @@ test('admin copy moves Firestore pages into Supabase and compares counts', { ski
     assert.ok(snap.data().at instanceof Timestamp);
     assert.equal(snap.createTime.toDate().toISOString(), '2025-01-01T00:00:00.000Z');
 });
+
+test('the Supabase copy leaves product prices behind', { skip }, async () => {
+    const { createSupabaseCopy } = await import('../../services/supabase-copy.js');
+    const docs = [{ id: 'priced', data: () => ({ name: 'Coke', price: 10, attributes: { price: 10, brand: 'X' }, variants: [{ size: '1L', price: 10 }] }),
+        createTime: Timestamp.now(), updateTime: Timestamp.now() }];
+    const query = () => ({ orderBy: () => query(), limit: () => query(), startAfter: () => query(),
+        get: async () => ({ empty: false, size: docs.length, docs }) });
+    const source = { listCollections: async () => [{ id: 'products' }], collection: () => query() };
+    const copy = createSupabaseCopy({ source, target: db, documentId: '__name__', enabled: () => true });
+    await copy.step({ body: { collection: 'products' } }, { status() { return this; }, json() {} });
+    assert.deepEqual((await db.collection('products').doc('priced').get()).data(), { name: 'Coke', attributes: { brand: 'X' }, variants: [{ size: '1L' }] });
+});
