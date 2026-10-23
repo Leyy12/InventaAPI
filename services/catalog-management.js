@@ -167,6 +167,12 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
         if (activity) await appendActivityAudit(db, activity);
         results.push(result);
       } catch (error) {
+        // The preview found no match, so a product with this identity was added after the
+        // check (usually by an earlier run of the same import). Nothing was overwritten.
+        if (error.status === 409 && /^Canonical catalog conflict/u.test(error.message)) {
+          results.push({ row: rowNumber, status: 'SKIPPED', reason: 'Already in the catalog (added after this file was checked).' });
+          continue;
+        }
         results.push({ row: rowNumber, status: 'FAILED', reason: Number.isInteger(error.status) ? error.message : 'Write unavailable; retry the same preview and row.' });
       }
     }

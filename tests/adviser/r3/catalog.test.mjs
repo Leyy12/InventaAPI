@@ -574,3 +574,13 @@ test('import skips rows whose name is only a barcode, number or size, and cleans
   assert.deepEqual(byName.slice(4).map(([status, name]) => [status, name]), [['NEW', 'AVON ULTRA RADIANCE'],
     ['NEW', 'prochef cooking baking spray'], ['NEW', '100% Lychee Juice'], ['NEW', 'C2']]);
 });
+
+test('a row whose product was added after the check is reported as already in the catalog, not failed', async () => {
+  const f = fixture(), plan = await f.preview();
+  assert.equal(plan.body.rows[0].status, 'NEW');
+  assert.equal((await f.create()).statusCode, 200); // e.g. an earlier run of the same import added it
+  const result = await f.commit(plan.body.previewId, [2]);
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.body.results, [{ row: 2, status: 'SKIPPED', reason: 'Already in the catalog (added after this file was checked).' }]);
+  assert.equal(f.products().length, 1);
+});
