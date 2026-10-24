@@ -168,7 +168,10 @@ export default function AuthEntry() {
 
   // Do not flash marketing content while Firebase is restoring an authenticated
   // session; the single navigation decision above resolves first.
-  if (loading || destination) return <SessionLoadingScreen
+  // A signed-in customer coming back from a cancelled payment goes straight to
+  // Plan & Billing; show the loading screen, never the landing page, meanwhile.
+  const cancelRedirect = !!cancelReturn && !!user && !loginStarted && profileRole(appUser) === 'customer';
+  if (loading || destination || cancelRedirect) return <SessionLoadingScreen
     variant={authStatus === 'verified' && user && profileRole(appUser) === 'customer' ? 'workspace' : 'public'} />;
 
   return (
