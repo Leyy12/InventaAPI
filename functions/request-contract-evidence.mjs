@@ -71,9 +71,10 @@ export async function resolveRequestContracts(tx, db, uid, account, { recoverHis
     const plan = paidPlan(order.plan);
     // Accepted historical settlement shapes, matching the locked payment
     // contract. Recovery cannot treat an arbitrary amount as paid plan evidence.
-    const listAmount = plan === 'pro_max' ? 499900 : 149900;
-    const validSettlement = order.billingProfile === undefined && order.listAmount === undefined && order.amount === listAmount
-      || order.billingProfile === 'global_live_test_v1' && order.mode === 'live' && order.listAmount === listAmount && order.amount === 500;
+    // Current and earlier list prices (₱500/₱1,300 now; ₱1,499/₱4,999 before 2026-10-24).
+    const listAmounts = plan === 'pro_max' ? [130000, 499900] : [50000, 149900];
+    const validSettlement = order.billingProfile === undefined && order.listAmount === undefined && listAmounts.includes(order.amount)
+      || order.billingProfile === 'global_live_test_v1' && order.mode === 'live' && listAmounts.includes(order.listAmount) && order.amount === 500;
     if (!plan || order.id !== doc.id || order.userId !== uid || !['test', 'live'].includes(order.mode)
       || order.plan !== (plan === 'pro_max' ? 'Pro Max' : 'Pro') || order.entitlementGranted === false || !validSettlement
       || (order.planId !== plan && !(plan === 'pro' && order.planId === undefined))

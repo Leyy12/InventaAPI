@@ -120,7 +120,7 @@ mode prefix. The current routes remain Checkout Sessions via
 `POST /api/v1/checkout/create-gcash`, status via
 `GET /api/v1/checkout/subscription-status`, and
 `POST /api/webhooks/paymongo` for `checkout_session.payment.paid` fulfillment.
-Price remains 149900 centavos, PHP, Pro, 30 calendar days.
+Price is 50000 centavos (149900 before 2026-10-24), PHP, Pro, 30 calendar days.
 
 Paid terms are **30 UTC calendar days**, preserving the UTC time of day. The
 renewal anchor is the later of a valid prior subscription expiry and the

@@ -831,7 +831,7 @@ test('Trial UX consistently uses product limits, shared keys and actual expiry r
   assert.doesNotMatch(products, /Remove a product before adding another|Legacy over-cap catalog preserved/);
   assert.match(products, /trialAddMode \?/); assert.doesNotMatch(read(files[2]), /onClick=\{activate\}|\/free-trial\/activate/);
   const plans = read(files[5]); assert.doesNotMatch(plans, /Minimum 50 products/); assert.match(plans, /Up to \$\{TRIAL_MAX_PRODUCTS\} products/); assert.match(plans, /Up to \$\{TRIAL_MAX_ACTIVE_KEYS\} API keys/);
-  assert.match(plans, /₱1,499/); assert.match(plans, /₱4,999/); assert.match(plans, /MOST POPULAR/);
+  assert.match(plans, /₱500/); assert.match(plans, /₱1,300/); assert.match(plans, /MOST POPULAR/);
 });
 test('consumed legacy 500-request evidence cannot regain access through direct status/key/API paths', async () => {
   const f = fixture(); await f.activate(); await f.db.collection('account_trial_usage').doc('owner').update({ used: 500 });

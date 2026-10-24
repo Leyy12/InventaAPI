@@ -48,7 +48,7 @@ test('the three buttons choose free, pro and pro_max with the catalog CTA text',
 });
 test('cards render the catalog\'s prices, features and exclusions', () => {
   const fixture = cards(), copy = text(fixture.h.output);
-  for (const value of ['FREE TRIAL', 'PRO', 'PRO MAX', '1,499', plans.pro_max.priceDisplay, 'Everything in Free, and:', 'Everything in Pro, and:',
+  for (const value of ['FREE TRIAL', 'PRO', 'PRO MAX', '500', plans.pro_max.priceDisplay, 'Everything in Free, and:', 'Everything in Pro, and:',
     ...plans.free.features, ...plans.free.exclusions, ...plans.pro.incrementalFeatures, ...plans.pro_max.incrementalFeatures]) {
     assert.ok(copy.includes(value), value);
   }

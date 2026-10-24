@@ -28,13 +28,13 @@ function handlers(account = free) {
 }
 
 test('authoritative purchase catalog preserves exact Pro and Pro Max terms', () => {
-  assert.deepEqual(PRO_PURCHASE, { planId: 'pro', plan: 'Pro', amount: 149900, currency: 'PHP', durationDays: 30, apiRequestLimit: 500 });
-  assert.deepEqual(PRO_MAX_PURCHASE, { planId: 'pro_max', plan: 'Pro Max', amount: 499900, currency: 'PHP', durationDays: 30, apiRequestLimit: null });
+  assert.deepEqual(PRO_PURCHASE, { planId: 'pro', plan: 'Pro', amount: 50000, currency: 'PHP', durationDays: 30, apiRequestLimit: 500 });
+  assert.deepEqual(PRO_MAX_PURCHASE, { planId: 'pro_max', plan: 'Pro Max', amount: 130000, currency: 'PHP', durationDays: 30, apiRequestLimit: null });
   assert.equal(matchesPurchase({ ...PRO_MAX_PURCHASE }), true);
-  assert.equal(matchesPurchase({ ...PRO_MAX_PURCHASE, amount: 149900 }), false);
+  assert.equal(matchesPurchase({ ...PRO_MAX_PURCHASE, amount: 50000 }), false);
   assert.equal(matchesPurchase({ ...PRO_PURCHASE, plan: 'Pro Max' }), false);
   const payload = checkoutPayload({ id: orderId, ...PRO_MAX_PURCHASE }, config.dashboardUrl);
-  assert.equal(payload.data.attributes.line_items[0].amount, 499900);
+  assert.equal(payload.data.attributes.line_items[0].amount, 130000);
   assert.equal(payload.data.attributes.line_items[0].name, 'InventaAPI Pro Max Plan');
   assert.equal(payload.data.attributes.metadata.planId, 'pro_max');
 });
@@ -42,14 +42,14 @@ test('authoritative purchase catalog preserves exact Pro and Pro Max terms', () 
 test('checkout uses requested server catalog plan and rejects client price/currency/duration/quota tampering', async () => {
   const env = handlers();
   const accepted = await invoke(env.payment.checkout, { body: { plan: 'pro_max' } });
-  assert.equal(accepted.statusCode, 200); assert.equal(accepted.body.amount, 499900);
+  assert.equal(accepted.statusCode, 200); assert.equal(accepted.body.amount, 130000);
   assert.deepEqual(Object.fromEntries(Object.entries(env.db.read(`payment_orders/${orderId}`))
     .filter(([key]) => Object.hasOwn(PRO_MAX_PURCHASE, key))), PRO_MAX_PURCHASE);
   assert.equal(env.calls(), 1);
   for (const body of [
-    { plan: 'enterprise' }, { plan: 'pro_max', amount: 149900 }, { plan: 'pro_max', currency: 'USD' },
+    { plan: 'enterprise' }, { plan: 'pro_max', amount: 50000 }, { plan: 'pro_max', currency: 'USD' },
     { plan: 'pro_max', durationDays: 365 }, { plan: 'pro_max', apiRequestLimit: 5000 },
-    { plan: 'pro', amount: 499900 }, { plan: 'pro_max', discount: 1 },
+    { plan: 'pro', amount: 130000 }, { plan: 'pro_max', discount: 1 },
   ]) {
     const attempt = handlers();
     assert.ok((await invoke(attempt.payment.checkout, { body })).statusCode >= 400);
@@ -84,7 +84,7 @@ test('Free, active Trial, and Upgrade Required purchase Pro Max without erasing 
     const env = handlers(initial);
     assert.equal((await invoke(env.payment.checkout, { body: { plan: 'pro_max' } })).statusCode, 200);
     assert.deepEqual(await fulfillPayment(env.db, { mode: 'test', eventId: 'evt_abc', sessionId: 'cs_abc',
-      paymentIntentId: 'pi_abc', paymentId: 'pay_abc', amount: 499900, currency: 'PHP' }, NOW), { duplicate: false });
+      paymentIntentId: 'pi_abc', paymentId: 'pay_abc', amount: 130000, currency: 'PHP' }, NOW), { duplicate: false });
     const upgraded = env.db.read('users/owner');
     assert.equal(upgraded.plan, 'Pro Max');
     assert.equal(upgraded.apiRequestLimit, null);
@@ -103,7 +103,7 @@ test('Pro Max renewal preserves existing paid time and active Pro Max cannot dow
   assert.equal(env.calls(), 0);
   assert.equal((await invoke(env.payment.checkout, { body: { plan: 'pro_max' } })).statusCode, 200);
   await fulfillPayment(env.db, { mode: 'test', eventId: 'evt_abc', sessionId: 'cs_abc',
-    paymentIntentId: 'pi_abc', paymentId: 'pay_abc', amount: 499900, currency: 'PHP' }, NOW);
+    paymentIntentId: 'pi_abc', paymentId: 'pay_abc', amount: 130000, currency: 'PHP' }, NOW);
   assert.equal(env.db.read('users/owner').subscriptionExpiresAt, '2026-10-31T12:00:00.000Z');
   assert.equal(env.db.read('users/owner').plan, 'Pro Max');
 });
@@ -122,14 +122,14 @@ test('Pro Max expiry after consumed Trial fails closed to Upgrade Required witho
 test('provider event amounts are parsed but exact saved-order binding decides entitlement', () => {
   const event = { data: { id: 'evt_abc', type: 'event', attributes: { type: 'checkout_session.payment.paid', livemode: false,
     data: { id: 'cs_abc', type: 'checkout_session', attributes: { status: 'active', livemode: false,
-      line_items: [{ amount: 499900, currency: 'PHP', quantity: 1 }],
-      payment_intent: { id: 'pi_abc', type: 'payment_intent', attributes: { amount: 499900, currency: 'PHP', livemode: false, status: 'succeeded' } },
-      payments: [{ id: 'pay_abc', type: 'payment', attributes: { amount: 499900, currency: 'PHP', livemode: false,
+      line_items: [{ amount: 130000, currency: 'PHP', quantity: 1 }],
+      payment_intent: { id: 'pi_abc', type: 'payment_intent', attributes: { amount: 130000, currency: 'PHP', livemode: false, status: 'succeeded' } },
+      payments: [{ id: 'pay_abc', type: 'payment', attributes: { amount: 130000, currency: 'PHP', livemode: false,
         payment_intent_id: 'pi_abc', status: 'paid', source: { type: 'gcash' }, refunds: [] } }],
     } },
   } } };
-  assert.equal(paymentFromEvent(event, 'test').amount, 499900);
+  assert.equal(paymentFromEvent(event, 'test').amount, 130000);
   assert.throws(() => paymentFromEvent(event, 'live'), error => error.code === 'MODE_MISMATCH');
-  event.data.attributes.data.attributes.line_items[0].amount = 149900;
+  event.data.attributes.data.attributes.line_items[0].amount = 50000;
   assert.throws(() => paymentFromEvent(event, 'test'), error => error.code === 'PURCHASE_MISMATCH');
 });
