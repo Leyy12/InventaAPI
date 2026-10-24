@@ -112,13 +112,21 @@ app.use((req, res, next) => {
 // 3. Express Rate Limit: Prevent Denial of Service (DoS) and brute-force scanning
 // Policy runs before quota use, business mutations, raw uploads and audits.
 // Admin recovery, authentication and payment settlement never enter this gate.
-const { verifyClientIp, limiter } = createIpRateLimiter({
+// The dashboard and admin apps call /api/ about 9 times per page load, and people in
+// one store or office share an IP, so 60 a minute signed them out after a few clicks.
+// The public product API (/daas/) keeps 60 a minute; plan quotas still apply to it.
+const appLimits = createIpRateLimiter({
     windowMs: 60 * 1000, // 1 minute
-    max: 60, // ordinary API/DaaS requests retain their shared per-IP protection
+    max: 300,
     publicImages: true,
+    message: 'Too many requests. Please try again after 1 minute. Maximum 300 requests per minute.',
 });
-app.use('/api/', verifyClientIp, limiter);
-app.use('/daas/', verifyClientIp, limiter);
+const daasLimits = createIpRateLimiter({
+    windowMs: 60 * 1000, // 1 minute
+    max: 60,
+});
+app.use('/api/', appLimits.verifyClientIp, appLimits.limiter);
+app.use('/daas/', daasLimits.verifyClientIp, daasLimits.limiter);
 app.use(createSystemPolicyMiddleware({ getDb: () => getFirestore() }));
 
 // 4. Data Compression: Ensure JSON responses are lightweight for Mobile Computing
