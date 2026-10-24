@@ -250,6 +250,12 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── View Detail Modal ────────────────────────────────────────────────────────
 function ViewModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  // Read-only window: Escape closes it (Edit and Add keep typed changes, so they don't).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const [attr1Key, attr2Key] = getSegmentPair(product.segment);
   const attr1 = getAttr1(product);
   const attr1Label = FIELD_META[attr1Key].label;
@@ -282,7 +288,7 @@ function ViewModal({ product, onClose }: { product: Product; onClose: () => void
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -477,7 +483,7 @@ function EditModal({
               <p className="text-[11px] text-slate-500 truncate max-w-xs">{getProductName(product)}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -695,7 +701,7 @@ function AddProductModal({
               <p className="text-[11px] text-slate-500">Canonical duplicates are blocked; distinct variants are never merged automatically.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1097,15 +1103,15 @@ export default function MasterProductCatalogPage() {
         {/* Table */}
         <div ref={tableTop} className="overflow-auto max-h-[62vh] custom-scrollbar">
           <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "960px" }}>
+            {/* One width per column (7). An 8th width here used to leave an empty strip on the right. */}
             <colgroup>
               <col style={{ width: "5%" }} />
-              <col style={{ width: "21%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "11%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "11%" }} />
-              <col style={{ width: "18%" }} />
+              <col style={{ width: "29%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "15%" }} />
             </colgroup>
             <thead>
               <tr>

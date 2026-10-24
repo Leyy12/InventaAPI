@@ -146,10 +146,12 @@ test('custom key path prevents the old X-Forwarded-For validation error', async 
     assert.equal(errors.some(message => message.includes('ERR_ERL_UNEXPECTED_X_FORWARDED_FOR')), false);
 });
 
-test('server mounts one verified limiter on both route families without changing auth or quota', async () => {
+test('server mounts a verified limiter on both route families (app 300/min, public API 60/min) without changing auth or quota', async () => {
     const source = await readFile(new URL('../../server.js', import.meta.url), 'utf8');
-    assert.match(source, /app\.use\('\/api\/', verifyClientIp, limiter\)/);
-    assert.match(source, /app\.use\('\/daas\/', verifyClientIp, limiter\)/);
+    assert.match(source, /app\.use\('\/api\/', appLimits\.verifyClientIp, appLimits\.limiter\)/);
+    assert.match(source, /app\.use\('\/daas\/', daasLimits\.verifyClientIp, daasLimits\.limiter\)/);
+    assert.match(source, /const appLimits = createIpRateLimiter\(\{[^}]*max: 300,/s);
+    assert.match(source, /const daasLimits = createIpRateLimiter\(\{[^}]*max: 60,/s);
     assert.doesNotMatch(source, /app\.set\(['"]trust proxy['"],\s*true\)/);
     assert.match(source, /app\.use\('\/api\/v1\/auth', authRouter\)/);
     assert.match(source, /app\.use\('\/daas\/v1', daasRouter\)/);

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Settings, Save, Server, Shield } from 'lucide-react';
 import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
-import { TRIAL_MAX_PRODUCTS } from '../../../../functions/entitlement-limits.mjs';
+import { TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '../../../../functions/entitlement-limits.mjs';
 
 type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
 type Configuration = { maintenanceMode: boolean; allowNewRegistrations: boolean; planRequestLimits: PlanLimits };
@@ -190,7 +190,7 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-xs text-slate-400 mt-3">{snapshot?.planLimitPeriod || 'Finite allowances are shared across all active API keys and reset at midnight UTC.'}</p>
                 <p className="text-xs text-slate-400 mt-2">Increases apply immediately. Lower allowances apply to new contracts; existing paid promises and existing Unlimited Trials remain protected. Saving never resets request usage.</p>
-                <p className="text-xs text-slate-400 mt-2">The Trial remains seven days with 50 products and one active key. Prices and independent abuse protection remain unchanged.</p>
+                <p className="text-xs text-slate-400 mt-2">The Trial remains seven days with {TRIAL_MAX_PRODUCTS} products and up to {TRIAL_MAX_ACTIVE_KEYS} active keys. Prices and independent abuse protection remain unchanged.</p>
               </div>
             </fieldset>
           </div>

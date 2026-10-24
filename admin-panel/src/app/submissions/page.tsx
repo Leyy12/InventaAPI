@@ -86,7 +86,7 @@ export default function SubmissionsPage() {
       setDecision(null);
     }
   }
-  return <main className="min-w-0 space-y-5 p-4 text-slate-200 sm:p-6 lg:p-8">
+  return <div className="min-w-0 space-y-5 p-4 text-slate-200 sm:p-6 lg:p-8">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div><h1 className="text-2xl font-semibold tracking-tight text-white">Product Submissions</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Review Customer products before they enter the catalog. Open a submission to inspect its photo, details and variants.</p></div>
@@ -116,5 +116,5 @@ export default function SubmissionsPage() {
     {next && <button type="button" disabled={busy} onClick={() => { void load(next); }} className={reviewButtonClass + ' border border-slate-700 text-slate-200'}>Load more</button>}
     {selected && <SubmissionReviewDialog key={selected.id} row={selected} busy={busy} decision={decision} locked={lockedIds.includes(selected.id)} error={error}
       onClose={() => setSelectedId(null)} onReview={(id, action) => { void review(id, action); }} onRefresh={() => { void load(); }} />}
-  </main>;
+  </div>;
 }
