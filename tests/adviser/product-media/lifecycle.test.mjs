@@ -58,3 +58,30 @@ test('Admin Add receipt prevents concurrent replay; Edit keep/replace/remove and
 test('Admin cannot publish customer ready media, another Admin upload, or unknown assets',async()=>{const f=fixture();f.db.seed('users/admin2',{role:'Admin'});for(const token of ['customer','admin2']){const id=(await f.upload(token,token==='customer'?'submission':'catalog')).body.image_asset_id;const r=await invoke(f.catalog.create,{token:'admin',body:{product:{...product,image_asset_id:id}}});assert.equal(r.statusCode,403);}assert.equal(f.db.read('products/admin-product'),undefined);});
 test('twenty outstanding uploads cap storage abuse without counting published history',async()=>{const f=fixture();for(let i=0;i<20;i++)assert.equal((await f.upload('customer','submission',`operation-number-${i}-long`)).statusCode,200);assert.equal((await f.upload('customer','submission','operation-over-limit-long')).statusCode,429);assert.equal(f.puts(),20);});
 test('catalog receipt cannot be reused with different content',async()=>{const f=fixture();await invoke(f.catalog.create,{token:'admin',headers:{'idempotency-key':key},body:{product}});assert.equal((await invoke(f.catalog.create,{token:'admin',headers:{'idempotency-key':key},body:{product:{...product,name:'other'}}})).statusCode,409);});
+test('Admin can give each variant its own uploaded photo; shared, kept, replaced and removed photos stay bound correctly',async()=>{
+  const f=fixture();
+  const twoFlavors={...product,variants:[{flavor:'Flakes in Oil',size:'155g',sku:'T-OIL-155'},{flavor:'Hot & Spicy',size:'155g',sku:'T-HOT-155'},{flavor:'Hot & Spicy',size:'420g',sku:'T-HOT-420'}]};
+  const created=await invoke(f.catalog.create,{token:'admin',body:{product:twoFlavors}});assert.equal(created.statusCode,200);const id=created.body.product.id;
+  const hot=(await f.upload('admin','catalog','variant-hot-key-123456')).body.image_asset_id;
+  assert.equal((await f.image(hot)).statusCode,404,'unbound upload is private');
+  const edit=(variants,revision)=>invoke(f.catalog.edit,{token:'admin',params:{id},body:{product:{variants},expectedRevision:revision}});
+  const withHot=twoFlavors.variants.map(v=>v.flavor==='Hot & Spicy'?{...v,image_asset_id:hot,image_url:''}:v);
+  assert.equal((await edit(withHot,1)).statusCode,200);
+  let saved=f.db.read('products/'+id);
+  assert.deepEqual(saved.variants.map(v=>v.image_asset_id||''),['',hot,hot]);
+  assert.ok(saved.variants.slice(1).every(v=>v.image_url.endsWith(`/api/v1/product-media/${hot}/image`)));
+  assert.equal(f.db.read('product_media/'+hot).state,'published');assert.equal((await f.image(hot)).statusCode,200);
+  // A metadata-only edit keeps the variant photo.
+  assert.equal((await invoke(f.catalog.edit,{token:'admin',params:{id},body:{product:{description:'x'},expectedRevision:2}})).statusCode,200);
+  assert.equal((await f.image(hot)).statusCode,200);
+  // Another admin's / unknown upload cannot be attached to a variant.
+  f.db.seed('users/admin2',{role:'Admin'});const foreign=(await f.upload('admin2','catalog','foreign-variant-key-1234')).body.image_asset_id;
+  assert.equal((await edit(withHot.map((v,i)=>i===0?{...v,image_asset_id:foreign}:v),3)).statusCode,403);
+  // Replacing with a new upload retires the old one; removing retires it too.
+  const hot2=(await f.upload('admin','catalog','variant-hot-key-654321')).body.image_asset_id;
+  assert.equal((await edit(twoFlavors.variants.map(v=>v.flavor==='Hot & Spicy'?{...v,image_asset_id:hot2,image_url:''}:v),3)).statusCode,200);
+  assert.equal(f.db.read('product_media/'+hot).state,'retired');assert.equal((await f.image(hot)).statusCode,404);assert.equal((await f.image(hot2)).statusCode,200);
+  assert.equal((await edit(twoFlavors.variants,4)).statusCode,200);
+  assert.equal(f.db.read('product_media/'+hot2).state,'retired');assert.equal((await f.image(hot2)).statusCode,404);
+  saved=f.db.read('products/'+id);assert.ok(saved.variants.every(v=>!v.image_asset_id&&!v.image_url));
+});

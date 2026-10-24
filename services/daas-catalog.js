@@ -115,7 +115,12 @@ export function formatDaaSProduct(product, {
     image_url: product.image_url || '',
     metadata: product.metadata || {},
     tags: product.tags || [],
-    variants,
+    // Each variant keeps its own image_url (when it has one); internal asset IDs stay private.
+    variants: variants.map(variant => {
+      if (!variant || typeof variant !== 'object' || !('image_asset_id' in variant)) return variant;
+      const { image_asset_id: _asset, ...rest } = variant;
+      return rest;
+    }),
     expirationDate: baseVariant?.expirationDate || null,
     availableToConsumerSince: availabilityIso(availability?.availableSince),
   });

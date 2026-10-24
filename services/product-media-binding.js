@@ -54,8 +54,32 @@ export async function prepareCatalogMedia({ tx, db, uid, productId, payload, pre
     }
     payload.image_url = data.publicUrl;
   }
-  if (oldId && oldId !== id) {
-    const { ref, data } = await readReadyMedia(tx, db, oldId);
+  // Per-variant uploaded photos (e.g. one photo per flavor). Several variants may share one.
+  const variantIds = list => new Set((Array.isArray(list) ? list : [])
+    .map(variant => variant?.image_asset_id).filter(value => typeof value === 'string' && value));
+  const oldVariantIds = variantIds(previous?.variants);
+  const nextVariants = action === 'delete' ? [] : Array.isArray(payload.variants) ? payload.variants : previous?.variants;
+  const newVariantIds = variantIds(nextVariants);
+  const publicUrls = new Map();
+  for (const variantId of newVariantIds) {
+    const { ref, data } = await readReadyMedia(tx, db, variantId);
+    if (oldVariantIds.has(variantId) || variantId === oldId) {
+      if (data.state !== 'published' || data.productId !== productId) throw submissionError(409, 'Existing image binding changed.');
+    } else {
+      if (!(data.workflow === 'catalog' && data.uid === uid && data.state === 'ready')) throw submissionError(403, 'This image cannot be published by this operation.');
+      writes.push(() => tx.update(ref, { state: 'published', open: false, productId, updatedAt: at }));
+    }
+    publicUrls.set(variantId, data.publicUrl);
+  }
+  if (Array.isArray(payload.variants)) for (const variant of payload.variants) {
+    if (!variant.image_asset_id) continue;
+    if (variant.image_url && variant.image_url !== publicUrls.get(variant.image_asset_id)) throw submissionError(400, 'Choose an uploaded variant photo or an external URL.');
+    variant.image_url = publicUrls.get(variant.image_asset_id);
+  }
+  const retire = new Set([...oldVariantIds].filter(oldVariant => !newVariantIds.has(oldVariant) && oldVariant !== id));
+  if (oldId && oldId !== id && !newVariantIds.has(oldId)) retire.add(oldId);
+  for (const retiredId of retire) {
+    const { ref, data } = await readReadyMedia(tx, db, retiredId);
     if (data.state !== 'published' || data.productId !== productId) throw submissionError(409, 'Existing image binding changed.');
     writes.push(() => tx.update(ref, { state: 'retired', open: false, updatedAt: at }));
   }

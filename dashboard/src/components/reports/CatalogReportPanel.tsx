@@ -56,7 +56,9 @@ export default function CatalogReportPanel({ source, usage, selection, onSelecti
             <h3 className="mb-3 font-semibold text-white">Products by segment</h3>
             <ul className="space-y-2 text-sm text-slate-300">{report.segments.map(item => <li key={item.name} className="flex justify-between"><span>{item.name}</span><span>{item.count}</span></li>)}</ul>
             <h3 className="mb-3 mt-6 font-semibold text-white">Products by category</h3>
-            <ul className="max-h-52 space-y-2 overflow-y-auto text-sm text-slate-300">{report.categories.map(item => <li key={item.name} className="flex justify-between gap-4"><span>{item.name}</span><span>{item.count}</span></li>)}</ul>
+            {/* Two columns use the card's width, so the full list fits without a scroll box. */}
+            <ul className="grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2">{report.categories.map(item => <li key={item.name} className="flex min-w-0 justify-between gap-4">
+              <span className="truncate" title={item.name}>{item.name}</span><span className="shrink-0 tabular-nums text-slate-400">{item.count}</span></li>)}</ul>
           </div>
         </div>}
     </>}

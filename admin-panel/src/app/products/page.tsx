@@ -2,6 +2,7 @@
 import { normalizeProductImageUrl, productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 import { catalogCsv } from '@/lib/catalog-csv';
 import ProductImageField from '@/components/products/ProductImageField';
+import VariantPhotoCell, { clearVariantPhoto, pickVariantPhoto, withUploadedVariantPhotos, type VariantPhotoFields } from '@/components/products/VariantPhotoCell';
 import { uploadProductImage, type MediaUpload } from '@/lib/product-media-client';
 
 import { useState, useEffect, useMemo, useId, useRef } from "react";
@@ -29,6 +30,9 @@ export interface ProductVariant {
   value?: string;
   sku?: string;
   expirationDate?: string; // YYYY-MM-DD
+  image_url?: string; // this variant's own photo (e.g. one per flavor)
+  image_asset_id?: string;
+  _file?: VariantPhotoFields['_file']; // photo picked in the form, uploaded on save
 }
 
 // Returns true if a variant expires within 30 days from today
@@ -429,6 +433,9 @@ function EditModal({
     setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "" }]);
   };
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
+  const variantUploads = useRef(new Map<File, MediaUpload>());
+  const pickPhoto = (i: number, file: File) => { setError(''); setVariants(prev => pickVariantPhoto(prev, i, file, v => v[segFields.field1.key] || '')); };
+  const removePhoto = (i: number) => setVariants(prev => clearVariantPhoto(prev, i));
 
   const handleSave = async () => {
     if (savingRef.current) return;
@@ -436,11 +443,11 @@ function EditModal({
     savingRef.current = true;
     setSaving(true); setError("");
     try {
-      const cleaned = variants;
+      const user = auth.currentUser;
+      if (!user) throw new Error('Sign in as Admin to save.');
+      const cleaned = await withUploadedVariantPhotos(user, variants, variantUploads.current);
       let imageFields: { image_url?: string; image_asset_id?: string } = {};
       if (imageFile) {
-        const user = auth.currentUser;
-        if (!user) throw new Error('Sign in as Admin to upload.');
         imageUpload.current ??= { uid: user.uid, key: crypto.randomUUID(), file: imageFile };
         imageFields = { image_url: '', image_asset_id: await uploadProductImage(user, 'catalog', imageUpload.current) };
       } else if (imageUrl !== (product.image_url ?? product.image ?? '')) {
@@ -536,8 +543,8 @@ function EditModal({
             </div>
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
-              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
-                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), ""].map(h => (
+              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[36px_1fr_90px_100px_110px_32px]" : "grid-cols-[36px_1fr_90px_100px_32px]"}`}>
+                {["Photo", segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>
@@ -547,7 +554,10 @@ function EditModal({
                   <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
                 )}
                 {variants.map((v, i) => (
-                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
+                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[36px_1fr_90px_100px_110px_32px]" : "grid-cols-[36px_1fr_90px_100px_32px]"}`}>
+                    <VariantPhotoCell variant={v} disabled={saving}
+                      label={[v[segFields.field1.key], v[segFields.field2.key]].filter(Boolean).join(' ') || `variant ${i + 1}`}
+                      onPick={file => pickPhoto(i, file)} onRemove={() => removePhoto(i)} onError={setError} />
                     <input value={v[segFields.field1.key] || ""} onChange={e => updateVariant(i, segFields.field1.key, e.target.value)}
                       placeholder={segFields.field1.placeholder} className={inputCls + " py-1.5 text-xs"} />
                     <input value={v[segFields.field2.key] || ""} onChange={e => updateVariant(i, segFields.field2.key, e.target.value)}
@@ -567,6 +577,7 @@ function EditModal({
                 ))}
               </div>
             </div>
+            <p className="text-[10px] text-slate-500 mt-1.5 ml-0.5">Photo: give each {segFields.field1.label.toLowerCase()} its own picture. Customers see it when they pick that variant. Choosing a photo also sets it on the other sizes of the same {segFields.field1.label.toLowerCase()} that have no photo yet (or shared the old one).</p>
             {showExpiry && (
               <p className="text-[10px] text-slate-600 mt-1.5 ml-0.5">* Expiration Date applies to perishable/medicine categories only.</p>
             )}
@@ -609,7 +620,7 @@ function AddProductModal({
   const [name, setName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const createAttempt = useRef<{ uid: string; key: string; product: Record<string, unknown>; media?: MediaUpload } | null>(null);
+  const createAttempt = useRef<{ uid: string; key: string; product: Record<string, unknown>; media?: MediaUpload; variantsUploaded?: boolean } | null>(null);
   const creating = useRef(false);
   const [pendingCreate, setPendingCreate] = useState(false);
   const [brand, setBrand] = useState("");
@@ -639,6 +650,9 @@ function AddProductModal({
     setVariants(prev => [...prev, { [f.field1.key]: "", [f.field2.key]: "" }]);
   };
   const removeVariant = (i: number) => setVariants(prev => prev.filter((_, idx) => idx !== i));
+  const variantUploads = useRef(new Map<File, MediaUpload>());
+  const pickPhoto = (i: number, file: File) => { setError(''); setVariants(prev => pickVariantPhoto(prev, i, file, v => v[segFields.field1.key] || '')); };
+  const removePhoto = (i: number) => setVariants(prev => clearVariantPhoto(prev, i));
 
   const handleAdd = async () => {
     if (creating.current) return;
@@ -651,13 +665,18 @@ function AddProductModal({
       if (createAttempt.current && createAttempt.current.uid !== user.uid) throw new Error('Sign back into the creating account to retry.');
       if (!createAttempt.current) {
         const image_url = normalizeProductImageUrl(imageUrl);
-        const cleaned = variants;
+        const cleaned = variants.map(({ _file, ...rest }) => rest);
         const key = crypto.randomUUID();
         createAttempt.current = { uid: user.uid, key,
           product: { name: name.trim(), brand: brand.trim(), category: category.trim(), segment, variants: cleaned, image_url },
           ...(imageFile ? { media: { uid: user.uid, key, file: imageFile } } : {}) };
       }
       setPendingCreate(true);
+      // Variant photos picked in this form are uploaded once, then kept with the attempt.
+      if (variants.some(v => v._file) && !createAttempt.current.variantsUploaded) {
+        createAttempt.current.product.variants = await withUploadedVariantPhotos(user, variants, variantUploads.current);
+        createAttempt.current.variantsUploaded = true;
+      }
       if (createAttempt.current.media && !createAttempt.current.media.assetId) {
         createAttempt.current.product.image_asset_id = await uploadProductImage(user, 'catalog', createAttempt.current.media);
       }
@@ -761,8 +780,8 @@ function AddProductModal({
             </div>
 
             <div className="rounded-xl border border-slate-800 overflow-hidden">
-              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
-                {[segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), ""].map(h => (
+              <div className={`grid bg-slate-800/60 px-3 py-2 gap-2 ${showExpiry ? "grid-cols-[36px_1fr_90px_100px_110px_32px]" : "grid-cols-[36px_1fr_90px_100px_32px]"}`}>
+                {["Photo", segFields.field1.label, segFields.field2.label, "SKU", ...(showExpiry ? ["Exp. Date"] : []), ""].map(h => (
                   <p key={h} className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{h}</p>
                 ))}
               </div>
@@ -771,7 +790,10 @@ function AddProductModal({
                   <p className="text-xs text-slate-600 text-center py-4">No variants. Click "Add Variant" to begin.</p>
                 )}
                 {variants.map((v, i) => (
-                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[1fr_90px_100px_110px_32px]" : "grid-cols-[1fr_90px_100px_32px]"}`}>
+                  <div key={i} className={`grid px-3 py-2 gap-2 items-center hover:bg-slate-800/20 ${showExpiry ? "grid-cols-[36px_1fr_90px_100px_110px_32px]" : "grid-cols-[36px_1fr_90px_100px_32px]"}`}>
+                    <VariantPhotoCell variant={v} disabled={saving}
+                      label={[v[segFields.field1.key], v[segFields.field2.key]].filter(Boolean).join(' ') || `variant ${i + 1}`}
+                      onPick={file => pickPhoto(i, file)} onRemove={() => removePhoto(i)} onError={setError} />
                     <input value={v[segFields.field1.key] || ""} onChange={e => updateVariant(i, segFields.field1.key, e.target.value)}
                       placeholder={segFields.field1.placeholder} className={inputCls + " py-1.5 text-xs"} />
                     <input value={v[segFields.field2.key] || ""} onChange={e => updateVariant(i, segFields.field2.key, e.target.value)}
@@ -791,6 +813,7 @@ function AddProductModal({
                 ))}
               </div>
             </div>
+            <p className="text-[10px] text-slate-500 mt-1.5 ml-0.5">Photo: give each {segFields.field1.label.toLowerCase()} its own picture. Customers see it when they pick that variant. Choosing a photo also sets it on the other sizes of the same {segFields.field1.label.toLowerCase()} that have no photo yet (or shared the old one).</p>
             {showExpiry && (
               <p className="text-[10px] text-slate-600 mt-1.5 ml-0.5">* Expiration Date applies to perishable/medicine categories only.</p>
             )}

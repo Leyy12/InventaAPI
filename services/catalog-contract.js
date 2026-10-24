@@ -133,6 +133,9 @@ export function validateCatalogProduct(input, previous = null) {
     if (variant.image_url !== undefined) {
       try { normalizeProductImageUrl(variant.image_url); } catch { throw catalogError(400, 'Invalid variant image URL.'); }
     }
+    // A variant may carry its own uploaded photo (bound to the product when saved).
+    if (variant.image_asset_id !== undefined && (typeof variant.image_asset_id !== 'string'
+      || (variant.image_asset_id && !/^[a-f0-9]{64}$/u.test(variant.image_asset_id)))) throw catalogError(400, 'Invalid variant image asset ID.');
     // Products have no price: any price on a variant is dropped, never stored.
     return withoutPrices(structuredClone(variant));
   });

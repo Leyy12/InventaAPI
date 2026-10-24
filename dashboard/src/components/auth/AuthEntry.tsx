@@ -38,6 +38,10 @@ export default function AuthEntry() {
   const [modalError, setModalError] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Older PayMongo sessions return here after a cancelled payment. A signed-in
+  // customer is sent on to Plan & Billing instead of the landing page.
+  const [cancelReturn] = useState<PlanId | null>(() => searchParams.get('payment') === 'cancelled'
+    ? (planIntent === 'pro_max' ? 'pro_max' : 'pro') : null);
   // Pre-check: already-active Pro modal shown BEFORE checkout is opened.
   const [showAlreadyProModal, setShowAlreadyProModal] = useState(false);
 
@@ -128,11 +132,17 @@ export default function AuthEntry() {
     }
   }, [searchParams, router, initialPlan]);
 
+  useEffect(() => {
+    if (!cancelReturn || loading || !user || loginStarted || profileRole(appUser) !== 'customer') return;
+    router.replace(`/dashboard/plan-billing?payment=cancelled${cancelReturn === 'pro_max' ? '&pendingPlan=pro_max' : ''}`);
+  }, [cancelReturn, loading, user, loginStarted, appUser, router]);
+
   // Restored paid intent waits for authoritative entitlement. A login already
   // in progress owns its segment/role checks and cannot be hijacked by this effect.
   useEffect(() => {
     if (loading || !pendingPlan || loginStarted || !user) return;
     if (profileRole(appUser) !== 'customer' || authStatus !== 'verified') return;
+    if (cancelReturn) return; // handled by the Plan & Billing redirect above
     if (pendingPlan === "free") { setPendingPlan(null); return; }
     if (!entitlement) return;
     if (purchaseBlocked(pendingPlan, entitlement)) {
@@ -143,7 +153,7 @@ export default function AuthEntry() {
     setSelectedPlan(pendingPlan);
     setPendingPlan(null);
     setShowSubscriptionModal(true);
-  }, [loading, user, appUser, authStatus, entitlement, pendingPlan, loginStarted]);
+  }, [loading, user, appUser, authStatus, entitlement, pendingPlan, loginStarted, cancelReturn]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const proExpiryDisplay = (() => {
