@@ -48,7 +48,7 @@ function fixture({ account = legacy, extra, used = 237, implementation = { creat
   const checkout = (version = policy.requestPolicyVersion(limits), more = {}) => invoke(payments.checkout,
     { token: 'synthetic', body: { plan: 'pro_max', requestPolicyVersion: version, ...more } });
   const fulfill = () => implementation.fulfillPayment(db, { mode: 'test', eventId: 'evt_new', sessionId: 'cs_new',
-    paymentIntentId: 'pi_new', paymentId: 'pay_new', amount: 499900, currency: 'PHP' }, now);
+    paymentIntentId: 'pi_new', paymentId: 'pay_new', amount: 130000, currency: 'PHP' }, now);
   const consume = () => (implementation.consumeAccountQuota ?? consumeAccountQuota)(db, { keyId: key.id, userId: 'customer', credential: key.credential, clock: () => now });
   return { db, keys, payments, status, checkout, fulfill, consume, limits, key, providerCalls: () => calls,
     time: value => { now = value; }, effective: () => lifecycle.evaluateEntitlement(db.read('users/customer'), now, limits, db.read('account_request_contracts/customer')) };
@@ -79,7 +79,7 @@ test('P1-A comparison: previous partial Pro promise skips verified Max history; 
     await assert.rejects(f.consume(), error => error.status === 403);
     assert.equal((await f.checkout(offer.body.requestPolicyVersion)).statusCode, 200);
     const order = f.db.read(`payment_orders/${NEXT}`); assert.equal(order.requestAllowance.limit, expected);
-    assert.equal(order.amount, 499900); assert.equal(order.durationDays, 30);
+    assert.equal(order.amount, 130000); assert.equal(order.durationDays, 30);
     await f.fulfill(); assert.equal(f.effective().limit, expected); assert.equal(f.db.read('account_api_usage/customer').used, 237);
     assert.equal(f.db.read('users/customer').subscriptionExpiresAt, '2026-11-13T12:00:00.000Z');
   }
@@ -317,7 +317,7 @@ test('accepted historical Live test-billing settlement retains its verified Unli
   delete extra['transactions/paymongo_test_pay_old']; extra['transactions/paymongo_live_pay_old'] = receipt;
   const f = fixture({ account: normalized, extra }); assert.equal((await f.status()).body.purchaseRequestLimits.pro_max, null);
   await f.checkout(); await f.fulfill(); assert.equal(f.effective().limit, null);
-  assert.equal(f.db.read(`payment_orders/${NEXT}`).amount, 499900, 'new checkout retains its unchanged configured charge');
+  assert.equal(f.db.read(`payment_orders/${NEXT}`).amount, 130000, 'new checkout retains its unchanged configured charge');
 });
 
 test('bounded recovery fails safely rather than truncating an account history', async () => {

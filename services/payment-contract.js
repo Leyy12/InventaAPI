@@ -3,10 +3,11 @@ import { validDocumentId } from './api-key-security.js';
 import { accountBlocked, evaluateEntitlement, dateMillis, planKind } from '../functions/subscription-lifecycle.mjs';
 import { validOrderRequestAllowance } from '../functions/request-limit-policy.mjs';
 
-// Existing price/quota/duration; each paid term spans 30 UTC calendar days.
-export const PRO_PURCHASE = Object.freeze({ planId: 'pro', plan: 'Pro', amount: 149900,
+// Price (centavos)/quota/duration; each paid term spans 30 UTC calendar days.
+// Pro ₱500 and Pro Max ₱1,300 per month (until 2026-10-24: ₱1,499 and ₱4,999).
+export const PRO_PURCHASE = Object.freeze({ planId: 'pro', plan: 'Pro', amount: 50000,
   currency: 'PHP', durationDays: 30, apiRequestLimit: PRO_DAILY_REQUEST_LIMIT });
-export const PRO_MAX_PURCHASE = Object.freeze({ planId: 'pro_max', plan: 'Pro Max', amount: 499900,
+export const PRO_MAX_PURCHASE = Object.freeze({ planId: 'pro_max', plan: 'Pro Max', amount: 130000,
   currency: 'PHP', durationDays: 30, apiRequestLimit: null });
 export const PURCHASE_CATALOG = Object.freeze({ pro: PRO_PURCHASE, pro_max: PRO_MAX_PURCHASE });
 export const purchaseForIntent = planId => typeof planId === 'string' && Object.hasOwn(PURCHASE_CATALOG, planId)

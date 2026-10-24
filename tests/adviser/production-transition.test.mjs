@@ -19,7 +19,7 @@ function fixture(limit = 500, { demo = false, project = 'inventaapi-db', mode = 
   const cfg = config(mode, { checkoutInitiationHold: String(hold) });
   const order = { id: ID, userId: 'owner', ...PRO_PURCHASE, mode, state: 'pending',
     sessionId: 'cs_synthetic', paymentIntentId: 'pi_synthetic', apiRequestLimit: limit,
-    ...(demo ? { amount: 500, listAmount: 149900, billingProfile: 'global_live_test_v1' } : {}) };
+    ...(demo ? { amount: 500, listAmount: 50000, billingProfile: 'global_live_test_v1' } : {}) };
   const payload = checkoutPayload(order, cfg.dashboardUrl);
   // Frozen pre-disclosure checkout naming, not the new-session builder's demo label.
   payload.data.attributes.line_items[0].name = 'InventaAPI Pro Plan';

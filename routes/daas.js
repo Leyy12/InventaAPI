@@ -4,6 +4,7 @@ import { requirePaidSubscription, enforceRequestLimit } from '../middleware/plan
 import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts } from '../services/daas-catalog.js';
 import { createDaaSSecurity } from '../services/daas-security.js';
 import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
+import { createRepeatGuard } from '../services/daas-repeat-guard.js';
 
 // Data lives in the Supabase database (database/firestore.js).
 let adminDb = null;
@@ -17,6 +18,8 @@ const router = express.Router();
 
 const { authenticateApiKey } = createDaaSSecurity({ getDb });
 const intelligence = createDaaSIntelligenceHandlers({ getDb });
+// The same request repeated within 2 seconds reuses the first answer (not counted twice).
+const repeatGuard = createRepeatGuard({ windowMs: 2000 });
 
 // DaaS Health Check
 router.get('/health', (req, res) => {
@@ -31,7 +34,7 @@ router.get('/health', (req, res) => {
 
 // DaaS Product Catalog Endpoint (Guarded by API Key + Rate Limiting)
 // Returns ONLY products linked to the authenticated API key
-router.get('/catalog', authenticateApiKey, enforceRequestLimit, async (req, res) => {
+router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, async (req, res) => {
     try {
         const linkedVariantSelections = req.apiKeyData.linkedVariantSelections || {};
         // A repeated ?search= arrives as an array; use the first value so .trim() never throws.

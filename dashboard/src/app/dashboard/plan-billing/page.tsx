@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, CreditCard } from 'lucide-react';
+import { ArrowRight, CreditCard } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { requestAllowanceLabel } from '@/config/plans';
 import { usePlanCatalog, useAccountRequestAllowance } from '@/lib/plan-request-policy';
@@ -11,6 +11,8 @@ import FreeTrialContent from '@/components/subscription/FreeTrialContent';
 
 type PaidPlanId = 'pro' | 'pro_max';
 
+// Same look as the landing page pricing cards (components/subscription/PlanCards.tsx),
+// plus the account-aware purchase button.
 function PlanCard({ planId, currentPlan, canPurchase, onChoose }: {
   planId: PaidPlanId;
   currentPlan: string;
@@ -20,46 +22,45 @@ function PlanCard({ planId, currentPlan, canPurchase, onChoose }: {
   const { plans, status } = usePlanCatalog(true);
   const plan = plans[planId];
   const isCurrent = currentPlan === plan.name;
-  const benefits = [plan.requestLimitDisplay, ...plan.incrementalFeatures.filter(feature => {
-    if (planId === 'pro') return /All Business Segments|Real Sales Analytics Feed|Multiple API Keys/.test(feature);
-    return /All Business Segments|Real Sales Analytics Feed|Multiple API Keys|API Playground/.test(feature);
-  }).map(feature => {
-    if (feature === 'Real Sales Analytics Feed') return 'Sales Analytics';
-    return feature;
-  })];
+  const pro = planId === 'pro';
+  const badge = isCurrent ? 'CURRENT PLAN' : plan.badge;
 
-  return <article className={`flex h-full flex-col rounded-2xl border bg-[#0d1526] p-5 sm:p-6 ${
-    isCurrent ? 'border-emerald-500/40 shadow-lg shadow-emerald-950/20' : planId === 'pro'
-      ? 'border-indigo-500/40 shadow-lg shadow-indigo-950/20' : 'border-sky-500/30'
+  return <article className={`glass-card relative flex h-full flex-col rounded-2xl p-8 transition-all ${
+    isCurrent ? 'border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/20'
+      : pro ? 'border-2 border-indigo-500/50 shadow-lg shadow-indigo-500/20 hover:border-indigo-500'
+        : 'border border-white/5 hover:border-indigo-500/30'
   }`}>
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-400">{plan.name}</p>
-        <div className="mt-2 flex items-baseline gap-1.5">
-          <span className="text-3xl font-bold tracking-tight text-white">{plan.priceDisplay}</span>
-          <span className="text-sm text-slate-400">{plan.billingCycle}</span>
-        </div>
+    {badge && <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+      <span className={`rounded-full px-3 py-1 text-xs font-bold text-white ${isCurrent ? 'bg-emerald-600' : 'bg-indigo-600'}`}>{badge}</span>
+    </div>}
+    <div className="mb-6">
+      <h3 className="mb-2 text-lg font-bold text-slate-300">{plan.displayName.toUpperCase()}</h3>
+      <div className="flex items-baseline gap-1">
+        <span className="text-5xl font-extrabold text-white">{plan.priceDisplay}</span>
+        <span className="text-sm text-slate-400">{plan.billingCycle}</span>
       </div>
-      {isCurrent ? <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">Current plan</span>
-        : planId === 'pro' ? <span className="shrink-0 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-semibold text-indigo-200">Popular</span> : null}
+      <p className="mt-3 text-sm text-slate-400">{plan.tagline}</p>
     </div>
-    <ul className="mt-6 flex-1 space-y-3" aria-label={`${plan.name} benefits`}>
-      {benefits.map(benefit => <li key={benefit} className="flex items-start gap-2.5 text-sm text-slate-300">
-        <Check className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
-        <span>{benefit}</span>
-      </li>)}
-    </ul>
-    {planId === 'pro_max' && <p className="mt-4 text-xs leading-5 text-slate-500">Standard security, abuse protection, and IP rate limits still apply.</p>}
-    <div className="mt-7">
-      {canPurchase ? <button type="button" disabled={status !== 'ready'} onClick={() => onChoose(planId)}
-        className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1526] ${
-          planId === 'pro' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-sky-600 hover:bg-sky-500'
-        }`}>
-        {isCurrent ? `Renew ${plan.name}` : `Get ${plan.name}`} <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </button> : <p className="rounded-xl border border-slate-700 px-4 py-3 text-center text-sm text-slate-400">
-        {isCurrent ? 'Your current plan' : 'This plan is not available for your current entitlement.'}
-      </p>}
+    <div className="mb-8 flex-1 space-y-3" aria-label={`${plan.name} benefits`}>
+      <p className={`mb-2 text-xs font-semibold ${pro ? 'text-indigo-400' : 'text-emerald-400'}`}>{pro ? 'Everything in Free, and:' : 'Everything in Pro, and:'}</p>
+      {plan.incrementalFeatures.map(feature => <div key={feature} className="flex items-start gap-2 text-sm">
+        <span className="mt-0.5 text-emerald-400">✓</span>
+        <span className="text-slate-300">{feature}</span>
+      </div>)}
+      {plan.exclusions.map(feature => <div key={feature} className="flex items-start gap-2 text-sm">
+        <span className="mt-0.5 text-slate-600">✗</span>
+        <span className="text-slate-500">{feature}</span>
+      </div>)}
+      {planId === 'pro_max' && <p className="pt-1 text-xs leading-5 text-slate-500">Standard security, abuse protection, and IP rate limits still apply.</p>}
     </div>
+    {canPurchase ? <button type="button" disabled={status !== 'ready'} onClick={() => onChoose(planId)}
+      className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl py-3 font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
+        pro ? 'border border-transparent bg-indigo-600 shadow-lg shadow-indigo-500/25 hover:bg-indigo-700' : 'border border-white/10 bg-white/5 hover:bg-white/10'
+      }`}>
+      {isCurrent ? `Renew ${plan.name}` : `Get ${plan.name}`} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+    </button> : <p className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm text-slate-400">
+      {isCurrent ? 'Your current plan' : 'This plan is not available for your current entitlement.'}
+    </p>}
   </article>;
 }
 
@@ -122,7 +123,7 @@ export default function PlanBillingPage() {
           <h2 className="mt-1 text-2xl font-bold text-white">{paid ? 'Manage your paid plan' : 'Choose the plan that fits'}</h2></div>
         <p className="text-sm text-slate-400">Purchases are confirmed by the server.</p>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-8 pt-4 lg:items-stretch">
         <PlanCard planId="pro" currentPlan={entitlement.plan} canPurchase={entitlement.canPurchasePro} onChoose={purchase} />
         <PlanCard planId="pro_max" currentPlan={entitlement.plan} canPurchase={entitlement.canPurchaseProMax} onChoose={purchase} />
       </div>

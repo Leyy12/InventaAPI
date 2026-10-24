@@ -83,7 +83,7 @@ for (const [previousMode, currentMode, previous, requested] of [
     for (const [field, value] of Object.entries(purchase)) assert.equal(order[field], value, field);
     assert.equal(order.userId, 'owner'); assert.equal(order.mode, currentMode);
     assert.equal(order.state, 'pending'); assert.equal(order.currency, 'PHP');
-    assert.equal(order.amount, requested === 'pro' ? 149900 : 499900);
+    assert.equal(order.amount, requested === 'pro' ? 50000 : 130000);
     assert.notEqual(order.sessionId, before[orderPath(env.oldId)].sessionId);
     assert.notEqual(order.paymentIntentId, before[orderPath(env.oldId)].paymentIntentId);
     assert.notEqual(order.idempotencyKey, before[orderPath(env.oldId)].idempotencyKey);
@@ -259,7 +259,7 @@ for (const [label, patch] of Object.entries({ owner: { userId: 'stranger' }, mod
 }
 test('processed history: client terms and forged account cannot override the new purchase', async () => {
   const env = await completed(), before = env.db.dump();
-  for (const body of [{ plan: 'pro_max', amount: 149900 }, { plan: 'pro_max', currency: 'USD' },
+  for (const body of [{ plan: 'pro_max', amount: 50000 }, { plan: 'pro_max', currency: 'USD' },
     { plan: 'pro_max', durationDays: 365 }, { plan: 'pro_max', apiRequestLimit: 5000 },
     { plan: 'pro_max', userId: 'stranger' }]) {
     const response = await invoke(env.handlers.checkout, { body });

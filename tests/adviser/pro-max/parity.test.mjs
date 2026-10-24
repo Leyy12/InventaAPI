@@ -32,8 +32,8 @@ test('shared effective limits and rendered pricing contract are 0–50, 500/day 
   assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('500 requests per day'));
   assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, null);
   assert.match(SUBSCRIPTION_PLANS.pro_max.requestLimitDisplay, /Unlimited/);
-  assert.equal(SUBSCRIPTION_PLANS.pro.priceDisplay, '₱1,499');
-  assert.equal(SUBSCRIPTION_PLANS.pro_max.priceDisplay, '₱4,999');
+  assert.equal(SUBSCRIPTION_PLANS.pro.priceDisplay, '₱500');
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.priceDisplay, '₱1,300');
   for (const file of ['dashboard/src/app/dashboard/products/page.tsx', 'dashboard/src/components/subscription/FreeTrialContent.tsx',
     'dashboard/src/components/reports/CustomerUsageSummary.tsx', 'dashboard/src/app/docs/page.tsx',
     'dashboard/src/app/privacy-policy/page.tsx', 'dashboard/src/components/auth/LoginForm.tsx']) {
@@ -70,8 +70,8 @@ test('public Pro Max capabilities have a fixed one-to-one proof map; no new mark
 test('Free, Pro, Pro Max public plans retain truthful inherited capabilities and real purchase entry', () => {
   assert.deepEqual(Object.keys(SUBSCRIPTION_PLANS), ['free', 'pro', 'pro_max']);
   assert.equal(getCumulativeFeatures('pro_max').header, 'Everything in Pro, and:');
-  assert.equal(SUBSCRIPTION_PLANS.pro.price, 1499);
-  assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 4999);
+  assert.equal(SUBSCRIPTION_PLANS.pro.price, 500);
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 1300);
   assert.equal(SUBSCRIPTION_PLANS.pro.highlighted, true);
   assert.ok(!SUBSCRIPTION_PLANS.free.features.includes('Product Recommendations'));
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One Business Segment'));

@@ -15,7 +15,7 @@ const text = tree => Array.isArray(tree) ? tree.map(text).join(' ') : tree === n
 
 test('all three runtime catalogs advertise verified allowances and retain prices, Trial capacity and duration', () => {
   const plans = config.plansForRequestLimits({ free_trial: 100, pro: 1000, pro_max: 2000 });
-  assert.equal(plans.pro.price, 1499); assert.equal(plans.pro_max.price, 4999);
+  assert.equal(plans.pro.price, 500); assert.equal(plans.pro_max.price, 1300);
   assert.equal(plans.free.billingCycle, '7 days'); assert.ok(plans.free.features.includes('Up to 50 products'));
   for (const [id, amount] of [['free', '100'], ['pro', '1,000'], ['pro_max', '2,000']]) {
     assert.equal(plans[id].requestLimitDisplay, `${amount} requests/day (UTC)`);

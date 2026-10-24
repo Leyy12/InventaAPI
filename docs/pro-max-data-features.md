@@ -29,8 +29,9 @@ by the existing atomic replacement test matrix.
 | Active Pro | 500 per UTC day | Grocery, Pharmacy, Hardware | Yes |
 | Active Pro Max | Unlimited account quota; usage still recorded | Grocery, Pharmacy, Hardware | Yes |
 
-Pro costs ₱1,499 (`149900` PHP minor units); Pro Max costs ₱4,999
-(`499900` PHP minor units). Both purchases last 30 UTC calendar days. The
+Pro costs ₱500 (`50000` PHP minor units); Pro Max costs ₱1,300
+(`130000` PHP minor units). Orders placed before 2026-10-24 at ₱1,499 / ₱4,999
+still verify. Both purchases last 30 UTC calendar days. The
 browser submits only `plan: pro` or `plan: pro_max`; the server purchase catalog
 fixes amount, currency, duration, and quota. Pro Max becomes effective after
 verified order-bound webhook fulfillment. Pro → Pro Max preserves the previous

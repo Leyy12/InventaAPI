@@ -38,8 +38,8 @@ test('Plan & Billing keeps its concise header and uses the embedded authoritativ
 test('Upgrade cards use canonical plan config and preserve server purchase permissions', () => {
   assert.match(billing, /usePlanCatalog\(true\)/);
   assert.match(billing, /const plan = plans\[planId\]/);
-  assert.match(plans, /priceDisplay: "₱1,499"/);
-  assert.match(plans, /priceDisplay: "₱4,999"/);
+  assert.match(plans, /priceDisplay: "₱500"/);
+  assert.match(plans, /priceDisplay: "₱1,300"/);
   assert.match(billing, /entitlement\.canPurchasePro/u);
   assert.match(billing, /entitlement\.canPurchaseProMax/u);
   assert.match(billing, /setPurchasePlan\(plan\)/u);
@@ -112,8 +112,8 @@ test('Overview Trial summary is compact while Plan & Billing retains detailed en
 });
 
 test('paid-plan display remains canonical and excludes temporary five-peso billing', () => {
-  assert.match(plans, /priceDisplay: "₱1,499"/);
-  assert.match(plans, /priceDisplay: "₱4,999"/);
+  assert.match(plans, /priceDisplay: "₱500"/);
+  assert.match(plans, /priceDisplay: "₱1,300"/);
   assert.match(plans, /\$\{PRO_DAILY_REQUEST_LIMIT\} requests per day/);
   assert.match(plans, /Unlimited account API quota/);
   assert.doesNotMatch(`${billing}\n${plans}`, /₱5\b|500 pesos|five-peso/i);
@@ -241,8 +241,8 @@ for (const plan of ['Pro', 'Pro Max']) {
     assert.equal(keyActions(tree).length, 1);
     const cards = nodes(tree, node => node.type === 'article');
     assert.equal(cards.length, 2);
-    assert.match(visibleText(cards[0]), /₱1,499/);
-    assert.match(visibleText(cards[1]), /₱4,999/);
+    assert.match(visibleText(cards[0]), /₱500/);
+    assert.match(visibleText(cards[1]), /₱1,300/);
     assert.equal(nodes(cards[0], node => node.type === 'button').length, 0);
     assert.equal(nodes(cards[1], node => node.type === 'button').length, 1);
     assert.match(visibleText(tree), /Current plan/);
@@ -325,8 +325,8 @@ test('rendered billing uses the same uncapped horizontal workspace as Products a
     assert.equal(keyActions(tree).length, 1);
     const cards = nodes(tree, node => node.type === 'article');
     assert.equal(cards.length, 2);
-    assert.match(visibleText(cards[0]), /₱1,499/);
-    assert.match(visibleText(cards[1]), /₱4,999/);
+    assert.match(visibleText(cards[0]), /₱500/);
+    assert.match(visibleText(cards[1]), /₱1,300/);
   }
   for (const route of ['products', 'api-keys']) {
     const page = read(`dashboard/src/app/dashboard/${route}/page.tsx`);
@@ -336,7 +336,7 @@ test('rendered billing uses the same uncapped horizontal workspace as Products a
 
 test('billing preserves approved capability filters, purchase handlers and layout while allowances are dynamic', () => {
   assert.doesNotMatch(billing, /Product Recommendations/);
-  assert.equal((billing.match(/All Business Segments\|Real Sales Analytics Feed/g) || []).length, 2);
+  assert.match(billing, /plan\.incrementalFeatures\.map/);
   assert.match(billing, /status !== 'ready'/);
   assert.match(billing, /setPurchasePlan\(plan\); setPurchaseOpen\(true\)/);
   assert.match(billing, /grid grid-cols-1 gap-4 lg:grid-cols-2/);

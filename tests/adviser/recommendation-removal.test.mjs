@@ -53,8 +53,8 @@ for (const plan of ['free', 'pro', 'pro_max']) {
 test('paid capability proof map retains sales, quota, keys and integration capabilities', () => {
   assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], ['unlimited_account_quota', 'all_segments', 'real_sales_feed',
     'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term']);
-  assert.equal(SUBSCRIPTION_PLANS.pro.price, 1499);
-  assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 4999);
+  assert.equal(SUBSCRIPTION_PLANS.pro.price, 500);
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 1300);
   assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, 500);
   assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, null);
 });

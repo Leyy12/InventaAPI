@@ -51,9 +51,9 @@ function fixture() {
     data: { id: 'cs_abc123', type: 'checkout_session', attributes: {
       status: 'active', livemode: false, reference_number: orderId,
       metadata: { userId: 'stranger', email: 'untrusted@example.test', plan: 'Enterprise' },
-      line_items: [{ amount: 149900, currency: 'PHP', quantity: 1 }],
-      payment_intent: { id: 'pi_abc123', type: 'payment_intent', attributes: { amount: 149900, currency: 'PHP', livemode: false, status: 'succeeded' } },
-      payments: [{ id: 'pay_abc123', type: 'payment', attributes: { amount: 149900, currency: 'PHP', livemode: false,
+      line_items: [{ amount: 50000, currency: 'PHP', quantity: 1 }],
+      payment_intent: { id: 'pi_abc123', type: 'payment_intent', attributes: { amount: 50000, currency: 'PHP', livemode: false, status: 'succeeded' } },
+      payments: [{ id: 'pay_abc123', type: 'payment', attributes: { amount: 50000, currency: 'PHP', livemode: false,
         payment_intent_id: 'pi_abc123', status: 'paid', source: { type: 'qrph' }, refunds: [], disputed: false } }],
     } },
   } } };
@@ -140,7 +140,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) test(`historical ${purc
 
 for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
   test(`global Live billing ${purchase.plan}: canonical display terms unchanged; saved/provider charge 500`, async () => {
-    assert.equal(purchase.amount, purchase.planId === 'pro' ? 149900 : 499900);
+    assert.equal(purchase.amount, purchase.planId === 'pro' ? 50000 : 130000);
     const env = temporaryBillingSetup();
     const result = await invoke(env.checkout, { body: { plan: purchase.planId, amount: purchase.amount } });
     assert.equal(result.statusCode, 200); assert.equal(result.body.amount, 500);
@@ -157,7 +157,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
     assert.equal(payload.line_items[0].name, `InventaAPI ${purchase.plan} — Capstone Demonstration`);
     assert.match(payload.line_items[0].description, /₱5 demonstration payment.*capstone project/u);
     assert.match(payload.line_items[0].description, /One-time charge; no automatic renewal/u);
-    assert.doesNotMatch(payload.line_items[0].description, /1,499|4,999|1499|4999/u);
+    assert.doesNotMatch(payload.line_items[0].description, /500|1,300|500|1300/u);
     assert.equal(payload.show_description, true); assert.equal(payload.show_line_items, true);
     for (const mutate of [o => {o.amount = 501;}, o => {o.listAmount = 500;}, o => {o.mode = 'test';},
       o => {delete o.billingProfile;}, o => {delete o.planId;}, o => {o.billingProfile = 'arbitrary_discount';},
@@ -245,7 +245,7 @@ test('global Live billing: expiration ambiguity preserves full-price intent and 
     clock:()=>now,newOrderId:()=> 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     expireSession:async()=>{throw Error('provider uncertain');},createSession:async()=>{throw Error('must not create');}});
   assert.equal((await invoke(next.checkout)).body.code,'CHECKOUT_REVIEW');
-  assert.equal(env.db.read(orderPath).state,'expiring');assert.equal(env.db.read(orderPath).amount,149900);
+  assert.equal(env.db.read(orderPath).state,'expiring');assert.equal(env.db.read(orderPath).amount,50000);
   assert.equal(env.db.read('payment_checkout_locks/owner').orderId,orderId);assert.equal(env.db.userWrites,0);
 });
 
@@ -293,9 +293,9 @@ test('temporary billing rollback cannot reuse a pending 500 session as full-pric
   const next=createPaymentHandlers({getDb:()=>env.db,verifyIdToken:async()=>({uid:'owner'}),
     getConfig:()=>liveBilling({globalTestBilling:'false'}),clock:()=>now,newOrderId:()=> 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     expireSession:async({order})=>{expires++;assert.equal(order.amount,500);return {sessionId:order.sessionId,status:'expired',unpaid:true};},
-    createSession:async({order})=>{assert.equal(order.amount,149900);assert.equal(order.billingProfile,undefined);
+    createSession:async({order})=>{assert.equal(order.amount,50000);assert.equal(order.billingProfile,undefined);
       return {sessionId:'cs_fullprice',paymentIntentId:'pi_fullprice',checkoutUrl:'https://checkout.paymongo.com/fullprice'};}});
-  const result=await invoke(next.checkout);assert.equal(result.statusCode,200);assert.equal(result.body.amount,149900);
+  const result=await invoke(next.checkout);assert.equal(result.statusCode,200);assert.equal(result.body.amount,50000);
   assert.equal(expires,1);assert.equal(env.db.read(orderPath).state,'superseded');
 });
 
@@ -316,7 +316,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) {
     const order = env.db.read(orderPath);
     const payload = JSON.parse(order.providerRequestBody).data.attributes;
     assert.deepEqual(payload.payment_method_types, ['qrph']);
-    assert.equal(payload.line_items[0].amount, purchase.planId === 'pro' ? 149900 : 499900);
+    assert.equal(payload.line_items[0].amount, purchase.planId === 'pro' ? 50000 : 130000);
     assert.equal(payload.line_items[0].currency, 'PHP');
     assert.equal(order.durationDays, 30);
     assert.equal(order.apiRequestLimit, purchase.planId === 'pro' ? 500 : null);
@@ -372,7 +372,7 @@ test('checkout: valid Customer and matching legacy UID bind only decoded UID', a
   const response = await invoke(env.checkout, { body: { userId: 'owner', userEmail: 'stranger@example.test' } });
   assert.equal(response.statusCode, 200); assert.equal(response.headers['Cache-Control'], 'no-store');
   assert.equal(env.db.read(orderPath).userId, 'owner');
-  assert.equal(env.db.read(orderPath).amount, 149900); assert.equal(env.calls(), 1);
+  assert.equal(env.db.read(orderPath).amount, 50000); assert.equal(env.calls(), 1);
   assert.equal(env.db.read('payment_sessions/test_cs_abc123').orderId, orderId);
 });
 for (const body of [{ userId: 'stranger' }, { amount: 1 }, { currency: 'USD' }, { plan: 'Enterprise' }, { durationDays: 999 }, { apiRequestLimit: -1 }]) {
@@ -817,7 +817,7 @@ for (const plan of ['pro', 'pro_max']) test(`replacement: ${plan} expires GCash,
   const result = await invoke(env.checkout, { body: { plan } });
   assert.equal(result.statusCode, 200); assert.equal(result.body.sessionId, 'cs_fresh123');
   assert.notEqual(result.body.orderId, orderId); assert.equal(result.body.currency, 'PHP');
-  assert.equal(result.body.amount, plan === 'pro' ? 149900 : 499900);
+  assert.equal(result.body.amount, plan === 'pro' ? 50000 : 130000);
   assert.deepEqual(env.trace, ['GET', 'POST', 'GET', 'GET']);
   const old = env.db.read(orderPath), current = env.db.read(`payment_orders/${result.body.orderId}`);
   assert.equal(old.state, 'superseded'); assert.equal(old.providerStatus, 'expired');
@@ -1086,7 +1086,7 @@ for (const plan of ['pro', 'pro_max']) for (const status of ['awaiting_payment_m
     const old=env.db.read(orderPath), current=env.db.read(`payment_orders/${result.body.orderId}`);
     assert.equal(old.state,'superseded'); assert.equal(old.providerStatus,'expired');
     assert.equal(old.providerRequestBody,before.providerRequestBody); assert.equal(old.amount,before.amount);
-    assert.equal(current.listAmount,plan==='pro'?149900:499900); assert.equal(current.amount,500);
+    assert.equal(current.listAmount,plan==='pro'?50000:130000); assert.equal(current.amount,500);
     assert.equal(current.billingProfile,'global_live_test_v1'); assert.equal(current.planId,plan);
     assert.equal(current.currency,'PHP'); assert.equal(current.mode,'live');
     assert.deepEqual(JSON.parse(current.providerRequestBody).data.attributes.payment_method_types,['qrph']);

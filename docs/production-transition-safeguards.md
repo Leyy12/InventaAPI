@@ -62,8 +62,8 @@ Maintenance Mode to implement this hold or suppress genuine paid fulfillment.
 
 ## Standard and demonstration pricing
 
-Standard catalog prices remain Pro PHP 1,499 and Pro Max PHP 4,999 per 30-day
-term. The demonstration override defaults OFF. Existing LIVE PHP 5 receipts and
+Standard catalog prices are Pro PHP 500 and Pro Max PHP 1,300 per 30-day
+term (PHP 1,499 / 4,999 before 2026-10-24; those orders still verify). The demonstration override defaults OFF. Existing LIVE PHP 5 receipts and
 their saved list-price/offer evidence remain valid with the override OFF.
 
 The owner explicitly authorizes retaining `PAYMONGO_GLOBAL_TEST_BILLING=true`

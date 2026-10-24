@@ -71,9 +71,9 @@ function event(mode) {
   const livemode = mode === 'live';
   return { data: { id: 'evt_r6c', type: 'event', attributes: { type: 'checkout_session.payment.paid', livemode,
     data: { id: 'cs_r6c', type: 'checkout_session', attributes: { status: 'active', livemode,
-      line_items: [{ amount: 149900, currency: 'PHP', quantity: 1 }],
-      payment_intent: { id: 'pi_r6c', type: 'payment_intent', attributes: { amount: 149900, currency: 'PHP', livemode, status: 'succeeded' } },
-      payments: [{ id: 'pay_r6c', type: 'payment', attributes: { amount: 149900, currency: 'PHP', livemode,
+      line_items: [{ amount: 50000, currency: 'PHP', quantity: 1 }],
+      payment_intent: { id: 'pi_r6c', type: 'payment_intent', attributes: { amount: 50000, currency: 'PHP', livemode, status: 'succeeded' } },
+      payments: [{ id: 'pay_r6c', type: 'payment', attributes: { amount: 50000, currency: 'PHP', livemode,
         payment_intent_id: 'pi_r6c', status: 'paid', source: { type: 'gcash' }, refunds: [], disputed: false } }],
     } } } } };
 }
@@ -94,7 +94,7 @@ async function setup(mode, nodeEnv) {
       assert.equal(url, 'https://api.paymongo.com/v1/checkout_sessions');
       assert.equal(Buffer.from(options.headers.Authorization.slice(6), 'base64').toString(), `${config.secretKey}:`);
       const payload = JSON.parse(options.body).data.attributes;
-      assert.deepEqual(payload.line_items.map(({ amount, currency, quantity }) => ({ amount, currency, quantity })), [{ amount: 149900, currency: 'PHP', quantity: 1 }]);
+      assert.deepEqual(payload.line_items.map(({ amount, currency, quantity }) => ({ amount, currency, quantity })), [{ amount: 50000, currency: 'PHP', quantity: 1 }]);
   assert.deepEqual(payload.payment_method_types, ['qrph']);
       assert.equal(payload.success_url, `${dashboardUrl}/dashboard?payment=success&order=${orderId}`);
       assert.equal(payload.cancel_url, `${dashboardUrl}/?payment=cancelled`);

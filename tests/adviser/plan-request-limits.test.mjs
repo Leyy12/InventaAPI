@@ -137,27 +137,27 @@ test('checkout captures accepted request terms; stale or forged terms cannot ini
   assert.equal((await f.checkout('pro', requestPolicyVersion(DEFAULT_REQUEST_LIMITS))).statusCode, 409); assert.equal(f.providerCalls(), 0);
   assert.equal((await invoke(f.handlers.checkout, { token: 'synthetic', body: { plan: 'pro', requestAllowance: { limit: null } } })).statusCode, 400);
   assert.equal((await f.checkout('pro')).statusCode, 200);
-  const order = f.db.read(`payment_orders/${orderId}`); assert.equal(order.amount, 149900); assert.equal(order.durationDays, 30);
+  const order = f.db.read(`payment_orders/${orderId}`); assert.equal(order.amount, 50000); assert.equal(order.durationDays, 30);
   assert.equal(order.requestAllowance.limit, 1000);
 });
 test('already-paid fulfillment honors frozen request promise despite later configuration failure and duplicates', async () => {
   const f = paymentFixture({ ...DEFAULT_REQUEST_LIMITS, pro: 1000 }); await f.checkout('pro');
   f.db.seed('system/settings', { maintenanceMode: true, planRequestLimits: { pro: 'unavailable' } });
-  assert.deepEqual(await f.fulfill(149900), { duplicate: false });
+  assert.deepEqual(await f.fulfill(50000), { duplicate: false });
   assert.equal(f.db.read('account_request_contracts/customer').plans.pro.limit, 1000);
   assert.equal(f.db.read('users/customer').subscriptionExpiresAt, '2026-11-13T12:00:00.000Z');
-  assert.deepEqual(await f.fulfill(149900), { duplicate: true });
+  assert.deepEqual(await f.fulfill(50000), { duplicate: true });
 });
 test('finite Pro Max purchases preserve price and capture finite terms for new customers', async () => {
   const f = paymentFixture({ ...DEFAULT_REQUEST_LIMITS, pro_max: 1000 }); assert.equal((await f.checkout('pro_max')).statusCode, 200);
-  assert.equal(f.db.read(`payment_orders/${orderId}`).amount, 499900); await f.fulfill(499900);
+  assert.equal(f.db.read(`payment_orders/${orderId}`).amount, 130000); await f.fulfill(130000);
   assert.equal(f.db.read('account_request_contracts/customer').plans.pro_max.limit, 1000);
   assert.equal(f.db.read('users/customer').apiRequestLimit, null);
 });
 test('existing paid renewal quotes preserve same-plan promises without merging Pro into Max', async () => {
   const max = paymentFixture({ ...DEFAULT_REQUEST_LIMITS, pro_max: 100 }, account('Pro Max'));
   const quote = await invoke(max.handlers.status, { token: 'synthetic' }); assert.equal(quote.body.purchaseRequestLimits.pro_max, null);
-  await max.checkout('pro_max'); await max.fulfill(499900); assert.equal(max.db.read('account_request_contracts/customer').plans.pro_max.limit, null);
+  await max.checkout('pro_max'); await max.fulfill(130000); assert.equal(max.db.read('account_request_contracts/customer').plans.pro_max.limit, null);
   const pro = paymentFixture({ ...DEFAULT_REQUEST_LIMITS, pro: 100, pro_max: 100 }, account('Pro'));
   const upgrade = await invoke(pro.handlers.status, { token: 'synthetic' }); assert.equal(upgrade.body.purchaseRequestLimits.pro, 500);
   assert.equal(upgrade.body.purchaseRequestLimits.pro_max, 100); assert.equal((await pro.checkout('pro_max')).statusCode, 200);

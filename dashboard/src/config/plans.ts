@@ -65,8 +65,8 @@ export const SUBSCRIPTION_PLANS = {
     displayName: "Pro",
     
     // Pricing
-    price: 1499,
-    priceDisplay: "₱1,499",
+    price: 500,
+    priceDisplay: "₱500",
     billingCycle: "/month",
     
     // Limits
@@ -109,8 +109,8 @@ export const SUBSCRIPTION_PLANS = {
     displayName: "Pro Max",
     
     // Pricing
-    price: 4999,
-    priceDisplay: "₱4,999",
+    price: 1300,
+    priceDisplay: "₱1,300",
     billingCycle: "/month",
     
     // Limits
