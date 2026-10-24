@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CreditCard } from 'lucide-react';
+import { AlertCircle, ArrowRight, CreditCard, X } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { requestAllowanceLabel } from '@/config/plans';
 import { usePlanCatalog, useAccountRequestAllowance } from '@/lib/plan-request-policy';
@@ -69,6 +69,16 @@ export default function PlanBillingPage() {
   const { entitlement, loading } = useAuth();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchasePlan, setPurchasePlan] = useState<PaidPlanId>('pro');
+  // Set when the customer comes back from PayMongo without paying.
+  const [cancelledPlan, setCancelledPlan] = useState<PaidPlanId | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') !== 'cancelled') return;
+    setCancelledPlan(params.get('pendingPlan') === 'pro_max' ? 'pro_max' : 'pro');
+    window.history.replaceState({}, '', '/dashboard/plan-billing');
+  }, []);
 
   if (loading || !entitlement) return <p role="status" className="p-8 text-slate-300">Verifying your plan and billing status…</p>;
 
@@ -109,6 +119,21 @@ export default function PlanBillingPage() {
       {!paid && !upgradeRequired && <p className="mt-5 border-t border-slate-700/70 pt-5 text-sm text-slate-300">Plan details are being verified. Please refresh in a moment.</p>}
     </section>}
     {trial && <p className="text-sm text-slate-300">Current Trial request allowance: {requestAllowanceLabel(requestAllowance, true)}.</p>}
+
+    {cancelledPlan && <div role="status" className="flex flex-col gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
+        <div><p className="text-sm font-semibold text-amber-100">Payment was not completed</p>
+          <p className="mt-1 text-sm text-amber-100/80">No charge was made. You can try again whenever you are ready.</p></div>
+      </div>
+      <div className="flex items-center gap-2">
+        {(cancelledPlan === 'pro_max' ? entitlement.canPurchaseProMax : entitlement.canPurchasePro) && <button type="button"
+          onClick={() => { purchase(cancelledPlan); setCancelledPlan(null); }}
+          className="inline-flex min-h-10 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Try again</button>}
+        <button type="button" aria-label="Dismiss" onClick={() => setCancelledPlan(null)}
+          className="rounded-lg p-2 text-amber-100/70 hover:bg-amber-400/10 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><X className="h-4 w-4" aria-hidden="true" /></button>
+      </div>
+    </div>}
 
     <section aria-label="Manage API keys" className="flex flex-col gap-3 rounded-2xl border border-slate-700/70 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <div><h2 className="text-sm font-semibold text-white">API key management</h2><p className="mt-1 text-sm text-slate-400">View and manage your existing keys.</p></div>

@@ -88,7 +88,9 @@ export function createProductMediaHandlers({ getDb, verifyIdToken, storage, proc
       } else {
         if (data.state !== 'published' || !data.productId) throw submissionError(404, 'Image unavailable.');
         const product = (await tx.get(db.collection('products').doc(data.productId))).data();
-        if (!product || product.image_asset_id !== req.params.id || !evaluateProductVisibility(product).visible) throw submissionError(404, 'Image unavailable.');
+        const bound = product && (product.image_asset_id === req.params.id
+          || (Array.isArray(product.variants) && product.variants.some(variant => variant?.image_asset_id === req.params.id)));
+        if (!bound || !evaluateProductVisibility(product).visible) throw submissionError(404, 'Image unavailable.');
       }
       return data;
     });

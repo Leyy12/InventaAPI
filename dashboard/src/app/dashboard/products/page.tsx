@@ -59,7 +59,12 @@ function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?
   const variants = (product.variants ?? []) as { flavor?: string; size?: string; image_url?: unknown }[];
   if (clicked) {
     const variant = variants.find(item => `${item.flavor || ''}|${item.size || ''}` === clicked);
-    if (variant) return typeof variant.image_url === 'string' && variant.image_url ? { image_url: variant.image_url } : product;
+    if (variant) {
+      if (typeof variant.image_url === 'string' && variant.image_url) return { image_url: variant.image_url };
+      // A size without its own photo shows its flavor's photo (e.g. Hot & Spicy 420g → Hot & Spicy 155g's).
+      const sibling = variant.flavor && variants.find(item => item.flavor === variant.flavor && typeof item.image_url === 'string' && item.image_url);
+      return sibling ? { image_url: sibling.image_url } : product;
+    }
   }
   if (!picked.size || picked.size >= variants.length) return product;
   const variant = variants.find(item => picked.has(`${item.flavor || ''}|${item.size || ''}`) && typeof item.image_url === 'string' && item.image_url);

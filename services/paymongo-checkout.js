@@ -21,7 +21,8 @@ export function checkoutPayload(order, dashboardUrl) {
   const success = new URL('/dashboard', base);
   success.searchParams.set('payment', 'success');
   success.searchParams.set('order', order.id);
-  const cancel = new URL('/?payment=cancelled', base);
+  // Cancelling at PayMongo returns the signed-in customer to Plan & Billing, not the landing page.
+  const cancel = new URL('/dashboard/plan-billing?payment=cancelled', base);
   if (order.planId === 'pro_max') cancel.searchParams.set('pendingPlan', 'pro_max');
   const demonstration = order.billingProfile === GLOBAL_LIVE_TEST_PROFILE;
   return { data: { attributes: {
