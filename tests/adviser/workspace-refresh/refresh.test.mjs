@@ -189,7 +189,7 @@ test('Customer actual API Keys list preserves expanded integration examples acro
   const Component = load('dashboard/src/app/dashboard/api-keys/page.tsx', 'AccountKeysSession', h, {
     'next/link': { default: stub }, 'lucide-react': icons, '@/lib/firebase/auth-context': {},
     '@/lib/api-keys': { apiKeyRequest: async () => { reads++; return { success: true, keys: [{ id: 'key-fixture', keyPrefix: 'synthetic-prefix', status: 'active', name: 'Fixture' }] }; } },
-    '@/lib/api-key-generation': { REVOCATION_WARNING: '' },
+    '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/api-key-generation': { REVOCATION_WARNING: '' },
     '@/components/reports/CustomerUsageSummary': { default: stub }, '@/components/api/RequestHistory': { default: stub },
     '@/components/shared/CodeSnippet': { default: stub },
     '@/config/plans': { requestAllowanceLabel: () => '1,000 requests/day (UTC)' },
@@ -281,7 +281,7 @@ test('Admin catalog search/segment/status remain stable with one Firestore load 
   const Page = load('admin-panel/src/app/products/page.tsx', 'MasterProductCatalogPage', h, {
     'lucide-react': icons,
     '@/lib/product-image-url': { normalizeProductImageUrl: value => value, productImageSource: () => '', showProductImageFallback: stub },
-    '@/lib/catalog-csv': { catalogCsv: stub }, '@/components/products/ProductImageField': { default: stub },
+    '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/catalog-csv': { catalogCsv: stub }, '@/components/products/ProductImageField': { default: stub },
     '@/lib/product-media-client': { uploadProductImage: stub },
     '@/lib/data/firestore-client': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
       { id: 'product', data: () => ({ name: 'Synthetic Rice', brand: 'Brand', segment: 'Grocery', status: 'Active', variants: [] }) }] }; } },

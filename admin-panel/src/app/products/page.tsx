@@ -2,6 +2,7 @@
 import { normalizeProductImageUrl, productImageSource, showProductImageFallback } from '@/lib/product-image-url';
 import { catalogCsv } from '@/lib/catalog-csv';
 import ProductImageField from '@/components/products/ProductImageField';
+import { appAlert, appConfirm } from '@/components/shared/AppDialog';
 import VariantPhotoCell, { clearVariantPhoto, pickVariantPhoto, withUploadedVariantPhotos, type VariantPhotoFields } from '@/components/products/VariantPhotoCell';
 import { uploadProductImage, type MediaUpload } from '@/lib/product-media-client';
 
@@ -106,9 +107,12 @@ const FIELD_META: Record<VariantFieldKey, { label: string; placeholder: string; 
 const getSegmentPair = (segment?: string): [VariantFieldKey, VariantFieldKey] =>
   SEGMENT_FIELD_PAIRS[segment || ""] || SEGMENT_FIELD_PAIRS.Grocery;
 
+// The form shows segment labels (Specs/Dimensions, Dosage/Form) but always edits the
+// stored variant fields, flavor and size: every product keeps its variants there and
+// customers' API keys pick variants by flavor + size.
 const getSegmentFields = (segment?: string) => {
   const [a, b] = getSegmentPair(segment);
-  return { field1: { ...FIELD_META[a], key: a }, field2: { ...FIELD_META[b], key: b } };
+  return { field1: { ...FIELD_META[a], key: "flavor" as const }, field2: { ...FIELD_META[b], key: "size" as const } };
 };
 
 
@@ -386,11 +390,13 @@ function EditModal({
   onSaved: (updated: Product) => void;
 }) {
   const seedVariants = (): ProductVariant[] => {
-    if (product.variants?.length) return product.variants.map(v => ({ ...v }));
+    // Older variants may hold their values under segment names; show them in flavor/size.
+    if (product.variants?.length) return product.variants.map(v => ({ ...v,
+      flavor: v.flavor || v.specs || v.dosage || v.value || "", size: v.size || v.dimensions || v.form || "" }));
     if (product.flavor || product.size || product.dosage || product.form || product.specs || product.dimensions) {
       return [{
-        flavor: product.flavor || "",
-        size: product.size || "",
+        flavor: product.flavor || product.specs || product.dosage || "",
+        size: product.size || product.dimensions || product.form || "",
         dosage: product.dosage || "",
         form: product.form || "",
         specs: product.specs || "",
@@ -461,7 +467,8 @@ function EditModal({
         '/' + encodeURIComponent(product.id), 'PATCH',
         { product: payload, expectedRevision: product.catalogRevision ?? 0 });
       onSaved(result.product);
-      if (result.possibleDuplicates.length) alert('Saved. Possible Brand + Product Name duplicates: ' + result.possibleDuplicates.join(', '));
+      if (result.possibleDuplicates.length) void appAlert({ title: 'Saved — possible duplicates', tone: 'warning',
+        message: 'Other products have the same brand and name: ' + result.possibleDuplicates.join(', ') + '. Check whether they should be merged.' });
       onClose();
     } catch (e: any) {
       setError(e.message || "Failed to save. Try again.");
@@ -684,7 +691,8 @@ function AddProductModal({
         product: createAttempt.current.product,
       }, createAttempt.current.key);
       onAdded({ product: result.product, isUpdate: false });
-      if (result.possibleDuplicates.length) alert('Created separately. Possible Brand + Product Name duplicates: ' + result.possibleDuplicates.join(', '));
+      if (result.possibleDuplicates.length) void appAlert({ title: 'Created — possible duplicates', tone: 'warning',
+        message: 'Other products have the same brand and name: ' + result.possibleDuplicates.join(', ') + '. Check whether they should be merged.' });
       onClose();
     } catch (e: any) {
       setError(e.message || "Failed to save. Try again.");
@@ -945,13 +953,20 @@ export default function MasterProductCatalogPage() {
         action === 'delete' ? 'DELETE' : 'POST', { expectedRevision: p.catalogRevision ?? 0 });
       setProducts(previous => action === 'delete' ? previous.filter(item => item.id !== p.id)
         : previous.map(item => item.id === p.id && result.product ? result.product : item));
-    } catch (cause) { alert(cause instanceof Error ? cause.message : 'Catalog change failed. Reload and retry.'); }
+    } catch (cause) {
+      void appAlert({ title: 'Change not saved', tone: 'danger',
+        message: cause instanceof Error ? cause.message : 'Catalog change failed. Reload and retry.' });
+    }
   };
   const handleArchive = (p: Product) => {
-    if (confirm('Archive ' + getProductName(p) + '?')) void changeState(p, 'archive');
+    void appConfirm({ title: 'Archive product?', tone: 'warning', confirmLabel: 'Archive',
+      message: getProductName(p) + ' will be hidden from customers and the API. You can restore it later from the Archived tab.' })
+      .then(ok => { if (ok) void changeState(p, 'archive'); });
   };
   const handleDelete = (p: Product) => {
-    if (confirm('Permanently delete ' + getProductName(p) + '? Its canonical identity stays reserved.')) void changeState(p, 'delete');
+    void appConfirm({ title: 'Delete product permanently?', tone: 'danger', confirmLabel: 'Delete',
+      message: getProductName(p) + ' will be removed from the catalog. This cannot be undone.\nIts name and SKUs stay reserved, so it cannot be added again as a new product.' })
+      .then(ok => { if (ok) void changeState(p, 'delete'); });
   };
   const handleRestore = (p: Product) => { void changeState(p, 'restore'); };
 

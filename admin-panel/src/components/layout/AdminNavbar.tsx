@@ -9,7 +9,7 @@ export default function AdminNavbar() {
       {/* Left */}
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-slate-500">
-          Super Admin Control Panel
+          Admin Control Panel
         </span>
       </div>
 

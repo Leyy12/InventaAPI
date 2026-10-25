@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { appConfirm } from "@/components/shared/AppDialog";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,7 @@ export default function AdminSidebar() {
       {/* Nav */}
       <div className="flex-1 py-4 px-2 overflow-y-auto space-y-0.5 custom-scrollbar">
         <p className="px-3 mb-2 text-xs font-semibold text-blue-900/80 uppercase tracking-widest">
-          Super Admin
+          Admin
         </p>
 
         {adminRoutes.map((route) => {
@@ -101,7 +102,7 @@ export default function AdminSidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-slate-200 truncate">
-              {adminUser?.fullName ?? "Super Admin"}
+              {adminUser?.fullName ?? "Admin"}
             </p>
             <p className="text-xs text-blue-500/60 truncate capitalize">
               {adminUser?.role ?? "Admin"}
@@ -111,9 +112,8 @@ export default function AdminSidebar() {
 
         <button
           onClick={() => {
-            if (window.confirm("Are you sure you want to logout?")) {
-              logout();
-            }
+            void appConfirm({ title: "Sign out?", message: "You will need to log in again to use the admin panel.",
+              confirmLabel: "Sign out", tone: "warning" }).then(ok => { if (ok) logout(); });
           }}
           className="flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded-lg text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
         >

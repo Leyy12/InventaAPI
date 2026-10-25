@@ -42,9 +42,9 @@ test('replacement action, confirmation, one-time modal, and focus targets are ab
 });
 
 test('Revoke confirmation and endpoint remain unchanged while Products retains key creation', () => {
-  assert.match(keys, /window\.confirm\(/);
+  assert.match(keys, /await appConfirm\(/);
   assert.match(keys, /apiKeyRequest\(user, `\/\$\{encodeURIComponent\(id\)\}`, \{ method: "DELETE" \}\)/);
-  assert.match(keys, /Select OK to revoke without creating a replacement/);
+  assert.match(keys, /Revoking does not create a replacement key/);
   assert.match(keys, /method: "DELETE"/);
   assert.doesNotMatch(keys, /localStorage|sessionStorage|indexedDB|document\.cookie|navigator\.sendBeacon/);
   assert.match(products, /api\/v1\/api-keys\/generate/);

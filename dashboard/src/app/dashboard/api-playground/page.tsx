@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { appAlert } from '@/components/shared/AppDialog';
 import { 
   Play, Copy, Check, Key, Database, AlertCircle, 
   Download, RefreshCw, Sparkles, Zap, ChevronDown, ChevronRight
@@ -61,7 +62,7 @@ export default function ApiPlaygroundPage() {
   // Preview selected products through the dashboard session: no key, no allowance used.
   const executePreview = async () => {
     if (!user) {
-      alert("Sign in again to preview your selected products.");
+      void appAlert({ title: "Session expired", message: "Sign in again to preview your selected products." });
       return;
     }
     setLoading(true);
@@ -94,7 +95,7 @@ export default function ApiPlaygroundPage() {
   const executeRequest = async () => {
     if (previewMode) return executePreview();
     if (!apiKey.trim()) {
-      alert("Please enter an API key");
+      void appAlert({ title: "API key needed", message: "Paste one of your API keys to send a request." });
       return;
     }
 
@@ -134,8 +135,8 @@ export default function ApiPlaygroundPage() {
   };
 
   const copyToClipboard = async (text: string) => {
-    try { await navigator.clipboard.writeText(text); alert('Response copied.'); }
-    catch { alert('Copy failed. Select and copy the response manually.'); }
+    try { await navigator.clipboard.writeText(text); void appAlert({ title: 'Copied', message: 'The response was copied to your clipboard.' }); }
+    catch { void appAlert({ title: 'Copy failed', tone: 'warning', message: 'Select and copy the response manually.' }); }
   };
 
   return (

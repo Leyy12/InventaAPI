@@ -220,7 +220,7 @@ test('sidebar retains all six Admin destinations in order, with Inventory active
   const Sidebar = load('admin-panel/src/components/layout/AdminSidebar.tsx', 'AdminSidebar', h, {
     'next/link': { __esModule: true, default: Link }, 'next/image': { __esModule: true, default: stub },
     'next/navigation': { usePathname: () => '/consumers' },
-    '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
+    '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
     'lucide-react': new Proxy({}, { get: () => stub }),
     '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ adminUser: null, logout: stub }) },
   });
