@@ -14,7 +14,7 @@ const admin = read('admin-panel/src/components/layout/AdminLayoutWrapper.tsx');
 
 test('public root and Login restoration use the neutral branded state, never raw checking text', () => {
   for (const source of [entry, root, login, layout]) assert.doesNotMatch(source, /Checking session\.\.\.|Checking session…/);
-  assert.match(entry, /if \(loading \|\| destination\) return <SessionLoadingScreen/);
+  assert.match(entry, /if \(loading \|\| destination \|\| cancelRedirect\) return <SessionLoadingScreen/);
   assert.match(entry, /authStatus === 'verified' && user && profileRole\(appUser\) === 'customer' \? 'workspace' : 'public'/);
   assert.match(root, /Suspense fallback=\{<SessionLoadingScreen variant="public"/);
   assert.match(login, /redirect\(customerLoginEntryDestination\(params\)\)/);

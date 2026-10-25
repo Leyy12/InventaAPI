@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import { useAuth } from "@/lib/firebase/auth-context";
 import NotificationBell from "@/components/shared/NotificationBell";
+import ThemeToggle from "@/components/shared/ThemeToggle";
 import { notifySubscriptionExpiringSoon } from "@/lib/firebase/notifications";
 import { dashboardRoutes, routeActive } from './dashboard-navigation';
 import { useWorkspaceHeaderSlot } from './WorkspaceHeaderSlot';
@@ -49,6 +50,7 @@ export default function Navbar() {
       </nav>}
 
       <div className="flex shrink-0 items-center gap-3">
+        <ThemeToggle />
         {/* Notification Bell */}
         {user && (
           <NotificationBell userId={user.uid} accentColor="indigo" />

@@ -898,7 +898,7 @@ DAAS_API_KEY=${generatedKey}
                 onClick={() => toggleProduct(product)}
                 aria-disabled={selectionDisabled || undefined}
                 aria-label={`${product.name}${isIncluded ? ', Included' : isSelected ? ', Selected' : ''}`}
-                style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : '#334155',
+                style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : 'var(--color-slate-700)',
                   boxShadow: isSelected ? '0 0 0 1px #818cf8, 0 4px 20px rgb(99 102 241 / 0.2)' : undefined }}
                 className={`glass-card rounded-xl transition-all overflow-hidden flex h-[24rem] flex-col ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
                   isSelected

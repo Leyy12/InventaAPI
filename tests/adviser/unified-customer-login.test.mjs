@@ -82,7 +82,7 @@ function landing(query = '') {
     'next/image': 'Image', 'lucide-react': icons,
     'next/navigation': { useRouter: () => router, useSearchParams: () => params },
     '@/components/auth/LoginForm': 'LoginForm', '@/components/auth/SessionLoadingScreen': 'Loading',
-    '@/components/subscription/SubscriptionModal': 'SubscriptionModal', '@/components/subscription/PlanCards': 'PlanCards',
+    '@/components/subscription/SubscriptionModal': 'SubscriptionModal', '@/components/shared/ThemeToggle': 'ThemeToggle', '@/components/subscription/PlanCards': 'PlanCards',
     '@/lib/firebase/auth-context': { useAuth: () => authState }, '@/config/plans': { SUBSCRIPTION_PLANS: plans },
     '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans, status: 'ready' }) },
     '../../../../services/auth-navigation': navigation,

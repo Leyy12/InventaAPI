@@ -8,7 +8,7 @@ test('Customer root is Landing for fresh and returning unauthenticated browsers'
   const source = read('dashboard/src/app/page.tsx');
   assert.match(source, /<AuthEntry \/>/);
   assert.doesNotMatch(source, /landingSeen|useSyncExternalStore|router\.replace/);
-  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /if \(loading \|\| destination\) return/);
+  assert.match(read('dashboard/src/components/auth/AuthEntry.tsx'), /if \(loading \|\| destination \|\| cancelRedirect\) return/);
 });
 
 test('Landing retains permanent login and pricing-first registration', () => {
