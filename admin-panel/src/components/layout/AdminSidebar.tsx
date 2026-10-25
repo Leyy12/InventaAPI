@@ -31,16 +31,9 @@ export default function AdminSidebar() {
   const { adminUser, logout } = useAdminAuth();
 
   return (
-    <aside className="w-56 flex flex-col hidden md:flex relative z-20"
-      style={{
-        background: "linear-gradient(180deg, #07102a 0%, #060d1f 100%)",
-        borderRight: "1px solid rgba(59,130,246,0.1)",
-      }}
-    >
+    <aside className="admin-sidebar w-56 flex flex-col hidden md:flex relative z-20">
       {/* Logo */}
-      <div className="h-14 flex items-center px-5 gap-3"
-        style={{ borderBottom: "1px solid rgba(59,130,246,0.08)" }}
-      >
+      <div className="admin-sidebar-rule h-14 flex items-center px-5 gap-3 border-b border-[rgba(59,130,246,0.08)]">
         <Image
           src="/inventa-logo.png"
           alt="InventaAPI Logo"
@@ -98,10 +91,10 @@ export default function AdminSidebar() {
       </div>
 
       {/* User footer */}
-      <div className="p-3" style={{ borderTop: "1px solid rgba(59,130,246,0.08)" }}>
+      <div className="admin-sidebar-rule p-3 border-t border-[rgba(59,130,246,0.08)]">
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-blue-950/30 cursor-pointer transition-colors mb-1">
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white [--color-white:#fff] flex-shrink-0"
             style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}
           >
             {adminUser?.fullName?.charAt(0) || adminUser?.email?.charAt(0) || "S"}

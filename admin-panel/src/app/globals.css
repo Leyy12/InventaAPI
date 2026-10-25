@@ -59,6 +59,18 @@
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.25);
 }
 
+/* ── Admin chrome (light versions live in theme.css) ── */
+.admin-navbar {
+  background: rgba(7, 16, 42, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+}
+.admin-sidebar {
+  background: linear-gradient(180deg, #07102a 0%, #060d1f 100%);
+  border-right: 1px solid rgba(59, 130, 246, 0.1);
+}
+
 /* ── Ambient blobs ── */
 .blob {
   position: fixed;

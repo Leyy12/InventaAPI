@@ -7,6 +7,7 @@ import { Database, Code, Zap, Server, ShieldCheck, Smartphone } from "lucide-rea
 import LoginForm from "@/components/auth/LoginForm";
 import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
+import ThemeToggle from "@/components/shared/ThemeToggle";
 import PlanCards from "@/components/subscription/PlanCards";
 import { useAuth } from "@/lib/firebase/auth-context";
 import type { PlanId } from "@/config/plans";
@@ -231,6 +232,7 @@ export default function AuthEntry() {
 
             </div>
             <div className="flex items-center gap-4 text-sm">
+              <ThemeToggle />
               <button
                 type="button"
                 ref={mobileMenuButtonRef}

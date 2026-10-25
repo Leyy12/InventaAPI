@@ -16,7 +16,7 @@ const highlighted = card => {
 };
 const notHighlighted = card => {
   assert.doesNotMatch(card.props.className, /border-2 border-indigo-500/);
-  assert.equal(card.props.style.borderColor, '#334155');
+  assert.equal(card.props.style.borderColor, 'var(--color-slate-700)');
   assert.equal(card.props.style.boxShadow, undefined);
 };
 
@@ -66,13 +66,13 @@ test('Checked means picked now; Included products are locked, labelled and never
 test('partial variant selection highlights the full card; clearing returns its neutral border', () => using({}, async f => {
   const neutral = f.card('grocery-0');
   assert.doesNotMatch(neutral.props.className, /border-2 border-indigo/);
-  assert.equal(neutral.props.style.borderColor, '#334155');
+  assert.equal(neutral.props.style.borderColor, 'var(--color-slate-700)');
   await f.click(nodes(neutral, n => n.type === 'button')[0]);
   highlighted(f.card('grocery-0'));
   assert.equal(nodes(f.card('grocery-0'), n => n.type === 'button' && n.props.className.includes('bg-indigo-500')).length, 1);
   await f.filter('selected'); assert.deepEqual(ids(f), ['grocery-0']);
   await f.click(f.button('Clear New Selections')); await f.filter('all');
-  assert.equal(f.card('grocery-0').props.style.borderColor, '#334155');
+  assert.equal(f.card('grocery-0').props.style.borderColor, 'var(--color-slate-700)');
   assert.equal(f.card('grocery-0').props.style.boxShadow, undefined);
 }));
 
