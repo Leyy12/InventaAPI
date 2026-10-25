@@ -5,6 +5,7 @@ import "./globals.css";
 import "./theme.css"; // light mode (after globals so it wins)
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import LayoutWrapper from "@/components/layout/LayoutWrapper";
+import AppDialogHost from "@/components/shared/AppDialog";
 import { AuthProvider } from "@/lib/firebase/auth-context";
 import { PlanRequestPolicyProvider } from '@/lib/plan-request-policy';
 
@@ -37,6 +38,7 @@ export default function RootLayout({
             <PlanRequestPolicyProvider><LayoutWrapper>
               {children}
             </LayoutWrapper></PlanRequestPolicyProvider>
+            <AppDialogHost />
           </AuthProvider>
         </Suspense>
       </body>

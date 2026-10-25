@@ -43,9 +43,9 @@ test('Customer API Keys exposes no replace action or replacement dialog for any 
 });
 test('Customer Revoke remains available and uses the existing DELETE flow', () => {
   assert.match(keys, /const revokeKey = async \(id: string, name: string\) => \{/u);
-  assert.match(keys, /window\.confirm\(/u);
+  assert.match(keys, /await appConfirm\(/u);
   assert.match(keys, /apiKeyRequest\(user, `\/\$\{encodeURIComponent\(id\)\}`, \{ method: "DELETE" \}\)/u);
-  assert.match(keys, /window\.alert\("Failed to revoke API key\. Please try again\."\)/u);
+  assert.match(keys, /appAlert\(\{ title: "Key not revoked", tone: "danger", message: "Failed to revoke API key\. Please try again\." \}\)/u);
   assert.match(keys, /onClick=\{\(\) => void revokeKey\(apiKey\.id, apiKey\.name\)\}/u);
 });
 test('key list and generation remain account-scoped and separate from key replacement', () => {

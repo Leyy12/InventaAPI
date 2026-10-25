@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { appAlert, appConfirm } from "@/components/shared/AppDialog";
 import Link from "next/link";
 import { Check, CheckCircle2, Clock, Code, Copy, Key, Shield, Trash2 } from "lucide-react";
 import type { User } from "@/lib/supabase-auth";
@@ -73,17 +74,14 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
     return () => { active = false; invalidateList(); };
   }, [fetchApiKeys, invalidateList]);
   const revokeKey = async (id: string, name: string) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to revoke "${name}"?\n\n` +
-      `This action cannot be undone. Integrations using this key will stop working.\n\n` +
-      `${REVOCATION_WARNING}\n\nSelect OK to revoke without creating a replacement.`
-    );
+    const confirmed = await appConfirm({ title: `Revoke "${name}"?`, tone: "danger", confirmLabel: "Revoke key",
+      message: `This cannot be undone. Integrations using this key will stop working.\n\n${REVOCATION_WARNING}\n\nRevoking does not create a replacement key.` });
     if (!confirmed) return;
     try {
       await apiKeyRequest(user, `/${encodeURIComponent(id)}`, { method: "DELETE" });
       void fetchApiKeys();
     } catch {
-      window.alert("Failed to revoke API key. Please try again.");
+      void appAlert({ title: "Key not revoked", tone: "danger", message: "Failed to revoke API key. Please try again." });
     }
   };
 

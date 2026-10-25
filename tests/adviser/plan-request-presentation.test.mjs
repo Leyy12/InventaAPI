@@ -124,7 +124,7 @@ test('real API Keys page receives updated allowance without remounting the key s
     'next/link': 'a', 'lucide-react': icons, '@/config/plans': config,
     '@/lib/plan-request-policy': { useAccountRequestAllowance: () => allowance },
     '@/lib/firebase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement: { subscription_status: 'active' } }) },
-    '@/lib/api-keys': {}, '@/lib/api-key-generation': {}, '@/components/reports/CustomerUsageSummary': () => null,
+    '@/lib/api-keys': {}, '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/api-key-generation': {}, '@/components/reports/CustomerUsageSummary': () => null,
     '@/components/api/RequestHistory': () => null, '@/components/shared/CodeSnippet': () => null,
   });
   const before = h.mount(Component); assert.equal(before.props.requestAllowance, 1000);

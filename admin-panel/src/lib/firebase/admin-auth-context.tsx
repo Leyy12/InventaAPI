@@ -41,7 +41,7 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
         const profile = snapshot.exists() ? snapshot.data() : null;
         if (profileRole(profile) !== 'admin') return null;
         return { ...profile, uid: currentUser.uid, email: currentUser.email || '',
-          fullName: profile?.fullName || currentUser.displayName || 'Super Admin',
+          fullName: profile?.fullName || currentUser.displayName || 'Admin',
           role: profile?.role, plan: profile?.plan || 'Unlimited', businessName: profile?.businessName || 'InventaAPI' } as AdminUser;
       },
       publish: state => { setUser(state.user); setAdminUser(state.profile); setLoading(state.loading); setAuthStatus(state.status); },
