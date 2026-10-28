@@ -3,13 +3,17 @@
  * Used by both pricing page and upgrade modal
  */
 
-import { PRO_DAILY_REQUEST_LIMIT, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
+import { PAID_MONTHLY_REQUEST_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
+
+const MONTHLY = PAID_MONTHLY_REQUEST_LIMIT.toLocaleString("en-US");
+export const PRO_REQUEST_LABEL = `${MONTHLY} API requests per month`;
+export const PRO_MAX_REQUEST_LABEL = `${MONTHLY} API requests per month for each segment`;
 import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
 export const PRO_MAX_CAPABILITY_IDS = [
-  'unlimited_account_quota', 'all_segments', 'real_sales_feed',
-  'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term',
+  'monthly_segment_quota', 'all_segments', 'segment_api_keys', 'auto_segment_routing',
+  'real_sales_feed', 'api_playground', 'usage_history', 'renewable_30_day_term',
 ] as const;
 
 export const SUBSCRIPTION_PLANS = {
@@ -70,20 +74,18 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: PRO_DAILY_REQUEST_LIMIT,
-    requestLimitDisplay: `${PRO_DAILY_REQUEST_LIMIT} requests/day`,
+    requestLimit: PAID_MONTHLY_REQUEST_LIMIT,
+    requestLimitDisplay: PRO_REQUEST_LABEL,
     
     // Description
     tagline: "For active businesses needing reliable, fast data integration",
     
     // Incremental features (adds to Free)
     incrementalFeatures: [
-      "API keys share the account allowance",
-      `${PRO_DAILY_REQUEST_LIMIT} requests per day`,
-      "Paid linked-product catalog access",
+      PRO_REQUEST_LABEL,
+      "One API key — add products to it anytime",
+      "Your business segment's catalog",
       "Real Sales Analytics Feed",
-      "All Business Segments",
-      "Multiple API Keys",
       "API Playground",
       "Usage & Integration History",
       "30-Day Renewable Subscription"
@@ -114,18 +116,19 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: null,
-    requestLimitDisplay: "Unlimited account API quota*",
+    requestLimit: PAID_MONTHLY_REQUEST_LIMIT,
+    requestLimitDisplay: PRO_MAX_REQUEST_LABEL,
     
     // Description
     tagline: "For high-volume API usage",
     
     // Incremental features (adds to Pro)
     incrementalFeatures: [
-      "Unlimited account API quota*",
+      PRO_MAX_REQUEST_LABEL,
       "All Business Segments",
+      `Up to ${PRO_MAX_SEGMENT_KEYS} API keys — one per segment`,
+      "Products sorted into the right key automatically",
       "Real Sales Analytics Feed",
-      "Multiple API Keys",
       "API Playground",
       "Usage & Integration History",
       "30-day renewable subscription"
@@ -146,6 +149,11 @@ export const SUBSCRIPTION_PLANS = {
 } as const;
 
 export type PlanId = keyof typeof SUBSCRIPTION_PLANS;
+// Active Pro / Pro Max allowance in words; null for Trial and other plans.
+export function paidAllowanceLabel(entitlement: { activePro?: boolean; plan?: string } | null | undefined): string | null {
+  if (!entitlement?.activePro) return null;
+  return entitlement.plan === 'Pro' ? PRO_REQUEST_LABEL : entitlement.plan === 'Pro Max' ? PRO_MAX_REQUEST_LABEL : null;
+}
 export type PlanRequestLimits = { free_trial: number | null; pro: number; pro_max: number | null };
 export function requestAllowanceLabel(limit: number | null | undefined, trial = false): string {
   if (limit === undefined) return 'Request allowance unavailable';
@@ -159,10 +167,9 @@ export function plansForRequestLimits(limits: PlanRequestLimits | null) {
     free: { ...SUBSCRIPTION_PLANS.free, requestLimit: limits?.free_trial,
       requestLimitDisplay: requestAllowanceLabel(limits?.free_trial, true),
       features: [...SUBSCRIPTION_PLANS.free.features, requestAllowanceLabel(limits?.free_trial, true)] },
-    pro: { ...SUBSCRIPTION_PLANS.pro, requestLimit: limits?.pro, requestLimitDisplay: requestAllowanceLabel(limits?.pro),
-      incrementalFeatures: SUBSCRIPTION_PLANS.pro.incrementalFeatures.map(feature => /^\d+ requests per day$/u.test(feature) ? requestAllowanceLabel(limits?.pro) : feature) },
-    pro_max: { ...SUBSCRIPTION_PLANS.pro_max, requestLimit: limits?.pro_max, requestLimitDisplay: requestAllowanceLabel(limits?.pro_max),
-      incrementalFeatures: SUBSCRIPTION_PLANS.pro_max.incrementalFeatures.map(feature => feature === 'Unlimited account API quota*' ? requestAllowanceLabel(limits?.pro_max) : feature) },
+    // Paid plans count requests per month (fixed); only the Trial uses the configurable policy.
+    pro: SUBSCRIPTION_PLANS.pro,
+    pro_max: SUBSCRIPTION_PLANS.pro_max,
   };
 }
 

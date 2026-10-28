@@ -6,7 +6,7 @@ import Link from "next/link";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { quotaSummary, quotaVerificationKey } from "@/lib/reports";
-import { createQuotaRefresh, type QuotaSource } from "@/lib/quota-refresh";
+import { createQuotaRefresh, type QuotaSource, type MonthlyUsage } from "@/lib/quota-refresh";
 import { subscribeAccountUsage } from "@/lib/account-usage-events";
 import { requestAllowanceLabel } from '@/config/plans';
 import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
@@ -50,6 +50,8 @@ function Usage({ user, upgradeRequired, activeTrial, requestAllowance }: { user:
   </section>;
   if (activeTrial) return <p role={source.status === 'error' ? 'alert' : 'status'} className="text-slate-300">{source.status === 'error'
     ? 'Trial catalog verification unavailable.' : 'Loading Trial catalog…'} {retryControl}</p>;
+  const monthly = source.status === 'ready' ? source.monthlyUsage : undefined;
+  if (monthly) return <MonthlyUsageCards monthly={monthly} activeKeys={source.count} />;
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[["API keys (active status)", source.count ?? unavailable],
@@ -66,6 +68,33 @@ function Usage({ user, upgradeRequired, activeTrial, requestAllowance }: { user:
     {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. Resets at {quota.resetsAt}. {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
   </section>;
 }
+const bucketLabel = (bucket: string) => bucket === 'account' ? 'This month' : bucket === 'general' ? 'Older keys' : bucket;
+// Active Pro: one monthly allowance. Pro Max: one per segment (Grocery, Pharmacy, Hardware).
+function MonthlyUsageCards({ monthly, activeKeys }: { monthly: MonthlyUsage; activeKeys: number | null }) {
+  const resets = new Date(monthly.resetsAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  return <section aria-label="Account API usage" className="space-y-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+        <p className="text-sm text-slate-400">API keys (active)</p><p className="mt-3 text-2xl font-semibold text-white">{activeKeys ?? '—'}</p>
+      </div>
+      {monthly.buckets.map(item => {
+        const percent = Math.min(100, (item.used / monthly.limit) * 100);
+        return <div key={item.bucket} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+          <p className="text-sm text-slate-400">{monthly.plan === 'pro' ? 'Requests this month' : `${bucketLabel(item.bucket)} requests`}</p>
+          <p className="mt-3 text-2xl font-semibold text-white">{item.used.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {monthly.limit.toLocaleString()}</span></p>
+          <div className="mt-3 h-1.5 rounded-full bg-slate-800" aria-hidden="true">
+            <div className={`h-1.5 rounded-full ${percent >= 90 ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-slate-400">{item.remaining.toLocaleString()} remaining</p>
+        </div>;
+      })}
+    </div>
+    <p className="text-xs text-slate-400">{monthly.plan === 'pro'
+      ? `Shared by your API key. ${monthly.limit.toLocaleString()} requests per month; resets ${resets} (UTC).`
+      : `Each segment has its own ${monthly.limit.toLocaleString()} requests per month; resets ${resets} (UTC).`}</p>
+  </section>;
+}
+
 export default function CustomerUsageSummary() {
   const { user, entitlement } = useAuth();
   const requestAllowance = useAccountRequestAllowance();

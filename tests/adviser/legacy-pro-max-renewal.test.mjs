@@ -256,7 +256,9 @@ test('receipt changes during recovery force transaction revalidation before any 
 
 test('active legacy Unlimited remains protected from finite defaults and records its intact entitlement', async () => {
   const f = fixture({ account: { ...legacy, subscriptionExpiresAt: '2026-11-01T00:00:00.000Z' } });
-  assert.equal((await f.consume()).usage.limit, null); assert.equal(f.db.read('account_api_usage/customer').used, 238);
+  // Active Pro Max now counts monthly per segment (this older key has no segment: "general").
+  assert.equal((await f.consume()).usage.limit, 15000); assert.equal(f.db.read('account_api_usage/customer').used, 237);
+  assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_general').used, 1);
   assert.equal(f.db.read('account_request_contracts/customer').plans.pro_max.limit, null);
   assert.equal(f.db.read('users/customer').subscriptionExpiresAt, '2026-11-01T00:00:00.000Z');
 });
@@ -362,9 +364,10 @@ test('verified finite purchase history restores its agreed terms, never inferred
 test('a genuinely new finite contract is accepted, enforced and preserved through expiry/renewal without resetting usage', async () => {
   const f = fixture({ account: fresh, used: 0 }); await f.checkout(); await f.fulfill();
   assert.equal(f.db.read(`payment_orders/${NEXT}`).requestAllowance.limit, 10); assert.equal(f.effective().limit, 10);
-  for (let i = 0; i < 10; i++) await f.consume(); await assert.rejects(f.consume(), error => error.status === 429);
-  f.time(new Date('2026-10-15T00:00:00.000Z')); assert.equal((await f.consume()).usage.used, 1);
-  assert.equal(f.db.read('account_api_usage/customer').window, '2026-10-15');
+  // The stored contract is kept, but active paid requests now use the monthly allowance.
+  for (let i = 0; i < 11; i++) assert.equal((await f.consume()).usage.limit, 15000);
+  f.time(new Date('2026-10-15T00:00:00.000Z')); assert.equal((await f.consume()).usage.used, 12);
+  assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_general').used, 12);
   f.time(new Date('2026-11-14T00:00:00.000Z')); await invoke(f.keys.list);
   assert.equal(f.db.read('users/customer').plan, 'Free'); assert.equal(f.db.read('account_request_contracts/customer').plans.pro_max.limit, 10);
   assert.equal((await f.status()).body.purchaseRequestLimits.pro_max, 10);
@@ -399,8 +402,9 @@ test('legacy Pro retains 500/day on normalization and applicable renewal offers;
   await invoke(f.keys.list); assert.equal(f.db.read('account_request_contracts/customer').plans.pro.limit, 500);
   assert.equal((await f.status()).body.purchaseRequestLimits.pro, 500);
   const active = fixture({ account: { ...account, subscriptionExpiresAt: '2026-11-01T00:00:00.000Z' }, used: 499 });
-  assert.equal((await active.consume()).usage.limit, 500); await assert.rejects(active.consume(), error => error.status === 429);
-  active.db.seed('system/settings', { planRequestLimits: { ...configured, pro: 1000 } }); assert.equal((await active.consume()).usage.limit, 1000);
+  // Active Pro requests use the 15,000 monthly allowance; daily settings no longer cap them.
+  assert.equal((await active.consume()).usage.limit, 15000); assert.equal((await active.consume()).usage.used, 2);
+  active.db.seed('system/settings', { planRequestLimits: { ...configured, pro: 1000 } }); assert.equal((await active.consume()).usage.limit, 15000);
 });
 
 test('actual personalized Billing cards match renewed legacy Unlimited and genuinely new finite backend allowances', async () => {
@@ -424,9 +428,12 @@ test('actual personalized Billing cards match renewed legacy Unlimited and genui
       'next/link': 'a', 'lucide-react': icons, '@/config/plans': config, '@/lib/plan-request-policy': module,
       '@/lib/supabase/auth-context': { useAuth: () => auth }, '@/components/subscription/SubscriptionModal': () => null, '@/components/subscription/FreeTrialContent': () => null });
     const tree = expand(h.mount(Billing)), card = nodes(tree, node => node.type === 'article').find(node => /Pro Max/.test(text(node)));
-    const quota = await f.consume(); assert.equal(quota.usage.limit, response.body.apiRequestLimit);
-    assert.match(text(card), account === legacy ? /Unlimited account request quota/ : /10 requests\/day \(UTC\)/);
-    assert.match(text(tree), account === legacy ? /Unlimited account request quota/ : /10 requests\/day \(UTC\)/);
-    assert.equal(module.useAccountRequestAllowance(), quota.usage.limit); h.stop(); providerHooks.stop();
+    // Renewed Pro Max (legacy or new contract) counts requests monthly per segment, and the
+    // Billing page shows that same allowance on the card and in the current-plan summary.
+    const quota = await f.consume(); assert.equal(quota.usage.limit, 15000); assert.equal(quota.usage.period, 'monthly');
+    assert.match(text(card), /15,000 API requests per month for each segment/);
+    assert.ok((text(tree).match(/15,000 API requests per month for each segment/g) || []).length >= 2);
+    assert.doesNotMatch(text(tree), /requests\/day|Unlimited account request quota/);
+    assert.equal(module.useAccountRequestAllowance(), response.body.apiRequestLimit); h.stop(); providerHooks.stop();
   }
 });

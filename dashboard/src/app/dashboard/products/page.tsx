@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/supabase/auth-context";
 import { getBaseSize, hasNearExpiry, type Product } from "@/lib/products-service";
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
+import PaidKeyResultModal, { type PaidAddResult } from "@/components/products/PaidKeyResultModal";
 import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
 import { ALL_CATEGORIES, keyNamesByProduct, keyProductUsage, matchesCategory, matchesKeyUsage, playgroundHref, productCategories, type KeyProductUsage, type KeyUsageFilter } from '@/lib/product-filters';
 
@@ -87,6 +88,10 @@ function CustomerCatalogSession() {
     || (paywalledUserId === user?.uid && !paidAccess);
   const canGenerate = !!entitlement && !upgradeRequired;
   const activeTrial = entitlement?.activeTrial === true;
+  // Paid key rules: Pro adds products to its one key; Pro Max sorts them into one key per segment.
+  const paidKeyPlan = entitlement?.activePro === true
+    ? entitlement.plan === 'Pro Max' ? 'pro_max' : entitlement.plan === 'Pro' ? 'pro' : null : null;
+  const [paidResults, setPaidResults] = useState<PaidAddResult[] | null>(null);
   const headerSlot = useWorkspaceHeaderSlot()?.target ?? null;
   const [summaryElement, setSummaryElement] = useState<HTMLElement | null>(null);
   const [summaryViewport, setSummaryViewport] = useState<{ target: HTMLElement; above: boolean } | null>(null);
@@ -109,7 +114,9 @@ function CustomerCatalogSession() {
   // Last variant chip clicked on each card; the card photo shows that variant.
   const [clickedVariant, setClickedVariant] = useState<Record<string, string>>({});
   const [paidSegment, setActiveSegment] = useState<string>("All");
-  const activeSegment = isFreePlan(appUser?.plan) ? activeCustomerSegment(appUser) || '' : paidSegment;
+  // Free and Pro accounts browse only their own segment; Pro Max can browse all three.
+  const segmentLocked = isFreePlan(appUser?.plan) || paidKeyPlan === 'pro';
+  const activeSegment = segmentLocked ? activeCustomerSegment(appUser) || '' : paidSegment;
   const currentCatalog = catalogSource?.segment === activeSegment ? catalogSource : null;
   const productAvailable = currentCatalog?.status === 'ready' ? currentCatalog.total : null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -539,6 +546,31 @@ function CustomerCatalogSession() {
     finally { setGenerating(false); }
   };
 
+  // Pro / Pro Max: add the selection to the right API key (created the first time).
+  const addPaidProducts = async () => {
+    if (!user || !paidKeyPlan || generating || selectedProducts.size === 0) return;
+    setGenerating(true); setSelectionError('');
+    try {
+      const full: string[] = [];
+      const partial: Record<string, string[]> = {};
+      for (const product of selectedLinkedProducts(products, appUser, selectedProducts)) {
+        const variants = selectedVariants[product.id!];
+        if (variants?.size && product.variants && variants.size < product.variants.length) partial[product.id!] = [...variants];
+        else full.push(product.id!);
+      }
+      const data = await apiKeyRequest(user, '/add-products', { method: 'POST',
+        body: JSON.stringify({ linkedProductIds: full, linkedVariantSelections: partial }) });
+      setPaidResults(Array.isArray(data.results) ? data.results : []);
+      setSelectedProducts(new Set());
+      setSelectedVariants({});
+      invalidateAccountUsage(user.uid);
+      void refreshKeyUsage();
+    } catch (error) {
+      setSelectionError(error instanceof Error ? error.message : 'Unable to add products.');
+    } finally { setGenerating(false); }
+  };
+  const paidAddLabel = paidKeyPlan === 'pro' ? 'Add to my API key' : 'Add selected products';
+
   const handleCopyAndClose = useCallback(async () => {
     if (generatedKey) {
       try { await navigator.clipboard.writeText(generatedKey); }
@@ -635,7 +667,9 @@ DAAS_API_KEY=${generatedKey}
             {trialPendingCount ?? cartSummary.totalProducts} selected
           </button>
           <div className="hidden xl:flex items-center gap-2">
-            {trialAddMode ? <button type="button" onClick={addTrialProducts}
+            {paidKeyPlan ? <button type="button" onClick={addPaidProducts} disabled={generating || selectedProducts.size === 0}
+              className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{paidAddLabel}</button>
+              : trialAddMode ? <button type="button" onClick={addTrialProducts}
               disabled={addSelectionDisabled}
               className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">Add Selected Products</button>
               : !upgradeRequired && <button type="button" onClick={openGenerationModal} disabled={generateSelectionDisabled}
@@ -664,7 +698,13 @@ DAAS_API_KEY=${generatedKey}
             When this group scrolls out of view a compact copy docks into the top bar. */}
         <div ref={setSummaryElement} role="group" aria-label="Catalog actions" className="flex flex-col items-end gap-2">
           <div className="flex flex-wrap items-center justify-end gap-3 [&>*]:whitespace-nowrap">
-            {trialAddMode ? <button onClick={addTrialProducts}
+            {paidKeyPlan ? selectedProducts.size > 0 && <button type="button" onClick={addPaidProducts} disabled={generating}
+                aria-label={`${paidAddLabel}: ${selectedProducts.size} selected products`}
+                className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-sm font-medium text-white transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50">
+                <Key className="w-4 h-4" />
+                {generating ? 'Adding…' : `${paidAddLabel} (${selectedProducts.size} ${selectedProducts.size === 1 ? 'product' : 'products'})`}
+              </button>
+            : trialAddMode ? <button onClick={addTrialProducts}
               disabled={!canGenerate || generating || !trialState.canSubmit || cartSummary.totalProducts === 0}
               className="px-6 py-3 rounded-xl bg-indigo-500 text-white disabled:opacity-50">Add Selected Products</button> : !upgradeRequired && (selectedProducts.size > 0 || activeTrial) && (
               <button
@@ -773,11 +813,11 @@ DAAS_API_KEY=${generatedKey}
             id="category-filter"
             value={activeSegment}
             onChange={(e) => setActiveSegment(e.target.value)}
-            disabled={isFreePlan(appUser?.plan)}
+            disabled={segmentLocked}
             className="appearance-none pl-4 pr-10 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-sm font-medium text-slate-200 focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20 hover:bg-slate-700/80 hover:border-slate-600 transition-all cursor-pointer min-w-[170px] disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Filter products by industry"
           >
-            {isFreePlan(appUser?.plan) ? (
+            {segmentLocked ? (
               <option value={activeSegment}>Industry: {activeSegment}</option>
             ) : (
               <>
@@ -1024,6 +1064,8 @@ DAAS_API_KEY=${generatedKey}
       )}
       </div>
       </section>
+
+      {paidResults && <PaidKeyResultModal results={paidResults} onClose={() => setPaidResults(null)} />}
 
       {/* Generate API Key Modal */}
       {showGenModal && canGenerate && (

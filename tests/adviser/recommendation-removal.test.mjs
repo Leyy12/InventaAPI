@@ -51,12 +51,12 @@ for (const plan of ['free', 'pro', 'pro_max']) {
 }
 
 test('paid capability proof map retains sales, quota, keys and integration capabilities', () => {
-  assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], ['unlimited_account_quota', 'all_segments', 'real_sales_feed',
-    'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term']);
+  assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], ['monthly_segment_quota', 'all_segments', 'segment_api_keys', 'auto_segment_routing',
+    'real_sales_feed', 'api_playground', 'usage_history', 'renewable_30_day_term']);
   assert.equal(SUBSCRIPTION_PLANS.pro.price, 500);
   assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 1300);
-  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, 500);
-  assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, null);
+  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, 15000);
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, 15000);
 });
 
 test('legacy telemetry is safely unavailable, not rewritten as another callable endpoint', () => {

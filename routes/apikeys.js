@@ -14,6 +14,7 @@ const handlers = createApiKeyHandlers({
 
 // Every handler verifies the bearer token, derives identity, and checks ownership.
 router.post('/generate', handlers.create);
+router.post('/add-products', handlers.addProducts);
 router.get('/', handlers.list);
 router.get('/history', createApiHistoryHandler({
   getDb: () => getDataStore(),

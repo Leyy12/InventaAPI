@@ -162,7 +162,8 @@ export default function SettingsPage() {
                 </label>
               </div>
               <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Shield className="w-4 h-4 text-indigo-400" />Plan Limits</h3>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-2"><Shield className="w-4 h-4 text-indigo-400" />Plan Limits</h3>
+                <p className="mb-4 text-xs leading-5 text-slate-400">Active Pro and Pro Max subscriptions use a fixed 15,000 API requests per month (Pro Max: per segment). The daily Pro and Pro Max values below only apply to older daily contracts.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label htmlFor="free-trial-linked-products" className="block text-sm font-medium leading-5 text-slate-300">Free Trial</label>

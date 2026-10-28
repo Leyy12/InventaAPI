@@ -94,6 +94,10 @@ export const rules = {
         read: async ctx => ctx.isAdmin(),
         create: deny, update: deny, delete: deny,
     },
+    account_paid_monthly_usage: {
+        read: async ctx => ctx.isAdmin(),
+        create: deny, update: deny, delete: deny,
+    },
     transactions: {
         read: async (ctx, data) => isOwner(ctx, data?.userId) || ctx.isAdmin(),
         create: deny, update: deny, delete: deny,

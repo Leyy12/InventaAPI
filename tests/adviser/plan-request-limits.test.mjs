@@ -40,36 +40,33 @@ test('malformed private promise state cannot be overwritten by Trial activation'
     assert.equal(db.read('users/customer').trialStartedAt, undefined);
   }
 });
-test('Pro increase is enforced across keys; settings changes preserve consumed usage and UTC reset', async () => {
-  const f = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 1000 }, used: 999 });
+// Active Pro and Pro Max count requests per UTC month (15,000). Daily settings,
+// stored daily contracts and profile claims no longer change that allowance.
+test('Pro keys share one monthly allowance; daily settings and contracts do not change it', async () => {
+  const f = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 1000 }, used: 999, contracts: { pro: newRequestContract(100) },
+    profileExtra: { requestAllowanceContracts: { pro: newRequestContract(null) }, planRequestLimits: { pro: null } } });
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 14999 });
   const outcomes = await Promise.allSettled([f.consume(0), f.consume(1)]);
   assert.equal(outcomes.filter(value => value.status === 'fulfilled').length, 1);
   assert.equal(outcomes.find(value => value.status === 'rejected').reason.status, 429);
-  assert.equal(f.db.read('account_api_usage/customer').used, 1000);
-  f.db.seed('system/settings', { planRequestLimits: { ...DEFAULT_REQUEST_LIMITS, pro: 1200 } });
-  assert.equal((await f.consume(1)).usage.used, 1001);
-  f.advance(new Date('2026-10-15T00:00:00Z'));
-  const tomorrow = await f.consume(0); assert.equal(tomorrow.usage.used, 1); assert.equal(tomorrow.usage.limit, 1200);
-  assert.equal(tomorrow.usage.resetsAt, '2026-10-16T00:00:00.000Z');
+  assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_account').used, 15000);
+  assert.equal(f.db.read('account_api_usage/customer').used, 999, 'the daily counter is not used for paid plans');
+  f.advance(new Date('2026-11-01T00:00:00Z'));
+  f.db.seed('users/customer', { ...account('Pro'), subscriptionExpiresAt: '2026-12-01T00:00:00Z' });
+  const next = await f.consume(0); assert.equal(next.usage.used, 1); assert.equal(next.usage.limit, 15000);
+  assert.equal(next.usage.resetsAt, '2026-12-01T00:00:00.000Z');
 });
-test('existing Pro and Pro Max commitments cannot be silently reduced', async () => {
-  const pro = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 100 }, used: 100 });
-  assert.equal((await pro.consume()).usage.limit, 500);
-  const max = quotaFixture({ plan: 'Pro Max', limits: { ...DEFAULT_REQUEST_LIMITS, pro_max: 10 }, used: 1000 });
-  assert.equal((await max.consume()).usage.limit, null); assert.equal(max.db.read('account_api_usage/customer').used, 1001);
-});
-test('new finite Pro Max contract is enforceable and Unlimited changes never reset counters', async () => {
+test('Pro Max counts each segment key separately; an untagged older key uses its own allowance', async () => {
   const f = quotaFixture({ plan: 'Pro Max', limits: { ...DEFAULT_REQUEST_LIMITS, pro_max: 10 }, contracts: { pro_max: newRequestContract(10) }, used: 9 });
-  assert.equal((await f.consume()).usage.used, 10); await assert.rejects(f.consume(1), { status: 429 });
-  f.db.seed('system/settings', { planRequestLimits: { ...DEFAULT_REQUEST_LIMITS, pro_max: null } });
-  assert.equal((await f.consume(1)).usage.used, 11);
-  f.db.seed('system/settings', { planRequestLimits: { ...DEFAULT_REQUEST_LIMITS, pro_max: 10 } });
-  await assert.rejects(f.consume(), { status: 429 }); assert.equal(f.db.read('account_api_usage/customer').used, 11);
-});
-test('new lower Pro contracts use their agreed allowance, and customer profile quota claims are ignored', async () => {
-  const f = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 100 }, contracts: { pro: newRequestContract(100) }, used: 99,
-    profileExtra: { requestAllowanceContracts: { pro: newRequestContract(null) }, planRequestLimits: { pro: null } } });
-  assert.equal((await f.consume()).usage.limit, 100); await assert.rejects(f.consume(1), { status: 429 });
+  const tag = (i, segment) => f.db.seed(`api_keys/${f.keys[i].id}`, { ...f.db.read(`api_keys/${f.keys[i].id}`), segment });
+  tag(0, 'Grocery'); tag(1, 'Pharmacy');
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_Grocery', { window: '2026-10', used: 15000 });
+  await assert.rejects(f.consume(0), { status: 429 });
+  const pharmacy = await f.consume(1);
+  assert.deepEqual([pharmacy.usage.used, pharmacy.usage.limit, pharmacy.usage.scope, pharmacy.usage.bucket], [1, 15000, 'segment', 'Pharmacy']);
+  tag(1, null);
+  assert.equal((await f.consume(1)).usage.bucket, 'general');
+  assert.equal(f.db.read('account_api_usage/customer').used, 9);
 });
 test('invalid configuration fails closed without quota use, while credential revocation remains available', async () => {
   const f = quotaFixture(); f.db.seed('system/settings', { planRequestLimits: { pro: 'invalid' } });
@@ -102,7 +99,13 @@ test('API-key metadata uses the same effective policy without credential recreat
   const keys = createApiKeyHandlers({ getDb: () => f.db, verifyIdToken: async () => ({ uid: 'customer' }), clock: () => now });
   const listed = await invoke(keys.list, { token: 'synthetic' }); assert.equal(listed.statusCode, 200);
   assert.equal(listed.body.usage.limit, 1000); assert.equal(listed.body.usage.used, 100);
-  assert.ok(listed.body.keys.every(key => key.requestLimit === 1000)); assert.equal(f.db.read('account_api_usage/customer').used, 100);
+  // Paid keys show the monthly allowance they draw from.
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 42 });
+  const monthly = await invoke(keys.list, { token: 'synthetic' });
+  assert.deepEqual(monthly.body.monthlyUsage.buckets, [{ bucket: 'account', used: 42, remaining: 14958 }]);
+  assert.ok(monthly.body.keys.every(key => key.requestLimit === 15000 && key.requestsUsed === 42 && key.quotaPeriod === 'monthly'));
+  assert.equal(monthly.body.monthlyUsage.resetsAt, '2026-11-01T00:00:00.000Z');
+  assert.equal(f.db.read('account_api_usage/customer').used, 100);
 });
 
 test('missing finite Trial counter is unavailable in metadata and cannot admit or reset requests', async () => {

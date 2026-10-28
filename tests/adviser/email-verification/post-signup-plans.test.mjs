@@ -8,7 +8,7 @@ const icons = new Proxy({}, { get: (_, name) => String(name) });
 const text = value => Array.isArray(value) ? value.map(text).join(' ') :
   value && typeof value === 'object' ? text(value.props?.children) : String(value ?? '');
 const config = name => load('dashboard/src/config/plans.ts', `exports.${name}`, hooks(), {
-  '../../../functions/entitlement-limits.mjs': { PRO_DAILY_REQUEST_LIMIT: 500, TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 }, 'lucide-react': icons,
+  '../../../functions/entitlement-limits.mjs': { PRO_DAILY_REQUEST_LIMIT: 500, PAID_MONTHLY_REQUEST_LIMIT: 15000, PRO_MAX_SEGMENT_KEYS: 3, TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 }, 'lucide-react': icons,
 });
 const plans = config('plansForRequestLimits')({ free_trial: null, pro: 500, pro_max: null });
 const classes = node => String(node.props?.className ?? '').split(/\s+/u);

@@ -10,7 +10,7 @@ import { apiKeyRequest } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
 import RequestHistory from "@/components/api/RequestHistory";
 import CodeSnippet from "@/components/shared/CodeSnippet";
-import { requestAllowanceLabel } from '@/config/plans';
+import { requestAllowanceLabel, paidAllowanceLabel } from '@/config/plans';
 import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
 
 interface ApiKey {
@@ -32,6 +32,7 @@ export default function ApiKeysPage() {
       key={user.uid}
       user={user}
       entitlementStatus={entitlement?.subscription_status ?? null}
+      paidAllowance={paidAllowanceLabel(entitlement)} paidPlan={entitlement?.activePro ? entitlement.plan : null}
       requestAllowance={requestAllowance}
     />
   ) : null;
@@ -39,7 +40,8 @@ export default function ApiKeysPage() {
 
 // A route reload, route exit, or account switch destroys this component and
 // its one-time secret. Neither list refreshes nor entitlement updates do.
-function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
+function AccountKeysSession({ user, entitlementStatus, requestAllowance, paidAllowance, paidPlan }: {
+  paidAllowance: string | null; paidPlan: string | null;
   user: User;
   entitlementStatus: string | null;
   requestAllowance?: number | null;
@@ -123,7 +125,9 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
         <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro or Pro Max</Link>
       </div>}
       {entitlementStatus === null && <p role="status" className="text-slate-400">Verifying account entitlement…</p>}
-      <p className="text-sm text-slate-300">Account request allowance: {requestAllowanceLabel(requestAllowance)}. Shared across all active API keys.</p>
+      <p className="text-sm text-slate-300">{paidPlan === 'Pro Max' ? `Request allowance: ${paidAllowance}. Each segment key has its own allowance.`
+        : paidPlan === 'Pro' ? `Request allowance: ${paidAllowance}. Pro includes one API key; add products to it from Products.`
+        : `Account request allowance: ${requestAllowanceLabel(requestAllowance)}. Shared across all active API keys.`}</p>
 
       <div className="glass-card rounded-xl p-6 border-l-4 border-amber-500">
         <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2"><Shield className="w-5 h-5 text-amber-400" /> Keep Your Keys Secure</h2>

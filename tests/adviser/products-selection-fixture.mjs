@@ -13,8 +13,8 @@ export const text = tree => Array.isArray(tree) ? tree.map(text).join(' ') : tre
 export async function productsFixture({ trial = true, included = 0, count = 60, catalogMode = 'ready', trialMode = 'ready', headerTarget = null, Observer, keyFilter = 'all' } = {}) {
   const h = hooks(), c = clock(), b = browser(), calls = [], keyCalls = [];
   const user = { uid: 'synthetic-products-only' };
-  const state = { user, appUser: { plan: trial ? 'Free' : 'Pro', businessSegment: 'Grocery' },
-    entitlement: { activeTrial: trial, activePro: !trial, plan: trial ? 'Free' : 'Pro', subscription_status: trial ? 'trial' : 'active' } };
+  const state = { user, appUser: { plan: trial ? 'Free' : 'Pro Max', businessSegment: 'Grocery' },
+    entitlement: { activeTrial: trial, activePro: !trial, plan: trial ? 'Free' : 'Pro Max', subscription_status: trial ? 'trial' : 'active' } };
   const products = ['Grocery', 'Hardware', 'Pharmacy'].flatMap(s => Array.from({ length: count }, (_, i) => ({
     id: s.toLowerCase() + '-' + i, name: `${s} ${i % 2 ? 'Rice' : 'Milk'} ${i}`,
     sku: `${s}-SKU-${i}`, description: 'Synthetic catalog fixture only', segment: s, category: i % 2 ? 'Rice' : 'Dairy',
@@ -41,6 +41,7 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
     '@/lib/supabase/auth-context': { useAuth: () => state },
     '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,
+    '@/components/products/PaidKeyResultModal': () => null,
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       if (init?.method) throw Error('Persisted mutations prohibited in selection fixture');
       keyCalls.push(path);

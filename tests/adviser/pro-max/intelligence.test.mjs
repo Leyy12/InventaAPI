@@ -147,18 +147,17 @@ test('DaaS ingestion validates key-linked current products and never accepts cro
   assert.equal(Object.keys(db.dump()).filter(key => key.startsWith('customer_sales/')).length, 1);
 });
 
-test('Pro Max unlimited remains measured past 500; Pro denies request 501; paid-only gate excludes Trial', async () => {
+test('Pro denies the 15,001st request of the month; Pro Max counts per segment; paid-only gate excludes Trial', async () => {
   const db = seed();
-  db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a' });
-  db.seed('account_api_usage/a', { window: '2026-09-27', used: 500 });
+  db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a', segment: 'Grocery' });
+  db.seed('account_paid_monthly_usage/a_2026-09_account', { window: '2026-09', used: 15000 });
   await assert.rejects(consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW }),
     error => error.status === 429);
   db.seed('users/a', account('a', 'Pro Max'));
   const admitted = await consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
-  assert.equal(admitted.usage.used, 501); assert.equal(admitted.usage.limit, null);
-  assert.equal(admitted.usage.unlimited, true);
+  assert.equal(admitted.usage.used, 1); assert.equal(admitted.usage.limit, 15000); assert.equal(admitted.usage.bucket, 'Grocery');
   const beyond = await consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
-  assert.equal(beyond.usage.used, 502);
+  assert.equal(beyond.usage.used, 2);
   db.seed('users/a', { ...account('a'), plan: 'Free', apiRequestLimit: 50, hasUsedFreeTrial: true, trialVersion: 1,
     trialStartedAt: '2026-09-26T12:00:00.000Z', trialExpiresAt: '2026-10-03T12:00:00.000Z' });
   await assert.rejects(consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a',
@@ -166,7 +165,7 @@ test('Pro Max unlimited remains measured past 500; Pro denies request 501; paid-
   assert.equal(evaluateEntitlement(account('a', 'Pro Max'), NOW).limit, null);
 });
 
-test('DaaS denies legacy Free, Trial leaves historical counters unchanged and paid Pro retains daily quota', async () => {
+test('DaaS denies legacy Free, Trial leaves historical counters unchanged and paid Pro counts monthly', async () => {
   const db = seed();
   db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a', linkedProductIds: Array.from({ length: 50 }, (_, i) => `p${i}`) });
   db.seed('account_free_monthly_usage/a', { window: '2026-09', used: 0 });
@@ -184,7 +183,8 @@ test('DaaS denies legacy Free, Trial leaves historical counters unchanged and pa
   assert.equal(db.read('account_free_monthly_usage/a').used, 0);
   db.seed('users/a', account('a'));
   assert.equal((await consume()).usage.used, 1);
-  assert.equal(db.read('account_api_usage/a').used, 1);
+  assert.equal(db.read('account_paid_monthly_usage/a_2026-09_account').used, 1);
+  assert.equal(db.read('account_api_usage/a').used, 0);
 });
 
 test('sales report eligibility is paid-only, not effective Trial level one', () => {
