@@ -82,13 +82,21 @@ export default function NotificationBell({
     setOpen((o) => !o);
   };
 
-  const handleMarkOne = async (id: string) => {
-    await markNotificationRead(id);
+  // The list only reloads every 30 seconds, so show the change right away
+  // and put it back if saving fails.
+  const markLocally = async (isTarget: (n: Notification) => boolean, save: () => Promise<void>) => {
+    const before = notifications;
+    setNotifications(list => list.map(n => (isTarget(n) ? { ...n, read: true } : n)));
+    try {
+      await save();
+    } catch {
+      setNotifications(before);
+    }
   };
 
-  const handleMarkAll = async () => {
-    await markAllRead(userId);
-  };
+  const handleMarkOne = (id: string) => markLocally(n => n.id === id, () => markNotificationRead(id));
+
+  const handleMarkAll = () => markLocally(n => !n.read, () => markAllRead(userId));
 
   const accentBg = accentColor === "indigo" ? "bg-indigo-500" : "bg-blue-500";
   const accentBorder =
