@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import ipaddr from 'ipaddr.js';
 
@@ -15,7 +16,19 @@ export function normalizeRateLimitIp(value) {
     }
 }
 
-export function trustedRateLimitIp(req, { vercel = process.env.VERCEL === '1' } = {}) {
+// The customer site (inventaapi.shop) forwards /api and /daas here (dashboard/src/proxy.ts).
+// It sends the caller's IP in x-inventa-client-ip together with the shared secret
+// INVENTA_PROXY_SECRET; that IP is trusted only when the secret matches exactly.
+const digest = value => createHash('sha256').update(value).digest();
+function proxySecretMatches(given, expected) {
+    if (typeof given !== 'string' || typeof expected !== 'string' || expected.length < 32) return false;
+    return timingSafeEqual(digest(given), digest(expected));
+}
+
+export function trustedRateLimitIp(req, { vercel = process.env.VERCEL === '1', proxySecret = process.env.INVENTA_PROXY_SECRET } = {}) {
+    if (proxySecretMatches(req.headers?.['x-inventa-proxy-key'], proxySecret)) {
+        return normalizeRateLimitIp(req.headers?.['x-inventa-client-ip']);
+    }
     if (!vercel) return normalizeRateLimitIp(req.socket?.remoteAddress);
 
     // Direct Vercel deployments overwrite X-Forwarded-For with the client IP.

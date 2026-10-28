@@ -118,8 +118,8 @@ test('unknown intent/error values are discarded', () => {
   assert.equal(loginEntryQuery(new URLSearchParams('pendingPlan=admin&error=https://evil.example&login=1&view=landing')), '');
 });
 test('Admin origin is fixed operator config and carries no token', () => {
-  assert.equal(adminLoginDestination('https://admin.example', 'customer.example'), 'https://admin.example/login');
-  assert.equal(adminLoginDestination(undefined, 'localhost'), 'http://localhost:3001/login');
+  assert.equal(adminLoginDestination('https://admin.example', 'customer.example'), 'https://admin.example/admin/login');
+  assert.equal(adminLoginDestination(undefined, 'localhost'), 'http://localhost:3001/admin/login');
   assert.equal(adminLoginDestination(undefined, 'customer.example'), null);
 });
 for (const target of ['//evil.example', 'javascript:alert(1)', 'http://admin.example', 'https://user:password@admin.example',

@@ -49,7 +49,7 @@ for (const origin of ['javascript:alert(1)', 'data:text/plain,test', 'file:///tm
 for (const scope of ['dashboard', 'admin']) test(scope + ' production rewrites use only the validated API origin', () => {
   const rewrites = frontendReleaseConfig(frontend, scope, 'v22.20.0');
   assert.deepEqual(rewrites, (scope === 'dashboard' ? ['api', 'daas'] : ['api']).map(path => ({
-    source: `/${path}/:path*`, destination: `https://api.r6b-fixture.net/${path}/:path*`,
+    source: `/${path}/:path*`, destination: `https://api.r6b-fixture.net/${path}/:path*`, ...(scope === 'admin' ? { basePath: false } : {}),
   })));
 });
 test('production Customer builds require the R5A Admin origin, Admin builds do not consume it', () => {
@@ -123,7 +123,7 @@ test('migration docs preserve privileged tooling, R3 scale gates, and frozen rec
 });
 test('development/test explicitly retain local rewrite support', () => {
   for (const NODE_ENV of ['development', 'test']) assert.deepEqual(frontendReleaseConfig({ NODE_ENV }, 'admin'), [
-    { source: '/api/:path*', destination: 'http://localhost:5002/api/:path*' },
+    { source: '/api/:path*', destination: 'http://localhost:5002/api/:path*', basePath: false },
   ]);
   assert.throws(() => frontendReleaseConfig({}, 'dashboard', 'v22.20.0'), /RESULT: FAIL/);
 });

@@ -10,6 +10,11 @@ export default function nextConfig(phase: string): NextConfig {
     NODE_ENV: phase === PHASE_DEVELOPMENT_SERVER ? 'development' : 'production',
   }, 'admin');
   return {
+    // Served at inventaapi.shop/admin (the Customer app forwards /admin here).
+    basePath: '/admin',
+    async redirects() {
+      return [{ source: '/', destination: '/admin', basePath: false, permanent: false }];
+    },
     // Only this derived non-secret label is exposed; NODE_ENV alone is not a deployment identity.
     env: { NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT: phase === PHASE_DEVELOPMENT_SERVER ? 'Development' : deploymentEnvironment({
       vercelEnvironment: process.env.VERCEL_ENV,

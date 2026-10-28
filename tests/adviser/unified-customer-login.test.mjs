@@ -263,7 +263,7 @@ for (const path of ['/dashboard', '/dashboard/products', '/dashboard/api-keys'])
 test('Admin navigation and configured destination are unchanged', () => {
   assert.equal(navigation.navigationDecision({ app: 'admin', path: '/', initializing: false, role: null }), '/login');
   assert.equal(navigation.navigationDecision({ app: 'admin', path: '/login', initializing: false, role: 'admin' }), '/');
-  assert.equal(navigation.adminLoginDestination('https://synthetic-admin.company', 'synthetic-customer.company'), 'https://synthetic-admin.company/login');
+  assert.equal(navigation.adminLoginDestination('https://synthetic-admin.company', 'synthetic-customer.company'), 'https://synthetic-admin.company/admin/login');
 });
 
 const resetForm = fixture => find(fixture.h, node => node.type === 'form');

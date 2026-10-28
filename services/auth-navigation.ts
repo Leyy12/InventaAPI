@@ -110,7 +110,8 @@ export function adminLoginDestination(config: string | undefined, hostname: stri
     if (url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local
       && ['localhost', '127.0.0.1'].includes(url.hostname))) return null;
-    return `${url.origin}/login`;
+    // The Admin app is served under /admin (admin-panel/next.config.ts basePath).
+    return `${url.origin}/admin/login`;
   } catch { return null; }
 }
 // Preserve only the existing entry intents. No arbitrary next/redirect/returnUrl support.
