@@ -78,23 +78,14 @@ function AdminSidebarBody({ onNavigate, onClose, drawer = false }: { onNavigate?
                 drawer ? "py-3" : "py-2",
                 " text-sm font-medium transition-all duration-150 group",
                 isActive
-                  ? "text-blue-300"
-                  : "text-slate-500 hover:text-slate-200"
+                  ? "bg-slate-800/70 text-slate-100"
+                  : "text-slate-500 hover:bg-slate-800/40 hover:text-slate-200"
               )}
-              style={
-                isActive
-                  ? {
-                      background: "rgba(59,130,246,0.12)",
-                      borderLeft: "2px solid #3b82f6",
-                      paddingLeft: "10px",
-                    }
-                  : {}
-              }
             >
               <route.icon
                 className={cn(
                   "w-3.5 h-3.5 flex-shrink-0",
-                  isActive ? "text-blue-400" : "text-slate-600 group-hover:text-slate-400"
+                  isActive ? "text-slate-200" : "text-slate-600 group-hover:text-slate-400"
                 )}
               />
               {route.name}

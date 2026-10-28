@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useId, useRef } from "react";
 import {
   Package, Pencil, Search, Download, Upload,
   Eye, RotateCcw, X, ShoppingCart, Wrench, Pill, Layers,
-  FolderArchive, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, ChevronRight, Archive,
+  FolderArchive, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, Archive,
   type LucideIcon
 } from "lucide-react";
 import { collection, getDocs } from "@/lib/data/data-client";
@@ -184,19 +184,6 @@ const getSizes = (p: Product): string[] => {
 
 
 
-const categoryStyle = (cat?: string) => {
-  if (!cat) return "bg-slate-700/60 text-slate-400 border-slate-600/60";
-  const c = cat.toLowerCase();
-  if (c.includes("noodle") || c.includes("instant")) return "bg-cyan-500/15 text-cyan-300 border-cyan-500/25";
-  if (c.includes("canned") || c.includes("sardine") || c.includes("tuna") || c.includes("meat")) return "bg-red-500/15 text-red-300 border-red-500/25";
-  if (c.includes("beverage") || c.includes("drink") || c.includes("water") || c.includes("juice") || c.includes("coffee") || c.includes("tea")) return "bg-teal-500/15 text-teal-300 border-teal-500/25";
-  if (c.includes("dairy") || c.includes("milk") || c.includes("cream") || c.includes("cheese")) return "bg-pink-500/15 text-pink-300 border-pink-500/25";
-  if (c.includes("snack") || c.includes("chip") || c.includes("cracker") || c.includes("cookie") || c.includes("candy") || c.includes("chocolate") || c.includes("gum")) return "bg-green-500/15 text-green-300 border-green-500/25";
-  if (c.includes("condiment") || c.includes("sauce") || c.includes("seasoning") || c.includes("oil")) return "bg-yellow-500/15 text-yellow-300 border-yellow-500/25";
-  if (c.includes("rice") || c.includes("grain") || c.includes("flour") || c.includes("sugar")) return "bg-amber-500/15 text-amber-300 border-amber-500/25";
-  return "bg-indigo-500/15 text-indigo-300 border-indigo-500/25";
-};
-
 const segmentStyle = (seg?: string) => {
   if (seg === "Grocery") return "bg-blue-500/10 text-blue-400 border-blue-500/20";
   if (seg === "Hardware") return "bg-orange-500/10 text-orange-400 border-orange-500/20";
@@ -216,24 +203,28 @@ const exportCSV = (data: Product[], fileName = "master_catalog.csv") => {
   URL.revokeObjectURL(a.href);
 };
 
-// ─── Expand More Button ───────────────────────────────────────────────────────
-function ExpandMore({ items, label }: { items: string[]; label: string }) {
+// ─── Variant values ──────────────────────────────────────────────────────────
+// Each value on its own chip. Long lists show the first few with "Show all (N)",
+// which opens inside the row so nothing is cut off.
+const VALUES_SHOWN = 3;
+function VariantValues({ items, mono = false }: { items: string[]; mono?: boolean }) {
   const [open, setOpen] = useState(false);
+  if (!items.length) return <span className="text-[13px] text-slate-600">—</span>;
+  const shown = open ? items : items.slice(0, VALUES_SHOWN);
+  const hidden = items.length - VALUES_SHOWN;
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 text-[12px] text-indigo-400/70 font-medium hover:text-indigo-300 transition-colors"
-      >
-        <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
-        {label}
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-30 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-2 min-w-[120px] space-y-0.5">
-          {items.map((item, i) => (
-            <p key={i} className="text-[12px] text-slate-300 px-2 py-1 rounded hover:bg-slate-700 whitespace-nowrap">{item}</p>
-          ))}
-        </div>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {shown.map((item, i) => (
+        <span key={`${item}-${i}`} title={item}
+          className={`max-w-[11rem] truncate rounded-md border border-slate-700/80 bg-slate-800/50 px-2 py-0.5 text-[12px] text-slate-300 ${mono ? "font-mono" : ""}`}>
+          {item}
+        </span>
+      ))}
+      {hidden > 0 && (
+        <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+          className="rounded-md px-1.5 py-0.5 text-[12px] font-medium text-slate-400 underline-offset-2 hover:text-slate-100 hover:underline">
+          {open ? "Show less" : `Show all (${items.length})`}
+        </button>
       )}
     </div>
   );
@@ -866,11 +857,12 @@ function TooltipButton({
 }) {
   const tooltipId = useId();
 
+  // One plain style for every action; only Delete turns red, and only on hover.
   const variants = {
-    view: "bg-blue-600/90 border-blue-400/80 text-white hover:bg-blue-500 hover:border-blue-300 shadow-[0_2px_10px_rgba(37,99,235,0.2)]",
-    edit: "bg-emerald-700/90 border-emerald-400/80 text-white hover:bg-emerald-600 hover:border-emerald-300 shadow-[0_2px_10px_rgba(4,120,87,0.2)]",
-    archive: "bg-slate-700/90 border-slate-500/80 text-white hover:bg-slate-600 hover:border-slate-400 shadow-[0_2px_10px_rgba(51,65,85,0.2)]",
-    danger: "bg-red-800/90 border-red-500/80 text-white hover:bg-red-700 hover:border-red-400 shadow-[0_2px_10px_rgba(153,27,27,0.2)]"
+    view: "hover:text-slate-100",
+    edit: "hover:text-slate-100",
+    archive: "hover:text-slate-100",
+    danger: "hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400",
   };
 
   const activeVariant = variants[tone];
@@ -882,9 +874,9 @@ function TooltipButton({
         aria-label={label}
         aria-describedby={tooltipId}
         onClick={onClick}
-        className={`inline-flex select-none items-center justify-center rounded-[10px] w-8 h-8 border-[2px] outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 focus-visible:ring-indigo-500 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 ${activeVariant}`}
+        className={`inline-flex select-none items-center justify-center rounded-lg w-8 h-8 border border-slate-700 bg-transparent text-slate-400 outline-none transition-colors duration-150 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400 ${activeVariant}`}
       >
-        <Icon className="w-4 h-4" strokeWidth={2.5} />
+        <Icon className="w-4 h-4" strokeWidth={2} />
       </button>
 
       {/* Tooltip */}
@@ -1021,8 +1013,8 @@ export default function MasterProductCatalogPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center shrink-0">
-              <Package className="w-4 h-4 text-indigo-400" />
+            <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+              <Package className="w-4 h-4 text-slate-300" />
             </div>
             Master Product Catalog
           </h1>
@@ -1031,7 +1023,7 @@ export default function MasterProductCatalogPage() {
         <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
           {/* Add Product */}
           <button onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white border border-emerald-500/50 transition-colors shadow-sm shadow-emerald-900/30">
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white [--color-white:#fff] border border-blue-500/50 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Add Product
           </button>
           <button onClick={() => exportCSV(filtered, imageFilter === "missing" ? "products_missing_images.csv" : "master_catalog.csv")}
@@ -1042,7 +1034,7 @@ export default function MasterProductCatalogPage() {
             <span className="inline-flex items-center gap-1.5">
               <button onClick={() => setShowManualMerge(true)} disabled={picked.size < 2}
                 title={picked.size < 2 ? "Tick at least two products" : "Merge the ticked products into one product"}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white border border-indigo-500/50 flex items-center gap-1.5 transition-colors disabled:opacity-50">
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors disabled:opacity-50">
                 <Layers className="w-3.5 h-3.5" /> Merge selected ({picked.size})
               </button>
               <button onClick={() => setPicked(new Set())} className="px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">Clear</button>
@@ -1054,7 +1046,7 @@ export default function MasterProductCatalogPage() {
             <Layers className="w-3.5 h-3.5" /> Merge duplicates
           </button>
           <button onClick={() => setShowImportModal(true)}
-            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white border border-blue-500/50 flex items-center gap-1.5 transition-colors shadow-sm shadow-blue-900/30">
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
             <Upload className="w-3.5 h-3.5" /> Import CSV
           </button>
         </div>
@@ -1071,10 +1063,10 @@ export default function MasterProductCatalogPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         {[
           { icon: <Package className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Total Products", value: total.toLocaleString(), sub: `${active} active · ${archived} archived`, color: "text-white" },
-          { icon: <ShoppingCart className="w-4 h-4 text-blue-300" />, bg: "bg-blue-500/20", label: "Grocery", value: grocery.toLocaleString(), sub: pct(grocery), color: "text-blue-400" },
-          { icon: <Wrench className="w-4 h-4 text-orange-300" />, bg: "bg-orange-500/20", label: "Hardware", value: hardware.toLocaleString(), sub: pct(hardware), color: "text-orange-400" },
-          { icon: <Pill className="w-4 h-4 text-emerald-300" />, bg: "bg-emerald-500/20", label: "Pharmacy", value: pharmacy.toLocaleString(), sub: pct(pharmacy), color: "text-emerald-400" },
-          { icon: <FolderArchive className="w-4 h-4 text-slate-400" />, bg: "bg-slate-600/40", label: "Archived", value: archived.toLocaleString(), sub: pct(archived), color: "text-slate-400" },
+          { icon: <ShoppingCart className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Grocery", value: grocery.toLocaleString(), sub: pct(grocery), color: "text-white" },
+          { icon: <Wrench className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Hardware", value: hardware.toLocaleString(), sub: pct(hardware), color: "text-white" },
+          { icon: <Pill className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Pharmacy", value: pharmacy.toLocaleString(), sub: pct(pharmacy), color: "text-white" },
+          { icon: <FolderArchive className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Archived", value: archived.toLocaleString(), sub: pct(archived), color: "text-white" },
         ].map(c => (
           <div key={c.label} className="flex items-center gap-3 rounded-xl p-3.5 border border-white/5 bg-slate-800/40">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${c.bg}`}>{c.icon}</div>
@@ -1191,14 +1183,6 @@ export default function MasterProductCatalogPage() {
                   const variantCount = product.variants?.length
                     ?? ((attrs1.length || attrs2.length) ? 1 : 0);
 
-                  const ATTR1_MAX = 2;
-                  const shownAttrs1 = attrs1.slice(0, ATTR1_MAX);
-                  const extraAttrs1 = attrs1.length - ATTR1_MAX;
-
-                  const ATTR2_MAX = 2;
-                  const shownAttrs2 = attrs2.slice(0, ATTR2_MAX);
-                  const extraAttrs2 = attrs2.length - ATTR2_MAX;
-
                   return (
                     <tr key={product.id}
                       className="group transition-colors duration-150 hover:bg-slate-800/40">
@@ -1239,7 +1223,7 @@ export default function MasterProductCatalogPage() {
                             <p className="mt-0.5 truncate text-xs font-medium text-slate-400" title={getBrand(product)}>{getBrand(product) || "—"}</p>
                             {product.category ? (
                               <div className="mt-1">
-                                <span className={`inline-block truncate text-[11px] font-semibold px-2 py-0.5 rounded-full border ${categoryStyle(product.category)}`}>
+                                <span title={product.category} className="block w-40 max-w-full truncate rounded-md border border-slate-700 bg-slate-800/60 px-2 py-0.5 text-[11px] font-medium text-slate-300">
                                   {product.category}
                                 </span>
                               </div>
@@ -1252,37 +1236,19 @@ export default function MasterProductCatalogPage() {
 
                       {/* Attributes */}
                       <td className={`px-4 py-3 overflow-hidden align-middle text-left ${isArchived ? "opacity-50" : ""}`}>
-                        {attrs1.length > 0 ? (
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <p className="truncate text-[13px] text-slate-300 leading-snug" title={shownAttrs1.join(", ")}>
-                              {shownAttrs1.join(", ")}
-                            </p>
-                            {extraAttrs1 > 0 && <ExpandMore items={attrs1.slice(ATTR1_MAX)} label={`+${extraAttrs1}`} />}
-                          </div>
-                        ) : (
-                          <span className="text-[13px] text-slate-600">—</span>
-                        )}
+                        <VariantValues items={attrs1} />
                       </td>
 
                       {/* Attribute details */}
                       <td className={`px-4 py-3 overflow-hidden align-middle text-left ${isArchived ? "opacity-50" : ""}`}>
-                        {attrs2.length > 0 ? (
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <p className="truncate text-[13px] text-slate-400 font-mono leading-snug" title={shownAttrs2.join(", ")}>
-                              {shownAttrs2.join(", ")}
-                            </p>
-                            {extraAttrs2 > 0 && <ExpandMore items={attrs2.slice(ATTR2_MAX)} label={`+${extraAttrs2}`} />}
-                          </div>
-                        ) : (
-                          <span className="text-[13px] text-slate-600">—</span>
-                        )}
+                        <VariantValues items={attrs2} mono />
                       </td>
 
                       {/* Variant Count Badge */}
                       <td className={`px-4 py-3 align-middle text-center ${isArchived ? "opacity-50" : ""}`}>
                         {variantCount > 0 ? (
                           <span title={`${variantCount} Total Variant${variantCount > 1 ? 's' : ''}`}
-                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-400">
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-300">
                             <Layers className="w-3 h-3" /> {variantCount} {variantCount > 1 ? 'Variants' : 'Variant'}
                           </span>
                         ) : (
