@@ -65,7 +65,8 @@ const allowedOrigins = [
     'http://localhost:3001',  // Admin Panel (local)
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
-    // Production Vercel domains
+    // Production: inventaapi.shop and its subdomains (www, admin), plus Vercel domains
+    /^https:\/\/(?:[a-z0-9-]+\.)?inventaapi\.shop$/,
     /\.vercel\.app$/,         // Any *.vercel.app subdomain
     /^https:\/\/inventa/,     // Any custom inventa* domain
 ];

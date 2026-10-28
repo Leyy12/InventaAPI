@@ -9,10 +9,9 @@ let postgresDb;
 export function getDataStore() {
     if (!process.env.SUPABASE_DB_URL) throw new Error('[Database] SUPABASE_DB_URL is required.');
     // The data's identity label ("inventaapi-db" = production) decides which payment
-    // mode is allowed (services/payment-isolation.js). FIREBASE_PROJECT_ID is its old
-    // name, read only until the Vercel setting is renamed.
+    // mode is allowed (services/payment-isolation.js).
     postgresDb ||= new PostgresDataStore({ connectionString: process.env.SUPABASE_DB_URL,
-        projectId: process.env.DATA_PROJECT_ID || process.env.FIREBASE_PROJECT_ID });
+        projectId: process.env.DATA_PROJECT_ID });
     return postgresDb;
 }
 
