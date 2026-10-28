@@ -330,7 +330,7 @@ test('rendered billing uses the same uncapped horizontal workspace as Products a
   }
   for (const route of ['products', 'api-keys']) {
     const page = read(`dashboard/src/app/dashboard/${route}/page.tsx`);
-    assert.match(page, /className="w-full px-6 lg:px-8\s/);
+    assert.match(page, /className="w-full px-6 max-sm:px-0 lg:px-8\s/);
   }
 });
 

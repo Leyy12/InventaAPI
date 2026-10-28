@@ -88,7 +88,7 @@ export default function PlanBillingPage() {
   const currentPlan = paid ? entitlement.plan : trial ? 'Free Trial' : upgradeRequired ? 'Upgrade Required' : 'Unavailable';
   const purchase = (plan: PaidPlanId) => { setPurchasePlan(plan); setPurchaseOpen(true); };
 
-  return <div className="w-full space-y-7 px-6 pb-10 lg:px-8">
+  return <div className="w-full space-y-7 px-6 max-sm:px-0 pb-10 lg:px-8">
     <header>
       <h1 className="flex items-center gap-3 text-3xl font-bold text-white"><CreditCard className="text-indigo-400" aria-hidden="true" />Plan &amp; Billing</h1>
       <p className="mt-2 text-slate-400">Manage your subscription, usage, and billing.</p>

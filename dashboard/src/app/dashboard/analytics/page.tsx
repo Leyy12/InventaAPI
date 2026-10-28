@@ -42,7 +42,7 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<"usage" | "sales">("usage");
   const paid = !!entitlement && !entitlement.activeTrial && entitlement.subscription_status === "active"
     && ["Pro", "Pro Max", "Enterprise", "Unlimited"].includes(entitlement.plan);
-  return <div className="w-full px-6 lg:px-8 space-y-6 pb-10">
+  return <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-6 pb-10">
     <h1 className="text-3xl font-bold text-white">Analytics</h1>
     <div role="tablist" aria-label="Analytics views" className="flex gap-2">
       <button role="tab" aria-selected={tab === "usage"} onClick={() => setTab("usage")}

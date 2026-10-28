@@ -73,7 +73,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="w-full px-6 lg:px-8 space-y-8 animate-pulse pb-10">
+      <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-8 animate-pulse pb-10">
         <div className="h-10 w-48 bg-slate-800 rounded"></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="h-32 bg-slate-800 rounded-xl"></div>
@@ -160,7 +160,7 @@ export default function DashboardPage() {
     ) : null;
 
   return (
-    <div className="w-full px-6 lg:px-8 pb-12 animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 pb-12 animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
 
       {/* ─── Payment Status Banner (from PayMongo redirect) ─── */}
       {paymentBanner}

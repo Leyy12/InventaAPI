@@ -106,7 +106,8 @@ test('navigation, legacy route and locked onboarding UI retain the authoritative
   assert.match(sidebar, /planLower === "free trial"/);
   assert.match(sidebar, /planLower === "upgrade required"/);
   assert.match(navbar, /customer-mobile-navigation/);
-  assert.match(navbar, /aria-current=/);
+  // Mobile links are the shared sidebar body (MobileSidebar), which marks the current page.
+  assert.match(navbar, /<MobileSidebar /); assert.match(sidebar, /aria-current=/);
   assert.match(config, /source: '\/dashboard\/free-trial', destination: '\/dashboard\/plan-billing'/);
   assert.match(billing, /<FreeTrialContent embedded \/>/);
   assert.match(source('dashboard/src/lib/supabase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\)/u);

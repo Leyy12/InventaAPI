@@ -2,7 +2,7 @@ import Link from 'next/link';
 import CodeSnippet from '@/components/shared/CodeSnippet';
 
 export default function DocsPage() {
-  return <div className="w-full px-6 lg:px-8 pb-10 space-y-6 text-slate-300">
+  return <div className="w-full px-6 max-sm:px-0 lg:px-8 pb-10 space-y-6 text-slate-300">
     <h1 className="text-3xl font-bold text-white">API Documentation</h1>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Quick start and authentication</h2>

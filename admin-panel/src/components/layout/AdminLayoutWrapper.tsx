@@ -44,7 +44,7 @@ export default function AdminLayoutWrapper({ children }: { children: React.React
       <AdminSidebar />
       <div className="flex-1 flex flex-col overflow-hidden relative z-10">
         <AdminNavbar />
-        <main className="flex-1 overflow-y-auto p-3 lg:p-4 custom-scrollbar">
+        <main className="flex-1 overflow-y-auto p-4 custom-scrollbar">
           {logoutNotice}
           {children}
         </main>

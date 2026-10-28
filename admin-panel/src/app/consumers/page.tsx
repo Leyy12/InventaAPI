@@ -68,7 +68,7 @@ export default function ConsumersPage() {
   </div>;
 
   return (
-    <div className="w-full px-6 lg:px-8 space-y-8 pb-10 animate-fadeIn">
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-8 pb-10 animate-fadeIn">
       <button type="button" disabled={loading || inventoryState === 'refreshing' || entitlementState === 'loading' || entitlementState === 'refreshing'} onClick={() => setRefreshVersion(value => value + 1)} className="text-sm text-indigo-300 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400">{inventoryState === 'refreshing' || entitlementState === 'refreshing' ? 'Refreshing inventory…' : 'Refresh inventory & entitlements'}</button>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

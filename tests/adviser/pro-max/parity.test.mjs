@@ -162,7 +162,8 @@ test('shared desktop/mobile navigation retains Plan & Billing without recommenda
   assert.doesNotMatch(navigation, /recommendations/iu);
   assert.doesNotMatch(navigation, /name: ['"]7-Day Pro Trial['"]/u);
   assert.match(source('dashboard/src/components/layout/Sidebar.tsx'), /import \{ dashboardRoutes, routeActive \}/u);
-  assert.match(source('dashboard/src/components/layout/Navbar.tsx'), /dashboardRoutes/u);
+  // The mobile drawer reuses the sidebar (and its dashboardRoutes) through MobileSidebar.
+  assert.match(source('dashboard/src/components/layout/Navbar.tsx'), /<MobileSidebar /u);
   const billing = source('dashboard/src/app/dashboard/plan-billing/page.tsx');
   assert.match(billing, /entitlement\.canPurchaseProMax/u);
   assert.match(billing, /planId="pro_max" currentPlan=\{entitlement\.plan\} canPurchase=\{entitlement\.canPurchaseProMax\} onChoose=\{purchase\}/u);

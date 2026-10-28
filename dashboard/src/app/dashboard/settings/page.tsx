@@ -10,7 +10,7 @@ export default function SettingsPage() {
 
   if (loading || !entitlement) {
     return (
-      <div className="w-full px-6 lg:px-8 space-y-8 animate-pulse">
+      <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-8 animate-pulse">
         <div className="h-10 w-48 bg-slate-800 rounded"></div>
         <div className="h-64 glass-card rounded-xl"></div>
       </div>
@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const segmentRestricted = restrictedSegmentAccount(appUser);
 
   return (
-    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-8 pb-10">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
           <Settings2 className="w-8 h-8 text-indigo-400" />

@@ -1015,10 +1015,10 @@ export default function MasterProductCatalogPage() {
   const tableHeaders = getTableHeaders(segmentFilter);
 
   return (
-    <div className="w-full px-6 lg:px-8 space-y-5 pb-8">
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-5 pb-8">
 
       {/* ── Page Header ── */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center shrink-0">
@@ -1026,9 +1026,9 @@ export default function MasterProductCatalogPage() {
             </div>
             Master Product Catalog
           </h1>
-          <p className="text-xs text-slate-500 mt-1 ml-[42px]">Manage all products, variations, and approvals across all segments.</p>
+          <p className="text-xs text-slate-500 mt-1 sm:ml-[42px]">Manage all products, variations, and approvals across all segments.</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
           {/* Add Product */}
           <button onClick={() => setShowAddModal(true)}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white border border-emerald-500/50 transition-colors shadow-sm shadow-emerald-900/30">
@@ -1068,7 +1068,7 @@ export default function MasterProductCatalogPage() {
       )}
 
       {/* ── Stats Row ── */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         {[
           { icon: <Package className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Total Products", value: total.toLocaleString(), sub: `${active} active · ${archived} archived`, color: "text-white" },
           { icon: <ShoppingCart className="w-4 h-4 text-blue-300" />, bg: "bg-blue-500/20", label: "Grocery", value: grocery.toLocaleString(), sub: pct(grocery), color: "text-blue-400" },
@@ -1091,9 +1091,9 @@ export default function MasterProductCatalogPage() {
       <div className="rounded-xl border border-slate-800/80 bg-[#111827] shadow-xl shadow-black/20 overflow-hidden">
 
         {/* Toolbar */}
-        <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-[#111827]">
+        <div className="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-[#111827]">
           {/* Search (Moved to left) */}
-          <div className="relative w-64">
+          <div className="relative w-full sm:w-64">
             <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input type="text" placeholder="Search by name, brand, SKU…" value={search}
               onChange={e => setSearch(e.target.value)}
@@ -1105,7 +1105,7 @@ export default function MasterProductCatalogPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Segment selector */}
             <div className="relative">
               <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)}

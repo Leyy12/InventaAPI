@@ -625,7 +625,7 @@ DAAS_API_KEY=${generatedKey}
   const returnToSummary = () => summaryElement?.scrollIntoView({ block: 'center' });
 
   return (
-    <div className="w-full px-6 lg:px-8 min-w-0 space-y-4 pb-10">
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 min-w-0 space-y-4 pb-10">
       {hasPendingSelection && summaryViewport?.target === summaryElement && summaryViewport?.above && headerSlot && createPortal(
         <div role="group" aria-label="Docked product selections" className="flex min-w-0 items-center gap-2">
           <button type="button" onClick={returnToSummary}
