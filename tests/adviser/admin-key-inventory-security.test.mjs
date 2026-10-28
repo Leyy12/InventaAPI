@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createAdminKeyInventoryHandler } from '../../services/admin-key-inventory.js';
 import { inventoryRecord, inventoryCounts, inventoryTimestamp, validateInventoryResponse, INVENTORY_PAGE_SIZE } from '../../services/admin-key-inventory-contract.mjs';
-import { invoke } from './phase2b1/memory-firestore.mjs';
+import { invoke } from './phase2b1/memory-store.mjs';
 import { hooks, load, flush, browser } from './workspace-refresh/harness.mjs';
 
 const date = '2026-10-12T06:30:00.000Z';
@@ -119,7 +119,7 @@ function client() {
   const h = hooks(), b = browser(), pending = [], calls = [];
   let user = { uid: 'admin', getIdToken: async () => 'synthetic-token' };
   const hook = load('admin-panel/src/lib/use-admin-key-inventory.ts', 'useAdminKeyInventory', h, {
-    './firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    './supabase/admin-auth-context': { useAdminAuth: () => ({ user }) },
     '../../../services/admin-key-inventory-contract.mjs': { validateInventoryResponse },
   }, { ...b, setInterval: () => { throw Error('Polling prohibited'); }, fetch: (url, init) => {
     calls.push({ url, init }); return new Promise((resolve, reject) => pending.push({ resolve, reject }));
@@ -161,5 +161,4 @@ test('inventory uses the safe reader and the removed Security Center redirects t
   assert.match(source('admin-panel/src/app/security/page.tsx'), /redirect\(['"]\/consumers['"]\)/u);
   assert.match(source('routes/admin.js'), /router\.get\('\/api-keys\/inventory'/);
   assert.match(source('services/api-key-management.js'), /where\('userId', '==', actor\.uid\)/);
-  assert.match(source('firestore.rules'), /match \/api_keys\/\{keyId\}[\s\S]*?allow read: if isAdmin\(\)/);
 });

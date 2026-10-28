@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, documentId, getDocs, query, where } from "@/lib/data/firestore-client";
-import { db } from "@/lib/firebase/config";
+import { collection, documentId, getDocs, query, where } from "@/lib/data/data-client";
+import { db } from "@/lib/supabase/config";
 import { canonicalLinkedProductIds, linkedProductLabels, type ProductLink } from "@/lib/linked-product-names";
 
 export function useLinkedProductNames(keys: ProductLink[]) {
@@ -17,7 +17,7 @@ export function useLinkedProductNames(keys: ProductLink[]) {
     async function load() {
       const found: Record<string, string> = Object.create(null);
       try {
-        // Only persisted linked document IDs are read. Firestore 'in' queries are bounded.
+        // Only persisted linked document IDs are read. 'in' queries are bounded.
         for (let i = 0; i < ids.length; i += 30) {
           const batch = ids.slice(i, i + 30);
           const result = await getDocs(query(collection(db, "products"), where(documentId(), "in", batch)));

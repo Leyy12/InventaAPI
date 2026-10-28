@@ -5,7 +5,7 @@ import { catalogQuery, catalogResult, createCustomerCatalogHandler } from '../..
 import { loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, createCatalogRefresh } from '../../../dashboard/src/lib/segment-catalog.ts';
 import { trialSelectionState } from '../../../dashboard/src/lib/trial-catalog-selection.ts';
 import { selectedLinkedProducts } from '../../../dashboard/src/lib/linked-product-selection.ts';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 function documents(segment, count, prefix) {
   return Array.from({ length: count }, (_, i) => ({ id: `${prefix}-${i}`, data: () => ({ name: `${prefix} ${i}`, category: 'Synthetic', segment, status: 'Active', origin: i < 3 ? 'customer-submission' : 'system' }) }));
@@ -30,7 +30,7 @@ for (const [segment, total] of [['Hardware', 123], ['Grocery', 82]]) test(`Custo
 
 test('full mounted-handler-to-Customer page assembly uses scoped query and total', async () => {
   const records = Object.fromEntries(docs.map(doc => [`products/${doc.id}`, doc.data()]));
-  const handler = createCustomerCatalogHandler({ getDb: () => memoryFirestore(records) });
+  const handler = createCustomerCatalogHandler({ getDb: () => memoryStore(records) });
   const result = await loadSegmentCatalog(async offset => (await invoke(handler, {
     query: { businessSegment: 'Grocery', limit: '20', offset: String(offset) },
   })).body, 'Grocery', new AbortController().signal);

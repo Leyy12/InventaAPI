@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Image from "next/image";
 import { signInWithEmailAndPassword } from "@/lib/supabase-auth";
-import { doc, getDocFromServer } from "@/lib/data/firestore-client";
+import { doc, getDocFromServer } from "@/lib/data/data-client";
 import { profileRole } from '../../../../services/auth-navigation';
-import { auth, db } from "@/lib/firebase/config";
+import { auth, db } from "@/lib/supabase/config";
 import { useRouter } from "next/navigation";
 import { KeyRound, Mail, AlertCircle, Loader2, Eye, EyeOff } from "lucide-react";
 
@@ -25,13 +25,13 @@ export default function AdminLoginPage() {
     try {
       console.log("[ADMIN LOGIN] Attempting authentication...");
       
-      // Step 1: Authenticate with Firebase
+      // Step 1: Sign in with Supabase Auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
       console.log("[ADMIN LOGIN] User authenticated:", user.email);
       
-      // Step 2: Get user role from Firestore
+      // Step 2: Get the user's role from their profile
       const userDoc = await getDocFromServer(doc(db, "users", user.uid));
       if (auth.currentUser !== user) throw new Error('Session ended during login.');
       

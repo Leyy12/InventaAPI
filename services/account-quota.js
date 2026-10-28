@@ -8,7 +8,7 @@ import { requestLimitPolicy, promisedRequestAllowance } from '../functions/reque
 import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
-  // Only deployment configuration and Firestore snapshot metadata qualify.
+  // Only deployment configuration and database snapshot metadata qualify.
   // data().createdAt is customer-writable and must NEVER be used as evidence.
   if (typeof cutoverAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(cutoverAt)) return false;
   const cutoff = new Date(cutoverAt);

@@ -7,7 +7,7 @@ import { productIdentityKeys } from '../../../services/product-contract.js';
 import { previewCatalogImport } from '../../../services/catalog-import.js';
 import { auditCatalog } from '../../../services/catalog-audit.js';
 import { assertBackfillReservationPlan, backfillCatalogReservations, prepareCatalogWrite } from '../../../services/catalog-writer.js';
-import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../r2a/memory-store.mjs';
 
 const product = { name: 'Coke', brand: 'Coca-Cola', category: 'Drinks', segment: 'Grocery',
   image_url: 'https://example.invalid/a.jpg', variants: [{ size: '330ml', sku: 'CAN-330' }] };
@@ -15,7 +15,7 @@ const matrix = (sku = 'CAN-330', name = 'Coke') => [['name', 'brand', 'category'
   [name, 'Coca-Cola', 'Drinks', 'Grocery', '330ml', sku, '0']];
 function fixture(extra = {}, deriveReservationId, options = {}) {
   // Query phantom detection deliberately disabled. Claims/fence must provide safety.
-  const db = memoryFirestore({ 'users/admin': { role: 'Admin' }, 'users/other-admin': { role: 'Admin' },
+  const db = memoryStore({ 'users/admin': { role: 'Admin' }, 'users/other-admin': { role: 'Admin' },
     'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, ...extra }, { queryConflicts: false });
   let serial = 0, time = new Date('2026-09-20T12:00:00Z');
   const checked = [];

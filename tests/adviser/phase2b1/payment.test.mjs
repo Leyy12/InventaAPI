@@ -6,7 +6,7 @@ import { PRO_PURCHASE, PRO_MAX_PURCHASE, paymentConfiguration, matchesPurchase,
 import { createPaymentHandlers } from '../../../services/payment-checkout.js';
 import { checkoutPayload, createPaymongoCheckout, expirePaymongoCheckout } from '../../../services/paymongo-checkout.js';
 import { createPaymentWebhook } from '../../../services/payment-webhook.js';
-import { memoryFirestore, invoke } from './memory-firestore.mjs';
+import { memoryStore, invoke } from './memory-store.mjs';
 
 const now = new Date('2026-09-20T10:00:00.000Z');
 const config = { mode: 'test', secretKey: 'sk_test_syntheticOnly', webhookSecret: 'synthetic-signing-secret-not-real', dashboardUrl: 'https://customer.example' };
@@ -17,7 +17,7 @@ const customer = { uid: 'owner', role: 'Developer', plan: 'Free', apiRequestLimi
 const providerOrder = () => ({ id: orderId, ...PRO_PURCHASE, mode: 'test', idempotencyKey: `checkout-test-${orderId}`,
   providerRequestBody: JSON.stringify(checkoutPayload({ id: orderId, ...PRO_PURCHASE }, config.dashboardUrl)) });
 function setup(options = {}) {
-  const db = memoryFirestore({ 'users/owner': customer, 'users/stranger': { ...customer, uid: 'stranger' } });
+  const db = memoryStore({ 'users/owner': customer, 'users/stranger': { ...customer, uid: 'stranger' } });
   let calls = 0, dbCalls = 0;
   const reports = [];
   const getDb = () => { dbCalls++; return db; };
@@ -628,7 +628,7 @@ test('payment: metadata and merchant reference are neither required nor ownershi
 // Provider model caches results by API-key scope + idempotency key, rejects
 // changed bytes, and can lose a response AFTER creating the provider object.
 function recoveryHarness() {
-  const db = memoryFirestore({ 'users/owner': customer });
+  const db = memoryStore({ 'users/owner': customer });
   const cache = new Map(); const requests = []; let creations = 0;
   let instant = now.getTime(); let settings = { ...config }; let loseResponse = true; let failBefore = false;
   const request = async (url, options) => {

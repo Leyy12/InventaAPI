@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Check, ArrowLeft, Loader2, ExternalLink } from "lucide-react";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { type PlanId, getCumulativeFeatures } from "@/config/plans";
 import { usePlanCatalog } from '@/lib/plan-request-policy';
 

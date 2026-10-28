@@ -23,7 +23,7 @@ export async function appendActivityAudit(db, { uid, actor, action, entityType, 
     const record = { action, userId: uid, entityType, entityId, timestamp: new Date(at),
       details: descriptions[action],
       metadata: { ...(catalogRevision !== undefined ? { catalogRevision } : {}), ...(productId ? { productId } : {}) } };
-    // Email comes from the verified Firebase token, never the request body/profile.
+    // Email comes from the verified auth token, never the request body/profile.
     if (actor?.uid === uid && typeof actor.email === 'string' && actor.email.length <= 320) record.userEmail = actor.email;
     await db.collection('audit_logs').add(record);
   } catch {

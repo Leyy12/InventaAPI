@@ -59,9 +59,6 @@ test('60/minute IP limiter and backend-mediated generation route remain', () => 
   assert.match(read('server.js'), /max: 60/);
   assert.match(read('routes/apikeys.js'), /router\.post\('\/generate', handlers\.create\)/);
 });
-test('marker rules explicitly deny browser access and mutation', () => {
-  assert.match(read('firestore.rules'), /match \/api_key_generation_days\/\{id\} \{ allow read, write: if false; \}/);
-});
 test('generation handler has no logging of credentials, quota mutation or history write', () => {
   const source = read('services/api-key-management.js');
   assert.doesNotMatch(source, /console\.|api_telemetry/);

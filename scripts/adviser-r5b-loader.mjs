@@ -4,7 +4,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Set(['services/api-history.js', 'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
   'functions/entitlement-limits.mjs','functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs', 'functions/subscription-lifecycle.mjs', 'services/reporting.js', 'services/product-contract.js', 'services/customer-segment.js', 'services/daas-catalog.js',
   'dashboard/src/lib/api-history.ts', 'dashboard/src/lib/api-examples.ts', 'dashboard/src/lib/quota-refresh.ts',
-  'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/r5b/history.test.mjs', 'tests/adviser/r5b/ux.test.mjs', 'tests/adviser/r5b/wiring.test.mjs'].map(file => resolvePath(root, file)));
+  'tests/adviser/phase2a/memory-store.mjs', 'tests/adviser/r5b/history.test.mjs', 'tests/adviser/r5b/ux.test.mjs', 'tests/adviser/r5b/wiring.test.mjs'].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {
     if (!['node:test', 'node:assert/strict', 'node:crypto', 'node:fs'].includes(specifier)

@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot } from "@/lib/data/firestore-client";
-import { db } from "@/lib/firebase/config";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { collection, onSnapshot } from "@/lib/data/data-client";
+import { db } from "@/lib/supabase/config";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { reconcileReportSession, type ReportSession, type ReportSelection, type ReportSource } from "@/lib/reports";
 import { useCategoryUsage } from "@/lib/category-usage";
 import CatalogReportPanel from "@/components/reports/CatalogReportPanel";

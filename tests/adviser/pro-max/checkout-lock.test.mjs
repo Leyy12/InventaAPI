@@ -5,7 +5,7 @@ import { createPaymentHandlers } from '../../../services/payment-checkout.js';
 import { fulfillPayment } from '../../../services/payment-webhook.js';
 import { purchaseForIntent } from '../../../services/payment-contract.js';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
-import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 
 const NOW = new Date('2026-09-30T08:00:00.000Z');
 const config = { mode: 'test', secretKey: 'sk_test_SYNTHETIC_LOCAL_ONLY',
@@ -17,7 +17,7 @@ const orderPath = id => `payment_orders/${id}`;
 
 // All provider work is injected and simulated. No SDK, credentials, or HTTP I/O.
 function fixture({ failFirst = false, mode = 'test' } = {}) {
-  const db = memoryFirestore({ 'users/owner': customer });
+  const db = memoryStore({ 'users/owner': customer });
   const attempts = [], sessions = new Map();
   let instant = NOW.getTime();
   let settings = { ...config, mode, secretKey: `sk_${mode}_SYNTHETIC_LOCAL_ONLY` };

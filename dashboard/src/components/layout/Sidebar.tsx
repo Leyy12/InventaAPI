@@ -6,7 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import SignOutDialog from '@/components/auth/SignOutDialog';
 import { dashboardRoutes, routeActive } from './dashboard-navigation';
 

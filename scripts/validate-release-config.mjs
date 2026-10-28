@@ -5,8 +5,8 @@ import { EMAIL_DELIVERY_PROVIDERS, senderAddress, validSmtpHost, validSmtpPort }
 const NODE_MAJOR = 22;
 const SCOPES = new Set(['all', 'backend', 'dashboard', 'admin']);
 const MODES = new Set(['production', 'test']);
-// Data identity labels ("inventaapi-db" = production). FIREBASE_PROJECT_ID keeps its old name.
-const DEPLOYMENT_FIREBASE_PROJECTS = new Set(['inventaapi-db', 'inventaapi-staging']);
+// Data identity labels (DATA_PROJECT_ID): "inventaapi-db" = production, "inventaapi-staging" = staging.
+const DEPLOYMENT_DATA_PROJECTS = new Set(['inventaapi-db', 'inventaapi-staging']);
 const supabaseOrigin = value => /^https:\/\/[a-z0-9]{20}\.supabase\.co$/u.test(value);
 const supabasePublishableKey = value => /^sb_publishable_\S{10,}$/u.test(value) || /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value);
 const supabaseSecretKey = value => /^sb_secret_\S{10,}$/u.test(value) || /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value);
@@ -82,15 +82,9 @@ export function validateReleaseConfig(env, {
   // Deployment checks never trust an escape flag. demo-* is confined to the
   // explicit local test mode with a database on this machine and no LIVE payments.
   const isolatedLocal = mode === 'test' && env.PAYMONGO_MODE !== 'live' && loopbackDatabase(env.SUPABASE_DB_URL);
-  const authorizedProject = value => DEPLOYMENT_FIREBASE_PROJECTS.has(value)
+  const authorizedProject = value => DEPLOYMENT_DATA_PROJECTS.has(value)
     || isolatedLocal && /^demo-[a-z0-9-]{1,24}[a-z0-9]$/u.test(value);
   if (backend || dashboard || admin) {
-    const primary = 'FIREBASE_PROJECT_ID';
-    for (const name of ['DATA_PROJECT_ID']) {
-      if (name !== primary && isPresent(env[name]) && isPresent(env[primary]) && env[name] !== env[primary]) {
-        add(errors, 'FIREBASE_PROJECT_CONFLICT', name, 'must match FIREBASE_PROJECT_ID (the data identity label)');
-      }
-    }
     if (mode === 'production' && loopbackDatabase(env.SUPABASE_DB_URL)) {
       add(errors, 'LOCAL_DATABASE_DEPLOYMENT', 'SUPABASE_DB_URL', 'a deployment cannot use a database on localhost');
     }
@@ -105,7 +99,7 @@ export function validateReleaseConfig(env, {
     required('SUPABASE_PUBLISHABLE_KEY', { valid: supabasePublishableKey, expectation: 'the Supabase publishable (or anon) key' });
     required('SUPABASE_SECRET_KEY', { secret: true, valid: value => supabaseSecretKey(value) && notPlaceholder(value),
       expectation: 'a Supabase secret (or service_role) key' });
-    required('FIREBASE_PROJECT_ID', { valid: authorizedProject,
+    required('DATA_PROJECT_ID', { valid: authorizedProject,
       expectation: 'the data identity label: inventaapi-db (Production) or inventaapi-staging' });
     if (!isPresent(env.CRON_SECRET) || env.CRON_SECRET.length < 16) {
       add(warnings, 'OPTIONAL_MISSING', 'CRON_SECRET', 'not set (or under 16 characters); the daily subscription and Trial jobs stay off');
@@ -113,7 +107,7 @@ export function validateReleaseConfig(env, {
     required('PAYMONGO_MODE', {
       valid: value => ['test', 'live'].includes(value), expectation: 'test or live',
     });
-    if (env.FIREBASE_PROJECT_ID === 'inventaapi-db' && env.PAYMONGO_MODE !== 'live') {
+    if (env.DATA_PROJECT_ID === 'inventaapi-db' && env.PAYMONGO_MODE !== 'live') {
       add(errors, 'PAYMENT_MODE_ISOLATION', 'PAYMONGO_MODE', 'Production data requires LIVE payments.');
     }
     if (env.PAYMENT_CHECKOUT_INITIATION_HOLD !== undefined && !['true', 'false'].includes(env.PAYMENT_CHECKOUT_INITIATION_HOLD)) {

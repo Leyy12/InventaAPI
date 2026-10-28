@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { ShieldAlert, Search, Clock, User, FileText } from "lucide-react";
-import { collection, getDocs, query, orderBy, limit, where } from "@/lib/data/firestore-client";
-import { db } from "@/lib/firebase/config";
+import { collection, getDocs, query, orderBy, limit, where } from "@/lib/data/data-client";
+import { db } from "@/lib/supabase/config";
 import { auditAction, auditActor, auditDetails, auditMatches, auditTimestamp, type AuditLogRecord } from "@/lib/audit-log-display";
 
 const LOGS_PER_PAGE = 50;

@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { getAuth } from '../services/supabase-auth.js';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { createCatalogHandlers } from '../services/catalog-management.js';
 
-const handlers = createCatalogHandlers({ getDb: getFirestore,
+const handlers = createCatalogHandlers({ getDb: getDataStore,
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked) });
 const router = Router();
 router.post('/', handlers.create);

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const sources = ["functions/entitlement-limits.mjs","functions/subscription-lifecycle.mjs","services/free-trial.js","services/api-key-security.js","services/api-key-management.js","services/account-quota.js","services/daas-security.js","services/daas-catalog.js","services/product-contract.js","services/customer-segment.js","services/reporting.js","services/product-submissions.js","services/product-submission-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/product-media-binding.js","services/catalog-contract.js","tests/adviser/phase2a/memory-firestore.mjs","tests/adviser/r2a/memory-firestore.mjs","dashboard/src/lib/entitlement-poller.ts","tests/adviser/free-trial/trial.test.mjs"];
+const sources = ["functions/entitlement-limits.mjs","functions/subscription-lifecycle.mjs","services/free-trial.js","services/api-key-security.js","services/api-key-management.js","services/account-quota.js","services/daas-security.js","services/daas-catalog.js","services/product-contract.js","services/customer-segment.js","services/reporting.js","services/product-submissions.js","services/product-submission-contract.js","services/catalog-audit.js","services/catalog-writer.js","services/product-media-binding.js","services/catalog-contract.js","tests/adviser/phase2a/memory-store.mjs","tests/adviser/r2a/memory-store.mjs","dashboard/src/lib/entitlement-poller.ts","tests/adviser/free-trial/trial.test.mjs"];
 sources.push('functions/trial-warning.mjs', 'functions/trial-warning-email.mjs', 'admin-panel/src/lib/linked-product-names.ts', 'dashboard/src/lib/linked-product-selection.ts', 'tests/adviser/free-trial/phase2.test.mjs');
 sources.push('functions/request-limit-policy.mjs');
 sources.push('functions/request-contract-evidence.mjs');
@@ -18,8 +18,8 @@ for (const file of sources) {
 }
 const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP']
   .filter(name => process.env[name]).map(name => [name, process.env[name]]));
-Object.assign(env, { NODE_ENV: 'test', FIREBASE_PROJECT_ID: 'demo-inventa-free-trial',
-  FIRESTORE_EMULATOR_HOST: '127.0.0.1:9', ADVISER_TEST_EXTERNAL_IO: 'disabled' });
+Object.assign(env, { NODE_ENV: 'test', DATA_PROJECT_ID: 'demo-inventa-free-trial',
+  ADVISER_TEST_EXTERNAL_IO: 'disabled' });
 console.log('[free-trial] Fixed module manifest; no SDK, credentials, image fetching or external I/O.');
 const result = spawnSync(process.execPath, ['--experimental-strip-types',
   '--experimental-loader', pathToFileURL(resolve(root, 'scripts/adviser-free-trial-loader.mjs')).href,

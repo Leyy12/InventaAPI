@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApiHistoryHandler, historyRecord, recordedTimestamp, HISTORY_LIMIT } from '../../../services/api-history.js';
-import { invoke } from '../phase2a/memory-firestore.mjs';
+import { invoke } from '../phase2a/memory-store.mjs';
 
 const row = (id, userId = 'owner', extra = {}) => ({ id, userId, timestamp: new Date('2026-09-21T12:00:00Z'),
   keyName: 'Warehouse server', apiKeyId: 'daas_legacy_secret', endpoint: '/catalog', method: 'GET', statusCode: 200, ...extra });

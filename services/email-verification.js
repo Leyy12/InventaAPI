@@ -4,21 +4,21 @@ import { normalizeSignupEmail, validSignupEmail, validVerificationCode, validNew
   VERIFICATION_CODE_TTL_SECONDS, VERIFICATION_RESEND_SECONDS, VERIFICATION_MAX_ATTEMPTS } from './email-verification-contract.mjs';
 
 // Signup email ownership: send a code -> verify it for a single-use token -> the
-// new Firebase identity redeems the token to become email_verified. Firestore only
-// accepts a Customer profile from a verified identity (firestore.rules).
+// new auth identity redeems the token to become email_verified. The API only
+// accepts a Customer profile from a verified identity (services/client-db-rules.js).
 // Password reset: send a code -> the code plus a new password changes the password.
 // Records are server-only, keyed by an email hash, and hold only hashed codes/tokens.
 export const VERIFICATION_COLLECTION = 'email_verifications';
 export const PASSWORD_RESET_COLLECTION = 'password_resets';
 export const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
 const SEND_WINDOW_MS = 60 * 60 * 1000, MAX_SENDS_PER_WINDOW = 5;
-// Optional Firestore TTL field; a successful confirmation deletes the record anyway.
+// Optional TTL field; a successful confirmation deletes the record anyway.
 const RECORD_RETENTION_MS = 24 * 60 * 60 * 1000;
 const UNAVAILABLE = 'Email verification is temporarily unavailable. Please try again later.';
 const RESET_UNAVAILABLE = 'Password reset is temporarily unavailable. Please try again later.';
 const TOKEN_INVALID = 'Your email verification expired or does not match this account. Request a new code.';
 const CODE_MISSING = 'No active code for this email. Request a new code.';
-// Firebase reports a password that fails the project's password policy with one of these.
+// Supabase Auth reports a password that fails the project's password policy with one of these.
 const PASSWORD_REJECTED = ['auth/invalid-password', 'auth/password-does-not-meet-requirements'];
 
 class VerificationError extends Error {
@@ -215,7 +215,7 @@ export function createEmailVerificationHandlers({ getDb, emailRegistered, remove
 }
 
 // Password recovery by emailed code. An unknown or disabled address gets the same reply and
-// no email. `findAccount` resolves an address to its Firebase uid, or null.
+// no email. `findAccount` resolves an address to its auth uid, or null.
 export function createPasswordResetHandlers({ getDb, findAccount, setPassword, revokeSessions, sendEmail,
   now = () => new Date(), createCode = sixDigitCode, report = reportDeliveryFailure }) {
   const recordRef = (db, email) => db.collection(PASSWORD_RESET_COLLECTION).doc(sha256(email));
@@ -246,7 +246,7 @@ export function createPasswordResetHandlers({ getDb, findAccount, setPassword, r
         'That password cannot be used. Request a new code and choose a different password.');
       throw error;
     }
-    // Other signed-in sessions must log in again. Firebase also expires them on a password change.
+    // Other signed-in sessions must log in again. Supabase Auth also expires them on a password change.
     try { await revokeSessions(uid); } catch { /* the password change already invalidates older sessions */ }
     return res.json({ success: true });
   });

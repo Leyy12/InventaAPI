@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { accountEntitlement, authenticateCredential, issueCredential } from '../../../services/api-key-security.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 const NOW = new Date('2026-09-17T12:00:00.000Z');
 const free = { plan: 'Free', apiRequestLimit: 50, selectedSegment: 'Grocery', businessSegment: 'Grocery' };
@@ -18,7 +18,7 @@ function fixture(account = trial, oldKey = null) {
   const old = oldKey || { ...issued.stored, name: 'Grocery integration', userId: 'owner',
     userEmail: 'owner@example.test', status: 'active', linkedProductIds: ['rice'],
     linkedVariantSelections: {}, productAvailability: { rice: { availableSince: NOW } }, createdAt: NOW };
-  const db = memoryFirestore({
+  const db = memoryStore({
     'users/owner': account, 'users/other': free, [`api_keys/${issued.id}`]: old,
     'account_request_contracts/owner': { version: 1, plans: {
       pro: { version: 1, period: 'utc_daily', limit: 500 },

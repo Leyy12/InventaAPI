@@ -66,14 +66,14 @@ export const matchesPurchase = order => {
 };
 
 export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, dashboardUrl,
-  globalTestBilling, globalTestAmountCentavos, firebaseProjectId, checkoutInitiationHold }) {
+  globalTestBilling, globalTestAmountCentavos, dataProjectId, checkoutInitiationHold }) {
   const keyMode = /^sk_(test|live)_\S+$/u.exec(secretKey || '')?.[1];
   requirePayment(['test', 'live'].includes(mode) && keyMode === mode
     && typeof webhookSecret === 'string' && webhookSecret.trim().length > 0
     && !/REPLACE|PLACEHOLDER|YOUR_/iu.test(webhookSecret)
     && !/REPLACE|PLACEHOLDER|YOUR_/iu.test(secretKey), 'PAYMENT_CONFIG', 'Payment service is not configured.', 503);
-  requirePayment(firebaseProjectId === undefined || ['inventaapi-db', 'inventaapi-staging'].includes(firebaseProjectId)
-    && (firebaseProjectId !== 'inventaapi-db' || mode === 'live'),
+  requirePayment(dataProjectId === undefined || ['inventaapi-db', 'inventaapi-staging'].includes(dataProjectId)
+    && (dataProjectId !== 'inventaapi-db' || mode === 'live'),
   'PAYMENT_MODE_ISOLATION', 'Payment mode is not permitted for this database.', 503);
   requirePayment(checkoutInitiationHold === undefined || ['true', 'false'].includes(checkoutInitiationHold),
     'PAYMENT_CONFIG', 'Invalid checkout initiation control.', 503);
@@ -89,7 +89,7 @@ export function paymentConfiguration({ mode, secretKey, webhookSecret, nodeEnv, 
   }
   const temporaryBilling = globalTestBillingConfiguration({ mode, globalTestBilling, globalTestAmountCentavos });
   return { mode, secretKey, webhookSecret, dashboardUrl, globalTestBilling: temporaryBilling,
-    ...(firebaseProjectId === undefined ? {} : { firebaseProjectId }), checkoutInitiationHold: checkoutInitiationHold === 'true' };
+    ...(dataProjectId === undefined ? {} : { dataProjectId }), checkoutInitiationHold: checkoutInitiationHold === 'true' };
 }
 
 export function authenticatedPayment({ getDb, verifyIdToken }, operation) {

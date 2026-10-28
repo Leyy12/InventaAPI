@@ -34,9 +34,9 @@ function fixture(owned, { count = 55, evidence = { keys: [], trialCatalog: measu
     '@/components/product-request/ProductNotFound': { default: stub },
     '../../../../../services/customer-segment.js': segment, '@/components/products/AddProductModal': { default: stub },
     '@/lib/product-image-url': { productImageSource: () => '', showProductImageFallback: stub },
-    '@/lib/firebase/auth-context': { useAuth: () => state },
-    '@/lib/firebase/config': { auth: { currentUser: user } },
-    '@/lib/firebase/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
+    '@/lib/supabase/auth-context': { useAuth: () => state },
+    '@/lib/supabase/config': { auth: { currentUser: user } },
+    '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       keyCalls.push({ path, init });

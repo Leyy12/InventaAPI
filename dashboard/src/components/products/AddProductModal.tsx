@@ -5,7 +5,7 @@ import {
   Plus, X, Save, Loader2, Upload
 } from "lucide-react";
 import { normalizeProductImageUrl } from "@/lib/product-image-url";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import ProductImageField from './ProductImageField';
 import { uploadProductImage, type MediaUpload } from '@/lib/product-media-client';
 import { activeCustomerSegment, restrictedSegmentAccount } from '../../../../services/customer-segment.js';

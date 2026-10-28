@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from 'react';
-import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import { navigationDecision, profileRole, authScreen } from '../../../../services/auth-navigation';
 import AdminSidebar from "./AdminSidebar";
 import AdminNavbar from "./AdminNavbar";

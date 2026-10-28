@@ -9,7 +9,7 @@ import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import PlanCards from "@/components/subscription/PlanCards";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import type { PlanId } from "@/config/plans";
 import { usePlanCatalog } from '@/lib/plan-request-policy';
 import { consumePostLogoutLoginEntry, customerSignupDestination, navigationDecision, profileRole } from '../../../../services/auth-navigation';
@@ -167,7 +167,7 @@ export default function AuthEntry() {
     });
   })();
 
-  // Do not flash marketing content while Firebase is restoring an authenticated
+  // Do not flash marketing content while Supabase is restoring an authenticated
   // session; the single navigation decision above resolves first.
   // A signed-in customer coming back from a cancelled payment goes straight to
   // Plan & Billing; show the loading screen, never the landing page, meanwhile.

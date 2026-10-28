@@ -68,7 +68,7 @@ export async function registerSignupAccount({ base, email, password, verificatio
   if (!result.ok) throw Object.assign(new Error(result.message), { code: /already registered/iu.test(result.message) ? 'auth/email-already-in-use' : 'auth/internal-error' });
 }
 
-// The backend marks the new identity email_verified. Firestore evaluates the ID token,
+// The backend marks the new identity email_verified. The API evaluates the ID token,
 // so the profile write must wait for a refreshed token that carries that claim.
 export async function confirmSignupEmail({ base, user, verificationToken, request = globalThis.fetch }) {
   const result = await verificationCall(request, `${base}/api/v1/auth/email-verification/confirm`,
@@ -77,8 +77,8 @@ export async function confirmSignupEmail({ base, user, verificationToken, reques
   if ((await user.getIdTokenResult(true)).claims?.email_verified !== true) throw new Error('Email verification was not applied.');
 }
 
-// Firebase Auth creation is not a completed InventaAPI registration. The
-// authoritative Firestore rule evaluates server-owned settings at profile commit.
+// Supabase Auth creation is not a completed InventaAPI registration. The
+// authoritative server rule evaluates server-owned settings at profile commit.
 // `reclaimEmail` (optional) clears an identity an interrupted signup left for this
 // address; creation is then retried once.
 export async function completeCustomerSignup({ canRegister, createUser, confirmEmail, writeProfile, profileExists, deleteUser, signOut, reclaimEmail }) {

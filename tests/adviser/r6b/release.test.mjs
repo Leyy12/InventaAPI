@@ -17,7 +17,7 @@ const frontend = {
   NEXT_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_PUBLIC_KEY',
 };
-const backend = { NODE_ENV: 'production', FIREBASE_PROJECT_ID: 'inventaapi-staging',
+const backend = { NODE_ENV: 'production', DATA_PROJECT_ID: 'inventaapi-staging',
   SUPABASE_DB_URL: 'postgresql://synthetic@db.r6b-fixture.net:5432/postgres', SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_PUBLIC_KEY', SUPABASE_SECRET_KEY: 'sb_secret_SYNTHETIC_NOT_A_KEY',
   PAYMONGO_MODE: 'live', PAYMONGO_SECRET_KEY: 'sk_live_SYNTHETIC_NOT_A_KEY', PAYMONGO_WEBHOOK_SECRET: 'SYNTHETIC_NOT_A_SECRET',
@@ -72,7 +72,7 @@ test('production build requires the Supabase URL and publishable key, never a se
 
 
 for (const app of ['dashboard', 'admin-panel']) test(app + ' sign-in is Supabase Auth; no Firebase SDK remains in the browser', () => {
-  const config = read(app + '/src/lib/firebase/config.ts');
+  const config = read(app + '/src/lib/supabase/config.ts');
   assert.match(config, /import \{ auth \} from "\.\.\/supabase-auth"/);
   assert.doesNotMatch(config, /firebase\//);
   const client = read(app + '/src/lib/supabase-auth.ts');
@@ -90,7 +90,6 @@ test('URL-only release has no active product upload/delete implementation', () =
     assert.doesNotMatch(source, /\b(?:uploadBytes|uploadBytesResumable|deleteObject)\s*\(/, path);
     assert.doesNotMatch(source, /(?:from\s*|import\s*\()['"][^'"]*AdminProductTable/, path);
   }
-  assert.equal(JSON.parse(read('firebase.json')).storage, undefined);
 });
 
 test('R6B sequence freezes explicitly before audit/backfill, deploys after migration, and lifts only after acceptance', () => {
@@ -147,7 +146,7 @@ test('backend production validation does not depend on reserved ambient TZ', () 
   for (const TZ of ['UTC', 'Asia/Manila', 'America/New_York', 'not-a-zone']) {
     assert.equal(validateReleaseConfig({ ...backend, TZ }, options).ok, true);
   }
-  for (const name of ['FIREBASE_PROJECT_ID', 'SUPABASE_DB_URL', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY',
+  for (const name of ['DATA_PROJECT_ID', 'SUPABASE_DB_URL', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY',
     'SUPABASE_SECRET_KEY', 'PAYMONGO_MODE', 'PAYMONGO_SECRET_KEY', 'PAYMONGO_WEBHOOK_SECRET',
     'DASHBOARD_URL', 'NEXT_PUBLIC_APP_URL']) {
     const invalid = { ...backend }; delete invalid[name];
@@ -163,47 +162,7 @@ test('PayMongo mode contract rejects credentials that mismatch explicit payment 
   assert.ok(validateReleaseConfig({ ...backend, PAYMONGO_SECRET_KEY: 'sk_test_SYNTHETIC' }, options).errors.some(issue => issue.name === 'PAYMONGO_SECRET_KEY'));
   assert.ok(validateReleaseConfig({ ...backend, PAYMONGO_MODE: 'test', NODE_ENV: 'test' }, { ...options, mode: 'test' }).errors.some(issue => issue.name === 'PAYMONGO_SECRET_KEY'));
 });
-test('history index exactly matches account equality and descending timestamp/document order', () => {
-  const config = JSON.parse(read('firestore.indexes.json'));
-  const matches = config.indexes.filter(index => index.collectionGroup === 'api_telemetry');
-  assert.deepEqual(matches, [{ collectionGroup: 'api_telemetry', queryScope: 'COLLECTION', fields: [
-    { fieldPath: 'userId', order: 'ASCENDING' }, { fieldPath: 'timestamp', order: 'DESCENDING' }, { fieldPath: '__name__', order: 'DESCENDING' },
-  ] }]);
-  assert.equal(new Set(config.indexes.map(index => JSON.stringify(index))).size, config.indexes.length);
-  assert.deepEqual(config.fieldOverrides, []);
-  assert.match(read('services/api-history.js'), /where\('userId', '==', actor.uid\)/);
-  assert.match(read('services/admin-traffic.js'), /orderBy\('timestamp', 'desc'\)\s*\.orderBy\(documentId, 'desc'\).limit\(ADMIN_TRAFFIC_LIMIT\)/);
-});
-test('R6D preserves the production legacy notification index alongside the additive customer-sales index', () => {
-  const config = JSON.parse(read('firestore.indexes.json'));
-  assert.equal(config.indexes.length, 11);
-  const matches = config.indexes.filter(index => index.collectionGroup === 'notifications'
-    && index.fields.some(field => field.fieldPath === 'user_email'));
-  assert.deepEqual(matches, [{ collectionGroup: 'notifications', queryScope: 'COLLECTION', fields: [
-    { fieldPath: 'user_email', order: 'ASCENDING' }, { fieldPath: 'is_read', order: 'ASCENDING' },
-    { fieldPath: 'created_at', order: 'DESCENDING' }, { fieldPath: '__name__', order: 'DESCENDING' },
-  ] }]);
-  assert.deepEqual(config.indexes.filter(index => index.collectionGroup === 'customer_sales'), [
-    { collectionGroup: 'customer_sales', queryScope: 'COLLECTION', fields: [
-      { fieldPath: 'userId', order: 'ASCENDING' }, { fieldPath: 'occurredAt', order: 'ASCENDING' },
-      { fieldPath: '__name__', order: 'ASCENDING' },
-    ] },
-  ]);
-  assert.deepEqual(config.fieldOverrides, []);
-  assert.equal(JSON.parse(read('firebase.json')).storage, undefined);
-});
 
-test('R6D index set has no semantic duplicates, including implicit document-name ordering', () => {
-  const config = JSON.parse(read('firestore.indexes.json'));
-  const signatures = config.indexes.map(index => {
-    const fields = index.fields.map(field => [field.fieldPath, field.order ?? null, field.arrayConfig ?? null]);
-    // Firestore appends __name__ in the final field direction (ASC for a non-directional field).
-    if (fields.at(-1)[0] !== '__name__') fields.push(['__name__', fields.at(-1)[1] ?? 'ASCENDING', null]);
-    return JSON.stringify([index.collectionGroup, index.queryScope, index.apiScope ?? 'ANY_API',
-      index.density ?? 'SPARSE_ALL', fields]);
-  });
-  assert.equal(new Set(signatures).size, config.indexes.length);
-});
 
 test('scheduled jobs run on Vercel Cron, not Firebase Functions', () => {
   assert.equal(existsSync(new URL('../../../functions/index.js', import.meta.url)), false);

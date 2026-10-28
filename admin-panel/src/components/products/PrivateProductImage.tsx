@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 
 export default function PrivateProductImage({ assetId, size, name = 'Private submitted product photo' }: {
   assetId: string; size?: 'thumbnail' | 'review'; name?: string;

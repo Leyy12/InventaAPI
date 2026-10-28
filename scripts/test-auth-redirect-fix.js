@@ -8,7 +8,7 @@ import { readFileSync } from 'fs';
 console.log('🔍 AUTH REDIRECT FIX VERIFICATION\n');
 console.log('═══════════════════════════════════════════════════════════════\n');
 
-const authFile = 'dashboard/src/lib/firebase/auth-context.tsx';
+const authFile = 'dashboard/src/lib/supabase/auth-context.tsx';
 const content = readFileSync(authFile, 'utf8');
 
 // Find the hasActiveSubscription block
@@ -53,7 +53,7 @@ if (hasStarter && hasDeveloper) {
     console.log('✅ CODE FIX CONFIRMED: Starter and Developer plans are allowed\n');
     console.log('═══════════════════════════════════════════════════════════════\n');
     console.log('🧪 MANUAL TEST NEEDED:\n');
-    console.log('   1. Create test user in Firestore with plan: "Starter"');
+    console.log('   1. Create test user in the database with plan: "Starter"');
     console.log('   2. Log in at http://localhost:3000');
     console.log('   3. Confirm user reaches dashboard (not redirected to landing)\n');
     console.log('   OR check browser console for auth debug logs while logged in\n');

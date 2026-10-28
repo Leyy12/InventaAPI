@@ -5,7 +5,7 @@ import { appAlert, appConfirm } from "@/components/shared/AppDialog";
 import Link from "next/link";
 import { Check, CheckCircle2, Clock, Code, Copy, Key, Shield, Trash2 } from "lucide-react";
 import type { User } from "@/lib/supabase-auth";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
 import RequestHistory from "@/components/api/RequestHistory";

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, CreditCard, X } from 'lucide-react';
-import { useAuth } from '@/lib/firebase/auth-context';
+import { useAuth } from '@/lib/supabase/auth-context';
 import { requestAllowanceLabel } from '@/config/plans';
 import { usePlanCatalog, useAccountRequestAllowance } from '@/lib/plan-request-policy';
 import SubscriptionModal from '@/components/subscription/SubscriptionModal';

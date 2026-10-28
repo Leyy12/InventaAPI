@@ -6,7 +6,7 @@ import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createApiHistoryHandler } from '../../../services/api-history.js';
 import { createAdminEntitlements } from '../../../services/admin-entitlements.js';
 import { resolveCurrentCatalogProducts } from '../../../services/daas-catalog.js';
-import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
 import { customerReportScope } from '../../../services/reporting.js';
 import { SUBSCRIPTION_PLANS, PRO_MAX_CAPABILITY_IDS, getCumulativeFeatures } from '../../../dashboard/src/config/plans.ts';
@@ -100,7 +100,7 @@ test('Pro Max has paid multi-segment behavior; Free/Trial remain in authoritativ
 });
 
 test('Pro Max can manage two active keys without a one-key ceiling or credential disclosure', async () => {
-  const db = memoryFirestore({ 'users/owner': owner,
+  const db = memoryStore({ 'users/owner': owner,
     'account_request_contracts/owner': { version: 1, plans: {
       pro_max: { version: 1, period: 'utc_daily', limit: null },
     } },
@@ -116,7 +116,7 @@ test('Pro Max can manage two active keys without a one-key ceiling or credential
 });
 
 test('Pro Max Admin view displays authoritative plan and observed unlimited usage', async () => {
-  const db = memoryFirestore({ 'users/admin': { uid: 'admin', role: 'Admin', plan: 'Enterprise' },
+  const db = memoryStore({ 'users/admin': { uid: 'admin', role: 'Admin', plan: 'Enterprise' },
     'users/owner': owner, 'account_api_usage/owner': { window: '2026-09-27', used: 19 } });
   const handler = createAdminEntitlements({ getDb: () => db, verifyIdToken: async () => ({ uid: 'admin' }), clock: () => now });
   const response = await invoke(handler, { body: { ids: ['owner'] } });
@@ -127,7 +127,7 @@ test('Pro Max Admin view displays authoritative plan and observed unlimited usag
 });
 
 test('sales and unavailable historical requests remain in bounded account-owned history', async () => {
-  const db = memoryFirestore({ 'users/owner': owner,
+  const db = memoryStore({ 'users/owner': owner,
     'api_telemetry/s': { userId: 'owner', keyName: 'POS', endpoint: '/sales', method: 'POST', statusCode: 200, timestamp: now },
     'api_telemetry/r': { userId: 'owner', keyName: 'POS', endpoint: '/recommendations', method: 'GET', statusCode: 200, timestamp: now },
     'api_telemetry/other': { userId: 'other', keyName: 'Other', endpoint: '/sales', method: 'POST', statusCode: 200, timestamp: now },

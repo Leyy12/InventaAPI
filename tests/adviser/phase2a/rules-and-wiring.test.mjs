@@ -4,19 +4,6 @@ import { test } from 'node:test';
 
 const source = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 // These are static assertions, not a Firestore Rules emulator.
-test('static rules: customer clients cannot write API keys or account usage, including reactivation', () => {
-  const rules = source('../firestore.rules').replace(/\/\/[^\n]*/gu, '');
-  for (const collection of ['api_keys', 'account_api_usage']) {
-    const blocks = [...rules.matchAll(new RegExp(`match /${collection}/\\{[^}]+\\} \\{([^}]+)\\}`, 'gu'))];
-    assert.equal(blocks.length, 1);
-    assert.match(blocks[0][1], /allow create, update, delete: if false;/u);
-    assert.match(blocks[0][1], /allow read: if isAdmin\(\);/u);
-    assert.doesNotMatch(blocks[0][1], /isOwner/u);
-  }
-  assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/u);
-  assert.match(rules, /request\.resource\.data\.get\('apiRequestLimit', 0\) == resource\.data\.get\('apiRequestLimit', 0\)/u);
-  assert.match(rules, /request\.resource\.data\.get\('plan', ''\) == resource\.data\.get\('plan', ''\)/u);
-});
 
 test('static wiring: all management routes use tested authenticated handlers', () => {
   const routes = source('../routes/apikeys.js');

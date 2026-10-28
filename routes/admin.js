@@ -1,25 +1,25 @@
 import express from 'express';
 import { getAuth } from '../services/supabase-auth.js';
 import { createAdminEntitlements } from '../services/admin-entitlements.js';
-import { getFirestore, FieldPath } from '../database/firestore.js';
+import { getDataStore, FieldPath } from '../database/data-store.js';
 import { createAdminTrafficHandler } from '../services/admin-traffic.js';
 import { createAdminKeyInventoryHandler } from '../services/admin-key-inventory.js';
-import { verifyFirebaseToken, requireAdmin } from '../middleware/auth.js';
+import { verifyAuthToken, requireAdmin } from '../middleware/auth.js';
 import { createSystemSettingsHandlers } from '../services/system-settings.js';
 import { createRequire } from 'node:module';
 
 const router = express.Router();
-const systemSettings = createSystemSettingsHandlers({ getDb: () => getFirestore(),
+const systemSettings = createSystemSettingsHandlers({ getDb: () => getDataStore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked),
   apiVersion: createRequire(import.meta.url)('../package.json').version });
 router.get('/system/settings', systemSettings.read);
 router.patch('/system/settings', systemSettings.save);
 router.get('/system/information', systemSettings.information);
-router.get('/api-keys/inventory', createAdminKeyInventoryHandler({ getDb: () => getFirestore(),
+router.get('/api-keys/inventory', createAdminKeyInventoryHandler({ getDb: () => getDataStore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
-router.get('/traffic', createAdminTrafficHandler({ getDb: () => getFirestore(),
+router.get('/traffic', createAdminTrafficHandler({ getDb: () => getDataStore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
-router.post('/entitlements', createAdminEntitlements({ getDb: () => getFirestore(),
+router.post('/entitlements', createAdminEntitlements({ getDb: () => getDataStore(),
   monthlyCutoverAt: process.env.FREE_MONTHLY_QUOTA_CUTOVER_AT,
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked) }));
 
@@ -29,9 +29,9 @@ router.post('/entitlements', createAdminEntitlements({ getDb: () => getFirestore
  * Returns real aggregate counts for the admin dashboard.
  * No authentication required for internal use (admin panel is server-side).
  */
-router.get('/stats', verifyFirebaseToken, requireAdmin, async (req, res) => {
+router.get('/stats', verifyAuthToken, requireAdmin, async (req, res) => {
   try {
-    const db = getFirestore();
+    const db = getDataStore();
 
     // Count all registered users
     const usersSnap = await db.collection('users').count().get();

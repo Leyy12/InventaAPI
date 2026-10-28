@@ -1,9 +1,9 @@
 // Sign-in for the browser, backed by Supabase Auth. It offers the small part of the
-// Firebase Auth interface this app uses (auth.currentUser, onIdTokenChanged,
+// Small auth interface this app uses (auth.currentUser, onIdTokenChanged,
 // signInWithEmailAndPassword, signOut, user.getIdToken) with the same error codes, so
 // pages only change where they import it from.
 //
-// An account carried over from Firebase keeps its old id (app_metadata.legacy_uid);
+// An account carried over from the old system keeps its old id (app_metadata.legacy_uid);
 // user.uid reports it, so the profile and every record filed under it stay attached.
 import { createClient, type Session, type User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -92,7 +92,7 @@ export async function signInWithEmailAndPassword(_auth: Auth, email: string, pas
 }
 
 export async function signOut(_auth: Auth): Promise<void> {
-  // This browser only, like Firebase; other devices stay signed in.
+  // This browser only; other devices stay signed in.
   const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) throw authError("auth/network-request-failed", "Could not sign out. Please try again.");
   auth.currentUser = null;

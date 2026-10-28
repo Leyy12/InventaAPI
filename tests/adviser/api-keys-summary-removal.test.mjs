@@ -18,7 +18,7 @@ function fixture({ status = 'trial', response = { success: true, keys: [key] }, 
   const History = () => null, Examples = () => null;
   const Component = load(keysPath, 'AccountKeysSession', h, {
     'next/link': { __esModule: true, default: 'a' }, 'lucide-react': new Proxy({}, { get: () => stub }),
-    '@/lib/firebase/auth-context': { useAuth: () => ({ user }) },
+    '@/lib/supabase/auth-context': { useAuth: () => ({ user }) },
     '@/components/shared/AppDialog': { default: () => null, appConfirm: async options => { confirmations.push(options.message); return false; }, appAlert: async () => {} }, '@/lib/api-key-generation': { REVOCATION_WARNING: 'Fixture revocation warning' },
     '@/config/plans': { requestAllowanceLabel },
     '@/lib/plan-request-policy': { useAccountRequestAllowance: () => 500 },

@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import NotificationBell from "@/components/shared/NotificationBell";
 import ThemeToggle from "@/components/shared/ThemeToggle";
-import { notifySubscriptionExpiringSoon } from "@/lib/firebase/notifications";
+import { notifySubscriptionExpiringSoon } from "@/lib/supabase/notifications";
 import { dashboardRoutes, routeActive } from './dashboard-navigation';
 import { useWorkspaceHeaderSlot } from './WorkspaceHeaderSlot';
 

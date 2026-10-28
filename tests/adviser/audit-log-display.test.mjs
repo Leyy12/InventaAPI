@@ -61,8 +61,8 @@ function pageFixture(records = [], failure = false) {
   const h = hooks(), calls = [];
   const page = load('admin-panel/src/app/audit/page.tsx', 'AuditLogsPage', h, {
     'lucide-react': new Proxy({}, { get: () => () => null }),
-    '@/lib/firebase/config': { db: 'synthetic-database' }, '@/lib/audit-log-display': display,
-    '@/lib/data/firestore-client': {
+    '@/lib/supabase/config': { db: 'synthetic-database' }, '@/lib/audit-log-display': display,
+    '@/lib/data/data-client': {
       collection: (_db, name) => { calls.push(['collection', name]); return name; },
       orderBy: (...args) => { calls.push(['orderBy', ...args]); return args; },
       limit: n => { calls.push(['limit', n]); return n; }, query: (...args) => args,
@@ -107,10 +107,7 @@ test('empty/error reader paths remain read-only and preserve accepted empty hand
 });
 test('audit restrictions and existing login/logout/auth-failure/request writers are preserved', () => {
   const source = path => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
-  const rules = source('firestore.rules').split('match /audit_logs/{logId}')[1].split('\n    }')[0];
-  assert.match(rules, /allow read: if isAdmin\(\)/); assert.match(rules, /allow update, delete: if false/);
-  assert.match(rules, /request.resource.data.userId == request.auth.uid/);
-  const auth = source('dashboard/src/lib/firebase/auth-context.tsx');
+  const auth = source('dashboard/src/lib/supabase/auth-context.tsx');
   assert.match(auth, /action: 'Customer Login'/); assert.match(auth, /action: 'Customer Logout'/);
   assert.match(source('services/daas-security.js'), /action: 'Authentication Failure'/);
   assert.match(source('routes/daas.js'), /action: 'API Request'/);

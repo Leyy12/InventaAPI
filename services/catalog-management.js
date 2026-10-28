@@ -4,7 +4,7 @@ import { appendActivityAudit, prepareCatalogWrite, readCatalog, requireCatalogAd
 import { planImportMerge, planImportUpdate, previewCatalogImport } from './catalog-import.js';
 import { mergeCatalogGroup, planSizeMerges, remapApiKeys } from './catalog-merge.js';
 
-// Firestore documents max out at 1 MiB; leave headroom for field overhead.
+// stored documents max out at 1 MiB; leave headroom for field overhead.
 const PREVIEW_CHUNK_BYTES = 700000;
 // Rows per commit request. The admin panel sends a large import as several batches.
 const COMMIT_BATCH_MAX = 200;
@@ -85,7 +85,7 @@ export function createCatalogHandlers({ getDb, verifyIdToken, now = () => new Da
       const ref = db.collection('catalog_import_previews').doc(previewId);
       if ((await tx.get(ref)).exists) throw catalogError(409, 'Preview ID collision. Retry.');
       // Rows are split across chunk documents so files of any length stay under
-      // Firestore's 1 MiB per-document limit. Chunks hold consecutive row numbers.
+      // a 1 MiB per-document limit. Chunks hold consecutive row numbers.
       const chunks = [];
       for (const row of plan.rows) {
         const bytes = Buffer.byteLength(JSON.stringify(row), 'utf8');

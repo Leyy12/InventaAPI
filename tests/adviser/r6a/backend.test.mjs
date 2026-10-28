@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAdminTrafficHandler, trafficRecord } from '../../../services/admin-traffic.js';
 import { telemetryReport } from '../../../services/reporting.js';
-import { invoke } from '../phase2a/memory-firestore.mjs';
+import { invoke } from '../phase2a/memory-store.mjs';
 
 const row = (id, extra = {}) => ({ id, timestamp: new Date('2026-09-22T12:00:00Z'), success: true, latencyMs: 10, ...extra });
 function setup(records = [], account = { role: 'Admin' }, options = {}) {

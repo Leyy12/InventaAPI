@@ -1,6 +1,6 @@
 import express from 'express';
 import { getAuth } from '../services/supabase-auth.js';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { createIpRateLimiter } from '../services/rate-limit-client-ip.js';
 import { createEmailSender } from '../services/email-delivery.js';
 import { createEmailVerificationHandlers, createPasswordResetHandlers } from '../services/email-verification.js';
@@ -18,9 +18,9 @@ const accountByEmail = email => getAuth().getUserByEmail(email).catch(error => {
 });
 // An Auth identity without a users/{uid} profile is a signup that never finished
 // (every completed account, admins included, has a profile).
-const profileExists = async uid => (await getFirestore().collection('users').doc(uid).get()).exists;
+const profileExists = async uid => (await getDataStore().collection('users').doc(uid).get()).exists;
 const verification = createEmailVerificationHandlers({
-  getDb: () => getFirestore(),
+  getDb: () => getDataStore(),
   emailRegistered: async email => {
     const account = await accountByEmail(email);
     return !!account && await profileExists(account.uid);
@@ -38,7 +38,7 @@ const verification = createEmailVerificationHandlers({
   sendEmail,
 });
 const passwordReset = createPasswordResetHandlers({
-  getDb: () => getFirestore(),
+  getDb: () => getDataStore(),
   findAccount: async email => {
     const account = await accountByEmail(email);
     return account && !account.disabled ? account.uid : null;
@@ -49,7 +49,7 @@ const passwordReset = createPasswordResetHandlers({
   sendEmail,
 });
 // Process-local per-IP bound on outbound email, shared by both code types, on top of
-// the per-address limits in Firestore.
+// the per-address limits in the database.
 const { verifyClientIp, limiter } = createIpRateLimiter({ windowMs: 15 * 60 * 1000, max: 10,
   message: 'Too many verification emails were requested from this network. Please try again in 15 minutes.' });
 router.post('/email-verification/send', verifyClientIp, limiter, verification.send);

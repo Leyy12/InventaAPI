@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 for (const file of ['services/api-key-management.js', 'services/api-key-security.js', 'services/account-quota.js',
   'services/product-contract.js', 'services/customer-segment.js', 'services/daas-catalog.js', 'functions/entitlement-limits.mjs','functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs', 'functions/subscription-lifecycle.mjs',
-  'dashboard/src/lib/api-key-generation.ts', 'tests/adviser/phase2a/memory-firestore.mjs',
+  'dashboard/src/lib/api-key-generation.ts', 'tests/adviser/phase2a/memory-store.mjs',
   'tests/adviser/r5c/generation.test.mjs']) {
   const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
   if (/\b(?:fetch|require)\s*\(|\bprocess\.(?:env|binding|getBuiltinModule)\b|\beval\s*\(|new\s+Function\b/u.test(source)) throw new Error('Impure isolated helper');

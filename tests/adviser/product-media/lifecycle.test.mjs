@@ -4,13 +4,13 @@ import { createProductMediaHandlers } from '../../../services/product-media.js';
 import { mediaDigest } from '../../../services/product-media-binding.js';
 import { createProductSubmissionHandlers } from '../../../services/product-submissions.js';
 import { createCatalogHandlers } from '../../../services/catalog-management.js';
-import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../r2a/memory-store.mjs';
 import { productIdentityKeys } from '../../../services/product-contract.js';
 
 const key='stable-operation-key-1234', bytes=Buffer.from('synthetic processed webp');
 const product={name:'Tall bottle',brand:'Brand',segment:'Grocery',category:'Drinks',variants:[{size:'330ml',price:10,sku:'BOTTLE-330'}],image_url:''};
 function fixture() {
-  const db=memoryFirestore({'users/customer':{role:'Developer',plan:'Free',apiRequestLimit:50,businessSegment:'Grocery'},
+  const db=memoryStore({'users/customer':{role:'Developer',plan:'Free',apiRequestLimit:50,businessSegment:'Grocery'},
     'users/other':{role:'Developer',plan:'Free',apiRequestLimit:50,businessSegment:'Grocery'},'users/admin':{role:'Admin'},'users/blocked':{role:'Admin',disabled:true}});
   const objects=new Map();let puts=0,failUpload=false;
   const verifyIdToken=async (token,revoked)=>{assert.equal(revoked,true);if(token==='revoked')throw Error('revoked');return {uid:token};};

@@ -1,16 +1,16 @@
 import express from 'express';
 import { getAuth } from '../services/supabase-auth.js';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { createPaymentHandlers } from '../services/payment-checkout.js';
 import { createPaymongoCheckout, expirePaymongoCheckout } from '../services/paymongo-checkout.js';
 import { paymentConfiguration } from '../services/payment-contract.js';
 
 const router = express.Router();
 const handlers = createPaymentHandlers({
-  getDb: () => getFirestore(),
+  getDb: () => getDataStore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
   getConfig: () => paymentConfiguration({ mode: process.env.PAYMONGO_MODE, secretKey: process.env.PAYMONGO_SECRET_KEY,
-    firebaseProjectId: getFirestore().projectId, checkoutInitiationHold: process.env.PAYMENT_CHECKOUT_INITIATION_HOLD,
+    dataProjectId: getDataStore().projectId, checkoutInitiationHold: process.env.PAYMENT_CHECKOUT_INITIATION_HOLD,
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET, nodeEnv: process.env.NODE_ENV,
     globalTestBilling: process.env.PAYMONGO_GLOBAL_TEST_BILLING,
     globalTestAmountCentavos: process.env.PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS,

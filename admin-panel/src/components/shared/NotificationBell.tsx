@@ -6,7 +6,7 @@ import {
   subscribeToNotifications,
   markNotificationRead,
   markAllRead,
-} from "@/lib/firebase/notifications";
+} from "@/lib/supabase/notifications";
 import {
   Bell,
   Check,

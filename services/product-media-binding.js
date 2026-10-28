@@ -33,7 +33,7 @@ export async function prepareRejectedMedia({ tx, db, content, submissionId, at }
 }
 
 // All object bytes are immutable and private before this transaction. Publishing
-// is a Firestore binding, not a pretend atomic Storage-copy + Firestore operation.
+// is a database binding, not a pretend atomic Storage-copy + database operation.
 export async function prepareCatalogMedia({ tx, db, uid, productId, payload, previous, action, submissionId, at }) {
   const oldId = previous?.image_asset_id || '';
   let id = payload.image_asset_id ?? oldId;

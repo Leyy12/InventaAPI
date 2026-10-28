@@ -8,7 +8,7 @@ export default function DocsPage() {
       <h2 className="text-xl font-semibold text-white">Quick start and authentication</h2>
       <p>API keys can be generated once per account per UTC day. Only a successfully created key uses this allowance. Revoking it or losing its one-time secret does not restore the allowance. Free Trial additionally permits up to 5 active API keys sharing up to 50 linked products. Use secure one-for-one replacement if its secret is lost.</p>
       <p>Select authorized products and create a key on the <Link href="/dashboard/products" className="text-indigo-300">Products page</Link>. Copy the secret when it is shown; you can copy it again later from API Keys. Manage or revoke keys on the <Link href="/dashboard/api-keys" className="text-indigo-300">API Keys page</Link>.</p>
-      <p>Send your saved API key in the <code>x-api-key: YOUR_API_KEY</code> header. This is different from the Firebase Bearer authentication used by the Customer management application.</p>
+      <p>Send your saved API key in the <code>x-api-key: YOUR_API_KEY</code> header. This is different from the signed-in session (Bearer token) the Customer dashboard uses.</p>
       <p>Keep keys in server-side secret configuration, never in URLs, public repositories, browser code or analytics. Example hostnames must be replaced with your operator-confirmed API origin.</p>
     </section>
     <CodeSnippet />
@@ -32,7 +32,7 @@ export default function DocsPage() {
       <h2 className="text-xl font-semibold text-white">Real sales reporting</h2>
       <p><code>GET /daas/v1/sales-feed</code> is for active Pro/Pro Max (and compatible legacy paid) plans, not Free or Trial. It returns your own completed sales: PHP summary, UTC daily time series, and top products. With no sales it returns zeros, empty arrays, and <code>hasData: false</code>—never sample figures.</p>
       <p>Optional <code>from</code> and <code>to</code> are inclusive UTC dates in <code>YYYY-MM-DD</code> format. Default is the last 30 days; maximum is 90 days. Invalid/future/unbounded ranges return <code>400 INVALID_RANGE</code>. Very large result sets fail closed with <code>503 SALES_REPORT_TOO_LARGE</code>; select a shorter range.</p>
-      <p>The Customer dashboard reads the same reports via Firebase-authenticated <code>/api/v1/customer/insights/sales-feed</code>, without exposing an API key to the browser. These dashboard reads do not consume a DaaS key allowance; they remain account-owned and server-authorized.</p>
+      <p>The Customer dashboard reads the same reports via your signed-in session at <code>/api/v1/customer/insights/sales-feed</code>, without exposing an API key to the browser. These dashboard reads do not consume a DaaS key allowance; they remain account-owned and server-authorized.</p>
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Account usage and recorded history</h2>

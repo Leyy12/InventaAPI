@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { Settings2, Building2 } from "lucide-react";
 import Link from "next/link";
 import { restrictedSegmentAccount, activeCustomerSegment } from '../../../../../services/customer-segment.js';

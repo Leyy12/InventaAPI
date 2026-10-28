@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useAdminAuth } from './firebase/admin-auth-context';
+import { useAdminAuth } from './supabase/admin-auth-context';
 import { validateInventoryResponse } from '../../../services/admin-key-inventory-contract.mjs';
 import type { EntitlementLoadStatus } from './api-key-inventory';
 

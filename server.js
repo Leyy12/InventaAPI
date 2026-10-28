@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { createIpRateLimiter, trustedRateLimitIp } from './services/rate-limit-client-ip.js';
 import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from './services/system-settings.js';
-import { getFirestore } from './database/firestore.js';
+import { getDataStore } from './database/data-store.js';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -127,7 +127,7 @@ const daasLimits = createIpRateLimiter({
 });
 app.use('/api/', appLimits.verifyClientIp, appLimits.limiter);
 app.use('/daas/', daasLimits.verifyClientIp, daasLimits.limiter);
-app.use(createSystemPolicyMiddleware({ getDb: () => getFirestore() }));
+app.use(createSystemPolicyMiddleware({ getDb: () => getDataStore() }));
 
 // 4. Data Compression: Ensure JSON responses are lightweight for Mobile Computing
 app.use(compression());
@@ -160,7 +160,7 @@ app.use((req, res, next) => {
 });
 
 // --- API Routing Hookup (Version 1) ---
-app.get('/api/v1/system/status', createSystemSettingsHandlers({ getDb: () => getFirestore() }).publicStatus);
+app.get('/api/v1/system/status', createSystemSettingsHandlers({ getDb: () => getDataStore() }).publicStatus);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/products', productsRouter);
 app.use('/api/v1/admin/catalog', catalogManagementRouter);

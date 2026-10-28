@@ -14,7 +14,7 @@ import {
   LogOut,
   FileText,
 } from "lucide-react";
-import { useAdminAuth } from "@/lib/firebase/admin-auth-context";
+import { useAdminAuth } from "@/lib/supabase/admin-auth-context";
 
 const adminRoutes = [
   { name: "Dashboard",              href: "/",          icon: LayoutDashboard },

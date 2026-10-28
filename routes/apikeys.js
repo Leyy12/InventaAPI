@@ -1,5 +1,5 @@
 import express from 'express';
-import { getFirestore, FieldPath } from '../database/firestore.js';
+import { getDataStore, FieldPath } from '../database/data-store.js';
 import { getAuth } from '../services/supabase-auth.js';
 import { createApiKeyHandlers } from '../services/api-key-management.js';
 import { createApiHistoryHandler } from '../services/api-history.js';
@@ -8,7 +8,7 @@ const router = express.Router();
 const handlers = createApiKeyHandlers({
   monthlyCutoverAt: process.env.FREE_MONTHLY_QUOTA_CUTOVER_AT,
   vaultSecret: process.env.API_KEY_ENCRYPTION_SECRET,
-  getDb: () => getFirestore(),
+  getDb: () => getDataStore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
 });
 
@@ -16,7 +16,7 @@ const handlers = createApiKeyHandlers({
 router.post('/generate', handlers.create);
 router.get('/', handlers.list);
 router.get('/history', createApiHistoryHandler({
-  getDb: () => getFirestore(),
+  getDb: () => getDataStore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
   documentId: FieldPath.documentId(),
 }));

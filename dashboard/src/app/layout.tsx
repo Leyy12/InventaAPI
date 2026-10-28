@@ -6,7 +6,7 @@ import "./theme.css"; // light mode (after globals so it wins)
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import LayoutWrapper from "@/components/layout/LayoutWrapper";
 import AppDialogHost from "@/components/shared/AppDialog";
-import { AuthProvider } from "@/lib/firebase/auth-context";
+import { AuthProvider } from "@/lib/supabase/auth-context";
 import { PlanRequestPolicyProvider } from '@/lib/plan-request-policy';
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });

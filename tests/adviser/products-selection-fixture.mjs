@@ -38,8 +38,8 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
     '../../../../../services/customer-segment.js': segment,
     '@/components/products/AddProductModal': { __esModule: true, default: stub },
     '@/lib/product-image-url': { productImageSource: p => typeof p?.image_url === 'string' ? p.image_url : '', showProductImageFallback: stub },
-    '@/lib/firebase/auth-context': { useAuth: () => state },
-    '@/lib/firebase/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
+    '@/lib/supabase/auth-context': { useAuth: () => state },
+    '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       if (init?.method) throw Error('Persisted mutations prohibited in selection fixture');

@@ -4,7 +4,7 @@ import { createCatalogHandlers } from '../../../services/catalog-management.js';
 import { planSizeMerges, mergedName, nameKey } from '../../../services/catalog-merge.js';
 import { identityId } from '../../../services/catalog-contract.js';
 import { productIdentityKeys } from '../../../services/product-contract.js';
-import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../r2a/memory-store.mjs';
 
 // Three sizes of one tuna saved as separate products by imports, plus products that must stay apart.
 const tuna = (name, brand, size, extra = {}) => ({ name, brand, segment: 'Grocery', category: 'Canned Goods', status: 'Active', is_active: true,
@@ -20,7 +20,7 @@ const seed = {
   'api_keys/k2': { userId: 'customer', linkedProductIds: [], linkedVariantSelections: { c: ['|155 g'] } },
 };
 function fixture() {
-  const db = memoryFirestore(seed, { queryConflicts: false });
+  const db = memoryStore(seed, { queryConflicts: false });
   // Reservations as the catalog writer leaves them: every identity bound to its product.
   for (const [path, data] of Object.entries(seed)) if (path.startsWith('products/')) {
     const id = path.split('/')[1];

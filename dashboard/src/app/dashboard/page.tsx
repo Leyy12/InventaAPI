@@ -2,7 +2,7 @@
 
 import { Database, Code, PackageSearch, Terminal, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { useEffect, useState } from "react";
 import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import { customerReportScope } from "@/lib/reports";

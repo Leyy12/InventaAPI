@@ -5,7 +5,7 @@ import { processTrialWarning, warningEligible, warningId } from '../../../functi
 import { sendResendTrialEmail } from '../../../functions/trial-warning-email.mjs';
 import { canonicalLinkedProductIds, linkedProductLabels } from '../../../admin-panel/src/lib/linked-product-names.ts';
 import { selectedLinkedProducts } from '../../../dashboard/src/lib/linked-product-selection.ts';
-import { memoryFirestore } from '../phase2a/memory-firestore.mjs';
+import { memoryStore } from '../phase2a/memory-store.mjs';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
 
 const startedAt = '2026-09-23T12:00:00.000Z', expiresAt = '2026-09-30T12:00:00.000Z';
@@ -15,7 +15,7 @@ const base = { role: 'Developer', email: 'customer@example.test', plan: 'Free', 
 const usage = { startedAt, expiresAt, used: 4 };
 function fixture(account = {}, counter = {}) {
   let time = threshold, sends = 0;
-  const db = memoryFirestore({ 'users/owner': { ...base, ...account }, 'account_trial_usage/owner': { ...usage, ...counter },
+  const db = memoryStore({ 'users/owner': { ...base, ...account }, 'account_trial_usage/owner': { ...usage, ...counter },
     'api_keys/key-a': { userId: 'owner', status: 'active' } });
   const run = () => processTrialWarning(db, 'owner', { now: () => new Date(time), from: 'trial@example.test',
     sendEmail: async () => { sends++; return 'email-accepted'; } });
@@ -202,13 +202,10 @@ test('Customer API Keys no longer exposes replacement, without changing the back
 test('scheduled job is UTC, paged, index-light and not entitlement authority', () => {
   const source = readFileSync(new URL('../../../services/scheduled-jobs.js', import.meta.url), 'utf8');
   const schedule = JSON.parse(readFileSync(new URL('../../../vercel.json', import.meta.url), 'utf8'));
-  const rules = readFileSync(new URL('../../../firestore.rules', import.meta.url), 'utf8');
   assert.match(source, /export async function sendTrialWarnings/u);
   assert.deepEqual(schedule.crons.find(cron => cron.path === '/api/v1/cron/trial-warnings'), { path: '/api/v1/cron/trial-warnings', schedule: '30 16 * * *' });
   assert.match(source, /\.where\('trialExpiresAt', '>', now\.toISOString\(\)\)/u);
   assert.match(source, /\.orderBy\('trialExpiresAt'\)\.limit\(200\)/u);
   assert.match(source, /query = query\.startAfter\(page\.docs\.at\(-1\)\)/u);
   assert.doesNotMatch(source, /setInterval|setTimeout|api_keys.*(?:delete|update)/u);
-  assert.doesNotMatch(rules, /match \/trial_warning_deliveries\//u);
-  assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/u);
 });

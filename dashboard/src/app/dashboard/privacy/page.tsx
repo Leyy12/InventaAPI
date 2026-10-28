@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { Shield, Trash2, AlertTriangle } from "lucide-react";
 
 export default function PrivacySettingsPage() {

@@ -5,7 +5,7 @@ import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createDaaSSecurity, requirePlan } from '../../../services/daas-security.js';
 import { consumeAccountQuota } from '../../../services/account-quota.js';
 import { authorizedProductIds } from '../../../services/daas-catalog.js';
-import { memoryFirestore, invoke } from './memory-firestore.mjs';
+import { memoryStore, invoke } from './memory-store.mjs';
 
 const NOW = new Date('2026-09-17T12:00:00.000Z');
 const clock = () => new Date(NOW);
@@ -28,7 +28,7 @@ function paidFixtures(uid) {
       plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } } };
 }
 function setup(extra = {}, metadata = {}) {
-  const db = memoryFirestore({ ...paidFixtures('owner'), ...paidFixtures('other'),
+  const db = memoryStore({ ...paidFixtures('owner'), ...paidFixtures('other'),
     'api_keys/key-a': legacy, 'products/rice': product, ...extra }, metadata);
   const handlers = createApiKeyHandlers({ getDb: () => db, clock, verifyIdToken: async (token, checkRevoked) => {
     assert.equal(checkRevoked, true);

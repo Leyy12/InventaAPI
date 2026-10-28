@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from './r2a/memory-store.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../../functions/request-contract-evidence.mjs';
 import { evaluateEntitlement, normalizeExpiredAccount } from '../../functions/subscription-lifecycle.mjs';
 import { newRequestContract, requestPolicyVersion } from '../../functions/request-limit-policy.mjs';
@@ -50,7 +50,7 @@ function fixture(index = 0) {
   for (let i = 0; i < 7; i++) records[`payment_orders/pending-${i}`] = {
     id: `pending-${i}`, userId: uid, state: 'pending', mode: 'live', apiRequestLimit: i < 4 ? 500 : 5000,
     providerRequestBody: `unchanged original ${i < 4 ? 500 : 5000}/day offer` };
-  const db = memoryFirestore(records);
+  const db = memoryStore(records);
   const creationTimes = new Map();
   const decorate = (snapshot, path) => ({ ...snapshot,
     createTime: { toDate: () => new Date(creationTimes.get(path) ?? createdAt) } });

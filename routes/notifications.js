@@ -1,11 +1,11 @@
 import express from 'express';
-import { getFirestore, FieldValue } from '../database/firestore.js';
+import { getDataStore, FieldValue } from '../database/data-store.js';
 
-// Data lives in the Supabase database (database/firestore.js).
+// Data lives in the Supabase database (database/data-store.js).
 let adminDb = null;
 function getDb() {
   if (!adminDb) {
-    adminDb = getFirestore();
+    adminDb = getDataStore();
   }
   return adminDb;
 }

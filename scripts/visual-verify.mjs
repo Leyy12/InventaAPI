@@ -14,7 +14,7 @@ async function verifyDashboard() {
     // Let's count standard rows or card elements
     console.log("Waiting for products to load in the UI...");
     
-    // Give it a few seconds to fetch from Firebase
+    // Give it a few seconds to fetch data
     await page.waitForTimeout(5000);
 
     // Take a screenshot for visual proof

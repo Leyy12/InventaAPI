@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { User } from "@/lib/supabase-auth";
-import { collection, query, onSnapshot, orderBy, limit } from "@/lib/data/firestore-client";
+import { collection, query, onSnapshot, orderBy, limit } from "@/lib/data/data-client";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { auth, db } from "@/lib/firebase/config";
+import { auth, db } from "@/lib/supabase/config";
 import { createTrafficRefresh, createTrafficRequest } from "@/lib/admin-traffic";
-import { useAdminAuth } from "@/lib/firebase/admin-auth-context";
+import { useAdminAuth } from "@/lib/supabase/admin-auth-context";
 import { activeKeyHolders, reportTimestamp, telemetryReport, type ReportSelection, type ReportSource } from "@/lib/reports";
 import { useCategoryUsage } from "@/lib/category-usage";
 import CatalogReportPanel from "@/components/reports/CatalogReportPanel";

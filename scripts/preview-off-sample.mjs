@@ -2,7 +2,7 @@
  * OFF Sample Tester
  * Pulls 50 real Philippine grocery products from Open Food Facts,
  * maps them to our schema with category-based pricing,
- * and prints them — NO Firestore writes, preview only.
+ * and prints them — NO database writes, preview only.
  */
 import { createRequire } from 'module';
 
@@ -117,7 +117,7 @@ async function fetchAndPreview() {
   }
 
   console.log("\n" + "=".repeat(80));
-  console.log("PREVIEW COMPLETE. No writes to Firestore were made.");
+  console.log("PREVIEW COMPLETE. No database writes were made.");
   console.log("=".repeat(80));
 }
 

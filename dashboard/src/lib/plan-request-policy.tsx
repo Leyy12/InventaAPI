@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { plansForRequestLimits, type PlanRequestLimits } from '@/config/plans';
-import { useAuth } from '@/lib/firebase/auth-context';
+import { useAuth } from '@/lib/supabase/auth-context';
 import { requestPolicyVersion } from '../../../functions/request-limit-policy.mjs';
 
 type Policy = { limits: PlanRequestLimits | null; version: string | null; status: 'loading' | 'ready' | 'unavailable' };

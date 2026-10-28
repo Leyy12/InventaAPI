@@ -16,8 +16,8 @@ import ProductCatalogEmptyState from "@/components/product-request/ProductNotFou
 import { activeCustomerSegment, scopeCustomerProducts } from '../../../../../services/customer-segment.js';
 import AddProductModal from "@/components/products/AddProductModal";
 import { productImageSource, showProductImageFallback } from '@/lib/product-image-url';
-import { useAuth } from "@/lib/firebase/auth-context";
-import { getBaseSize, hasNearExpiry, type Product } from "@/lib/firebase/products-service";
+import { useAuth } from "@/lib/supabase/auth-context";
+import { getBaseSize, hasNearExpiry, type Product } from "@/lib/products-service";
 import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
@@ -434,7 +434,7 @@ function CustomerCatalogSession() {
     setGenerating(true);
     
     try {
-      const { auth } = await import("@/lib/firebase/config");
+      const { auth } = await import("@/lib/supabase/config");
       const currentUser = auth.currentUser;
       
       if (!currentUser) {
@@ -471,7 +471,7 @@ function CustomerCatalogSession() {
           userId: currentUser.uid,
           userEmail: currentUser.email || "",
           keyName: keyName.trim(),
-          // SECURITY: Do NOT send plan - let backend determine from user's actual Firestore data
+          // SECURITY: Do NOT send plan - let backend determine from user's stored account data
           linkedProducts: selectedProductsList,
           linkedProductIds: finalLinkedProductIds,
           linkedVariantSelections: finalLinkedVariantSelections

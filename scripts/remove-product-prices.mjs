@@ -13,7 +13,7 @@
  *   node scripts/remove-product-prices.mjs --apply   # delete the prices
  */
 
-import { getFirestore, FieldValue, FieldPath } from '../database/firestore.js';
+import { getDataStore, FieldValue, FieldPath } from '../database/data-store.js';
 import { withoutPrices } from '../services/product-contract.js';
 
 const apply = process.argv.includes('--apply');
@@ -31,7 +31,7 @@ export function priceRemoval(data) {
 }
 
 async function main() {
-  const db = getFirestore();
+  const db = getDataStore();
   let cursor = null, scanned = 0, withPrices = 0;
   console.log(apply ? 'Deleting product prices…' : 'Report only (add --apply to delete). Checking products…');
   for (;;) {

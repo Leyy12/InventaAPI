@@ -5,7 +5,7 @@ import * as admin from '../../../admin-panel/src/lib/product-image-url.ts';
 import { normalizeProductImageUrl } from '../../../services/product-submission-contract.js';
 import { createProductSubmissionHandlers } from '../../../services/product-submissions.js';
 import { projectProduct } from '../../../services/product-contract.js';
-import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../r2a/memory-store.mjs';
 
 const url = 'https://images.example.invalid/photo.jpg';
 for (const [name, api] of Object.entries({ customer, admin })) {
@@ -45,7 +45,7 @@ for (const [name, api] of Object.entries({ customer, admin })) {
 }
 
 test('Customer URL persists only as reviewed metadata before Admin publication', async () => {
-  const db = memoryFirestore({ 'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, 'users/admin': { role: 'Admin' } });
+  const db = memoryStore({ 'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, 'users/admin': { role: 'Admin' } });
   const handlers = createProductSubmissionHandlers({ getDb: () => db, now: () => new Date('2026-09-20T01:00:00.000Z'),
     makeId: () => 'media-review', verifyIdToken: async token => ({ uid: token }) });
   const result = await invoke(handlers.submit, { token: 'customer', headers: { 'idempotency-key': 'media-operation-0001' },

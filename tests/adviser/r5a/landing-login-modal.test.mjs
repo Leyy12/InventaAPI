@@ -118,7 +118,7 @@ test('Existing Admin authentication boundary remains intact', () => {
 });
 
 test('Successful Customer logout returns to root without resurrecting popup intent', () => {
-  const source = read('dashboard/src/lib/firebase/auth-context.tsx');
+  const source = read('dashboard/src/lib/supabase/auth-context.tsx');
   assert.ok(source.includes('if (busy) beginCustomerLogout();'));
   assert.ok(source.includes("clearSession(); router.replace('/')"));
   assert.doesNotMatch(source, /completeLanding|login=true&from=logout/);

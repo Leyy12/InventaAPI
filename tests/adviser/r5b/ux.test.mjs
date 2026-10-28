@@ -6,7 +6,7 @@ import { quotaSummary } from '../../../services/reporting.js';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { consumeAccountQuota } from '../../../services/account-quota.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 const record = { keyName:'Integration',timestamp:'2026-09-21T12:00:00.000Z',endpoint:'/daas/v1/catalog',method:'GET',statusCode:200 };
 const payload = (records = [record]) => ({ success:true, records, limit:50, hasMore:false });
 test('history loading → data → refresh loading → failure clears old rows → retry empty', async () => {
@@ -70,7 +70,7 @@ for(const invalid of [null,undefined,{...usage,scope:'key'},{...usage,used:NaN},
   test('unavailable quota does not become zero: '+JSON.stringify(invalid),()=>assert.equal(quotaSummary(invalid,now),null));
 }
 test('Free issuance denial does not change shared request usage across existing keys',async()=>{
-  const db=memoryFirestore({'users/owner':{role:'Developer',plan:'Free',apiRequestLimit:50,selectedSegment:'Grocery',businessSegment:'Grocery'},
+  const db=memoryStore({'users/owner':{role:'Developer',plan:'Free',apiRequestLimit:50,selectedSegment:'Grocery',businessSegment:'Grocery'},
     'account_free_monthly_usage/owner':{window:'2026-09',used:17},
     'api_keys/old-a':{userId:'owner',key:'daas_old_a',status:'active'},
     'api_keys/old-b':{userId:'owner',key:'daas_old_b',status:'active'}});

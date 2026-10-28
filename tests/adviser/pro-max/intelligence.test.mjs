@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 import { validateSale, recordSale, salesRange, readSales, aggregateSales,
   paidSalesEligible } from '../../../services/customer-intelligence.js';
 import { createCustomerIntelligenceHandlers, createDaaSIntelligenceHandlers } from '../../../services/customer-intelligence-handlers.js';
@@ -21,7 +21,7 @@ const paidContracts = () => ({ version: 1, plans: {
   pro: { version: 1, period: 'utc_daily', limit: 500 },
   pro_max: { version: 1, period: 'utc_daily', limit: null },
 } });
-const seed = () => memoryFirestore({
+const seed = () => memoryStore({
   'users/a': account('a'), 'users/b': account('b'),
   'account_request_contracts/a': paidContracts(), 'account_request_contracts/b': paidContracts(),
   'products/bread': { name: 'Bread', category: 'Food', segment: 'Grocery', status: 'active', price: 12.5 },
