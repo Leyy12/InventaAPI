@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, CreditCard, X } from 'lucide-react';
 import { useAuth } from '@/lib/supabase/auth-context';
-import { requestAllowanceLabel } from '@/config/plans';
+import { requestAllowanceLabel, paidAllowanceLabel } from '@/config/plans';
 import { usePlanCatalog, useAccountRequestAllowance } from '@/lib/plan-request-policy';
 import SubscriptionModal from '@/components/subscription/SubscriptionModal';
 import FreeTrialContent from '@/components/subscription/FreeTrialContent';
@@ -111,7 +111,7 @@ export default function PlanBillingPage() {
         {entitlement.subscriptionExpiresAt && <p className="text-sm text-slate-300">
           Subscription ends <time dateTime={entitlement.subscriptionExpiresAt}>{new Date(entitlement.subscriptionExpiresAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</time>
         </p>}
-        <p className="text-sm text-slate-400">{requestAllowanceLabel(requestAllowance)}. Standard security, abuse protection, and IP rate limits still apply.</p>
+        <p className="text-sm text-slate-400">{paidAllowanceLabel(entitlement) ?? requestAllowanceLabel(requestAllowance)}. Standard security, abuse protection, and IP rate limits still apply.</p>
       </div>}
       {upgradeRequired && <p className="mt-5 border-t border-slate-700/70 pt-5 text-sm leading-6 text-amber-100/90">
         Your one-time Trial has ended. Upgrade to Pro or Pro Max to restore protected API access. Your account and existing API keys remain available.

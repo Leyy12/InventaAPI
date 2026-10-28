@@ -8,6 +8,7 @@ import CustomerUsageSummary from "@/components/reports/CustomerUsageSummary";
 import { customerReportScope } from "@/lib/reports";
 import { activeCustomerSegment } from '../../../../services/customer-segment.js';
 import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
+import { PRO_REQUEST_LABEL, PRO_MAX_REQUEST_LABEL } from '@/config/plans';
 
 // "Welcome" for a brand-new account's first visit, "Welcome back" afterwards.
 // New = created in the last 24 hours and first seen on this browser within the last 30 minutes.
@@ -140,7 +141,9 @@ export default function DashboardPage() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-emerald-300">Payment confirmed. Your current subscription is shown below.</p>
           <p className="text-xs text-emerald-400/80 mt-0.5">
-            Current allowance: {requestAllowance === undefined ? 'Unavailable' : requestAllowance === null ? 'Unlimited account quota' : `${requestAllowance.toLocaleString()} requests/day (UTC)`} · Subscription end: {entitlement?.subscriptionExpiresAt ? new Date(entitlement.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
+            Current allowance: {entitlement?.activePro && entitlement.plan === 'Pro' ? PRO_REQUEST_LABEL
+              : entitlement?.activePro && entitlement.plan === 'Pro Max' ? PRO_MAX_REQUEST_LABEL
+              : requestAllowance === undefined ? 'Unavailable' : requestAllowance === null ? 'Unlimited account quota' : `${requestAllowance.toLocaleString()} requests/day (UTC)`} · Subscription end: {entitlement?.subscriptionExpiresAt ? new Date(entitlement.subscriptionExpiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : 'Verifying'}
           </p>
         </div>
         <button

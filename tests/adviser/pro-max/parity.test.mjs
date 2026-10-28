@@ -19,7 +19,7 @@ const owner = { uid: 'owner', role: 'Developer', plan: 'Pro Max', apiRequestLimi
 const raw = (name, segment) => ({ name, segment, category: 'Products', status: 'active', price: 10 });
 const source = relative => readFileSync(fileURLToPath(new URL(`../../../${relative}`, import.meta.url)), 'utf8');
 
-test('shared effective limits and rendered pricing contract are 0–50, 500/day and unlimited', () => {
+test('shared effective limits and rendered pricing contract are 0–50 Trial products and 15,000 requests per month', () => {
   assert.equal(TRIAL_MIN_PRODUCTS, 0); assert.equal(TRIAL_MAX_PRODUCTS, 50); assert.equal(PRO_DAILY_REQUEST_LIMIT, 500);
   assert.equal(SUBSCRIPTION_PLANS.free.billingCycle, '7 days');
   assert.equal(SUBSCRIPTION_PLANS.free.requestLimit, null);
@@ -27,11 +27,12 @@ test('shared effective limits and rendered pricing contract are 0–50, 500/day 
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('Up to 50 products'));
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('Up to 5 API keys'));
   assert.doesNotMatch(JSON.stringify(SUBSCRIPTION_PLANS.free), /minimum|500 products|50–500/i);
-  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, PRO_DAILY_REQUEST_LIMIT);
-  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimitDisplay, '500 requests/day');
-  assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('500 requests per day'));
-  assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, null);
-  assert.match(SUBSCRIPTION_PLANS.pro_max.requestLimitDisplay, /Unlimited/);
+  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, 15000);
+  assert.equal(SUBSCRIPTION_PLANS.pro.requestLimitDisplay, '15,000 API requests per month');
+  assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('One API key — add products to it anytime'));
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimit, 15000);
+  assert.equal(SUBSCRIPTION_PLANS.pro_max.requestLimitDisplay, '15,000 API requests per month for each segment');
+  assert.doesNotMatch(JSON.stringify([SUBSCRIPTION_PLANS.pro, SUBSCRIPTION_PLANS.pro_max]), /requests\/day|per day|Unlimited/);
   assert.equal(SUBSCRIPTION_PLANS.pro.priceDisplay, '₱500');
   assert.equal(SUBSCRIPTION_PLANS.pro_max.priceDisplay, '₱1,300');
   for (const file of ['dashboard/src/app/dashboard/products/page.tsx', 'dashboard/src/components/subscription/FreeTrialContent.tsx',
@@ -56,12 +57,13 @@ test('shared UI/server change predicate counts unique IDs and permits only legac
 
 test('public Pro Max capabilities have a fixed one-to-one proof map; no new marketing line can silently appear', () => {
   assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], [
-    'unlimited_account_quota', 'all_segments', 'real_sales_feed',
-    'multiple_api_keys', 'api_playground', 'usage_history', 'renewable_30_day_term',
+    'monthly_segment_quota', 'all_segments', 'segment_api_keys', 'auto_segment_routing',
+    'real_sales_feed', 'api_playground', 'usage_history', 'renewable_30_day_term',
   ]);
   assert.deepEqual([...SUBSCRIPTION_PLANS.pro_max.incrementalFeatures], [
-    'Unlimited account API quota*', 'All Business Segments',
-    'Real Sales Analytics Feed', 'Multiple API Keys', 'API Playground',
+    '15,000 API requests per month for each segment', 'All Business Segments',
+    'Up to 3 API keys — one per segment', 'Products sorted into the right key automatically',
+    'Real Sales Analytics Feed', 'API Playground',
     'Usage & Integration History', '30-day renewable subscription',
   ]);
   assert.equal(PRO_MAX_CAPABILITY_IDS.length, SUBSCRIPTION_PLANS.pro_max.incrementalFeatures.length);
@@ -99,7 +101,7 @@ test('Pro Max has paid multi-segment behavior; Free/Trial remain in authoritativ
   assert.equal(customerReportScope('Free', 'Grocery').restricted, true);
 });
 
-test('Pro Max can manage two active keys without a one-key ceiling or credential disclosure', async () => {
+test('Pro Max can manage two active keys without credential disclosure; keys show the monthly allowance', async () => {
   const db = memoryStore({ 'users/owner': owner,
     'account_request_contracts/owner': { version: 1, plans: {
       pro_max: { version: 1, period: 'utc_daily', limit: null },
@@ -112,7 +114,9 @@ test('Pro Max can manage two active keys without a one-key ceiling or credential
   const result = await invoke(handlers.list);
   assert.equal(result.statusCode, 200); assert.equal(result.body.keys.length, 2);
   assert.equal(result.body.usage.limit, null); assert.equal(result.body.usage.used, 7);
-  assert.ok(result.body.keys.every(key => key.plan === 'Pro Max' && key.requestLimit === null && !('key' in key)));
+  assert.ok(result.body.keys.every(key => key.plan === 'Pro Max' && key.requestLimit === 15000 && key.quotaPeriod === 'monthly' && !('key' in key)));
+  // Older keys without a segment share a separate "general" monthly allowance.
+  assert.deepEqual(result.body.monthlyUsage.buckets.map(item => item.bucket), ['Grocery', 'Pharmacy', 'Hardware', 'general']);
 });
 
 test('Pro Max Admin view displays authoritative plan and observed unlimited usage', async () => {

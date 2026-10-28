@@ -17,15 +17,19 @@ test('all three runtime catalogs advertise verified allowances and retain prices
   const plans = config.plansForRequestLimits({ free_trial: 100, pro: 1000, pro_max: 2000 });
   assert.equal(plans.pro.price, 500); assert.equal(plans.pro_max.price, 1300);
   assert.equal(plans.free.billingCycle, '7 days'); assert.ok(plans.free.features.includes('Up to 50 products'));
-  for (const [id, amount] of [['free', '100'], ['pro', '1,000'], ['pro_max', '2,000']]) {
-    assert.equal(plans[id].requestLimitDisplay, `${amount} requests/day (UTC)`);
-    assert.match(config.getCumulativeFeatures(id, plans).features.join('|'), new RegExp(amount));
+  // The Trial follows the verified policy; paid plans always show their fixed monthly allowance.
+  assert.equal(plans.free.requestLimitDisplay, '100 requests/day (UTC)');
+  assert.match(config.getCumulativeFeatures('free', plans).features.join('|'), /100/);
+  for (const [id, label] of [['pro', '15,000 API requests per month'], ['pro_max', '15,000 API requests per month for each segment']]) {
+    for (const limits of [{ free_trial: 100, pro: 1000, pro_max: 2000 }, null]) {
+      const catalog = config.plansForRequestLimits(limits);
+      assert.equal(catalog[id].requestLimitDisplay, label);
+      assert.match(config.getCumulativeFeatures(id, catalog).features.join('|'), new RegExp(label));
+      assert.doesNotMatch(config.getCumulativeFeatures(id, catalog).features.join('|'), /requests\/day|Unlimited|1,000|2,000/);
+    }
   }
   const unavailable = config.plansForRequestLimits(null);
-  for (const id of ['free', 'pro', 'pro_max']) {
-    const features = config.getCumulativeFeatures(id, unavailable).features.join('|');
-    assert.match(features, /Request allowance unavailable/); assert.doesNotMatch(features, /Unlimited|500 requests/);
-  }
+  assert.match(config.getCumulativeFeatures('free', unavailable).features.join('|'), /Request allowance unavailable/);
   assert.match(config.plansForRequestLimits(policy.DEFAULT_REQUEST_LIMITS).free.requestLimitDisplay, /Unlimited.*7-day/);
 });
 
@@ -54,8 +58,8 @@ test('verified policy changes refresh the same account once, matching personaliz
   auth.entitlement = { requestPolicyVersion: version, apiRequestLimit: 1000, purchaseRequestLimits: { pro: 1000, pro_max: null } };
   h.render(); await flush(); context.value = h.output.props.value;
   assert.equal(module.useAccountRequestAllowance(), 1000);
-  assert.match(module.usePlanCatalog().plans.pro_max.requestLimitDisplay, /2,000/);
-  assert.match(module.usePlanCatalog(true).plans.pro_max.requestLimitDisplay, /Unlimited/);
+  assert.match(module.usePlanCatalog().plans.pro_max.requestLimitDisplay, /15,000 API requests per month for each segment/);
+  assert.match(module.usePlanCatalog(true).plans.pro_max.requestLimitDisplay, /15,000 API requests per month for each segment/);
   response = { success: true, planRequestLimits: changed, requestPolicyVersion: 'wrong-version' };
   interval(); await flush(); context.value = h.output.props.value;
   assert.equal(module.useAccountRequestAllowance(), undefined); assert.equal(module.usePlanCatalog(true).status, 'unavailable');
@@ -75,7 +79,9 @@ test('real billing current allowance and cards share verified values; unavailabl
   const expand = value => Array.isArray(value) ? value.map(expand) : value && typeof value === 'object'
     ? typeof value.type === 'function' ? expand(value.type(value.props)) : { ...value, props: { ...value.props, children: expand(value.props.children) } } : value;
   let tree = expand(h.mount(Component));
-  assert.equal((text(tree).match(/1,000 requests\/day \(UTC\)/g) || []).length, 2);
+  // Current allowance line and the Pro card both show the monthly allowance.
+  assert.ok((text(tree).match(/15,000 API requests per month/g) || []).length >= 2);
+  assert.doesNotMatch(text(tree), /requests\/day/);
   ready = false; tree = expand(h.render()); assert.doesNotMatch(text(tree), /1,000 requests|500 requests/);
   assert.equal(nodes(tree, node => node.type === 'button' && node.props.disabled).length, 2); h.stop();
 });
@@ -93,7 +99,7 @@ test('real upgrade modal advertises personalized allowance and freezes verified 
       return { ok: true, json: async () => ({ checkoutUrl: 'https://synthetic.invalid/payment' }) };
     } });
     h.mount(Component, { isOpen: true, selectedPlan: 'pro', onClose() {} }); await flush();
-    assert.match(text(h.output), ready ? /1,000 requests/ : /Request allowance unavailable/);
+    assert.match(text(h.output), /15,000 API requests per month/);
     const button = nodes(h.output, node => node.type === 'button' && /Continue|Subscribe|Proceed|Pay/.test(text(node))).at(-1);
     assert.ok(button); await button.props.onClick(); await flush();
     assert.deepEqual(requests, ready ? [{ plan: 'pro', requestPolicyVersion: version }] : []);

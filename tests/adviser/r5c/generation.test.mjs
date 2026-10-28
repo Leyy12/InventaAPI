@@ -5,9 +5,10 @@ import { authenticateCredential, accountEntitlement } from '../../../services/ap
 import { consumeAccountQuota } from '../../../services/account-quota.js';
 import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
-// Generation-policy tests use a paid account so the clarified pre-Trial Free
-// issuance gate does not obscure the independent UTC daily-marker behavior.
-const account = { role: 'Developer', plan: 'Pro', subscription_status: 'active',
+// Generation-policy tests use a legacy paid (Unlimited) account so neither the
+// pre-Trial Free issuance gate nor the Pro / Pro Max key-count rules obscure the
+// independent UTC daily-marker behavior.
+const account = { role: 'Developer', plan: 'Unlimited', subscription_status: 'active',
   subscriptionStartedAt: '2026-09-01T00:00:00.000Z',
   subscriptionExpiresAt: '2035-01-01T00:00:00.000Z', apiRequestLimit: 5000,
   selectedSegment: 'Grocery', businessSegment: 'Grocery' };
@@ -300,6 +301,18 @@ for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5
       subscriptionExpiresAt: plan === 'Free' ? null : '2027-01-01T00:00:00.000Z' };
     const { db, create, clock } = setup({ 'users/owner': profile, [counter]: usage, 'api_keys/old': legacy });
     const made = await create();
+    if (plan === 'Pro') {
+      // Pro holds one API key: the existing key is kept and a second one is refused
+      // (before any marker is written). Requests count against the monthly allowance.
+      assert.equal(made.statusCode, 409); assert.equal(made.body.error, 'PRO_SINGLE_KEY');
+      assert.deepEqual(await counts(db), [1, 0]);
+      assert.deepEqual(db.read(counter), usage);
+      const first = await consumeAccountQuota(db, { userId: 'owner', keyId: 'old', credential: legacy.key, clock });
+      assert.deepEqual([first.usage.period, first.usage.used, first.usage.limit], ['monthly', 1, 15000]);
+      assert.equal(db.read('account_paid_monthly_usage/owner_2026-09_account').used, 1);
+      assert.deepEqual(db.read(counter), usage);
+      return;
+    }
     if (plan === 'Free') {
       assert.equal(made.statusCode, 403); assert.equal(made.body.error, 'UPGRADE_REQUIRED');
       assert.deepEqual(await counts(db), [1, 0]);

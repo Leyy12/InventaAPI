@@ -75,7 +75,7 @@ function landing(query = '') {
   const router = { replace: route => routes.push(route), push: route => routes.push(route) };
   // Marketing objects do not participate in authorization; load the real config.
   const plans = load('dashboard/src/config/plans.ts', 'exports.SUBSCRIPTION_PLANS', h, {
-    '../../../functions/entitlement-limits.mjs': { PRO_DAILY_REQUEST_LIMIT: 500, TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
+    '../../../functions/entitlement-limits.mjs': { PRO_DAILY_REQUEST_LIMIT: 500, PAID_MONTHLY_REQUEST_LIMIT: 15000, PRO_MAX_SEGMENT_KEYS: 3, TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
     'lucide-react': icons,
   });
   const component = load('dashboard/src/components/auth/AuthEntry.tsx', 'AuthEntry', h, {

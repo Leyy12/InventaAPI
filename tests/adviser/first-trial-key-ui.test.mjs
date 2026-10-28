@@ -38,6 +38,7 @@ function fixture(owned, { count = 55, evidence = { keys: [], trialCatalog: measu
     '@/lib/supabase/config': { auth: { currentUser: user } },
     '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,
+    '@/components/products/PaidKeyResultModal': () => null,
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       keyCalls.push({ path, init });
       if (init?.method === 'PATCH') {

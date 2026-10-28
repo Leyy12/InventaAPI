@@ -13,9 +13,16 @@ const legacy = { key: 'daas_old_credential', name: 'Existing integration', userI
 const account = { plan: 'Free', apiRequestLimit: 3, selectedSegment: 'Grocery', businessSegment: 'Grocery' };
 const trialAccount = { ...account, hasUsedFreeTrial: true, trialVersion: 1,
   trialStartedAt: NOW.toISOString(), trialExpiresAt: '2026-09-24T12:00:00.000Z' };
-const paidAccount = { ...account, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 'active',
+// Daily account counter tests use a legacy paid (Unlimited) account: active Pro and
+// Pro Max now count monthly (see the monthly tests at the end of this file).
+const paidAccount = { ...account, plan: 'Unlimited', apiRequestLimit: null, subscription_status: 'active',
   subscriptionStartedAt: NOW.toISOString(),
   subscriptionExpiresAt: '2026-10-17T12:00:00.000Z' };
+// Active Pro: monthly allowance of 15,000 requests shared by the account's keys.
+const proAccount = { ...account, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 'active',
+  subscriptionStartedAt: NOW.toISOString(), subscriptionExpiresAt: '2026-10-17T12:00:00.000Z' };
+const MONTHLY = 'account_paid_monthly_usage/owner_2026-09_account';
+const monthly = used => ({ [MONTHLY]: { userId: 'owner', window: '2026-09', bucket: 'account', used } });
 const trialCounter = { used: 0, startedAt: NOW.toISOString(), expiresAt: '2026-09-24T12:00:00.000Z' };
 const product = { name: 'Rice', segment: 'Grocery', category: 'Grains', status: 'Active' };
 const trialIds = Array.from({ length: 50 }, (_, i) => `rice-${i}`);
@@ -45,7 +52,7 @@ const consume = (db, keyId = 'key-a', credential = legacy.key, extra = {}) => co
 test('paid profile claims without valid private evidence cannot grant key access or quota', async () => {
   for (const contracts of [undefined, { version: 1, plans: {} },
     { version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 0 } } }]) {
-    const { db, handlers } = setup({ 'account_request_contracts/owner': contracts });
+    const { db, handlers } = setup({ 'users/owner': proAccount, 'account_request_contracts/owner': contracts });
     const profile = db.read('users/owner');
     for (const operation of ['create', 'list', 'view', 'products']) {
       const response = await invoke(handlers[operation], { body: { keyName: 'Denied', linkedProductIds: ['rice'] } });
@@ -57,6 +64,7 @@ test('paid profile claims without valid private evidence cannot grant key access
     assert.deepEqual(db.read('users/owner'), profile);
     assert.deepEqual(db.read('api_keys/key-a'), legacy);
     assert.equal(db.read('account_api_usage/owner'), undefined);
+    assert.equal(db.read(MONTHLY), undefined);
     assert.deepEqual(db.read('account_request_contracts/owner'), contracts);
   }
 });
@@ -230,47 +238,42 @@ test('scope validates identifiers and enforces the server account segment on cre
   }
 });
 
-test('legacy paid keys consume one allowance; creation and revocation never reset usage', async () => {
-  const { db, handlers } = setup({ 'api_keys/key-b': { ...legacy, key: 'daas_second_credential', requestsUsed: 0 } });
-  await activate(db);
-  assert.equal((await consume(db)).usage.remaining, 499);
-  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 498);
+test('Pro keys share one monthly allowance; a second key is refused and revocation never resets usage', async () => {
+  const { db, handlers } = setup({ 'users/owner': proAccount, 'api_keys/key-b': { ...legacy, key: 'daas_second_credential', requestsUsed: 0 } });
+  assert.equal((await consume(db)).usage.remaining, 14999);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 14998);
   const created = await invoke(handlers.create, { body: { keyName: 'Key C' } });
-  assert.equal(created.statusCode, 200);
+  assert.equal(created.statusCode, 409); assert.equal(created.body.error, 'PRO_SINGLE_KEY');
   assert.equal((await invoke(handlers.revoke)).statusCode, 200);
-  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 497);
-  const replacement = await invoke(handlers.create, { body: { keyName: 'Replacement key' } });
-  assert.equal(replacement.body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
-  await db.collection('account_api_usage').doc('owner').update({ used: 5000 });
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 14997);
+  await db.collection('account_paid_monthly_usage').doc('owner_2026-09_account').update({ used: 15000 });
   await assert.rejects(consume(db, 'key-b', 'daas_second_credential'), error => error.status === 429);
   await db.collection('api_keys').doc('key-b').delete();
-  assert.equal(db.read('account_api_usage/owner').used, 5000);
+  assert.equal(db.read(MONTHLY).used, 15000);
+  assert.equal(db.read('account_api_usage/owner'), undefined, 'paid plans no longer touch the daily counter');
 });
 
 test('competing keys at the last remaining unit cannot both succeed', async () => {
-  const { db } = setup({ 'account_api_usage/owner': { window: '2026-09-17', used: 499 },
+  const { db } = setup({ 'users/owner': proAccount, ...monthly(14999),
     'api_keys/key-b': { ...legacy, key: 'daas_second_credential' } });
   const results = await Promise.allSettled([consume(db), consume(db, 'key-b', 'daas_second_credential')]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 1);
-  assert.equal(db.read('account_api_usage/owner').used, 500);
+  assert.equal(db.read(MONTHLY).used, 15000);
   assert.ok(db.retries > 0, 'concurrent conflict must replay the transaction');
 });
 
 test('many simultaneous requests cannot exceed account allowance', async () => {
-  const { db } = setup();
-  await activate(db);
-  await db.collection('account_api_usage').doc('owner').update({ used: 493 });
+  const { db } = setup({ 'users/owner': proAccount, ...monthly(14993) });
   const results = await Promise.allSettled(Array.from({ length: 25 }, () => consume(db)));
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 7);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 18);
-  assert.equal(db.read('account_api_usage/owner').used, 500);
+  assert.equal(db.read(MONTHLY).used, 15000);
 });
 
 test('quota ignores key snapshots, per-key counter manipulation, and subscription flags', async () => {
   const { db } = setup({ 'api_keys/key-a': { ...legacy, plan: 'Enterprise', requestLimit: 999999, requestsUsed: 0, resetAt: '2100-01-01' },
-    'users/owner': { ...paidAccount, subscription_status: 'active' },
-    'account_api_usage/owner': { window: '2026-09-17', used: 5000 } });
+    'users/owner': { ...proAccount, subscription_status: 'active' }, ...monthly(15000) });
   await assert.rejects(consume(db), error => error.status === 429);
 });
 
@@ -374,7 +377,7 @@ test('DaaS middleware consumes once and returns authoritative account data', asy
   const consumed = await invoke(security.enforceRequestLimit, authentication.req);
   assert.equal(consumed.nextCalled, true);
   assert.equal(consumed.req.requestUsage.used, 1);
-  assert.equal(consumed.req.userPlan, 'Pro');
+  assert.equal(consumed.req.userPlan, 'Unlimited');
   assert.equal(consumed.req.apiCredential, undefined);
   assert.equal(db.read('account_api_usage/owner').used, 1);
 });
@@ -437,21 +440,23 @@ test('concurrent first requests share one committed hold and cannot initialize a
   await db.collection('account_api_usage').doc('owner').set({ window: '2026-09-18', used: 499 });
   const atBoundary = { clock: () => new Date(BOUNDARY) };
   const activated = await Promise.allSettled([consume(db, 'key-a', legacy.key, atBoundary), consume(db, 'key-b', 'daas_second', atBoundary)]);
-  assert.equal(activated.filter(result => result.status === 'fulfilled').length, 1);
-  assert.equal(activated.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 1);
-  assert.equal(db.read('account_api_usage/owner').used, 500);
+  // Legacy Unlimited: both succeed and the counter continues from the stored balance.
+  assert.equal(activated.filter(result => result.status === 'fulfilled').length, 2);
+  assert.equal(db.read('account_api_usage/owner').used, 501);
 });
 
-test('Pro request 500 succeeds, 501 denies without increment, next UTC day restores access', async () => {
-  const { db } = setup({ 'account_api_usage/owner': { window: '2026-09-17', used: 499 } });
+test('Pro request 15,000 succeeds, 15,001 denies without increment, next UTC month restores access', async () => {
+  const { db } = setup({ 'users/owner': proAccount, ...monthly(14999) });
   const last = await consume(db);
-  assert.equal(last.usage.limit, 500); assert.equal(last.usage.used, 500); assert.equal(last.usage.remaining, 0);
+  assert.equal(last.usage.limit, 15000); assert.equal(last.usage.used, 15000); assert.equal(last.usage.remaining, 0);
+  assert.equal(last.usage.period, 'monthly'); assert.equal(last.usage.resetsAt, '2026-10-01T00:00:00.000Z');
   await assert.rejects(consume(db), error => error.status === 429 && error.code === 'Rate Limit Exceeded');
-  assert.equal(db.read('account_api_usage/owner').used, 500);
-  assert.equal(db.read('users/owner').apiRequestLimit, 5000, 'historical snapshot stays intact, effective cap is 500');
-  const reset = await consume(db, 'key-a', legacy.key, { clock: () => new Date('2026-09-18T00:00:00.000Z') });
-  assert.equal(reset.usage.used, 1); assert.equal(reset.usage.remaining, 499);
-  assert.equal(reset.usage.resetsAt, '2026-09-19T00:00:00.000Z');
+  assert.equal(db.read(MONTHLY).used, 15000);
+  assert.equal(db.read('users/owner').apiRequestLimit, 5000, 'historical snapshot stays intact');
+  const reset = await consume(db, 'key-a', legacy.key, { clock: () => new Date('2026-10-01T00:00:00.000Z') });
+  assert.equal(reset.usage.used, 1); assert.equal(reset.usage.remaining, 14999);
+  assert.equal(reset.usage.resetsAt, '2026-11-01T00:00:00.000Z');
+  assert.equal(db.read('account_paid_monthly_usage/owner_2026-10_account').used, 1);
 });
 
 test('provably post-cutover server-created accounts initialize immediately and atomically', async () => {
@@ -502,7 +507,7 @@ test('the middleware reports pending cutover without granting downstream access'
 });
 
 test('a transaction conflict rechecks changed account entitlement before granting capacity', async () => {
-  const { db } = setup();
+  const { db } = setup({ 'users/owner': proAccount });
   await activate(db);
   const original = db.runTransaction;
   let changed = false;
@@ -517,6 +522,7 @@ test('a transaction conflict rechecks changed account entitlement before grantin
   await assert.rejects(consume(db), error => error.status === 403 && error.code === 'UPGRADE_REQUIRED');
   assert.ok(db.retries > 0);
   assert.equal(db.read('account_api_usage/owner').used, 0);
+  assert.equal(db.read(MONTHLY), undefined);
 });
 
 test('credential expiry is rechecked inside quota consumption', async () => {

@@ -21,7 +21,7 @@ function customer() {
   const h = hooks(), c = clock(), b = browser(), calls = [];
   const user = { uid: 'synthetic', getIdToken: async () => 'synthetic-not-a-credential' };
   let fail = false;
-  const state = { user, appUser: { plan: 'Pro', businessSegment: 'Grocery' }, entitlement: { activePro: true, plan: 'Pro' } };
+  const state = { user, appUser: { plan: 'Pro Max', businessSegment: 'Grocery' }, entitlement: { activePro: true, plan: 'Pro Max' } };
   const Component = load('dashboard/src/app/dashboard/products/page.tsx', 'CustomerCatalogSession', h, {
     'react-dom': { createPortal: stub },
     '@/components/layout/WorkspaceHeaderSlot': { useWorkspaceHeaderSlot: () => null },
@@ -36,7 +36,7 @@ function customer() {
     '@/lib/product-image-url': { productImageSource: () => '', showProductImageFallback: stub },
     '@/lib/supabase/auth-context': { useAuth: () => state },
     '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
-    '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } },
+    '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } }, '@/components/products/PaidKeyResultModal': () => null,
     '@/lib/segment-catalog': { ...catalog, createCatalogRefresh: options => catalog.createCatalogRefresh({ ...options, schedule: c.schedule, cancel: c.cancel }) },
   }, { ...b, fetch: async url => {
     calls.push(url);

@@ -188,7 +188,9 @@ test('malformed page-size metadata cannot assemble a misleading total', async ()
 test('Customer wiring uses same response for grid/count, safe segment identity, independent search and Trial usage', () => {
   const source = readFileSync(new URL('../../../dashboard/src/app/dashboard/products/page.tsx', import.meta.url), 'utf8');
   assert.match(source, /key=\{user\?\.uid/);
-  assert.match(source, /isFreePlan\(appUser\?\.plan\) \? activeCustomerSegment\(appUser\)/);
+  // Free and Pro accounts are locked to their own segment; Pro Max can browse all three.
+  assert.match(source, /segmentLocked = isFreePlan\(appUser\?\.plan\) \|\| paidKeyPlan === 'pro'/);
+  assert.match(source, /segmentLocked \? activeCustomerSegment\(appUser\)/);
   assert.match(source, /businessSegment: activeSegment, limit: '1000'/);
   assert.match(source, /catalogSource\?\.segment === activeSegment/);
   assert.match(source, /currentCatalog\.total/);

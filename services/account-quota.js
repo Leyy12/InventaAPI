@@ -6,6 +6,8 @@ import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '.
 import { authorizedProductIds } from './daas-catalog.js';
 import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
+import { PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
+import { MONTHLY_USAGE_COLLECTION, paidQuotaPlan, monthWindow, quotaBucket, monthlyUsageId, monthlyUsed, monthlyUsage } from './paid-monthly-quota.js';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
   // Only deployment configuration and database snapshot metadata qualify.
@@ -45,6 +47,12 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       ? await transaction.get(db.collection('api_keys').where('userId', '==', userId)) : null;
     const legacyHistory = entitlement.activeTrial && !Object.hasOwn(account, 'trialConsumed')
       ? await transaction.get(db.collection('account_trial_usage').doc(userId)) : null;
+    // Active Pro / Pro Max: monthly allowance (read here so every read precedes the writes below).
+    const paidPlan = paidQuotaPlan(entitlement);
+    const month = paidPlan ? monthWindow(now) : null;
+    const bucket = paidPlan ? quotaBucket(paidPlan, key) : null;
+    const monthlyRef = paidPlan ? db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(userId, month.window, bucket)) : null;
+    const monthlyDoc = monthlyRef ? await transaction.get(monthlyRef) : null;
     preserveRequestContracts(transaction, resolved);
     if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
     const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
@@ -76,6 +84,21 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
             resetsAt: entitlement.expiresAt, productsIncluded: products, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS } };
       }
       if (!usageDoc.exists) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Daily Trial request usage requires verification.');
+    }
+    if (paidPlan) {
+      const used = monthlyUsed(monthlyDoc.exists ? monthlyDoc.data() : undefined, month.window);
+      if (used >= PAID_MONTHLY_REQUEST_LIMIT) {
+        const where = bucket === 'account' ? 'account' : `${bucket} segment`;
+        return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded',
+          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} requests for this ${where} is used up. It resets on the 1st of next month (UTC).`, {
+            quota: monthlyUsage(bucket, used, month.window, month.resetsAt),
+          }) };
+      }
+      transaction.set(monthlyRef, { userId, window: month.window, bucket, used: used + 1, updatedAt: now.toISOString() });
+      // Per-key diagnostics for existing admin screens; never used as allowance.
+      const keyUsed = key.resetAt === month.resetsAt && Number.isSafeInteger(key.requestsUsed) && key.requestsUsed >= 0 ? key.requestsUsed : 0;
+      transaction.update(keyRef, { lastUsed: now.toISOString(), requestsUsed: Math.min(keyUsed + 1, Number.MAX_SAFE_INTEGER), resetAt: month.resetsAt });
+      return { key: { ...key, id: keyId }, account: effectiveAccount, usage: monthlyUsage(bucket, used + 1, month.window, month.resetsAt) };
     }
     // Finite Trial promises share the existing UTC daily accounting path.
     // Paid quota retains its established clean-window cutover semantics.

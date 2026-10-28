@@ -47,8 +47,8 @@ test('Upgrade cards use canonical plan config and preserve server purchase permi
   assert.match(billing, /Renew \$\{plan\.name\}/u);
   assert.match(billing, /Get \$\{plan\.name\}/u);
   assert.match(billing, /Standard security, abuse protection, and IP rate limits still apply\./u);
-  for (const benefit of ['${PRO_DAILY_REQUEST_LIMIT} requests per day', 'All Business Segments',
-    'Real Sales Analytics Feed', 'Multiple API Keys', 'Unlimited account API quota', 'API Playground']) {
+  for (const benefit of ['PRO_REQUEST_LABEL', 'PRO_MAX_REQUEST_LABEL', 'All Business Segments',
+    'Real Sales Analytics Feed', 'One API key — add products to it anytime', 'Up to ${PRO_MAX_SEGMENT_KEYS} API keys — one per segment', 'API Playground']) {
     assert.ok(plans.includes(benefit), `canonical plan config must contain ${benefit}`);
   }
   assert.doesNotMatch(plans, /Product Recommendations/);
@@ -114,8 +114,9 @@ test('Overview Trial summary is compact while Plan & Billing retains detailed en
 test('paid-plan display remains canonical and excludes temporary five-peso billing', () => {
   assert.match(plans, /priceDisplay: "₱500"/);
   assert.match(plans, /priceDisplay: "₱1,300"/);
-  assert.match(plans, /\$\{PRO_DAILY_REQUEST_LIMIT\} requests per day/);
-  assert.match(plans, /Unlimited account API quota/);
+  assert.match(plans, /API requests per month`/);
+  assert.match(plans, /API requests per month for each segment`/);
+  assert.doesNotMatch(plans, /Unlimited account API quota|requests per day/);
   assert.doesNotMatch(`${billing}\n${plans}`, /₱5\b|500 pesos|five-peso/i);
 });
 
@@ -180,7 +181,8 @@ function renderBilling(trialTree, overrides = {}) {
       activePro: false, activeTrial: true, plan: 'Free', subscription_status: 'trial',
       canPurchasePro: true, canPurchaseProMax: true, ...overrides,
     } }) },
-    '@/config/plans': { requestAllowanceLabel: limit => limit === null ? 'Unlimited account request quota' : `${limit} requests/day (UTC)` },
+    '@/config/plans': { requestAllowanceLabel: limit => limit === null ? 'Unlimited account request quota' : `${limit} requests/day (UTC)`,
+      paidAllowanceLabel: entitlement => entitlement?.activePro ? (entitlement.plan === 'Pro Max' ? '15,000 API requests per month for each segment' : '15,000 API requests per month') : null },
     '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans: planConfig, status: 'ready' }), useAccountRequestAllowance: () => 500 },
     '@/components/subscription/SubscriptionModal': () => null,
     '@/components/subscription/FreeTrialContent': ({ embedded }) => { assert.equal(embedded, true); return trialTree; },

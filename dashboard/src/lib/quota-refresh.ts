@@ -1,10 +1,13 @@
 export type TrialCatalog = { productsIncluded: number; productsAvailable: number; activeKeys: number; expiresAt: string };
-export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown; trialCatalog?: TrialCatalog };
+// Active Pro / Pro Max: requests per UTC month (one bucket for Pro, one per segment for Pro Max).
+export type MonthlyUsage = { period: 'monthly'; window: string; resetsAt: string; limit: number; plan: 'pro' | 'pro_max';
+  buckets: { bucket: string; used: number; remaining: number }[] };
+export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown; trialCatalog?: TrialCatalog; monthlyUsage?: MonthlyUsage };
 
 // One quota read on entry, explicit retry or a relevant account-usage event.
 // No subscription polling or inferred allowance. Values come only from read().
 export function createQuotaRefresh({ read, onState, schedule = setTimeout, cancel = clearTimeout }: {
-  read: (signal: AbortSignal) => Promise<{ keys: unknown[]; usage: unknown; trialCatalog?: TrialCatalog }>;
+  read: (signal: AbortSignal) => Promise<{ keys: unknown[]; usage: unknown; trialCatalog?: TrialCatalog; monthlyUsage?: MonthlyUsage }>;
   onState: (source: QuotaSource) => void;
   schedule?: typeof setTimeout; cancel?: typeof clearTimeout;
 }) {
@@ -32,7 +35,8 @@ export function createQuotaRefresh({ read, onState, schedule = setTimeout, cance
       if (timer !== undefined) cancel(timer);
       timer = undefined;
       onState({ status: 'ready', count: result.keys.length, usage: result.usage,
-        ...(result.trialCatalog ? { trialCatalog: result.trialCatalog } : {}) });
+        ...(result.trialCatalog ? { trialCatalog: result.trialCatalog } : {}),
+        ...(result.monthlyUsage ? { monthlyUsage: result.monthlyUsage } : {}) });
     }, fail);
   }
   return {
