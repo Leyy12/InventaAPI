@@ -61,18 +61,9 @@ function SidebarBody({ onNavigate, onClose, drawer = false }: { onNavigate?: () 
               "flex items-center gap-3 px-3 rounded-lg text-sm font-medium transition-all duration-200 group",
               drawer ? "py-3" : "py-2",
               isActive
-                ? "text-indigo-400"
+                ? "bg-indigo-500/10 text-indigo-400"
                 : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
             )}
-            style={
-              isActive
-                ? {
-                  background: "rgba(99,102,241,0.12)",
-                  borderLeft: "2px solid #6366f1",
-                  paddingLeft: "10px",
-                }
-                : {}
-            }
           >
             <route.icon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300")} />
             {route.name}
