@@ -10,7 +10,7 @@ import { LinkedProducts, useLinkedProductNames } from "@/components/admin/Linked
 import { activeAccountProductCounts } from "@/lib/api-key-inventory";
 import { InventoryPlanBadge, InventoryPlanUsage, InventoryTimeline } from "@/components/admin/InventoryDetails";
 
-const KEYS_PER_PAGE = 25;
+const KEYS_PER_PAGE = 10;
 type OwnerRow = { id: string; businessName?: string; fullName?: string; email?: string };
 export default function ConsumersPage() {
   const [usersMap, setUsersMap] = useState<Record<string, OwnerRow>>({});
@@ -54,7 +54,7 @@ export default function ConsumersPage() {
       );
     });
   }, [apiKeys, usersMap, search]);
-  // 25 keys per page; a new search starts from the first page.
+  // 10 keys per page; a new search starts from the first page.
   useEffect(() => { setPage(0); }, [search]);
   const pageCount = Math.max(1, Math.ceil(filteredKeys.length / KEYS_PER_PAGE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -216,15 +216,18 @@ export default function ConsumersPage() {
               Showing <span className="font-semibold text-slate-300">{pageStart + 1}–{pageStart + pageKeys.length}</span> of{" "}
               <span className="font-semibold text-slate-300">{filteredKeys.length}</span> keys
             </p>
-            {pageCount > 1 && (
-              <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0}
-                  className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40">Previous</button>
-                <span>Page {currentPage + 1} of {pageCount}</span>
-                <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}
-                  className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40">Next</button>
-              </div>
-            )}
+            <nav aria-label="API key pages" className="flex items-center gap-1.5 text-[11px] text-slate-400">
+              <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0}
+                className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent">Previous</button>
+              {Array.from({ length: pageCount }, (_, index) => (
+                <button key={index} type="button" onClick={() => setPage(index)} aria-current={index === currentPage ? "page" : undefined}
+                  className={`min-w-7 rounded-lg border px-2 py-1 ${index === currentPage ? "border-slate-500 bg-slate-800 text-slate-100" : "border-transparent hover:bg-slate-800"}`}>
+                  {index + 1}
+                </button>
+              ))}
+              <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}
+                className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent">Next</button>
+            </nav>
           </div>
         )}
       </div>

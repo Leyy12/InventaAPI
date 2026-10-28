@@ -230,7 +230,9 @@ test('sidebar retains all six Admin destinations in order, with Inventory active
     ['Dashboard', '/'], ['Master Product Catalog', '/products'], ['Product Submissions', '/submissions'],
     ['API Key Inventory', '/consumers'], ['Audit Logs', '/audit'], ['System Settings', '/settings'],
   ]);
-  assert.match(links[3].props.className, /text-blue-300/);
+  assert.match(links[3].props.className, /bg-slate-800\/70 text-slate-100/);
+  assert.equal(links[3].props['aria-current'], 'page');
+  assert.doesNotMatch(links[0].props.className, /bg-slate-800\/70/);
   assert.doesNotMatch(source('admin-panel/src/components/layout/AdminSidebar.tsx'), /Security Center|\/security|ShieldCheck/);
   h.stop();
 });
