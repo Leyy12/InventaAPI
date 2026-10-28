@@ -40,7 +40,7 @@ function AdminSidebarBody({ onNavigate, onClose, drawer = false }: { onNavigate?
       {/* Logo */}
       <div className="admin-sidebar-rule h-14 shrink-0 flex items-center px-5 gap-3 border-b border-[rgba(59,130,246,0.08)]">
         <Image
-          src="/inventa-logo.png"
+          src="/admin/inventa-logo.png"
           alt="InventaAPI Logo"
           width={56}
           height={56}

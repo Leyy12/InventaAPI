@@ -89,7 +89,7 @@ export default function AdminLoginPage() {
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center mb-4">
               <Image
-                src="/inventa-logo.png"
+                src="/admin/inventa-logo.png"
                 alt="InventaAPI Logo"
                 width={160}
                 height={160}

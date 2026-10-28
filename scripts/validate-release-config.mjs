@@ -204,6 +204,16 @@ export function validateReleaseConfig(env, {
     }
   }
 
+  if (dashboard || admin) {
+    // Optional: where the API / Admin app really run when the Customer site forwards
+    // /api, /daas and /admin on the single public domain (dashboard/src/proxy.ts).
+    for (const name of dashboard ? ['API_ORIGIN', 'ADMIN_ORIGIN'] : ['API_ORIGIN']) {
+      if (isPresent(env[name]) && !validReleaseOrigin(env[name], mode)) {
+        add(errors, 'MALFORMED_PUBLIC', name, `must be a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} origin`);
+      }
+    }
+  }
+
   if (dashboard) {
     required('NEXT_PUBLIC_ADMIN_APP_ORIGIN', {
       valid: value => validReleaseOrigin(value, mode), expectation: `a canonical ${mode === 'production' ? 'HTTPS, non-local' : 'HTTP(S)'} Admin origin`,

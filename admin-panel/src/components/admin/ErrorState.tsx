@@ -22,7 +22,7 @@ export default function ErrorState({ error }: ErrorStateProps) {
           Retry
         </button>
         <a
-          href="/"
+          href="/admin"
           className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors"
         >
           Back to Dashboard

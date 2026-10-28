@@ -157,3 +157,18 @@ test('server mounts a verified limiter on both route families (app 300/min, publ
     assert.match(source, /app\.use\('\/daas\/v1', daasRouter\)/);
     assert.match(source, /IP: \$\{trustedRateLimitIp\(req\) \?\? 'unverified'\}/);
 });
+
+test('customer-site proxy IP is trusted only with the exact shared secret', async () => {
+  const { trustedRateLimitIp } = await import('../../services/rate-limit-client-ip.js');
+  const secret = 'p'.repeat(40);
+  const req = (headers) => ({ headers: { 'x-forwarded-for': '76.76.21.9', ...headers }, socket: { remoteAddress: '10.0.0.1' } });
+  const proxied = { 'x-inventa-client-ip': '203.0.113.7', 'x-inventa-proxy-key': secret };
+  assert.equal(trustedRateLimitIp(req(proxied), { vercel: true, proxySecret: secret }), '203.0.113.7');
+  // Wrong, missing or short secrets fall back to the platform IP; a forged header is ignored.
+  assert.equal(trustedRateLimitIp(req({ ...proxied, 'x-inventa-proxy-key': secret + 'x' }), { vercel: true, proxySecret: secret }), '76.76.21.9');
+  assert.equal(trustedRateLimitIp(req({ 'x-inventa-client-ip': '203.0.113.7' }), { vercel: true, proxySecret: secret }), '76.76.21.9');
+  assert.equal(trustedRateLimitIp(req(proxied), { vercel: true, proxySecret: undefined }), '76.76.21.9');
+  assert.equal(trustedRateLimitIp(req({ ...proxied, 'x-inventa-proxy-key': 'short' }), { vercel: true, proxySecret: 'short' }), '76.76.21.9');
+  // A valid secret with an invalid IP is not trusted at all.
+  assert.equal(trustedRateLimitIp(req({ ...proxied, 'x-inventa-client-ip': '1.2.3.4, 5.6.7.8' }), { vercel: true, proxySecret: secret }), null);
+});
