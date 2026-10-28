@@ -1026,7 +1026,15 @@ export default function MasterProductCatalogPage() {
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white [--color-white:#fff] border border-blue-500/50 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Add Product
           </button>
-          <button onClick={() => exportCSV(filtered, imageFilter === "missing" ? "products_missing_images.csv" : "master_catalog.csv")}
+          <button onClick={() => {
+              // Ask first: the button is easy to hit by accident and the download starts at once.
+              const count = filtered.length;
+              if (!count) return;
+              const missing = imageFilter === "missing";
+              void appConfirm({ title: "Export CSV?", confirmLabel: "Download",
+                message: `This downloads ${count.toLocaleString()} product${count === 1 ? "" : "s"}${missing ? " without a photo" : ""} as ${missing ? "products_missing_images.csv" : "master_catalog.csv"}.` })
+                .then(ok => { if (ok) exportCSV(filtered, missing ? "products_missing_images.csv" : "master_catalog.csv"); });
+            }}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors">
             <Download className="w-3.5 h-3.5" /> Export CSV
           </button>
