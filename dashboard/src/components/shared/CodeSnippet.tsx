@@ -16,7 +16,7 @@ export default function CodeSnippet({ endpoint = `${process.env.NEXT_PUBLIC_API_
     <p className="text-xs text-slate-400">Server-side examples only. Replace YOUR_API_KEY with a securely stored key; never publish it in browser code or URLs.</p>
     <div className="flex flex-wrap gap-3"><code className="break-all">{endpoint}</code><button onClick={() => void copy(endpoint, 'Endpoint')} className="text-indigo-300">Copy endpoint</button></div>
     <div className="flex flex-wrap gap-4">{(['curl', 'javascript', 'python', 'php'] as const).map(lang => <button key={lang} aria-pressed={language === lang} onClick={() => setLanguage(lang)} className={language === lang ? 'text-indigo-300' : 'text-slate-400'}>{lang === 'curl' ? 'cURL' : lang === 'php' ? 'PHP' : lang === 'javascript' ? 'JavaScript' : 'Python'}</button>)}</div>
-    <pre className="overflow-x-auto rounded-lg border border-[#1e293b] bg-[#0b1220] text-[#e2e8f0] p-4 text-xs"><code>{examples[language]}</code></pre>
+    <pre className="overflow-x-auto code-panel rounded-lg p-4 text-xs"><code>{examples[language]}</code></pre>
     <button onClick={() => void copy(examples[language], 'Example')} className="text-indigo-300">Copy example</button>
     {message && <p role="status" className="text-sm">{message}</p>}
   </section>;

@@ -313,3 +313,8 @@ html:not([data-theme="light"]) { color-scheme: dark; }
 /* Charts */
 [data-theme="light"] .recharts-cartesian-grid line { stroke: #e2e8f0; }
 [data-theme="light"] .recharts-tooltip-wrapper .recharts-default-tooltip { border-color: #e2e8f0 !important; }
+
+/* Code blocks (docs, integration examples, playground). Dark panel in dark mode;
+   a clear grey panel with dark text in light mode so code stands out from cards. */
+.code-panel { background: #0b1220; color: #e2e8f0; border: 1px solid #1e293b; }
+[data-theme="light"] .code-panel { background: #e2e8f0; color: #0f172a; border-color: #cbd5e1; }
