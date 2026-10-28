@@ -2,6 +2,7 @@ import { DEFAULT_REQUEST_LIMITS, effectiveRequestAllowance } from './request-lim
 import { resolveRequestContracts, preserveRequestContracts } from './request-contract-evidence.mjs';
 import { hasLegacyProCompatibility, legacyProRequestLimit } from './legacy-pro-compatibility.mjs';
 export { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS } from './entitlement-limits.mjs';
+import { plansDisabled } from './plans-switch.mjs';
 
 // Shared by Express and the existing deployable Functions package. No SDK/I/O.
 export const PLAN_LEVELS = Object.freeze({ free: 0, starter: 0, pro: 1, professional: 1,
@@ -74,6 +75,13 @@ export function trialState(account, now = new Date()) {
 export function evaluateEntitlement(account, now = new Date(), requestLimits = DEFAULT_REQUEST_LIMITS, requestContracts) {
   if (accountBlocked(account)) unavailable('ACCOUNT_DISABLED', 403);
   if (!Number.isFinite(now.getTime())) unavailable();
+  if (plansDisabled()) {
+    // Plans switched off for testing: everyone gets active, unlimited Pro Max.
+    return { plan: 'Pro Max', level: 2, limit: effectiveRequestAllowance(requestContracts, 'pro_max', requestLimits),
+      status: 'active', activePro: true, expired: false, startedAt: null, normalization: null,
+      // A rolling date 30 days ahead keeps "days left" and expiry warnings sensible.
+      expiresAt: new Date(now.getTime() + 30 * 86400000).toISOString() };
+  }
   const kind = planKind(account.plan);
   if (!kind) unavailable();
   const level = kind === 'free' ? 0 : kind === 'pro' ? 1 : 2;

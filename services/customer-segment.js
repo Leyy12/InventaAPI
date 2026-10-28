@@ -1,7 +1,9 @@
 import { normalizeSegment, PRODUCT_SEGMENTS } from './product-contract.js';
+import { plansDisabled } from '../functions/plans-switch.mjs';
 
 // Ownership is independent of Pro Trial feature entitlement. Unknown plans fail closed.
 export function restrictedSegmentAccount(account) {
+  if (plansDisabled()) return false;
   return !['pro', 'professional', 'pro max', 'enterprise', 'unlimited'].includes(String(account?.plan || '').toLowerCase());
 }
 export function activeCustomerSegment(account) {
