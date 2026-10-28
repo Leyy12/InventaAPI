@@ -1,12 +1,12 @@
 import express from 'express';
 import { getAuth } from '../services/supabase-auth.js';
-import { getFirestore, FieldValue, FieldPath } from '../database/firestore.js';
+import { getDataStore, FieldValue, FieldPath } from '../database/data-store.js';
 import { rulesFor } from '../services/client-db-rules.js';
 import { withoutPrices } from '../services/product-contract.js';
 
 // Browser data access for the dashboard and admin panel. The browsers used to
-// read and write Firestore directly under firestore.rules; they now send the
-// same operations here (see src/lib/data/firestore-client.ts in each app), and
+// read and wrote the old database directly; they now send the
+// same operations here (see src/lib/data/data-client.ts in each app), and
 // services/client-db-rules.js applies those rules before touching the database.
 // Data is stored in Supabase.
 
@@ -134,7 +134,7 @@ async function readQuery(db, ctx, body) {
     }
     const limit = Number.isSafeInteger(body.limit) && body.limit > 0 ? Math.min(body.limit, MAX_RESULTS) : MAX_RESULTS;
     const snapshot = await query.limit(limit).get();
-    // Like Firestore, a query fails as a whole if any result is not readable.
+    // A query fails as a whole if any result is not readable.
     for (const doc of snapshot.docs) if (!(await rules.read(ctx, plainData(doc), doc.id))) throw denied();
     return { docs: snapshot.docs.map(doc => ({ id: doc.id, data: outgoing(body.collection, doc.data()) })) };
 }
@@ -226,5 +226,5 @@ export function createClientDbHandler({ getDb, verifyIdToken }) {
 }
 
 const router = express.Router();
-router.post('/', createClientDbHandler({ getDb: () => getFirestore(), verifyIdToken: token => getAuth().verifyIdToken(token) }));
+router.post('/', createClientDbHandler({ getDb: () => getDataStore(), verifyIdToken: token => getAuth().verifyIdToken(token) }));
 export default router;

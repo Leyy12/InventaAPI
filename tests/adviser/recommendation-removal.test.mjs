@@ -14,9 +14,9 @@ test('shared desktop/mobile navigation preserves exact remaining order without a
   assert.deepEqual([...navigation.matchAll(/name: '([^']+)'/g)].map(match => match[1]),
     ['Overview', 'Products', 'API Keys', 'Documentation', 'Analytics', 'Privacy', 'Plan & Billing', 'Settings']);
   assert.doesNotMatch(navigation, /recommendation|Lightbulb/i);
-  for (const component of ['Sidebar', 'Navbar']) {
-    assert.match(read(`dashboard/src/components/layout/${component}.tsx`), /dashboardRoutes/);
-  }
+  assert.match(read('dashboard/src/components/layout/Sidebar.tsx'), /dashboardRoutes/);
+  // The mobile drawer is the same sidebar body (MobileSidebar), so it shares the routes.
+  assert.match(read('dashboard/src/components/layout/Navbar.tsx'), /<MobileSidebar /);
 });
 
 test('removed page has no hidden compatibility route or redirect', () => {

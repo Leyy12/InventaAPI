@@ -34,8 +34,8 @@ function customer() {
     '../../../../../services/customer-segment.js': segment,
     '@/components/products/AddProductModal': { default: stub },
     '@/lib/product-image-url': { productImageSource: () => '', showProductImageFallback: stub },
-    '@/lib/firebase/auth-context': { useAuth: () => state },
-    '@/lib/firebase/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
+    '@/lib/supabase/auth-context': { useAuth: () => state },
+    '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } },
     '@/lib/segment-catalog': { ...catalog, createCatalogRefresh: options => catalog.createCatalogRefresh({ ...options, schedule: c.schedule, cancel: c.cancel }) },
   }, { ...b, fetch: async url => {
@@ -108,7 +108,7 @@ test('Admin real entitlement hook: initial load, zero focus/visibility/idle read
   const h = hooks(), c = clock(), b = browser(), calls = [];
   const user = { uid: 'admin-synthetic', getIdToken: async () => 'synthetic-not-a-credential' };
   const hook = load('admin-panel/src/lib/use-account-entitlements.ts', 'useAccountEntitlements', h, {
-    './firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    './supabase/admin-auth-context': { useAdminAuth: () => ({ user }) },
   }, { ...b, setInterval: () => { throw Error('generic Admin polling'); }, fetch: async (url, init) => {
     calls.push({ url, ids: JSON.parse(init.body).ids }); return { ok: true, json: async () => ({ accounts: { a: { plan: 'Pro', limit: 500 } } }) };
   } });
@@ -125,11 +125,11 @@ test('Admin real Reports effects retain 4 legitimate listeners, filter and manua
   let unsubscribes = 0;
   const user = { uid: 'admin-synthetic', getIdToken: async () => 'synthetic-not-a-credential' };
   const Component = load('admin-panel/src/components/admin/AdminDashboardClient.tsx', 'Reports', h, {
-    '@/lib/data/firestore-client': { collection: (_db, name) => name, query: value => value, orderBy: stub, limit: stub,
+    '@/lib/data/data-client': { collection: (_db, name) => name, query: value => value, orderBy: stub, limit: stub,
       onSnapshot: (query, publish) => { registrations.push({ query, publish }); publish({ docs: [] }); return () => { unsubscribes++; }; } },
-    recharts: icons, '@/lib/firebase/config': { auth: { currentUser: user }, db: {} },
+    recharts: icons, '@/lib/supabase/config': { auth: { currentUser: user }, db: {} },
     '@/lib/admin-traffic': { ...traffic, createTrafficRefresh: (read, publish, options) => traffic.createTrafficRefresh(read, publish, { ...options, schedule: c.schedule, cancel: c.cancel }) },
-    '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) }, '@/lib/reports': reporting,
+    '@/lib/supabase/admin-auth-context': { useAdminAuth: () => ({ user }) }, '@/lib/reports': reporting,
     '@/components/reports/CatalogReportPanel': { default: stub }, '@/lib/category-usage': { useCategoryUsage: () => ({ status: 'loading', segments: {} }) },
   }, { ...b, fetch: async url => { reads.push(url); return { ok: true, json: async () => ({ success: true, limit: 500, records: [] }) }; } });
   h.mount(Component, { user }); await flush(); assert.equal(reads.length, 1); assert.equal(registrations.length, 4);
@@ -173,7 +173,7 @@ test('timestamp-only verification cannot remount the actual Customer Usage bound
   const h = hooks(); let entitlement = { plan: 'Pro', subscription_status: 'active', apiRequestLimit: 500, serverTime: 'first' };
   const Component = load('dashboard/src/components/reports/CustomerUsageSummary.tsx', 'CustomerUsageSummary', h, {
     '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 }, '@/lib/trial-display.mjs': {},
-    'next/link': { default: stub }, '@/lib/api-keys': {}, '@/lib/firebase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement }) },
+    'next/link': { default: stub }, '@/lib/api-keys': {}, '@/lib/supabase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement }) },
     '@/lib/reports': reporting, '@/lib/quota-refresh': {}, '@/lib/account-usage-events': {},
     '@/config/plans': {}, '@/lib/plan-request-policy': { useAccountRequestAllowance: () => entitlement.apiRequestLimit },
   });
@@ -187,7 +187,7 @@ test('Customer actual API Keys list preserves expanded integration examples acro
   const h = hooks(), c = clock(), b = browser(); let reads = 0;
   const user = { uid: 'synthetic' };
   const Component = load('dashboard/src/app/dashboard/api-keys/page.tsx', 'AccountKeysSession', h, {
-    'next/link': { default: stub }, 'lucide-react': icons, '@/lib/firebase/auth-context': {},
+    'next/link': { default: stub }, 'lucide-react': icons, '@/lib/supabase/auth-context': {},
     '@/lib/api-keys': { apiKeyRequest: async () => { reads++; return { success: true, keys: [{ id: 'key-fixture', keyPrefix: 'synthetic-prefix', status: 'active', name: 'Fixture' }] }; } },
     '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/api-key-generation': { REVOCATION_WARNING: '' },
     '@/components/reports/CustomerUsageSummary': { default: stub }, '@/components/api/RequestHistory': { default: stub },
@@ -206,7 +206,7 @@ test(`Customer actual ${embedded ? 'embedded' : 'standalone'} Trial panel reads 
   const h = hooks(), c = clock(), b = browser(); let reads = 0;
   const user = { uid: 'trial-synthetic', getIdToken: async () => 'synthetic-not-a-credential' };
   const Component = load('dashboard/src/components/subscription/FreeTrialContent.tsx', 'TrialPanel', h, {
-    'next/link': { default: stub }, 'lucide-react': icons, '@/lib/firebase/auth-context': {},
+    'next/link': { default: stub }, 'lucide-react': icons, '@/lib/supabase/auth-context': {},
     '@/lib/account-usage-events': { subscribeAccountUsage },
     '@/lib/trial-display.mjs': { formatTrialExpiry: () => 'fixture-date', trialCapacityMessage: () => '', trialRemainingSlots: () => 50 },
     '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 },
@@ -230,8 +230,8 @@ test('both active frontend trees contain no automatic focus/visibility/page-show
   for (const file of [...inspect('dashboard/src'), ...inspect('admin-panel/src')]) {
     assert.doesNotMatch(source(file), /addEventListener\(\s*['"](?:focus|visibilitychange|pageshow|pagehide)['"]|window\.onfocus\s*=|refetchOnWindowFocus\s*:\s*true|revalidateOnFocus\s*:\s*true/, file);
   }
-  assert.match(source('admin-panel/src/lib/firebase/admin-auth-context.tsx'), /onIdTokenChanged/);
-  assert.match(source('dashboard/src/lib/firebase/auth-context.tsx'), /onIdTokenChanged/);
+  assert.match(source('admin-panel/src/lib/supabase/admin-auth-context.tsx'), /onIdTokenChanged/);
+  assert.match(source('dashboard/src/lib/supabase/auth-context.tsx'), /onIdTokenChanged/);
   assert.match(source('admin-panel/src/app/consumers/page.tsx'), /JSON.stringify\(\[usersMap, apiKeys\]\)/);
   const removedSecurityPage = source('admin-panel/src/app/security/page.tsx');
   assert.match(removedSecurityPage, /redirect\("\/consumers"\)/);
@@ -247,7 +247,7 @@ test('Admin submission status/review survive 30s, 60s, 5min and window switches;
     content: { name: 'Bottle', brand: 'Brand', segment: 'Grocery', category: 'Beverages', variants: [{ size: '250ml' }] } };
   const Page = load('admin-panel/src/app/submissions/page.tsx', 'SubmissionsPage', h, {
     'lucide-react': icons,
-    '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    '@/lib/supabase/admin-auth-context': { useAdminAuth: () => ({ user }) },
     '@/lib/submission-review': { reviewSubmission },
     '@/components/products/SubmissionReviewDialog': { __esModule: true, default: 'review-dialog', SubmissionImage: stub,
       ReviewStatus: stub, submittedDate: value => value, reviewButtonClass: 'button' },
@@ -283,10 +283,10 @@ test('Admin catalog search/segment/status remain stable with one Firestore load 
     '@/lib/product-image-url': { normalizeProductImageUrl: value => value, productImageSource: () => '', showProductImageFallback: stub },
     '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/catalog-csv': { catalogCsv: stub }, '@/components/products/ProductImageField': { default: stub },
     '@/lib/product-media-client': { uploadProductImage: stub },
-    '@/lib/data/firestore-client': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
+    '@/lib/data/data-client': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
       { id: 'product', data: () => ({ name: 'Synthetic Rice', brand: 'Brand', segment: 'Grocery', status: 'Active', variants: [] }) }] }; } },
     '@/lib/catalog-client': { catalogRequest: stub, brandNameWarning: () => '' },
-    '@/lib/firebase/config': { db: {}, auth: {} }, '@/components/admin/ImportCsvModal': { default: stub },
+    '@/lib/supabase/config': { db: {}, auth: {} }, '@/components/admin/ImportCsvModal': { default: stub },
   }, { ...b, setTimeout: c.schedule, clearTimeout: c.cancel });
   h.mount(Page); await flush(); assert.equal(reads, 1);
   const search = () => nodes(h.output, n => n.type === 'input' && n.props.placeholder?.includes('Search'))[0];

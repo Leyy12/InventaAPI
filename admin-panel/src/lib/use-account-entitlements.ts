@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useAdminAuth } from './firebase/admin-auth-context';
+import { useAdminAuth } from './supabase/admin-auth-context';
 import type { EntitlementLoadStatus } from './api-key-inventory';
 export interface AccountEntitlement { plan: string; status: string; limit: number | null; used: number | null; active: boolean;
   period?: 'daily' | 'monthly' | 'trial' | 'upgrade_required'; resetsAt?: string | null; holdUntil?: string | null;

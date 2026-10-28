@@ -1,4 +1,4 @@
-import { auth } from '@/lib/firebase/config';
+import { auth } from '@/lib/supabase/config';
 
 export async function catalogRequest<T>(path: string, method: string, body: unknown, operationKey?: string): Promise<T> {
   const user = auth.currentUser;

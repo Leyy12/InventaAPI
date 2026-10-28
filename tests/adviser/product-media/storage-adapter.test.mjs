@@ -16,7 +16,7 @@ function adapter({ enabled = 'true', meta = {}, token = false, existing = null, 
   const source = readFileSync(new URL('../../../routes/product-media.js', import.meta.url),'utf8')
     .replace(/^import .*;\r?\n/gmu,'').replace('export default router;','');
   runInNewContext(source, { process:{env:{PRODUCT_MEDIA_ENABLED:enabled,PRODUCT_MEDIA_BUCKET:'approved-staging-bucket',PRODUCT_MEDIA_BUCKET_PROJECT_NUMBER:'123',PRODUCT_MEDIA_PUBLIC_ORIGIN:'https://media.invalid'}},
-    getStorage:()=>({bucket:()=>bucket}), getFirestore(){}, getAuth(){}, Router:()=>router, raw:()=>()=>{},
+    getStorage:()=>({bucket:()=>bucket}), getDataStore(){}, getAuth(){}, Router:()=>router, raw:()=>()=>{},
     mediaDigest, processProductImage(){}, MAX_IMAGE_BYTES:3*1024*1024,
     createProductMediaHandlers(options){storage=options.storage;return{};}, });
   return {storage,options:()=>saved,reads:()=>reads};

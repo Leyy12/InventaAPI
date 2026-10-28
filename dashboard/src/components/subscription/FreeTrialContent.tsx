@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { User } from '@/lib/supabase-auth';
 import Link from 'next/link';
 import { Zap } from 'lucide-react';
-import { useAuth } from '@/lib/firebase/auth-context';
+import { useAuth } from '@/lib/supabase/auth-context';
 import { subscribeAccountUsage } from '@/lib/account-usage-events';
 import { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
 import { TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from '../../../../functions/entitlement-limits.mjs';

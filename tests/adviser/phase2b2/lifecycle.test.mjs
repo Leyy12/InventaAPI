@@ -9,7 +9,7 @@ import { fulfillPayment } from '../../../services/payment-webhook.js';
 import { PRO_PURCHASE } from '../../../services/payment-contract.js';
 import { beginAccountDeletion, completeAccountDeletion, createAccountDeletionHandler } from '../../../services/account-deletion.js';
 import { createAdminEntitlements } from '../../../services/admin-entitlements.js';
-import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 
 const NOW = new Date('2026-09-20T10:00:00.000Z');
 const END = '2026-09-20T10:00:01.000Z';
@@ -19,7 +19,7 @@ const free = { ...owner, plan: 'Free', subscription_status: 'inactive', apiReque
 const key = { userId: 'owner', status: 'active', key: 'daas_one', plan: 'Pro', requestLimit: 5000 };
 const verifyIdToken = async (token, revoked) => { assert.equal(revoked, true); if (token !== 'owner-token') throw Error('invalid'); return { uid: 'owner' }; };
 function setup(account = owner) {
-  const db = memoryFirestore({ 'users/owner': account, 'users/stranger': { ...free, uid: 'stranger' },
+  const db = memoryStore({ 'users/owner': account, 'users/stranger': { ...free, uid: 'stranger' },
     ...Object.fromEntries([['owner', account], ['stranger', free]].map(([uid, profile]) =>
       [`account_request_contracts/${uid}`, { version: 1, historyVerifiedThrough: profile.subscriptionExpiresAt,
         plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } }])),

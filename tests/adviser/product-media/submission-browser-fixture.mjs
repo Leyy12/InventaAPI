@@ -20,8 +20,8 @@ for (const [id, file] of [
   ['react-dom', 'react-dom/cjs/react-dom.production.js'], ['react-dom/client', 'react-dom/cjs/react-dom-client.production.js'],
   ['scheduler', 'scheduler/cjs/scheduler.production.js'], ['lucide-react', 'lucide-react/dist/cjs/lucide-react.js'],
 ]) modules.set(id, readFileSync(new URL('../../../dashboard/node_modules/' + file, import.meta.url), 'utf8'));
-source('@/lib/firebase/auth-context', `export const useAuth=()=>({user:window.fixture.user,appUser:{plan:'Free',businessSegment:'Grocery'}});`);
-source('@/lib/firebase/admin-auth-context', `export const useAdminAuth=()=>({user:window.fixture.user});`);
+source('@/lib/supabase/auth-context', `export const useAuth=()=>({user:window.fixture.user,appUser:{plan:'Free',businessSegment:'Grocery'}});`);
+source('@/lib/supabase/admin-auth-context', `export const useAdminAuth=()=>({user:window.fixture.user});`);
 source('fixture', `
 import React from 'react';import {createRoot} from 'react-dom/client';
 import Customer from './dashboard/src/components/products/AddProductModal';

@@ -37,7 +37,7 @@ test('Customer guard hides protected children before auth/role verification', ()
   assert.match(source, /navigationDecision/); assert.doesNotMatch(source, /landingSeen|completeLanding/);
 });
 test('Customer session never trusts browser profiles or auto-recreates missing accounts', () => {
-  const source = read('dashboard/src/lib/firebase/auth-context.tsx');
+  const source = read('dashboard/src/lib/supabase/auth-context.tsx');
   for (const token of ['createAuthSession', 'getDocFromServer', 'onIdTokenChanged', 'sessionGate.current?.failure', 'sessionGate.current?.invalidate']) assert.ok(source.includes(token));
   assert.doesNotMatch(source, /getItem\(|setItem\(|setDoc\(|readCache|hasActiveSubscription/);
   assert.ok(source.includes('if (busy) beginCustomerLogout();'));
@@ -45,7 +45,7 @@ test('Customer session never trusts browser profiles or auto-recreates missing a
   assert.doesNotMatch(source, /finally \{ router.replace/);
 });
 test('subscription verification retains one poller and only exposes HTTP status for auth rejection', () => {
-  const source = read('dashboard/src/lib/firebase/auth-context.tsx');
+  const source = read('dashboard/src/lib/supabase/auth-context.tsx');
   assert.equal((source.match(/const poller = createEntitlementPoller\(/g) || []).length, 1);
   assert.match(source, /session\.poller\.refresh\(\)/);
   assert.match(read('dashboard/src/lib/subscription.ts'), /status: response.status/);
@@ -70,12 +70,12 @@ function sources(directory) {
 }
 test('Customer logout routing is owned only by the provider', () => {
   for (const [path, source] of sources('dashboard/src')) {
-    if (path === 'dashboard/src/lib/firebase/auth-context.tsx') continue;
+    if (path === 'dashboard/src/lib/supabase/auth-context.tsx') continue;
     if (/logout\s*[=(]|signOut\(/.test(source)) assert.doesNotMatch(source, /(?:router\.(?:push|replace)\(|window.location.href\s*=\s*)["']\/["']/, path);
   }
 });
 test('Admin protected UI and Login use authoritative role gate with own logout', () => {
-  const provider = read('admin-panel/src/lib/firebase/admin-auth-context.tsx');
+  const provider = read('admin-panel/src/lib/supabase/admin-auth-context.tsx');
   assert.match(provider, /getDocFromServer/); assert.match(provider, /profileRole\(profile\) !== 'admin'/);
   assert.match(provider, /completed: \(\) => \{ gate.invalidate\(\); router.replace\('\/login'\); \}/);
   const wrapper = read('admin-panel/src/components/layout/AdminLayoutWrapper.tsx');
@@ -122,11 +122,11 @@ function providerLogout(app, fail = false, storage = null) {
   auth.signOut = signOut;
   const router = { replace: path => routes.push(path) };
   // Bind the actual provider configuration to the production logout action.
-  const path = app === 'customer' ? 'dashboard/src/lib/firebase/auth-context.tsx' : 'admin-panel/src/lib/firebase/admin-auth-context.tsx';
+  const path = app === 'customer' ? 'dashboard/src/lib/supabase/auth-context.tsx' : 'admin-panel/src/lib/supabase/admin-auth-context.tsx';
   const body = bodyBetween(path, 'logoutAction.current = createLogoutAction({', '\n    const unsubscribe');
   const clear = () => { localUser = null; invalidated = true; };
   const gate = { invalidate: clear }, sessionGate = { current: gate }, logoutAction = { current: null };
-  new Function('logoutAction', 'createLogoutAction', 'auth', 'firebaseSignOut', 'sessionGate', 'gate',
+  new Function('logoutAction', 'createLogoutAction', 'auth', 'supabaseSignOut', 'sessionGate', 'gate',
     'setLogoutBusy', 'setLogoutError', 'clearSession', 'completeLanding', 'browserStorage', 'markPostLogoutLogin', 'router', 'beginCustomerLogout', 'cancelCustomerLogout',
     'logoutAction.current = createLogoutAction({' + body)(logoutAction, createLogoutAction, auth, signOut,
       sessionGate, gate, value => { busy = value; }, value => { error = value; }, clear, completeLanding, () => storage, () => true, router, () => {}, () => {});
@@ -154,7 +154,7 @@ for (const app of ['customer', 'admin']) {
 function verificationHarness(pathname = '/dashboard') {
   let logoutCalls = 0, state;
   const pending = [], timers = new Map(); let nextTimer = 0;
-  const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
+  const rejectedBody = bodyBetween('dashboard/src/lib/supabase/auth-context.tsx', 'rejected: () => {', '\n      },');
   const rejected = () => new Function('window', 'endSession', 'router', 'customerLogoutDestination', 'customerLoginEntryDestination', rejectedBody)(
     { location: { pathname } }, () => { logoutCalls++; return Promise.resolve(); }, { replace() {} }, customerLogoutDestination, customerLoginEntryDestination);
   const gate = createAuthSession({
@@ -192,12 +192,12 @@ test('review: Admin SDK token-refresh network failure is not revocation; visibil
   let logouts = 0;
   const identity = { uid: 'admin', getIdToken: async () => { throw Object.assign(Error('offline'), { code: 'auth/network-request-failed' }); } };
   let state, attempts = 0;
-  const readBody = bodyBetween('admin-panel/src/lib/firebase/admin-auth-context.tsx', 'readProfile: async (currentUser, forceRefresh) => {', '\n      },');
+  const readBody = bodyBetween('admin-panel/src/lib/supabase/admin-auth-context.tsx', 'readProfile: async (currentUser, forceRefresh) => {', '\n      },');
   const gate = createAuthSession({
     readProfile: async (currentUser, forceRefresh) => { attempts++; return new AsyncFunction('currentUser', 'getDocFromServer', 'doc', 'db', 'profileRole', 'forceRefresh',
       readBody.replace(' as AdminUser', ''))(currentUser, async () => { throw Error('profile must not be read after failed refresh'); }, () => {}, {}, profileRole, forceRefresh); },
     publish: value => { state = value; }, rejected: () => { logouts++; }, schedule: () => 1, cancel: () => {} });
-  assert.doesNotMatch(read('admin-panel/src/lib/firebase/admin-auth-context.tsx'), /visibilitychange|visibilityState/);
+  assert.doesNotMatch(read('admin-panel/src/lib/supabase/admin-auth-context.tsx'), /visibilitychange|visibilityState/);
   await gate.accept(identity);
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(logouts, 0, 'A transient refresh error must not destroy a valid Admin session');
@@ -215,7 +215,7 @@ test('review: actual signup provisions profile, then signs the verified account 
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
   const auth = { currentUser: null }, user = { uid: 'new-customer', email: 'demo@example.invalid' };
   let current, unexpectedLogout = 0;
-  const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
+  const rejectedBody = bodyBetween('dashboard/src/lib/supabase/auth-context.tsx', 'rejected: () => {', '\n      },');
   const gate = createAuthSession({ readProfile: async identity => profiles.get(identity.uid) ?? null,
     publish: state => { current = state; },
     rejected: () => new Function('window', 'endSession', 'router', 'customerLogoutDestination', 'customerLoginEntryDestination', rejectedBody)({ location: { pathname: '/signup' } }, async () => { unexpectedLogout++; }, { replace() { unexpectedLogout++; } }, customerLogoutDestination, customerLoginEntryDestination),
@@ -288,7 +288,7 @@ for (const app of ['customer', 'admin']) {
 function actualProfileGate(app, initialError = null, initialProfile = { role: 'Admin' }, initialTrialError = null) {
   let error = initialError, trialError = initialTrialError, profile = initialProfile, state, denied = 0, trialCalls = 0;
   const identity = { uid: 'a', getIdToken: async () => { if (error) throw error; return 'synthetic'; } };
-  const path = app === 'admin' ? 'admin-panel/src/lib/firebase/admin-auth-context.tsx' : 'dashboard/src/lib/firebase/auth-context.tsx';
+  const path = app === 'admin' ? 'admin-panel/src/lib/supabase/admin-auth-context.tsx' : 'dashboard/src/lib/supabase/auth-context.tsx';
   const body = bodyBetween(path, app === 'admin' ? 'readProfile: async (currentUser, forceRefresh) => {' : 'readProfile: async currentUser => {', '\n      },').replace(/ as (?:AdminUser|AppUser)/g, '');
   const reader = new AsyncFunction('currentUser', 'getDocFromServer', 'doc', 'db', 'profileRole', 'readSubscription', 'forceRefresh', 'establishCustomerTrial', body);
   const gate = createAuthSession({ readProfile: (user, forceRefresh) => reader(user, async () => {
@@ -337,7 +337,7 @@ test('Privacy invalidates only after confirmed backend deletion and before local
   const source = read('dashboard/src/app/dashboard/privacy/page.tsx');
   assert.ok(source.indexOf('confirmAccountDeletion();') > source.indexOf('if (!result.deleted)'));
   assert.ok(source.indexOf('confirmAccountDeletion();') < source.indexOf('await logout();'));
-  const body = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'const confirmAccountDeletion = () => {', '\n  };');
+  const body = bodyBetween('dashboard/src/lib/supabase/auth-context.tsx', 'const confirmAccountDeletion = () => {', '\n  };');
   const events = [];
   new Function('sessionGate', 'router', 'customerLoginEntryDestination', body)({ current: { deny() { events.push('deny'); } } }, { replace(path) { events.push(path); } }, customerLoginEntryDestination);
   assert.deepEqual(events, ['deny', customerLoginEntryDestination()]);
@@ -359,7 +359,7 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
   let path = '/dashboard', state, modal = false, pendingPlan = null, busy = false, error, finishSignOut;
   const requests = [];
   const router = { replace(target) { requests.push(target); } };
-  const provider = 'dashboard/src/lib/firebase/auth-context.tsx';
+  const provider = 'dashboard/src/lib/supabase/auth-context.tsx';
   const layout = 'dashboard/src/components/layout/LayoutWrapper.tsx';
   const entry = 'dashboard/src/components/auth/AuthEntry.tsx';
   const gate = createAuthSession({ readProfile: async () => ({ role: 'Developer' }),
@@ -394,7 +394,7 @@ function logoutRaceHarness({ storageDenied = false, fail = false } = {}) {
     await new Promise(resolve => { finishSignOut = resolve; });
   };
   const body = bodyBetween(provider, 'logoutAction.current = createLogoutAction({', '\n    const unsubscribe');
-  const bindings = { logoutAction, createLogoutAction, auth, firebaseSignOut: sdk, sessionGate, gate,
+  const bindings = { logoutAction, createLogoutAction, auth, supabaseSignOut: sdk, sessionGate, gate,
     setLogoutBusy: value => { busy = value; }, setLogoutError: value => { error = value; },
     beginCustomerLogout, cancelCustomerLogout, markPostLogoutLogin, clearSession, router };
   new Function(...Object.keys(bindings), 'logoutAction.current = createLogoutAction({' + body)(...Object.values(bindings));
@@ -462,7 +462,7 @@ test('race: failed SDK signOut cancels intent and retains authenticated UI', asy
 test('race: provider rejection cannot introduce a second /login redirect during logout', () => {
   const h = logoutRaceHarness();
   try {
-    const rejectedBody = bodyBetween('dashboard/src/lib/firebase/auth-context.tsx', 'rejected: () => {', '\n      },');
+    const rejectedBody = bodyBetween('dashboard/src/lib/supabase/auth-context.tsx', 'rejected: () => {', '\n      },');
     const rejected = () => new Function('window', 'router', 'customerLogoutDestination', 'customerLoginEntryDestination', rejectedBody)(
       { location: { pathname: '/dashboard' } }, { replace: path => h.requests.push(path) }, customerLogoutDestination, customerLoginEntryDestination);
     beginCustomerLogout(); rejected(); assert.deepEqual(h.requests, []);
@@ -522,7 +522,7 @@ async function exerciseLoginEntry({ pendingPlan = null, failure = null } = {}) {
   const effective = { plan: 'Free' };
   const events = [];
   const body = bodyBetween('dashboard/src/components/auth/LoginForm.tsx',
-    '      // 1. Sign in with Firebase', '      // The inline form completes as part');
+    '      // 1. Sign in with Supabase Auth', '      // The inline form completes as part');
   const bindings = {
     signInWithEmailAndPassword: async () => {
       if (failure === 'firebase') throw Error('synthetic login failure');

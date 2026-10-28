@@ -36,13 +36,6 @@ test('frontend sends bearer tokens without UID authority; backend confirmation g
   assert.match(status, /subscription-status\?orderId=/u);
   assert.doesNotMatch(status, /force the upgrade|Payment received/u);
 });
-test('new authority collections and subscription fields are client-protected', () => {
-  const rules = source('firestore.rules');
-  for (const collection of ['payment_orders', 'payment_sessions', 'payment_checkout_locks', 'payment_events']) {
-    assert.ok(rules.includes(`match /${collection}/{id} { allow read, write: if false; }`));
-  }
-  assert.match(rules, /affectedKeys\(\)\.hasAny\(\[\s*'subscriptionExpiresAt', 'subscription_status', 'lastSubscribedAt'/u);
-});
 test('external I/O APIs are disabled in the isolated test process', async () => {
   assert.throws(() => globalThis['fetch']('https://api.paymongo.com/v1/checkout_sessions'), /External I\/O blocked/u);
   assert.throws(() => new WebSocket('wss://example.test'), /External I\/O blocked/u);

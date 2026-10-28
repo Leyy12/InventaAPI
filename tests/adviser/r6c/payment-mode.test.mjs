@@ -6,7 +6,7 @@ import { createPaymentHandlers } from '../../../services/payment-checkout.js';
 import { createPaymongoCheckout } from '../../../services/paymongo-checkout.js';
 import { createPaymentWebhook } from '../../../services/payment-webhook.js';
 import { validateReleaseConfig, formatValidation } from '../../../scripts/validate-release-config.mjs';
-import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 
 const now = new Date('2026-09-22T10:00:00.000Z');
 const orderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -14,7 +14,7 @@ const dashboardUrl = 'https://customer.r6c-fixture.net';
 const credentials = mode => ({ mode, secretKey: `sk_${mode}_SYNTHETIC_ONLY`, webhookSecret: 'synthetic-opaque-secret', dashboardUrl });
 const backend = (mode, nodeEnv) => ({ NODE_ENV: nodeEnv, PAYMONGO_MODE: mode,
   PAYMONGO_SECRET_KEY: credentials(mode).secretKey, PAYMONGO_WEBHOOK_SECRET: credentials(mode).webhookSecret,
-  FIREBASE_PROJECT_ID: 'inventaapi-staging',
+  DATA_PROJECT_ID: 'inventaapi-staging',
   SUPABASE_DB_URL: 'postgresql://synthetic@db.fixture.net:5432/postgres', SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_SYNTHETIC_ONLY', SUPABASE_SECRET_KEY: 'sb_secret_SYNTHETIC_ONLY',
   DASHBOARD_URL: dashboardUrl, NEXT_PUBLIC_APP_URL: dashboardUrl, TZ: 'UTC',
@@ -85,7 +85,7 @@ function signed(payload, config, field = config.mode === 'test' ? 'te' : 'li') {
 }
 async function setup(mode, nodeEnv) {
   const config = paymentConfiguration({ ...credentials(mode), nodeEnv });
-  const db = memoryFirestore({ 'users/owner': { uid: 'owner', role: 'Developer', plan: 'Free', apiRequestLimit: 50 } });
+  const db = memoryStore({ 'users/owner': { uid: 'owner', role: 'Developer', plan: 'Free', apiRequestLimit: 50 } });
   let calls = 0;
   const handlers = createPaymentHandlers({ getDb: () => db, getConfig: () => config, clock: () => now,
     newOrderId: () => orderId, verifyIdToken: async () => ({ uid: 'owner' }),

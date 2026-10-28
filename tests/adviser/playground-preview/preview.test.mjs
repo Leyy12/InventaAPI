@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 import { createPlaygroundPreviewHandler } from '../../../services/playground-preview.js';
 import { playgroundHref, previewScopeFromQuery } from '../../../dashboard/src/lib/product-filters.ts';
 
@@ -15,7 +15,7 @@ const records = () => ({
 });
 const tokens = { 'grocery-token': 'grocery-owner', 'pro-token': 'pro-owner', 'ghost-token': 'ghost' };
 function preview() {
-  const db = memoryFirestore(records());
+  const db = memoryStore(records());
   const handler = createPlaygroundPreviewHandler({ getDb: () => db, verifyIdToken: async token => {
     if (!tokens[token]) throw new Error('bad token');
     return { uid: tokens[token] };

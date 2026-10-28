@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from 'react';
-import { useAuth } from '@/lib/firebase/auth-context';
+import { useAuth } from '@/lib/supabase/auth-context';
 import { customerPublicPath, navigationDecision, profileRole, adminLoginDestination, authScreen, customerLogoutDestination, customerLoginEntryDestination } from '../../../../services/auth-navigation';
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
@@ -71,7 +71,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         <Navbar />
         {/* Subscription expiry warning — appears for Pro users within 3 days of expiry */}
         <SubscriptionExpiryBanner />
-        <main className="flex-1 overflow-y-auto p-6 lg:p-10">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10">
           {logoutNotice}
           <CustomerMaintenanceBoundary pathname={pathname} paymentRecovery={pathname === '/dashboard'
             && ['success', 'failed'].includes(searchParams.get('payment') || '')}>{children}</CustomerMaintenanceBoundary>

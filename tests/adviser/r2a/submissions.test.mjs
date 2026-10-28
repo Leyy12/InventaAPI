@@ -5,7 +5,7 @@ import { normalizeProductImageUrl, validateSubmissionContent } from '../../../se
 import { projectProduct } from '../../../services/product-contract.js';
 import { normalizeProductImageUrl as customerImage } from '../../../dashboard/src/lib/product-image-url.ts';
 import { normalizeProductImageUrl as adminImage } from '../../../admin-panel/src/lib/product-image-url.ts';
-import { memoryFirestore, invoke } from './memory-firestore.mjs';
+import { memoryStore, invoke } from './memory-store.mjs';
 
 const content = { name: ' Test Product ', brand: 'Brand', segment: 'groceries', category: 'Food',
   description: 'Description', variants: [{ flavor: 'Cheese', size: '50g', sku: 'abc-123', price: 25 }],
@@ -21,7 +21,7 @@ test('isolated runtime blocks global network APIs', async () => {
   assert.throws(() => new globalThis.WebSocket('wss://example.invalid'));
 });
 function fixture(extra = {}) {
-  const db = memoryFirestore({ 'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' },
+  const db = memoryStore({ 'users/customer': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' },
     'users/admin': { role: 'Admin' }, 'users/stranger': { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Grocery' }, ...extra });
   let serial = 0;
   const verified = [];

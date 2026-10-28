@@ -32,7 +32,7 @@ export default function ErrorState({ error }: ErrorStateProps) {
         <p className="text-xs text-slate-500 text-left">
           <strong className="text-slate-400">Troubleshooting:</strong><br />
           • Ensure backend API is running on port 5000<br />
-          • Check if Firebase credentials are configured<br />
+          • Check that the API and Supabase are configured<br />
           • Verify NEXT_PUBLIC_API_URL in .env.local
         </p>
       </div>

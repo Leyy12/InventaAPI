@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const sources = ['functions/entitlement-limits.mjs', 'services/customer-catalog.js', 'services/product-contract.js', 'services/customer-segment.js',
   'dashboard/src/lib/segment-catalog.ts', 'dashboard/src/lib/trial-catalog-selection.ts',
   'dashboard/src/lib/trial-display.mjs', 'dashboard/src/lib/linked-product-selection.ts',
-  'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/segment-catalog/catalog.test.mjs',
+  'tests/adviser/phase2a/memory-store.mjs', 'tests/adviser/segment-catalog/catalog.test.mjs',
   'tests/adviser/segment-catalog/customer.test.mjs'];
 for (const file of sources) {
   if (/\b(?:fetch|require)\s*\(|\bprocess\.(?:env|binding|getBuiltinModule)\b|\beval\s*\(|new\s+Function\b/u.test(readFileSync(resolve(root, file), 'utf8'))) {

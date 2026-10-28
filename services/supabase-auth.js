@@ -1,9 +1,9 @@
 // Sign-in for the API, backed by Supabase Auth. It offers the small part of the
-// Firebase Admin Auth interface this codebase uses (verifyIdToken, getUserByEmail,
+// Small server auth interface this codebase uses (verifyIdToken, getUserByEmail,
 // createUser, updateUser, deleteUser, revokeRefreshTokens) with the same results and
 // the same error codes, so routes only change where getAuth() comes from.
 //
-// Account ids: an account carried over from Firebase keeps its old id in
+// Account ids: an account carried over from the old system keeps its old id in
 // app_metadata.legacy_uid, so every record filed under it (users/{uid}, API keys,
 // history) stays attached. New accounts use their Supabase id.
 //

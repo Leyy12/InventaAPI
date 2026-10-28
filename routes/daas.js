@@ -1,16 +1,16 @@
 import express from 'express';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { requirePaidSubscription, enforceRequestLimit } from '../middleware/planGate.js';
 import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts } from '../services/daas-catalog.js';
 import { createDaaSSecurity } from '../services/daas-security.js';
 import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 import { createRepeatGuard } from '../services/daas-repeat-guard.js';
 
-// Data lives in the Supabase database (database/firestore.js).
+// Data lives in the Supabase database (database/data-store.js).
 let adminDb = null;
 function getDb() {
   if (!adminDb) {
-    adminDb = getFirestore();
+    adminDb = getDataStore();
   }
   return adminDb;
 }
@@ -49,8 +49,8 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
             const latencyMs = Date.now() - req.startTime;
             const ts = new Date();
             
-            // Log telemetry — timestamp must be a Date/Firestore Timestamp (not a string)
-            // so that Firestore orderBy('timestamp') works correctly.
+            // Log telemetry — timestamp must be a Date (not a string)
+            // so that orderBy('timestamp') works correctly.
             getDb().collection('api_telemetry').add({
                 apiKeyId: req.apiKeyData.id,
                 userId: req.apiKeyData.userId,

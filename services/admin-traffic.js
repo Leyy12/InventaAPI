@@ -45,7 +45,7 @@ export function createAdminTrafficHandler({ getDb, verifyIdToken, documentId }) 
       await authorize();
       if (snapshot.docs.length > ADMIN_TRAFFIC_LIMIT) throw new Error('Query bound violated');
       const records = snapshot.docs.map(doc => trafficRecord(doc.data()));
-      // Invalid historical timestamp types can sort first in Firestore. Keep them
+      // Invalid historical timestamp types can sort first in the database. Keep them
       // as excluded samples, after valid dates. Stable sort preserves ID tie order.
       records.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       return res.json({ success: true, records, limit: ADMIN_TRAFFIC_LIMIT });

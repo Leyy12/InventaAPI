@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 for (const file of ['services/admin-traffic.js', 'services/api-key-security.js', 'functions/entitlement-limits.mjs','functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs', 'functions/subscription-lifecycle.mjs',
   'services/reporting.js', 'services/product-contract.js', 'admin-panel/src/lib/admin-traffic.ts',
-  'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/r6a/backend.test.mjs', 'tests/adviser/r6a/frontend.test.mjs']) {
+  'tests/adviser/phase2a/memory-store.mjs', 'tests/adviser/r6a/backend.test.mjs', 'tests/adviser/r6a/frontend.test.mjs']) {
   const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
   if (/\b(?:fetch|require)\s*\(|\bprocess\.(?:env|binding|getBuiltinModule)\b|\beval\s*\(|new\s+Function\b/u.test(source)) throw new Error('Impure isolated helper');
 }

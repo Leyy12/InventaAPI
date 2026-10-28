@@ -1,6 +1,6 @@
 import { requirePayment } from './payment-contract.js';
 
-// Bind to the Firestore instance actually used, never a request or NODE_ENV.
+// Bind to the database actually used, never a request or NODE_ENV.
 export function requirePaymentProject(db, mode, configuredProject) {
   let project;
   try { project = db.projectId; } catch { /* Unresolved SDK identity fails closed. */ }
@@ -13,8 +13,8 @@ export function requirePaymentProject(db, mode, configuredProject) {
 }
 
 export function requirePaymentRuntime(db, config) {
-  const project = requirePaymentProject(db, config.mode, config.firebaseProjectId);
+  const project = requirePaymentProject(db, config.mode, config.dataProjectId);
   requirePayment(/^sk_(test|live)_\S+$/u.exec(config.secretKey || '')?.[1] === config.mode,
     'PAYMENT_CONFIG', 'Payment configuration is inconsistent.', 503);
-  return { ...config, firebaseProjectId: project };
+  return { ...config, dataProjectId: project };
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { authenticateCredential, accountEntitlement } from '../../../services/api-key-security.js';
 import { consumeAccountQuota } from '../../../services/account-quota.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 // Generation-policy tests use a paid account so the clarified pre-Trial Free
 // issuance gate does not obscure the independent UTC daily-marker behavior.
@@ -17,7 +17,7 @@ function setup(extra = {}) {
   const paidFixtures = uid => ({ [`users/${uid}`]: account,
     [`account_request_contracts/${uid}`]: { version: 1,
       plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } } });
-  const db = memoryFirestore({ ...paidFixtures('owner'), ...paidFixtures('other'), ...extra });
+  const db = memoryStore({ ...paidFixtures('owner'), ...paidFixtures('other'), ...extra });
   const clock = () => new Date(now);
   const handlers = createApiKeyHandlers({ getDb: () => db, clock, verifyIdToken: async (token, revoked) => {
     assert.equal(revoked, true);

@@ -29,7 +29,7 @@ export function catalogResult(documents, { segment, search = '', limit = null, o
     const value = document.data();
     const canonical = projectProduct(value, document.id);
     if (!canonical?.visibility.visible || (segment && canonical.segment !== segment)) continue;
-    // A stored `id` must never replace the actual Firestore document identity.
+    // A stored `id` must never replace the actual stored document identity.
     unique.set(document.id, withoutPrices({ ...value, id: document.id, segment: canonical.segment }));
   }
   const available = [...unique.values()].sort((a, b) =>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
-import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import ProductImagePreview from './ProductImagePreview';
 import PrivateProductImage from './PrivateProductImage';
 

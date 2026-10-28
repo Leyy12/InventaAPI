@@ -7,7 +7,7 @@
   "scripts": {
     "test:adviser:segment-catalog": "node scripts/run-segment-catalog-tests.mjs",
     "test:adviser:playground-preview": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/playground-preview/preview.test.mjs",
-    "test:supabase": "node --test --test-reporter=spec tests/supabase/auth.test.mjs tests/supabase/storage.test.mjs tests/supabase/cron.test.mjs tests/supabase/postgres-firestore.test.mjs",
+    "test:supabase": "node --test --test-concurrency=1 --test-reporter=spec tests/supabase/*.test.mjs",
     "test:rate-limit": "node --test --test-reporter=spec tests/rate-limit/client-ip.test.mjs",
     "test:adviser:free-trial": "node scripts/run-adviser-free-trial-tests.mjs",
     "test:adviser:pro-max": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/pro-max/*.test.mjs",
@@ -19,16 +19,11 @@
     "test:r0:config": "node --test tests/r0/release-config.test.mjs",
     "test:adviser:phase1": "node scripts/run-adviser-phase1-tests.mjs",
     "test:adviser:phase2a": "node scripts/run-adviser-phase2a-tests.mjs",
-    "test:adviser:phase2a:rules": "node --test --test-reporter=spec scripts/test-adviser-phase2a-rules.mjs",
     "test:adviser:phase2b1": "node scripts/run-adviser-phase2b1-tests.mjs",
-    "test:adviser:phase2b1:rules": "node --test --test-reporter=spec scripts/test-adviser-phase2b1-rules.mjs",
     "test:adviser:phase2b2": "node scripts/run-adviser-phase2b2-tests.mjs",
-    "test:adviser:phase2b2:rules": "node --test --test-reporter=spec scripts/test-adviser-phase2b2-rules.mjs",
     "test:adviser:r2a": "node scripts/run-adviser-r2a-tests.mjs",
-    "test:adviser:r2a:rules": "node --test --test-reporter=spec scripts/test-adviser-r2a-rules.mjs",
     "test:adviser:r2b": "node scripts/run-adviser-r2b-tests.mjs",
     "test:adviser:r3": "node scripts/run-adviser-r3-tests.mjs",
-    "test:adviser:r3:rules": "node --test --test-reporter=spec scripts/test-adviser-r3-rules.mjs",
     "test:adviser:r4": "node scripts/run-adviser-r4-tests.mjs",
     "test:adviser:category-usage": "node --test --test-reporter=spec tests/adviser/category-usage.test.mjs",
     "test:adviser:r5a": "node scripts/run-adviser-r5a-tests.mjs",
@@ -37,10 +32,8 @@
     "test:adviser:r6a": "node scripts/run-adviser-r6a-tests.mjs",
     "test:adviser:r6b": "node --test --test-reporter=spec tests/adviser/r6b/release.test.mjs",
     "test:adviser:r6c": "node scripts/run-adviser-r6c-tests.mjs",
-    "test:adviser:r7c": "node scripts/run-adviser-r7c-tests.mjs",
     "test:adviser:r8c": "node scripts/run-adviser-r8c-tests.mjs",
     "test:adviser:api-key-copy": "node --test tests/adviser/api-key-copy/*.test.mjs",
-    "test:supabase": "node --test --test-concurrency=1 --test-reporter=spec tests/supabase/*.test.mjs",
     "test:adviser:csv-extract": "node --experimental-strip-types --test --test-reporter=spec tests/adviser/csv-extract/extract.test.mjs"
   },
   "dependencies": {
@@ -61,8 +54,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "firebase": "^10.12.2",
-    "firebase-admin": "^11.11.1",
     "playwright": "^1.62.1"
   }
 }

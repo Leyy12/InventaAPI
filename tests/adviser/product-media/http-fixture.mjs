@@ -12,7 +12,7 @@ import { createProductMediaHandlers } from '../../../services/product-media.js';
 import { processProductImage, MAX_IMAGE_BYTES } from '../../../services/product-media-processing.js';
 import { mediaDigest } from '../../../services/product-media-binding.js';
 import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from '../../../services/system-settings.js';
-import { memoryFirestore } from '../r2a/memory-firestore.mjs';
+import { memoryStore } from '../r2a/memory-store.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const source = relative => readFileSync(path.join(root, relative), 'utf8');
@@ -29,7 +29,7 @@ export async function mediaHttpFixture({ enabled = true, vercel = false } = {}) 
   const asset = { version: 1, uid: 'owner', state: 'published', productId: 'fixture',
     path: `product-media/${assetId}.webp`, processedDigest: mediaDigest(bytes), bytes: bytes.length };
   const product = { name: 'Synthetic bottle', status: 'Active', is_active: true, image_asset_id: assetId };
-  const db = memoryFirestore({ [`product_media/${assetId}`]: asset, 'products/fixture': product,
+  const db = memoryStore({ [`product_media/${assetId}`]: asset, 'products/fixture': product,
     'users/owner': { role: 'Customer' }, 'users/other': { role: 'Customer' }, 'users/admin': { role: 'Admin' } });
   const faults = { read: false, corrupt: false };
   const object = { async download() { if (faults.read) throw Error('synthetic storage failure');
@@ -41,7 +41,7 @@ export async function mediaHttpFixture({ enabled = true, vercel = false } = {}) 
   runInNewContext(executable(source('routes/product-media.js')) + '\nresult.router = router;', {
     result, process: { env: { PRODUCT_MEDIA_ENABLED: String(enabled), PRODUCT_MEDIA_BUCKET: 'synthetic-private-bucket',
       PRODUCT_MEDIA_BUCKET_PROJECT_NUMBER: '123', PRODUCT_MEDIA_PUBLIC_ORIGIN: 'https://synthetic.invalid' } },
-    Router: express.Router, raw: express.raw, getFirestore: () => db, getStorage: () => ({ bucket: () => bucket }),
+    Router: express.Router, raw: express.raw, getDataStore: () => db, getStorage: () => ({ bucket: () => bucket }),
     getAuth: () => ({ async verifyIdToken(token, revoked) {
       if (revoked !== true || !['owner', 'other', 'admin'].includes(token)) throw Error('Invalid synthetic token');
       return { uid: token }; } }), createProductMediaHandlers, processProductImage, MAX_IMAGE_BYTES, mediaDigest,
@@ -51,7 +51,7 @@ export async function mediaHttpFixture({ enabled = true, vercel = false } = {}) 
     .map(([, name]) => [name, express.Router()]));
   runInNewContext(executable(serverSource).replaceAll('import.meta.url', 'sourceUrl') + '\nresult.app = app;', { ...routers,
     customerSubmissionsRouter: express.Router(), adminSubmissionsRouter: express.Router(), productMediaRouter: result.router,
-    express, helmet, cors, compression, getFirestore: () => db,
+    express, helmet, cors, compression, getDataStore: () => db,
     createSystemPolicyMiddleware, createSystemSettingsHandlers,
     createIpRateLimiter: options => createIpRateLimiter({ ...options, vercel }),
     trustedRateLimitIp: req => trustedRateLimitIp(req, { vercel }), path,

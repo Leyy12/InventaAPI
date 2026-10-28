@@ -9,7 +9,7 @@ const sources = [
   'functions/entitlement-limits.mjs','functions/subscription-lifecycle.mjs',
   'functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs',
   'functions/legacy-pro-compatibility.mjs',
-  ...tests, 'tests/adviser/phase2a/memory-firestore.mjs',
+  ...tests, 'tests/adviser/phase2a/memory-store.mjs',
   'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
   'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js', 'services/customer-segment.js',
 ];
@@ -25,10 +25,9 @@ const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP']
   .filter(name => process.env[name]).map(name => [name, process.env[name]]));
 Object.assign(env, {
   NODE_ENV: 'test', ADVISER_TEST_EXTERNAL_IO: 'disabled',
-  FIREBASE_PROJECT_ID: 'demo-inventaapi-adviser-phase2a',
+  DATA_PROJECT_ID: 'demo-inventaapi-adviser-phase2a',
   GCLOUD_PROJECT: 'demo-inventaapi-adviser-phase2a',
   GOOGLE_CLOUD_PROJECT: 'demo-inventaapi-adviser-phase2a',
-  FIRESTORE_EMULATOR_HOST: '127.0.0.1:9', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9',
 });
 console.log('[adviser-phase2a] Fixed module allowlist; SDK/network imports and global network APIs blocked.');
 console.log('[adviser-phase2a] In-memory transactions and static rules evidence only; no emulator or production access.');

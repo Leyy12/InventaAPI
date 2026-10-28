@@ -8,13 +8,13 @@
  *   node scripts/backup-products.mjs
  */
 
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const db = getFirestore();
+const db = getDataStore();
 
 async function backup() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -30,7 +30,7 @@ async function backup() {
 
   const docs = snap.docs.map(d => {
     const data = d.data();
-    // Convert Firestore Timestamps to ISO strings for JSON serialization
+    // Convert stored timestamps to ISO strings for JSON serialization
     const serialized = JSON.parse(JSON.stringify(data, (key, val) => {
       if (val && typeof val === 'object' && typeof val.toDate === 'function') {
         return val.toDate().toISOString();

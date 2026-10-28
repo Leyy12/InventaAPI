@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { User } from "@/lib/supabase-auth";
-import { collection, query, onSnapshot, orderBy, limit } from "@/lib/data/firestore-client";
+import { collection, query, onSnapshot, orderBy, limit } from "@/lib/data/data-client";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { auth, db } from "@/lib/firebase/config";
+import { auth, db } from "@/lib/supabase/config";
 import { createTrafficRefresh, createTrafficRequest } from "@/lib/admin-traffic";
-import { useAdminAuth } from "@/lib/firebase/admin-auth-context";
+import { useAdminAuth } from "@/lib/supabase/admin-auth-context";
 import { activeKeyHolders, reportTimestamp, telemetryReport, type ReportSelection, type ReportSource } from "@/lib/reports";
 import { useCategoryUsage } from "@/lib/category-usage";
 import CatalogReportPanel from "@/components/reports/CatalogReportPanel";
@@ -46,7 +46,7 @@ function Reports({ user }: { user: User }) {
   const users = sources.users.status === "ready" ? sources.users.records.filter(record =>
     typeof record.role === "string" && record.role.toLowerCase() !== "admin").length : null;
   const unavailable = (feed: Feed) => sources[feed].status === "loading" ? "Loading…" : "Unavailable";
-  return <div className="w-full px-6 lg:px-8 pb-8 space-y-8">
+  return <div className="w-full px-6 max-sm:px-0 lg:px-8 pb-8 space-y-8">
     <h1 className="text-2xl font-bold text-white">Dashboard and reports</h1>
     <CatalogReportPanel source={sources.products} usage={usage} selection={selection} onSelection={setSelection} />
     <section aria-label="Global account and recorded traffic summaries" className="space-y-4">

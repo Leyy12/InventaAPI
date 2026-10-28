@@ -74,9 +74,9 @@ window.fixture.configure(window.fixtureOptions||{});
 `);
 source('next/navigation', `import {useFixture} from 'fixture';export const usePathname=()=>useFixture().pathname;export const useSearchParams=()=>new URLSearchParams();export const useRouter=()=>({push:useFixture().navigate,replace:useFixture().navigate});`);
 source('next/link', `import React from 'react';import {useFixture} from 'fixture';export default function Link({href,onClick,children,...props}){const f=useFixture();return <a {...props} href={href} onClick={e=>{e.preventDefault();onClick?.(e);f.navigate(href);}}>{children}</a>;}`);
-source('@/lib/firebase/auth-context', `import {useFixture} from 'fixture';export const useAuth=()=>useFixture().auth;`);
+source('@/lib/supabase/auth-context', `import {useFixture} from 'fixture';export const useAuth=()=>useFixture().auth;`);
 source('@/lib/api-keys', `export {transport as apiKeyRequest} from 'fixture';`);
-source('@/lib/firebase/config', `import {runtime} from 'fixture';export const auth={get currentUser(){return runtime.currentUser;}};`);
+source('@/lib/supabase/config', `import {runtime} from 'fixture';export const auth={get currentUser(){return runtime.currentUser;}};`);
 source('@/components/shared/NotificationBell', `import React from 'react';export default function Bell(){return <button aria-label="Notifications" className="p-2 rounded-full text-slate-400"><svg className="h-5 w-5"/></button>;}`);
 source('dashboard/src/components/layout/Sidebar.tsx', `import React from 'react';export default function Sidebar(){return <aside className="w-64 shrink-0 hidden md:flex"/>;}`);
 source('@/components/shared/SubscriptionExpiryBanner', `export default ()=>null;`);
@@ -84,11 +84,11 @@ source('@/components/shared/CustomerMaintenanceBoundary', `export default ({chil
 source('@/components/auth/SessionLoadingScreen', `export default ()=>null;export const SessionRecoveryState=()=>null;`);
 source('@/components/product-request/ProductNotFound', `import React from 'react';export default ()=> <div>Empty catalog</div>;`);
 source('@/components/products/AddProductModal', `export default ()=>null;`);
-source('@/lib/firebase/notifications', `export const notifySubscriptionExpiringSoon=()=>{throw Error('Unexpected fixture notification mutation');};`);
+source('@/lib/supabase/notifications', `export const notifySubscriptionExpiringSoon=()=>{throw Error('Unexpected fixture notification mutation');};`);
 source('@/lib/account-usage-events', `export const invalidateAccountUsage=()=>{};`);
 source('@/lib/api-key-generation', `export const GENERATION_POLICY='Synthetic policy';export const generationErrorMessage=data=>data.error;`);
 source('@/lib/product-image-url', `export const productImageSource=()=>'';export const showProductImageFallback=()=>{};`);
-source('@/lib/firebase/products-service', `export const getBasePrice=()=>1;export const getBaseSize=()=> 'each';export const hasNearExpiry=()=>false;`);
+source('@/lib/products-service', `export const getBasePrice=()=>1;export const getBaseSize=()=> 'each';export const hasNearExpiry=()=>false;`);
 modules.set('lucide-react', `const R=require('react');module.exports=new Proxy({}, {get:()=>props=>R.createElement('svg',props)});`);
 
 const bundle=`const process={env:{NODE_ENV:'production',NEXT_PUBLIC_API_URL:'https://synthetic.invalid'}};const factories={${[...modules].map(([id,code])=>JSON.stringify(id)+':function(module,exports,require){\n'+code+'\n}').join(',')}};

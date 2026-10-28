@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from 'react';
-import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import { navigationDecision, profileRole, authScreen } from '../../../../services/auth-navigation';
 import AdminSidebar from "./AdminSidebar";
 import AdminNavbar from "./AdminNavbar";
@@ -44,7 +44,7 @@ export default function AdminLayoutWrapper({ children }: { children: React.React
       <AdminSidebar />
       <div className="flex-1 flex flex-col overflow-hidden relative z-10">
         <AdminNavbar />
-        <main className="flex-1 overflow-y-auto p-3 lg:p-4 custom-scrollbar">
+        <main className="flex-1 overflow-y-auto p-4 custom-scrollbar">
           {logoutNotice}
           {children}
         </main>

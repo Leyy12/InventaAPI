@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { openCredential, sealCredential } from '../../../services/credential-vault.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 const NOW = new Date('2026-09-17T12:00:00.000Z');
 const SECRET = 'test-vault-secret-with-at-least-32-characters';
@@ -12,7 +12,7 @@ const account = { plan: 'Pro', apiRequestLimit: 5000, subscription_status: 'acti
 const contracts = { version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } };
 
 function setup(vaultSecret = SECRET, extra = {}) {
-  const db = memoryFirestore({ 'users/owner': account, 'account_request_contracts/owner': contracts,
+  const db = memoryStore({ 'users/owner': account, 'account_request_contracts/owner': contracts,
     'users/other': account, 'account_request_contracts/other': contracts,
     'products/rice': { name: 'Rice', segment: 'Grocery', category: 'Grains', status: 'Active' }, ...extra });
   const handlers = createApiKeyHandlers({ getDb: () => db, clock: () => new Date(NOW), vaultSecret,

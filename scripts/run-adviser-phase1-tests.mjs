@@ -90,7 +90,7 @@ Object.assign(safeEnvironment, {
   NODE_ENV: 'test',
   ADVISER_TEST_MODE: 'isolated-unit',
   ADVISER_TEST_EXTERNAL_IO: 'disabled',
-  FIREBASE_PROJECT_ID: 'demo-inventaapi-adviser-tests',
+  DATA_PROJECT_ID: 'demo-inventaapi-adviser-tests',
   GCLOUD_PROJECT: 'demo-inventaapi-adviser-tests',
   GOOGLE_CLOUD_PROJECT: 'demo-inventaapi-adviser-tests',
   FIRESTORE_EMULATOR_HOST: '127.0.0.1:9',

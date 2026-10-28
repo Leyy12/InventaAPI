@@ -23,7 +23,7 @@ const fixtures = new Map([
   ['firebase-admin/firestore', `
     export const FieldPath = { documentId: () => '__name__' };
     export const FieldValue = { serverTimestamp: () => { throw Error('Writes prohibited'); } };
-    export const getFirestore = () => ({ collection(name) {
+    export const getDataStore = () => ({ collection(name) {
       if (name === 'system') return { doc: id => { if (id !== 'settings') throw Error('Unexpected system document');
         return { get: async () => ({ data: () => ({ maintenanceMode: false }) }) }; } };
       if (name !== 'products') throw Error('Unexpected collection');

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { catalogQuery, catalogResult, createCustomerCatalogHandler } from '../../../services/customer-catalog.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 export function fixtureRecords() {
   const rows = {};
@@ -23,7 +23,7 @@ export function fixtureRecords() {
 
 for (const [segment, total, other] of [['Hardware', 123, 'Grocery'], ['Grocery', 82, 'Hardware']]) {
   test(`${segment}: exact unique availability ${total}, generated products included, other segment absent`, async () => {
-    const db = memoryFirestore(fixtureRecords());
+    const db = memoryStore(fixtureRecords());
     const calls = [], collection = db.collection;
     db.collection = name => {
       const query = collection(name);
@@ -45,7 +45,7 @@ for (const [segment, total, other] of [['Hardware', 123, 'Grocery'], ['Grocery',
 }
 
 test('pagination total spans all segment pages, page length is not availability', async () => {
-  const handler = createCustomerCatalogHandler({ getDb: () => memoryFirestore(fixtureRecords()) });
+  const handler = createCustomerCatalogHandler({ getDb: () => memoryStore(fixtureRecords()) });
   for (const offset of ['0', '20', '120', '200']) {
     const result = (await invoke(handler, { query: { segment: 'hardware', limit: '20', offset } })).body;
     assert.deepEqual(result.availability, { segment: 'Hardware', total: 123 });
@@ -55,7 +55,7 @@ test('pagination total spans all segment pages, page length is not availability'
 });
 
 test('search stays scoped, availability remains full segment total, results metadata separate', async () => {
-  const handler = createCustomerCatalogHandler({ getDb: () => memoryFirestore(fixtureRecords()) });
+  const handler = createCustomerCatalogHandler({ getDb: () => memoryStore(fixtureRecords()) });
   const result = (await invoke(handler, { query: { businessSegment: 'Grocery', search: 'generated', limit: '1' } })).body;
   assert.equal(result.availability.total, 82); assert.equal(result.pagination.total, 2);
   assert.equal(result.products.length, 1); assert.equal(result.products[0].segment, 'Grocery');
@@ -85,7 +85,7 @@ for (const query of [{ limit: '0' }, { limit: '-1' }, { limit: '1001' }, { offse
   test(`malformed pagination/search rejected: ${JSON.stringify(query)}`, () => assert.throws(() => catalogQuery(query)));
 
 test('All/default preserves explicit paid all-categories discovery, excludes hidden/unassigned records', async () => {
-  const handler = createCustomerCatalogHandler({ getDb: () => memoryFirestore(fixtureRecords()) });
+  const handler = createCustomerCatalogHandler({ getDb: () => memoryStore(fixtureRecords()) });
   for (const query of [{}, { businessSegment: 'All' }]) {
     const result = (await invoke(handler, { query })).body;
     assert.equal(result.availability.total, 205); assert.equal(result.availability.segment, null);
@@ -101,7 +101,7 @@ test('negative/malformed publication signals override active=true and exclude de
 });
 
 test('newly approved visible Hardware product increases only Hardware, no persistent catalog cache', async () => {
-  const db = memoryFirestore(fixtureRecords()), handler = createCustomerCatalogHandler({ getDb: () => db });
+  const db = memoryStore(fixtureRecords()), handler = createCustomerCatalogHandler({ getDb: () => db });
   const count = async segment => (await invoke(handler, { query: { segment } })).body.availability.total;
   assert.equal(await count('Hardware'), 123);
   await db.collection('products').doc('submission_approved-fixture').set({ name: 'Approved', category: 'Synthetic', segment: 'Hardware', status: 'Active', is_active: true });
@@ -109,7 +109,7 @@ test('newly approved visible Hardware product increases only Hardware, no persis
 });
 
 test('page cache reuses one read per segment until the writer revision changes or it expires', async () => {
-  const db = memoryFirestore(fixtureRecords());
+  const db = memoryStore(fixtureRecords());
   let clock = 0;
   const handler = createCustomerCatalogHandler({ getDb: () => db, cacheMs: 30000, now: () => clock });
   const count = async segment => (await invoke(handler, { query: { segment } })).body.availability.total;
@@ -129,7 +129,7 @@ test('database failure is not a fabricated zero availability', async () => {
 });
 
 test('historical missing/alternate/alias-only stored segment is not guessed into the selected canonical query', async () => {
-  const db = memoryFirestore({
+  const db = memoryStore({
     'products/alternate': { name: 'Alternate', category: 'Synthetic', businessSegment: 'Grocery', status: 'Active' },
     'products/alias': { name: 'Alias', category: 'Synthetic', segment: 'food', status: 'Active' },
     'products/missing': { name: 'Missing', category: 'Synthetic', status: 'Active' },
@@ -140,7 +140,7 @@ test('historical missing/alternate/alias-only stored segment is not guessed into
 
 test('actual mounted public route reuses scoped handler; no duplicate catalog endpoint', () => {
   const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 'utf8');
-  assert.match(read('routes/products.js'), /router.get\('\/', createCustomerCatalogHandler\(\{ getDb: getFirestore, cacheMs: \d+ \}\)\)/);
+  assert.match(read('routes/products.js'), /router.get\('\/', createCustomerCatalogHandler\(\{ getDb: getDataStore, cacheMs: \d+ \}\)\)/);
   assert.match(read('server.js'), /app.use\('\/api\/v1\/products', productsRouter\)/);
   assert.match(read('services/product-submissions.js'), /productId = `submission_\$\{ref.id\}`/);
   assert.match(read('services/catalog-contract.js'), /result.segment = normalizeSegment/);

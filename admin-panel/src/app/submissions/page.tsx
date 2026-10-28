@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ClipboardList, RefreshCw } from 'lucide-react';
-import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import { reviewSubmission } from '@/lib/submission-review';
 import SubmissionReviewDialog, { ReviewStatus, SubmissionImage, submittedDate, reviewButtonClass, type Submission, type Decision } from '@/components/products/SubmissionReviewDialog';
 

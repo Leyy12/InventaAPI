@@ -5,7 +5,7 @@ import { checkoutPayload } from '../../../services/paymongo-checkout.js';
 import { createPaymentHandlers } from '../../../services/payment-checkout.js';
 import { fulfillPayment, paymentFromEvent } from '../../../services/payment-webhook.js';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
-import { memoryFirestore, invoke } from '../phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 
 const NOW = new Date('2026-09-27T12:00:00.000Z');
 const orderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -14,7 +14,7 @@ const pro = { ...free, plan: 'Pro', apiRequestLimit: 5000, subscription_status: 
   subscriptionStartedAt: '2026-09-01T12:00:00.000Z', subscriptionExpiresAt: '2026-10-01T12:00:00.000Z' };
 const config = { mode: 'test', secretKey: 'sk_test_synthetic', webhookSecret: 'synthetic-only', dashboardUrl: 'https://customer.example' };
 function handlers(account = free) {
-  const db = memoryFirestore({ 'users/owner': account,
+  const db = memoryStore({ 'users/owner': account,
     ...(account.plan !== 'Free' ? { 'account_request_contracts/owner': { version: 1, plans: {
       [account.plan === 'Pro Max' ? 'pro_max' : 'pro']: { version: 1, period: 'utc_daily', limit: account.plan === 'Pro Max' ? null : 500 },
     } } } : {}) });

@@ -9,7 +9,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import Link from 'next/link';
 import CodeSnippet from "@/components/shared/CodeSnippet";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { previewScopeFromQuery } from "@/lib/product-filters";
 
 interface ApiResponse {

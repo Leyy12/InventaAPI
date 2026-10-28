@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const source = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
 test('UI gets authoritative plan/quota/expiry and does not retain cached Pro on failure', () => {
-  const auth = source('dashboard/src/lib/firebase/auth-context.tsx');
+  const auth = source('dashboard/src/lib/supabase/auth-context.tsx');
   assert.match(auth, /plan: entitlement\?\.plan \?\? 'Unavailable'/);
   assert.match(auth, /apiRequestLimit: entitlement\?\.apiRequestLimit/);
   assert.match(auth, /subscriptionExpiresAt: entitlement\?\.subscriptionExpiresAt/);

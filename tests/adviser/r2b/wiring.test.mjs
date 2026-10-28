@@ -11,7 +11,8 @@ function files(dir) {
   });
 }
 const frontends = ['dashboard', 'admin-panel'];
-const dormant = ['dashboard/src/app/dashboard/products/page.tsx.backup'];
+// The old products page backup (the only file with storage calls) was deleted.
+const dormant = [];
 const storage = /firebase\/storage|uploadBytes|uploadBytesResumable|getDownloadURL|deleteObject|getStorage/u;
 test('Storage references are confined to initialization and the dormant backup source', () => {
   const found = frontends.flatMap(app => files(app + '/src')).filter(path => storage.test(read(path))).sort();
@@ -67,18 +68,6 @@ test('only the managed adapter handles object bytes; URL metadata is never fetch
   assert.match(adapter, /meta\.public !== false\) throw/u);
   assert.doesNotMatch(route + adapter, /\/object\/public\/|\/object\/sign\/|createSignedUrl|getPublicUrl/u);
   assert.match(adapter, /mediaDigest\(await read\(path\)\) !== digest\) throw/u);
-  assert.match(read('product-media.storage.rules'), /allow read, write: if false/u);
-});
-test('Storage remains absent from deployment/emulators, with explicit non-deployment documentation', () => {
-  const config = JSON.parse(read('firebase.json'));
-  assert.equal(config.storage, undefined); assert.equal(config.emulators.storage, undefined);
-  assert.equal(config.firestore.rules, 'firestore.rules');
-  const doc = read('docs/adviser-r2b-media-storage.md');
-  for (const phrase of ['MODE A — URL-ONLY', 'DORMANT / NOT PART OF ACTIVE PRODUCT FLOW',
-    'DO NOT DEPLOY', 'alerts NOT implemented', 'NOT APPLICABLE', 'do not cap charges']) assert.ok(doc.includes(phrase), phrase);
-  assert.match(read('docs/release-runbook.md'), /Do NOT deploy `storage.rules`/u);
-  assert.match(read('docs/release-environment.md'), /R2B is URL-only/u);
-  assert.match(doc, /firebase\.google\.com\/docs\/storage\/monitor-storage/u);
 });
 test('standalone frontend image contracts stay identical', () => {
   assert.equal(read('dashboard/src/lib/product-image-url.ts'), read('admin-panel/src/lib/product-image-url.ts'));

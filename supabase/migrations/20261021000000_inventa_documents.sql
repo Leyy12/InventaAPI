@@ -1,6 +1,6 @@
--- Inventa data tables, one per former Firestore collection.
--- Each row keeps the Firestore document id and its fields as JSON, so the API's
--- data layer (database/postgres-firestore.js) reads and writes them the same way.
+-- Inventa data tables, one per former document collection.
+-- Each row keeps the stored document id and its fields as JSON, so the API's
+-- data layer (database/postgres-data-store.js) reads and writes them the same way.
 -- Row Level Security is on with no policies: only the server's direct Postgres
 -- connection can reach these tables; the public anon key cannot.
 

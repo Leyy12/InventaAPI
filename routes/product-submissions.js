@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { getAuth } from '../services/supabase-auth.js';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { createProductSubmissionHandlers } from '../services/product-submissions.js';
 
-const handlers = createProductSubmissionHandlers({ getDb: getFirestore,
+const handlers = createProductSubmissionHandlers({ getDb: getDataStore,
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked) });
 export const customerSubmissionsRouter = Router();
 export const adminSubmissionsRouter = Router();

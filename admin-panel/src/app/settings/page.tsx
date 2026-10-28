@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Settings, Save, Server, Shield } from 'lucide-react';
-import { useAdminAuth } from '@/lib/firebase/admin-auth-context';
+import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import { TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '../../../../functions/entitlement-limits.mjs';
 
 type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
@@ -133,7 +133,7 @@ export default function SettingsPage() {
     finally { setCheckingHealth(false); }
   };
 
-  return <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
+  return <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-8 pb-10">
     <div>
       <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3"><Settings className="w-8 h-8 text-indigo-500" />System Settings</h1>
       <p className="text-slate-400">Manage platform availability, registrations, and plan request allowances.</p>

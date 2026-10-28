@@ -1,4 +1,4 @@
-// Browser data endpoint (/api/v1/client-db) applying the firestore.rules port,
+// Browser data endpoint (/api/v1/client-db) applying the access rules in services/client-db-rules.js,
 // run against a real Postgres. Needs TEST_DATABASE_URL; skipped otherwise.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,9 +23,9 @@ async function call(who, body) {
 
 test.before(async () => {
     if (!url) return;
-    const { PostgresFirestore } = await import('../../database/postgres-firestore.js');
+    const { PostgresDataStore } = await import('../../database/postgres-data-store.js');
     const { createClientDbHandler } = await import('../../routes/client-db.js');
-    db = new PostgresFirestore({ connectionString: url });
+    db = new PostgresDataStore({ connectionString: url });
     await db._run(client => client.query('truncate public.users, public.notifications, public.products, public.audit_logs, public.system, public.api_keys'));
     await db.collection('users').doc('admin1').set({ uid: 'admin1', role: 'Admin' });
     await db.collection('users').doc('bob').set({ uid: 'bob', role: 'Developer', plan: 'Free', apiRequestLimit: 50, email: 'bob@example.com' });

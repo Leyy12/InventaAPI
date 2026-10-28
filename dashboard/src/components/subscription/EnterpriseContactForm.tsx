@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { collection, addDoc } from '@/lib/data/firestore-client';
-import { db } from '@/lib/firebase/config';
+import { collection, addDoc } from '@/lib/data/data-client';
+import { db } from '@/lib/supabase/config';
 
 interface EnterpriseContactFormProps {
   onClose: () => void;
@@ -43,7 +43,7 @@ export default function EnterpriseContactForm({ onClose, onSuccess }: Enterprise
         throw new Error('Please enter a valid email address');
       }
 
-      // Save to Firestore
+      // Save to the database
       await addDoc(collection(db, 'enterprise_inquiries'), {
         fullName: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),

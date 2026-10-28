@@ -6,7 +6,7 @@ import "./theme.css"; // light mode (after globals so it wins)
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import AdminLayoutWrapper from "@/components/layout/AdminLayoutWrapper";
 import AppDialogHost from "@/components/shared/AppDialog";
-import { AdminAuthProvider } from "@/lib/firebase/admin-auth-context";
+import { AdminAuthProvider } from "@/lib/supabase/admin-auth-context";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });

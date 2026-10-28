@@ -102,7 +102,8 @@ export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion,
     try { await settingsRef(db).get(); databaseStatus = 'Connected'; } catch { databaseStatus = 'Unavailable'; }
     return res.json({ success: true, apiVersion: typeof apiVersion === 'string' ? apiVersion : null,
       environment: deploymentEnvironment({ development: env.NODE_ENV === 'development', vercelEnvironment: env.VERCEL_ENV,
-        firebaseProjectId: env.FIREBASE_PROJECT_ID, cloudRunService: env.K_SERVICE }),
+        // FIREBASE_PROJECT_ID is the old name of DATA_PROJECT_ID, read until Vercel is updated.
+        dataProjectId: env.DATA_PROJECT_ID ?? env.FIREBASE_PROJECT_ID, cloudRunService: env.K_SERVICE }),
       databaseStatus, checkedAt: now().toISOString(), uptime: 'Not tracked' });
   });
   const publicStatus = wrap(async (_req, res) => {

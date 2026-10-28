@@ -1,5 +1,5 @@
 -- The trial-expiry email job (functions/trial-warning.mjs) records each warning here.
--- Same shape and rules as the other Inventa tables: Firestore document id + JSON data,
+-- Same shape and rules as the other Inventa tables: stored document id + JSON data,
 -- Row Level Security on with no policies (server connection only).
 create table if not exists public.trial_warning_deliveries (
   id text primary key,

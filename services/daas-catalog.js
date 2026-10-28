@@ -42,7 +42,7 @@ function matchesSearch(product, searchQuery) {
 
 /**
  * Resolves product IDs from the API-key relationship on every call. A legacy
- * linkedProducts entry may contribute only its stored Firestore document ID;
+ * linkedProducts entry may contribute only its stored stored document ID;
  * all embedded product fields are ignored so an existing key always sees the
  * current eligible product document.
  */

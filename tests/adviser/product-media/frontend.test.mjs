@@ -27,7 +27,7 @@ test('Customer retries exact file/key/payload across failed upload, failed submi
   const user={uid:'customer',getIdToken:async()=> 'synthetic-token'};
   const Modal=load('dashboard/src/components/products/AddProductModal.tsx','AddProductModal',h,{
     'lucide-react':Object.fromEntries(['Plus','X','AlertTriangle','Check','Save','Loader2','Upload'].map(key=>[key,'svg'])),
-    '@/lib/product-image-url':{normalizeProductImageUrl},'@/lib/firebase/auth-context':{useAuth:()=>({user,appUser:{plan:'Free',businessSegment:'Grocery'}})},
+    '@/lib/product-image-url':{normalizeProductImageUrl},'@/lib/supabase/auth-context':{useAuth:()=>({user,appUser:{plan:'Free',businessSegment:'Grocery'}})},
     '../../../../services/customer-segment.js':{restrictedSegmentAccount:()=>true,activeCustomerSegment:()=> 'Grocery'},
     './ProductImageField':'image-field','@/lib/product-media-client':{uploadProductImage:async(_,workflow,operation)=>{assert.equal(workflow,'submission');uploadOperations.push(operation);if(++uploads===1)throw Error('Upload unavailable');operation.assetId='a'.repeat(64);return operation.assetId;}},
     './SubmissionFeedbackDialog':'submission-feedback',
@@ -59,14 +59,14 @@ test('product image fit has stable height, preserves complete packaging and reta
 
 function adminForm(name, h, request, upload) {
   h.React.useId = () => 'admin-form';
-  const brandNameWarning = load('admin-panel/src/lib/catalog-client.ts','brandNameWarning',h,{'@/lib/firebase/config':{auth:{}}});
+  const brandNameWarning = load('admin-panel/src/lib/catalog-client.ts','brandNameWarning',h,{'@/lib/supabase/config':{auth:{}}});
   return load('admin-panel/src/app/products/page.tsx',name,h,{
     '@/lib/product-image-url':{normalizeProductImageUrl,productImageSource,showProductImageFallback},
     '@/lib/catalog-csv':{catalogCsv(){}},'@/components/products/ProductImageField':'image-field',
     '@/lib/product-media-client':{uploadProductImage:upload},
-    'lucide-react':new Proxy({},{get:()=> 'svg'}),'@/lib/data/firestore-client':{},
+    'lucide-react':new Proxy({},{get:()=> 'svg'}),'@/lib/data/data-client':{},
     '@/lib/catalog-client':{catalogRequest:request,brandNameWarning},
-    '@/lib/firebase/config':{db:{},auth:{currentUser:{uid:'admin',getIdToken:async()=> 'token'}}},
+    '@/lib/supabase/config':{db:{},auth:{currentUser:{uid:'admin',getIdToken:async()=> 'token'}}},
     '@/components/admin/ImportCsvModal':{__esModule:true,default:'csv-modal'},
   },{crypto:{randomUUID:()=> 'admin-stable-operation-key'},alert(){}});
 }

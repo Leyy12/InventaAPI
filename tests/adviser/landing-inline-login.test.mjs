@@ -82,5 +82,5 @@ test('legacy logout markers are consumed, never mapped to form/modal visibility'
   const body = entry.slice(entry.indexOf('    if (!loading && !user)'), entry.indexOf('  const destination'));
   assert.match(body, /consumePostLogoutLoginEntry\(\)/);
   assert.doesNotMatch(body, /setPendingPlan|setShow|router/);
-  assert.match(read('dashboard/src/lib/firebase/auth-context.tsx'), /if \(busy\) beginCustomerLogout\(\)/);
+  assert.match(read('dashboard/src/lib/supabase/auth-context.tsx'), /if \(busy\) beginCustomerLogout\(\)/);
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../r2a/memory-store.mjs';
 import { createPasswordResetHandlers, createEmailVerificationHandlers, passwordResetEmail,
   PASSWORD_RESET_COLLECTION } from '../../../services/email-verification.js';
 
@@ -14,7 +14,7 @@ const accounts = { [email]: 'juan-uid' };
 const sent = { success: true, expiresInSeconds: 600, resendAvailableInSeconds: 60 };
 
 function fixture({ deliver, setPassword, revoke } = {}) {
-  const db = memoryFirestore({});
+  const db = memoryStore({});
   const state = { now: Date.parse('2026-10-20T08:00:00.000Z'), generated: 0, mail: [], passwords: [], revoked: [], reports: [], lookups: [] };
   const options = { getDb: () => db,
     sendEmail: async message => { if (deliver) await deliver(message); state.mail.push(message); },

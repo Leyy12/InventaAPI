@@ -1,15 +1,15 @@
 import express from 'express';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 import { createCustomerCatalogHandler } from '../services/customer-catalog.js';
 import { projectProduct, withoutPrices } from '../services/product-contract.js';
 
 const router = express.Router();
 
-router.get('/', createCustomerCatalogHandler({ getDb: getFirestore, cacheMs: 30000 }));
+router.get('/', createCustomerCatalogHandler({ getDb: getDataStore, cacheMs: 30000 }));
 
 router.get('/:id', async (req, res) => {
   try {
-    const db = getFirestore();
+    const db = getDataStore();
     const doc = await db.collection('products').doc(req.params.id).get();
     // Same visibility as the public list: hidden, archived or draft products stay private.
     if (!doc.exists || !projectProduct(doc.data(), doc.id)?.visibility.visible) {

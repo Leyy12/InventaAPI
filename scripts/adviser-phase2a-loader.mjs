@@ -8,7 +8,7 @@ const modules = new Set([
   'functions/legacy-pro-compatibility.mjs',
   'services/api-key-security.js', 'services/api-key-management.js', 'services/account-quota.js',
   'services/daas-security.js', 'services/daas-catalog.js', 'services/product-contract.js', 'services/customer-segment.js',
-  'tests/adviser/phase2a/memory-firestore.mjs', 'tests/adviser/phase2a/api-key-security.test.mjs',
+  'tests/adviser/phase2a/memory-store.mjs', 'tests/adviser/phase2a/api-key-security.test.mjs',
   'tests/adviser/phase2a/rules-and-wiring.test.mjs',
 ].map(path => resolve(root, path)));
 const builtins = new Set(['node:test', 'node:assert/strict', 'node:crypto', 'node:fs']);

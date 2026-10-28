@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { signInWithEmailAndPassword, signOut } from "@/lib/supabase-auth";
-import { doc, getDocFromServer } from "@/lib/data/firestore-client";
-import { auth, db } from "@/lib/firebase/config";
+import { doc, getDocFromServer } from "@/lib/data/data-client";
+import { auth, db } from "@/lib/supabase/config";
 import { useRouter } from "next/navigation";
 import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";
 import type { PlanId } from "@/config/plans";
@@ -68,13 +68,13 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
     setSuccess("");
 
     try {
-      // 1. Sign in with Firebase
+      // 1. Sign in with Supabase Auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       console.log("[LOGIN] User authenticated:", user.email);
 
-      // 2. Get user role from Firestore
+      // 2. Get the user's role from their profile
       const userDoc = await getDocFromServer(doc(db, "users", user.uid));
       if (auth.currentUser !== user) throw new Error('Session ended during login. Please try again.');
       const userData = userDoc.data();
@@ -183,9 +183,9 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
       let errorMessage = "An error occurred during login. Please try again.";
 
       if (err && typeof err === 'object' && 'code' in err) {
-        const firebaseError = err as { code: string; message: string };
+        const authError = err as { code: string; message: string };
 
-        switch (firebaseError.code) {
+        switch (authError.code) {
           case 'auth/wrong-password':
             errorMessage = "❌ Incorrect password. Please check your password and try again.";
             break;
@@ -208,7 +208,7 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
             errorMessage = "❌ Invalid email or password. Please check your credentials.";
             break;
           default:
-            errorMessage = `❌ Login failed: ${firebaseError.code}`;
+            errorMessage = `❌ Login failed: ${authError.code}`;
         }
       }
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from './r2a/memory-store.mjs';
 import { createApiKeyHandlers } from '../../services/api-key-management.js';
 import { createPaymentHandlers } from '../../services/payment-checkout.js';
 import { fulfillPayment } from '../../services/payment-webhook.js';
@@ -35,7 +35,7 @@ const proof = (allowance = null, account = legacy, plan = 'pro_max') => ({
 function fixture({ account = legacy, extra, used = 237, implementation = { createApiKeyHandlers, createPaymentHandlers, fulfillPayment }, at = NOW, limits = configured } = {}) {
   let now = at, calls = 0;
   const key = issueCredential();
-  const db = memoryFirestore({ 'users/customer': account, 'system/settings': { planRequestLimits: limits },
+  const db = memoryStore({ 'users/customer': account, 'system/settings': { planRequestLimits: limits },
     'account_api_usage/customer': { window: '2026-10-14', used },
     [`api_keys/${key.id}`]: { ...key.stored, userId: 'customer', status: 'active', linkedProductIds: [] },
     ...(extra ?? (account.plan === 'Pro Max' ? proof(null, account) : account.plan === 'Pro' ? proof(500, account, 'pro') : {})) });
@@ -416,13 +416,13 @@ test('actual personalized Billing cards match renewed legacy Unlimited and genui
     const providerHooks = hooks(); let context;
     providerHooks.React.createContext = value => (context = { value, Provider: 'provider' }); providerHooks.React.useContext = value => value.value;
     const module = load('dashboard/src/lib/plan-request-policy.tsx', 'exports', providerHooks, { '@/config/plans': config,
-      '@/lib/firebase/auth-context': { useAuth: () => auth }, '../../../functions/request-limit-policy.mjs': policy }, {
+      '@/lib/supabase/auth-context': { useAuth: () => auth }, '../../../functions/request-limit-policy.mjs': policy }, {
       setInterval: () => 1, clearInterval() {}, fetch: async url => { assert.equal(url, '/api/v1/system/status');
         return { ok: true, json: async () => ({ success: true, planRequestLimits: configured, requestPolicyVersion: policy.requestPolicyVersion(configured) }) }; } });
     providerHooks.mount(module.PlanRequestPolicyProvider); await flush(); context.value = providerHooks.output.props.value;
     const h = hooks(), Billing = load('dashboard/src/app/dashboard/plan-billing/page.tsx', 'PlanBillingPage', h, {
       'next/link': 'a', 'lucide-react': icons, '@/config/plans': config, '@/lib/plan-request-policy': module,
-      '@/lib/firebase/auth-context': { useAuth: () => auth }, '@/components/subscription/SubscriptionModal': () => null, '@/components/subscription/FreeTrialContent': () => null });
+      '@/lib/supabase/auth-context': { useAuth: () => auth }, '@/components/subscription/SubscriptionModal': () => null, '@/components/subscription/FreeTrialContent': () => null });
     const tree = expand(h.mount(Billing)), card = nodes(tree, node => node.type === 'article').find(node => /Pro Max/.test(text(node)));
     const quota = await f.consume(); assert.equal(quota.usage.limit, response.body.apiRequestLimit);
     assert.match(text(card), account === legacy ? /Unlimited account request quota/ : /10 requests\/day \(UTC\)/);

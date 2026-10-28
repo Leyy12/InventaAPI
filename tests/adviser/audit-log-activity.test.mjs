@@ -4,15 +4,15 @@ import assert from 'node:assert/strict';
 import { createCatalogHandlers } from '../../services/catalog-management.js';
 import { createProductSubmissionHandlers } from '../../services/product-submissions.js';
 import { createApiKeyHandlers } from '../../services/api-key-management.js';
-import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
-import { memoryFirestore as keyFirestore } from './phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from './r2a/memory-store.mjs';
+import { memoryStore as keyFirestore } from './phase2a/memory-store.mjs';
 
 const at = '2026-10-13T01:00:00.000Z';
 const product = { name: 'Synthetic Rice', brand: 'Fixture', segment: 'Grocery', category: 'Grains',
   description: 'Private body sentinel', variants: [{ sku: 'TEST-RICE', size: '1kg', price: 1, password: 'variant-secret-sentinel' }] };
 const submissionProduct = { ...product, variants: [{ sku: 'TEST-RICE', size: '1kg', price: 1 }] };
 function fixture(extra = {}, withEmail = true) {
-  const db = memoryFirestore({ 'users/admin': { role: 'Admin', email: 'untrusted-profile@example.test' },
+  const db = memoryStore({ 'users/admin': { role: 'Admin', email: 'untrusted-profile@example.test' },
     'users/customer': { role: 'Developer', plan: 'Free', businessSegment: 'Grocery' }, ...extra });
   const auditAttempts = [], collection = db.collection;
   let auditSerial = 0;

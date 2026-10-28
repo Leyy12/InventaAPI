@@ -6,16 +6,10 @@ test('history route precedes arbitrary key ID route; SDK checks revocation and d
   const route=source('routes/apikeys.js');assert.ok(route.indexOf("router.get('/history'")<route.indexOf("router.get('/:id'"));
   assert.match(route,/FieldPath.documentId\(\)/);assert.match(route,/verifyIdToken\(token, checkRevoked\)/);
 });
-test('composite index matches account and stable descending query',()=>{
-  const indexes=JSON.parse(source('firestore.indexes.json')).indexes;
-  assert.ok(indexes.some(i=>i.collectionGroup==='api_telemetry' && JSON.stringify(i.fields)===JSON.stringify([
-    {fieldPath:'userId',order:'ASCENDING'},{fieldPath:'timestamp',order:'DESCENDING'},{fieldPath:'__name__',order:'DESCENDING'}])));
-});
 test('Customer history uses Bearer-authenticated backend, never direct Firestore telemetry reads',()=>{
   const ui=source('dashboard/src/components/api/RequestHistory.tsx');assert.match(ui,/apiKeyRequest\(user, '\/history'/);assert.match(ui,/key=\{user.uid\}/);
   assert.doesNotMatch(ui,/firebase\/firestore|collection\(/);
   assert.match(source('dashboard/src/lib/api-keys.ts'),/getIdToken\(\)/);
-  assert.doesNotMatch(source('firestore.rules'),/match \/api_telemetry/);
 });
 test('no fabricated Consumer Name, status fallback or complete-history claim',()=>{
   const ui=source('dashboard/src/components/api/RequestHistory.tsx');

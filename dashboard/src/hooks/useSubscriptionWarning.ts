@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { useMemo } from "react";
 
 interface SubscriptionWarning {

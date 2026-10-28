@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Set(['functions/entitlement-limits.mjs','functions/request-limit-policy.mjs', 'functions/request-contract-evidence.mjs', 'functions/legacy-pro-compatibility.mjs', 'functions/subscription-lifecycle.mjs', 'services/api-key-security.js', 'services/payment-isolation.js', 'services/legacy-payment-offer.js', 'services/payment-contract.js', 'services/paymongo-checkout.js',
-  'services/payment-checkout.js', 'services/payment-webhook.js', 'tests/adviser/phase2b1/memory-firestore.mjs',
+  'services/payment-checkout.js', 'services/payment-webhook.js', 'tests/adviser/phase2b1/memory-store.mjs',
   'tests/adviser/phase2b1/payment.test.mjs', 'tests/adviser/phase2b1/wiring.test.mjs'].map(file => resolvePath(root, file)));
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('node:')) {

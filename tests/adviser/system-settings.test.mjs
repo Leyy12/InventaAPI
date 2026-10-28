@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import express from 'express';
-import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from './r2a/memory-store.mjs';
 import { createSystemSettingsHandlers, createSystemPolicyMiddleware } from '../../services/system-settings.js';
 import { DEFAULT_SYSTEM_SETTINGS, deploymentEnvironment } from '../../services/system-settings-contract.mjs';
 import { createIpRateLimiter } from '../../services/rate-limit-client-ip.js';
 import { completeCustomerSignup, readRegistrationPolicy } from '../../services/customer-registration.mjs';
 
 function fixture(settings = DEFAULT_SYSTEM_SETTINGS, extra = {}) {
-  const db = memoryFirestore({ 'users/admin': { role: 'Admin' }, 'users/customer': { role: 'Developer' },
+  const db = memoryStore({ 'users/admin': { role: 'Admin' }, 'users/customer': { role: 'Developer' },
     ...(settings ? { 'system/settings': structuredClone(settings) } : {}), ...extra });
   const decorate = snap => ({ ...snap, updateTime: snap.exists ? {
     seconds: parseInt(createHash('sha256').update(JSON.stringify(snap.data())).digest('hex').slice(0, 12), 16), nanoseconds: 0 } : undefined });
@@ -28,7 +28,7 @@ function fixture(settings = DEFAULT_SYSTEM_SETTINGS, extra = {}) {
   db.runTransaction = (callback, options) => originalTransaction(tx => callback({ ...tx, get: async ref => decorate(await tx.get(ref)) }), options);
   const verified = [], diagnostics = [];
   const handlers = createSystemSettingsHandlers({ getDb: () => db, apiVersion: '1.0.0',
-    env: { VERCEL_ENV: 'production', FIREBASE_PROJECT_ID: 'inventaapi-db' },
+    env: { VERCEL_ENV: 'production', DATA_PROJECT_ID: 'inventaapi-db' },
     now: () => new Date('2026-10-14T00:00:00Z'), report: () => diagnostics.push('safe audit failure'),
     verifyIdToken: async (token, revoked) => {
       verified.push([token, revoked]); if (!['admin', 'customer'].includes(token)) throw Error('private token error');
@@ -154,11 +154,11 @@ test('system information uses API package version and a real bounded-scope datab
   f.db.failDirectRead = 'system/settings'; assert.equal((await invoke(f.handlers.information, { token: 'admin' })).body.databaseStatus, 'Unavailable');
 });
 for (const [configuration, expected] of [
-  [{ development: true }, 'Development'], [{ vercelEnvironment: 'production', firebaseProjectId: 'inventaapi-db' }, 'Production'],
-  [{ cloudRunService: 'inventaapi-api-staging', firebaseProjectId: 'inventaapi-staging' }, 'Staging'],
-  [{ firebaseProjectId: 'inventaapi-staging', apiOrigin: 'https://inventaapi-api-staging-or463scbca-as.a.run.app' }, 'Staging'],
-  [{ vercelEnvironment: 'preview', firebaseProjectId: 'inventaapi-db' }, 'Unknown'], [{}, 'Unknown'],
-  [{ vercelEnvironment: 'production', firebaseProjectId: 'unexpected' }, 'Unknown'],
+  [{ development: true }, 'Development'], [{ vercelEnvironment: 'production', dataProjectId: 'inventaapi-db' }, 'Production'],
+  [{ cloudRunService: 'inventaapi-api-staging', dataProjectId: 'inventaapi-staging' }, 'Staging'],
+  [{ dataProjectId: 'inventaapi-staging', apiOrigin: 'https://inventaapi-api-staging-or463scbca-as.a.run.app' }, 'Staging'],
+  [{ vercelEnvironment: 'preview', dataProjectId: 'inventaapi-db' }, 'Unknown'], [{}, 'Unknown'],
+  [{ vercelEnvironment: 'production', dataProjectId: 'unexpected' }, 'Unknown'],
 ]) test(`environment evidence resolves ${expected}: ${JSON.stringify(configuration)}`, () => assert.equal(deploymentEnvironment(configuration), expected));
 
 async function withPolicy(f, run) {

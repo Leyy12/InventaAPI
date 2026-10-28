@@ -1,5 +1,5 @@
 import { normalizeSegment } from '../../../services/product-contract.js';
-import type { Product } from './firebase/products-service';
+import type { Product } from './products-service';
 
 export type CatalogResult = { products: Product[]; total: number };
 export type CatalogSource = CatalogResult & { segment: string; status: 'loading' | 'ready' | 'error' };

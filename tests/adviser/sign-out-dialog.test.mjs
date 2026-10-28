@@ -91,9 +91,9 @@ test('Sidebar opens the themed confirmation; logout remains owned by the existin
   const h = hooks(); let calls = 0;
   const Sidebar = load('dashboard/src/components/layout/Sidebar.tsx', 'Sidebar', h, {
     'next/link': 'a', 'next/image': 'img', 'next/navigation': { usePathname: () => '/dashboard' },
-    '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
+    'react-dom': { createPortal: node => node }, '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
     'lucide-react': { LogOut: 'svg' },
-    '@/lib/firebase/auth-context': { useAuth: () => ({ loading: false, user: { uid: 'synthetic', email: 'customer@example.invalid' },
+    '@/lib/supabase/auth-context': { useAuth: () => ({ loading: false, user: { uid: 'synthetic', email: 'customer@example.invalid' },
       appUser: { plan: 'Free Trial' }, logout: async () => { calls++; return { ok: true }; } }) },
     './dashboard-navigation': { dashboardRoutes: [], routeActive: () => false },
     '@/components/auth/SignOutDialog': 'sign-out-dialog',

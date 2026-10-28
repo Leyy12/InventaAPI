@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { memoryFirestore, invoke } from './r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from './r2a/memory-store.mjs';
 import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, requestPolicyVersion, newRequestContract } from '../../functions/request-limit-policy.mjs';
 import { consumeAccountQuota } from '../../services/account-quota.js';
 import { issueCredential } from '../../services/api-key-security.js';
@@ -16,7 +16,7 @@ const account = (plan = 'Pro') => ({ uid: 'customer', role: 'Developer', busines
 function quotaFixture({ plan = 'Pro', limits = DEFAULT_REQUEST_LIMITS, used = 0, contracts, profileExtra = {}, trial = false } = {}) {
   let at = now;
   const keys = [issueCredential(), issueCredential()];
-  const db = memoryFirestore({ 'users/customer': { ...account(plan), ...profileExtra }, 'system/settings': { planRequestLimits: limits },
+  const db = memoryStore({ 'users/customer': { ...account(plan), ...profileExtra }, 'system/settings': { planRequestLimits: limits },
     'account_api_usage/customer': { window: '2026-10-14', used },
     ...((contracts || plan !== 'Free') ? { 'account_request_contracts/customer': { version: 1,
       plans: contracts ?? { [plan === 'Pro Max' ? 'pro_max' : 'pro']: newRequestContract(plan === 'Pro Max' ? null : 500) } } } : {}),
@@ -32,7 +32,7 @@ test('accepted initial request defaults and permitted Unlimited policies are val
 
 test('malformed private promise state cannot be overwritten by Trial activation', async () => {
   for (const contracts of [{ version: 2, plans: {} }, { version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 0 } } }]) {
-    const db = memoryFirestore({ 'users/customer': { uid: 'customer', role: 'Developer', plan: 'Free', businessSegment: 'Grocery' },
+    const db = memoryStore({ 'users/customer': { uid: 'customer', role: 'Developer', plan: 'Free', businessSegment: 'Grocery' },
       'account_request_contracts/customer': contracts });
     const trials = createFreeTrialHandlers({ getDb: () => db, verifyIdToken: async () => ({ uid: 'customer' }), clock: () => now });
     const result = await invoke(trials.session, { token: 'synthetic' }); assert.equal(result.statusCode, 503);
@@ -106,7 +106,7 @@ test('API-key metadata uses the same effective policy without credential recreat
 });
 
 test('missing finite Trial counter is unavailable in metadata and cannot admit or reset requests', async () => {
-  const credential = issueCredential(), db = memoryFirestore({ 'users/customer': { ...account('Free'), hasUsedFreeTrial: true,
+  const credential = issueCredential(), db = memoryStore({ 'users/customer': { ...account('Free'), hasUsedFreeTrial: true,
     trialVersion: 1, trialConsumed: false, trialStartedAt: '2026-10-13T12:00:00Z', trialExpiresAt: '2026-10-20T12:00:00Z' },
     'account_request_contracts/customer': { version: 1, plans: { free_trial: newRequestContract(10) } },
     'system/settings': { planRequestLimits: { ...DEFAULT_REQUEST_LIMITS, free_trial: 10 } },
@@ -120,7 +120,7 @@ test('missing finite Trial counter is unavailable in metadata and cannot admit o
 
 const orderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 function paymentFixture(limits, initialAccount = { ...account('Free'), subscriptionStartedAt: null, subscriptionExpiresAt: null }) {
-  const db = memoryFirestore({ 'users/customer': initialAccount, 'system/settings': { planRequestLimits: limits },
+  const db = memoryStore({ 'users/customer': initialAccount, 'system/settings': { planRequestLimits: limits },
     ...(initialAccount.plan !== 'Free' ? { 'account_request_contracts/customer': { version: 1,
       plans: { [initialAccount.plan === 'Pro Max' ? 'pro_max' : 'pro']: newRequestContract(initialAccount.plan === 'Pro Max' ? null : 500) } } } : {}) });
   let providerCalls = 0;

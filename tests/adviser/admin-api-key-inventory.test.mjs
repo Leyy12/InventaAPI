@@ -129,7 +129,7 @@ function hookFixture() {
   const h = hooks(), b = browser(), pending = [], calls = [];
   let user = { uid: 'synthetic-admin', getIdToken: async () => 'synthetic-token' };
   const hook = load('admin-panel/src/lib/use-account-entitlements.ts', 'useAccountEntitlements', h,
-    { './firebase/admin-auth-context': { useAdminAuth: () => ({ user }) } }, {
+    { './supabase/admin-auth-context': { useAdminAuth: () => ({ user }) } }, {
       ...b, setInterval: () => { throw Error('Polling prohibited'); },
       fetch: (url, init) => { calls.push({ url, init }); return new Promise((resolve, reject) => pending.push({ resolve, reject })); },
     });
@@ -175,11 +175,11 @@ function pageFixture() {
   const linkedProps = { names: { p1: 'Persisted Product', old: 'Historical Product' }, loading: false, error: false };
   const Component = load('admin-panel/src/app/consumers/page.tsx', 'ConsumersPage', h, {
     'lucide-react': new Proxy({}, { get: () => stub }),
-    '@/lib/data/firestore-client': { collection: (_db, name) => name, query: value => value, orderBy: stub,
+    '@/lib/data/data-client': { collection: (_db, name) => name, query: value => value, orderBy: stub,
       onSnapshot: (name, publish) => { subscriptions.push(name); publish({ docs: (name === 'users'
         ? [{ id: 'a', data: () => ({ businessName: 'Synthetic Owner', email: 'synthetic@invalid.test' }) }]
         : keyRows.map(row => ({ id: row.id, data: () => row }))) }); return stub; } },
-    '@/lib/firebase/config': { db: {} },
+    '@/lib/supabase/config': { db: {} },
     '@/lib/use-admin-key-inventory': { useAdminKeyInventory: () => ({ records: ['ready', 'refreshing'].includes(inventoryState) ? keyRows : [], status: inventoryState }) },
     '@/lib/use-account-entitlements': { useAccountEntitlements: (...args) => args[3] ? { accounts: { a: trial }, status: 'ready' } : { a: pro } },
     '@/lib/api-key-inventory': inventory, '@/components/admin/InventoryDetails': details,
@@ -220,9 +220,9 @@ test('sidebar retains all six Admin destinations in order, with Inventory active
   const Sidebar = load('admin-panel/src/components/layout/AdminSidebar.tsx', 'AdminSidebar', h, {
     'next/link': { __esModule: true, default: Link }, 'next/image': { __esModule: true, default: stub },
     'next/navigation': { usePathname: () => '/consumers' },
-    '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
+    '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, 'react-dom': { createPortal: node => node }, '@/lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
     'lucide-react': new Proxy({}, { get: () => stub }),
-    '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ adminUser: null, logout: stub }) },
+    '@/lib/supabase/admin-auth-context': { useAdminAuth: () => ({ adminUser: null, logout: stub }) },
   });
   h.mount(Sidebar);
   const links = nodes(h.output, n => n.type === Link);

@@ -37,7 +37,7 @@ test('verified policy changes refresh the same account once, matching personaliz
     apiRequestLimit: 500, purchaseRequestLimits: { pro: 500, pro_max: null } }, refreshUserDoc: async () => { refreshes++; } };
   let response = { success: true, planRequestLimits: policy.DEFAULT_REQUEST_LIMITS, requestPolicyVersion: auth.entitlement.requestPolicyVersion };
   const module = load('dashboard/src/lib/plan-request-policy.tsx', 'exports', h, {
-    '@/config/plans': config, '@/lib/firebase/auth-context': { useAuth: () => auth }, '../../../functions/request-limit-policy.mjs': policy,
+    '@/config/plans': config, '@/lib/supabase/auth-context': { useAuth: () => auth }, '../../../functions/request-limit-policy.mjs': policy,
   }, { setInterval: fn => { interval = fn; return 1; }, clearInterval: () => {}, fetch: async url => {
     assert.equal(url, '/api/v1/system/status'); calls++; return { ok: true, json: async () => response };
   } });
@@ -67,7 +67,7 @@ test('real billing current allowance and cards share verified values; unavailabl
   const h = hooks(); let ready = true;
   const Component = load('dashboard/src/app/dashboard/plan-billing/page.tsx', 'PlanBillingPage', h, {
     'next/link': 'a', 'lucide-react': icons, '@/config/plans': config,
-    '@/lib/firebase/auth-context': { useAuth: () => ({ loading: false, entitlement: { activePro: true, plan: 'Pro', subscription_status: 'active', canPurchasePro: true, canPurchaseProMax: true } }) },
+    '@/lib/supabase/auth-context': { useAuth: () => ({ loading: false, entitlement: { activePro: true, plan: 'Pro', subscription_status: 'active', canPurchasePro: true, canPurchaseProMax: true } }) },
     '@/lib/plan-request-policy': { useAccountRequestAllowance: () => ready ? 1000 : undefined,
       usePlanCatalog: () => ({ plans: config.plansForRequestLimits(ready ? { free_trial: null, pro: 1000, pro_max: null } : null), status: ready ? 'ready' : 'unavailable' }) },
     '@/components/subscription/SubscriptionModal': () => null, '@/components/subscription/FreeTrialContent': () => null,
@@ -86,7 +86,7 @@ test('real upgrade modal advertises personalized allowance and freezes verified 
     const location = { href: '' };
     const Component = load('dashboard/src/components/subscription/SubscriptionModal.tsx', 'SubscriptionModal', h, {
       'next/navigation': { useRouter: () => ({ push() {} }) }, 'lucide-react': icons, '@/config/plans': config,
-      '@/lib/firebase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic', getIdToken: async () => 'synthetic-only' }, entitlement: { canPurchasePro: true } }) },
+      '@/lib/supabase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic', getIdToken: async () => 'synthetic-only' }, entitlement: { canPurchasePro: true } }) },
       '@/lib/plan-request-policy': { usePlanCatalog: () => ({ plans: config.plansForRequestLimits(ready ? { free_trial: null, pro: 1000, pro_max: null } : null), status: ready ? 'ready' : 'unavailable', requestPolicyVersion: ready ? version : null }) },
     }, { window: { location }, fetch: async (url, options) => {
       assert.equal(url, 'https://synthetic.invalid/api/v1/checkout/create-gcash'); requests.push(JSON.parse(options.body));
@@ -104,7 +104,7 @@ test('real upgrade modal advertises personalized allowance and freezes verified 
 test('real Overview usage renders the authoritative 1,000 allowance and preserved usage, hiding unverified or stale summaries', async () => {
   const h = hooks(), now = new Date(), reset = new Date(now); reset.setUTCHours(24, 0, 0, 0);
   const Component = load('dashboard/src/components/reports/CustomerUsageSummary.tsx', 'Usage', h, {
-    '@/lib/trial-display.mjs': {}, 'next/link': 'a', '@/lib/firebase/auth-context': {},
+    '@/lib/trial-display.mjs': {}, 'next/link': 'a', '@/lib/supabase/auth-context': {},
     '@/config/plans': config, '@/lib/plan-request-policy': {}, '@/lib/reports': reporting,
     '@/lib/quota-refresh': { createQuotaRefresh }, '@/lib/account-usage-events': { subscribeAccountUsage: () => () => {} },
     '@/lib/api-keys': { apiKeyRequest: async () => ({ keys: [{}, {}], usage: { scope: 'account', period: 'daily',
@@ -123,7 +123,7 @@ test('real API Keys page receives updated allowance without remounting the key s
   const Component = load('dashboard/src/app/dashboard/api-keys/page.tsx', 'ApiKeysPage', h, {
     'next/link': 'a', 'lucide-react': icons, '@/config/plans': config,
     '@/lib/plan-request-policy': { useAccountRequestAllowance: () => allowance },
-    '@/lib/firebase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement: { subscription_status: 'active' } }) },
+    '@/lib/supabase/auth-context': { useAuth: () => ({ user: { uid: 'synthetic' }, entitlement: { subscription_status: 'active' } }) },
     '@/lib/api-keys': {}, '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/api-key-generation': {}, '@/components/reports/CustomerUsageSummary': () => null,
     '@/components/api/RequestHistory': () => null, '@/components/shared/CodeSnippet': () => null,
   });

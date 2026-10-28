@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { ShieldAlert, Search, Clock, User, FileText } from "lucide-react";
-import { collection, getDocs, query, orderBy, limit, where } from "@/lib/data/firestore-client";
-import { db } from "@/lib/firebase/config";
+import { collection, getDocs, query, orderBy, limit, where } from "@/lib/data/data-client";
+import { db } from "@/lib/supabase/config";
 import { auditAction, auditActor, auditDetails, auditMatches, auditTimestamp, type AuditLogRecord } from "@/lib/audit-log-display";
 
 const LOGS_PER_PAGE = 50;
@@ -75,7 +75,7 @@ export default function AuditLogsPage() {
   };
 
   return (
-    <div className="w-full px-6 lg:px-8 space-y-8 pb-10">
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-8 pb-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">

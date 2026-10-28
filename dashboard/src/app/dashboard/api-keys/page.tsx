@@ -5,7 +5,7 @@ import { appAlert, appConfirm } from "@/components/shared/AppDialog";
 import Link from "next/link";
 import { Check, CheckCircle2, Clock, Code, Copy, Key, Shield, Trash2 } from "lucide-react";
 import type { User } from "@/lib/supabase-auth";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
 import RequestHistory from "@/components/api/RequestHistory";
@@ -109,7 +109,7 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance }: {
   };
 
   return (
-    <div className="w-full px-6 lg:px-8 space-y-6 pb-10">
+    <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-6 pb-10">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-2">
           <Key className="w-8 h-8 text-indigo-400" /> API Keys

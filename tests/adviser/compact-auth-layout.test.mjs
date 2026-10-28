@@ -16,10 +16,10 @@ for (const pendingPlan of [null, 'free', 'pro', 'pro_max']) {
   test(`real inline card is plan-neutral without discarding ${pendingPlan} continuation`, () => {
     const h = hooks();
     const component = load('dashboard/src/components/auth/LoginForm.tsx', 'exports.default', h, {
-      'next/image': 'Image', 'next/link': 'Link', '@/lib/supabase-auth': {}, '@/lib/data/firestore-client': {},
-      '@/lib/firebase/config': { auth: {}, db: {} },
+      'next/image': 'Image', 'next/link': 'Link', '@/lib/supabase-auth': {}, '@/lib/data/data-client': {},
+      '@/lib/supabase/config': { auth: {}, db: {} },
       'next/navigation': { useRouter: () => ({}) },
-      '@/lib/firebase/auth-context': { useAuth: () => ({ refreshUserDoc() {} }) },
+      '@/lib/supabase/auth-context': { useAuth: () => ({ refreshUserDoc() {} }) },
       'lucide-react': icons, '../../../../services/auth-navigation': navigation,
       '../../../../services/product-contract.js': { PRODUCT_SEGMENTS: ['Grocery', 'Pharmacy', 'Hardware'] },
       '../../../../services/customer-segment.js': {}, '@/lib/subscription': {},
@@ -77,7 +77,7 @@ test('Pricing navbar remains heading navigation; all three signup destinations r
 test('real signup retains every input, consent and both footer/submit actions', () => {
   const h = hooks();
   const component = load('dashboard/src/app/signup/page.tsx', 'SignupPageInner', h, {
-    '@/lib/supabase-auth': {}, '@/lib/data/firestore-client': {}, '@/lib/firebase/config': { auth: {}, db: {} },
+    '@/lib/supabase-auth': {}, '@/lib/data/data-client': {}, '@/lib/supabase/config': { auth: {}, db: {} },
     'next/navigation': { useRouter: () => ({}), useSearchParams: () => new URLSearchParams() },
     'lucide-react': icons, 'next/link': 'Link', 'next/image': 'Image',
     '../../../../services/auth-navigation': navigation,
@@ -146,7 +146,7 @@ test('logout and protected navigation still fail closed without a popup', () => 
   navigation.consumePostLogoutLoginEntry();
   assert.equal(navigation.customerLoginEntryDestination(), '/');
   assert.equal(navigation.navigationDecision({ path: '/dashboard/products', initializing: false, role: null }), '/');
-  const provider = read('dashboard/src/lib/firebase/auth-context.tsx');
+  const provider = read('dashboard/src/lib/supabase/auth-context.tsx');
   assert.match(provider, /clearSession\(\); router\.replace\('\/'\)/);
   assert.doesNotMatch(provider, /finally \{ router\.replace/);
 });

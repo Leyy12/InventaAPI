@@ -33,7 +33,7 @@ async function settingsFixture(options = {}) {
     return { ok: status === 200, status, json: async () => body };
   };
   const component = load('admin-panel/src/app/settings/page.tsx', 'SettingsPage', h, {
-    'next/link': 'Link', 'lucide-react': icons, '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    'next/link': 'Link', 'lucide-react': icons, '@/lib/supabase/admin-auth-context': { useAdminAuth: () => ({ user }) },
     '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS },
   }, { fetch: fakeFetch, process: { env: { NEXT_PUBLIC_API_URL: 'https://synthetic.invalid', NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT: options.environment || 'Production' } } });
   h.mount(component);

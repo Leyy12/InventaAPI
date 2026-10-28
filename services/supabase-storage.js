@@ -1,5 +1,5 @@
 // Product photo storage in a private Supabase Storage bucket. Same contract as the
-// earlier Firebase Storage adapter (see services/product-media.js):
+// earlier storage adapter (see services/product-media.js):
 //   verify()                          the bucket exists and is private
 //   putImmutable(path, bytes, digest) write once; never overwrite; prove the stored bytes
 //   read(path)                        bytes of a stored photo

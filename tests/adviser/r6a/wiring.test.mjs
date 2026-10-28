@@ -29,12 +29,6 @@ test('loading/error excluded from aggregation; bounded snapshot labels and no in
     'Latest 500 stored telemetry', 'No prior-period comparison', 'not a real-time feed', 'not a complete daily total']) assert.ok(page.includes(label));
   assert.doesNotMatch(page, /99\.9|operational|Math.random|previous:|generateTrafficData/iu);
 });
-test('rules default-deny telemetry and real emulator assertions cover Customer and Admin', () => {
-  const rules = read('firestore.rules'); assert.doesNotMatch(rules, /match \/api_telemetry/u);
-  assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/u);
-  const tests = read('scripts/test-adviser-phase2a-rules.mjs');
-  assert.match(tests, /\['customer', 'admin'\]/u); assert.match(tests, /direct telemetry get\/list\/create\/update\/delete remain denied/u);
-});
 test('test sandbox blocks external SDK and network access', async () => {
   for (const specifier of ['firebase-admin', 'node:http', '../../../database/firebase.js']) await assert.rejects(import(specifier));
   assert.throws(() => globalThis.fetch('https://example.invalid'));

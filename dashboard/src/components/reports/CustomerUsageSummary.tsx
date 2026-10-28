@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { User } from "@/lib/supabase-auth";
 import Link from "next/link";
 import { apiKeyRequest } from "@/lib/api-keys";
-import { useAuth } from "@/lib/firebase/auth-context";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { quotaSummary, quotaVerificationKey } from "@/lib/reports";
 import { createQuotaRefresh, type QuotaSource } from "@/lib/quota-refresh";
 import { subscribeAccountUsage } from "@/lib/account-usage-events";

@@ -13,7 +13,7 @@ export default function nextConfig(phase: string): NextConfig {
     // Only this derived non-secret label is exposed; NODE_ENV alone is not a deployment identity.
     env: { NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT: phase === PHASE_DEVELOPMENT_SERVER ? 'Development' : deploymentEnvironment({
       vercelEnvironment: process.env.VERCEL_ENV,
-      firebaseProjectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+      dataProjectId: process.env.NEXT_PUBLIC_DATA_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, // old name until Vercel is updated
       apiOrigin: process.env.NEXT_PUBLIC_API_URL,
     }) },
     turbopack: {

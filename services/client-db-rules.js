@@ -1,4 +1,4 @@
-// Server-side port of firestore.rules for the documents the dashboard and admin
+// Server-side access rules for the documents the dashboard and admin
 // browsers read and write through /api/v1/client-db. Every collection not listed
 // here is denied, exactly like the rules' default-deny match.
 //

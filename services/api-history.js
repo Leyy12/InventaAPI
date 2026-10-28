@@ -5,7 +5,7 @@ export const HISTORY_LIMIT = 50;
 
 export function recordedTimestamp(value) {
   try {
-    // The writer stores Firestore timestamps. Do not parse arbitrary strings,
+    // The writer stores stored timestamps. Do not parse arbitrary strings,
     // numeric epochs or missing values into invented historical dates.
     const date = value instanceof Date ? value : value?.toDate?.();
     return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
@@ -55,9 +55,9 @@ export function createApiHistoryHandler({ getDb, verifyIdToken, documentId }) {
       const rows = snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
       if (rows.some(row => row.data.userId !== actor.uid)) throw new Error('History ownership invariant');
       const records = rows.slice(0, HISTORY_LIMIT).map(row => historyRecord(row.data));
-      // Corrupt timestamp types can sort ahead of real timestamps in Firestore.
+      // Corrupt timestamp types can sort ahead of real timestamps in the database.
       // Keep valid recorded dates newest-first and put unavailable dates last.
-      // Stable sort preserves Firestore's document-ID tie-breaker.
+      // Stable sort preserves the document-ID tie-breaker.
       records.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       return res.json({ success: true, records, limit: HISTORY_LIMIT, hasMore: rows.length > HISTORY_LIMIT });
     } catch (error) { return sendSecurityError(res, error); }

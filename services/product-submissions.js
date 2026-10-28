@@ -19,7 +19,7 @@ function reviewView(snapshot) {
     createdAt: safeText(data.createdAt), productId: safeText(data.productId) || null, content };
 }
 
-// Dependencies are injected: isolated tests never import Firebase or configuration.
+// Dependencies are injected: isolated tests never import SDKs or configuration.
 export function createProductSubmissionHandlers({ getDb, verifyIdToken, now = () => new Date(), makeId = randomUUID, deriveReservationId }) {
   const timestamp = () => now().toISOString();
   const wrap = action => async (req, res) => {

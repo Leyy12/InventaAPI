@@ -152,7 +152,7 @@ function keyActions(tree) {
 async function renderTrial({ embedded = true, state = fixture, fail = false, pending = false } = {}) {
   const h = hooks(), c = clock();
   const Component = load('dashboard/src/components/subscription/FreeTrialContent.tsx', 'TrialPanel', h, {
-    'next/link': 'a', 'lucide-react': icons, '@/lib/firebase/auth-context': {},
+    'next/link': 'a', 'lucide-react': icons, '@/lib/supabase/auth-context': {},
     '@/lib/account-usage-events': { subscribeAccountUsage: () => () => {} },
     '@/lib/trial-display.mjs': { formatTrialExpiry, trialCapacityMessage, trialRemainingSlots },
     '../../../../functions/entitlement-limits.mjs': limits,
@@ -176,7 +176,7 @@ function renderBilling(trialTree, overrides = {}) {
   const h = hooks();
   const Component = load('dashboard/src/app/dashboard/plan-billing/page.tsx', 'PlanBillingPage', h, {
     'next/link': 'a', 'lucide-react': icons,
-    '@/lib/firebase/auth-context': { useAuth: () => ({ loading: false, entitlement: {
+    '@/lib/supabase/auth-context': { useAuth: () => ({ loading: false, entitlement: {
       activePro: false, activeTrial: true, plan: 'Free', subscription_status: 'trial',
       canPurchasePro: true, canPurchaseProMax: true, ...overrides,
     } }) },
@@ -330,7 +330,7 @@ test('rendered billing uses the same uncapped horizontal workspace as Products a
   }
   for (const route of ['products', 'api-keys']) {
     const page = read(`dashboard/src/app/dashboard/${route}/page.tsx`);
-    assert.match(page, /className="w-full px-6 lg:px-8\s/);
+    assert.match(page, /className="w-full px-6 max-sm:px-0 lg:px-8\s/);
   }
 });
 

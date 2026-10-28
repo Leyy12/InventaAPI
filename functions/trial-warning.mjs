@@ -31,7 +31,7 @@ export function warningId(uid, startedAt) {
   return createHash('sha256').update(`${uid}\u0000${startedAt}`).digest('hex');
 }
 
-// A Firestore transaction owns each attempt; the provider receives the same frozen
+// A database transaction owns each attempt; the provider receives the same frozen
 // payload and idempotency key on every retry. After the provider's 24h dedupe
 // window, uncertainty requires operator review rather than risking a second email.
 export async function processTrialWarning(db, uid, { now = () => new Date(), from, sendEmail }) {

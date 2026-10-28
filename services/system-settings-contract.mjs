@@ -21,13 +21,13 @@ export function validSettingsChanges(changes) {
       && Object.entries(value).every(([plan, limit]) => validPlanRequestLimit(plan, limit)) : typeof value === 'boolean');
 }
 
-/** @param {{ development?: boolean, vercelEnvironment?: string, firebaseProjectId?: string, cloudRunService?: string, apiOrigin?: string }} [configuration] */
-export function deploymentEnvironment({ development = false, vercelEnvironment, firebaseProjectId, cloudRunService, apiOrigin } = {}) {
+/** @param {{ development?: boolean, vercelEnvironment?: string, dataProjectId?: string, cloudRunService?: string, apiOrigin?: string }} [configuration] */
+export function deploymentEnvironment({ development = false, vercelEnvironment, dataProjectId, cloudRunService, apiOrigin } = {}) {
   if (development && !vercelEnvironment && !cloudRunService) return 'Development';
-  if (vercelEnvironment === 'production' && firebaseProjectId === 'inventaapi-db') return 'Production';
+  if (vercelEnvironment === 'production' && dataProjectId === 'inventaapi-db') return 'Production';
   let stagingOrigin = false;
   try { stagingOrigin = /^(?:[a-z0-9-]+---)?inventaapi-api-staging-[a-z0-9]+-as\.a\.run\.app$/u.test(new URL(apiOrigin).hostname); } catch { /* unknown origin */ }
-  if (firebaseProjectId === 'inventaapi-staging'
+  if (dataProjectId === 'inventaapi-staging'
     && (cloudRunService === 'inventaapi-api-staging' || stagingOrigin)) return 'Staging';
   return 'Unknown';
 }

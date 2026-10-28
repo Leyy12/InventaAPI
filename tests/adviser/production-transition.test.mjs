@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { memoryFirestore, invoke } from './phase2b1/memory-firestore.mjs';
+import { memoryStore, invoke } from './phase2b1/memory-store.mjs';
 import { paymentConfiguration, PRO_PURCHASE, PRO_MAX_PURCHASE } from '../../services/payment-contract.js';
 import { requirePaymentProject } from '../../services/payment-isolation.js';
 import { createPaymentHandlers } from '../../services/payment-checkout.js';
@@ -26,7 +26,7 @@ function fixture(limit = 500, { demo = false, project = 'inventaapi-db', mode = 
   payload.data.attributes.line_items[0].description = limit === 5000
     ? '1 Month Subscription — 5,000 API requests/day' : '1 Month Subscription — 500 API requests/day';
   order.providerRequestBody = JSON.stringify(payload);
-  const db = memoryFirestore({ 'users/owner': FREE, [`payment_orders/${ID}`]: order,
+  const db = memoryStore({ 'users/owner': FREE, [`payment_orders/${ID}`]: order,
     [`payment_sessions/${mode}_cs_synthetic`]: { orderId: ID, userId: 'owner', sessionId: order.sessionId, mode },
     'payment_checkout_locks/owner': { orderId: ID, sessionId: order.sessionId, mode },
     'account_daily_usage/owner_2026-10-15': { used: 41 }, 'trial_usage/owner': { selectedProductCount: 12 } });
@@ -156,7 +156,7 @@ for (let i = 0; i < 2; i++) test(`historical paid Pro ${i + 1}: local receipt/ev
 for (const [project, mode, allowed] of [['inventaapi-db', 'test', false], ['inventaapi-db', 'live', true],
   ['inventaapi-staging', 'test', true], ['wrong-project', 'live', false], [undefined, 'live', false]]) {
   test(`effective project ${project}, mode ${mode}: checkout ${allowed ? 'allowed' : 'rejected before writes'}`, async () => {
-    const db = memoryFirestore({ 'users/owner': FREE }); db.projectId = project; let calls = 0;
+    const db = memoryStore({ 'users/owner': FREE }); db.projectId = project; let calls = 0;
     const handlers = createPaymentHandlers({ getDb: () => db, getConfig: () => config(mode),
       verifyIdToken: async () => ({ uid: 'owner' }), clock: () => NOW, newOrderId: () => ID,
       createSession: async () => { calls++; return { sessionId: 'cs_new', paymentIntentId: 'pi_new', checkoutUrl: 'https://checkout.paymongo.com/new' }; } });
@@ -178,7 +178,7 @@ test('effective project overrides conflicting config; unknown identity and missi
   assert.throws(() => requirePaymentProject({ projectId: 'inventaapi-db' }, 'live', 'inventaapi-staging'), { code: 'PAYMENT_PROJECT' });
   assert.throws(() => requirePaymentProject({ get projectId() { throw Error('unresolved'); } }, 'live'), { code: 'PAYMENT_PROJECT' });
   assert.throws(() => requirePaymentProject({ projectId: 'inventaapi-db' }, undefined), { code: 'PAYMENT_MODE_ISOLATION' });
-  assert.throws(() => config('test', { firebaseProjectId: 'inventaapi-db' }), { code: 'PAYMENT_MODE_ISOLATION' });
+  assert.throws(() => config('test', { dataProjectId: 'inventaapi-db' }), { code: 'PAYMENT_MODE_ISOLATION' });
   assert.throws(() => config('live', { secretKey: 'sk_test_synthetic' }), { code: 'PAYMENT_CONFIG' });
 });
 
@@ -195,7 +195,7 @@ test('initiation hold defaults OFF, blocks checkout before writes, and preserves
 });
 
 for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) test(`standard ${purchase.plan} initiation keeps canonical price`, async () => {
-  const db = memoryFirestore({ 'users/owner': FREE }); db.projectId = 'inventaapi-db';
+  const db = memoryStore({ 'users/owner': FREE }); db.projectId = 'inventaapi-db';
   const h = createPaymentHandlers({ getDb: () => db, getConfig: () => config(), verifyIdToken: async () => ({ uid: 'owner' }),
     clock: () => NOW, newOrderId: () => ID, createSession: async ({ order }) => {
       assert.equal(order.amount, purchase.amount); assert.equal(order.billingProfile, undefined);
@@ -206,7 +206,7 @@ for (const purchase of [PRO_PURCHASE, PRO_MAX_PURCHASE]) test(`standard ${purcha
 });
 
 test('release validator rejects Production TEST mode and malformed initiation hold without secrets', () => {
-  const result = validateReleaseConfig({ NODE_ENV: 'production', FIREBASE_PROJECT_ID: 'inventaapi-db',
+  const result = validateReleaseConfig({ NODE_ENV: 'production', DATA_PROJECT_ID: 'inventaapi-db',
     PAYMONGO_MODE: 'test', PAYMENT_CHECKOUT_INITIATION_HOLD: 'invalid' }, { scope: 'backend', mode: 'production', nodeVersion: 'v22.20.0', now: NOW });
   assert.ok(result.errors.some(e => e.code === 'PAYMENT_MODE_ISOLATION'));
   assert.ok(result.errors.some(e => e.code === 'INVALID_CHECKOUT_HOLD'));

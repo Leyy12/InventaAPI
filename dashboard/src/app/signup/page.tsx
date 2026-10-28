@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { signInWithEmailAndPassword, signOut, type User } from "@/lib/supabase-auth";
-import { doc, getDocFromServer, setDoc, serverTimestamp } from "@/lib/data/firestore-client";
-import { auth, db } from "@/lib/firebase/config";
+import { doc, getDocFromServer, setDoc, serverTimestamp } from "@/lib/data/data-client";
+import { auth, db } from "@/lib/supabase/config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, KeyRound, AlertCircle, ArrowRight, ArrowLeft, User as UserIcon, Building, Briefcase, Eye, EyeOff, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -89,7 +89,7 @@ function SignupPageInner() {
   };
 
   // Every detail is checked before a code is sent and again before the account is created,
-  // so a rejected form never leaves a Firebase identity behind.
+  // so a rejected form never leaves a auth identity behind.
   const detailsError = () => {
     if (!detailsComplete) return "Please fill in every field.";
     if (!validSignupEmail(normalizeSignupEmail(formData.email))) return "Please enter a valid email address.";

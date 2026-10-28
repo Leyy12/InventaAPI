@@ -5,7 +5,7 @@ import { request } from 'node:http';
 import express from 'express';
 
 const calls = { firestore: 0, auth: 0, middleware: 0 };
-mock.module('firebase-admin/firestore', { namedExports: { getFirestore() {
+mock.module('firebase-admin/firestore', { namedExports: { getDataStore() {
   calls.firestore++; throw new Error('Database access forbidden in route-removal test');
 } } });
 mock.module('firebase-admin/auth', { namedExports: { getAuth() {

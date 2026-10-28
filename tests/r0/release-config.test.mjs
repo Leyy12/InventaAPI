@@ -6,7 +6,7 @@ import { formatValidation, validateReleaseConfig } from '../../scripts/validate-
 
 const complete = {
   NODE_ENV: 'production',
-  FIREBASE_PROJECT_ID: 'inventaapi-db',
+  DATA_PROJECT_ID: 'inventaapi-db',
   SUPABASE_DB_URL: 'postgresql://postgres.abcdefghijklmnopqrst:not-a-real-password@db.inventa-release.com:6543/postgres',
   SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_not-a-real-key', SUPABASE_SECRET_KEY: 'sb_secret_not-a-real-key',
@@ -133,7 +133,7 @@ const validateBackend = (extra = {}, mode = 'production') => validateReleaseConf
 
 test('only authorized Production LIVE and staging TEST deployment identities pass', () => {
   assert.equal(validateBackend().ok, true);
-  assert.equal(validateBackend({ FIREBASE_PROJECT_ID: 'inventaapi-staging',
+  assert.equal(validateBackend({ DATA_PROJECT_ID: 'inventaapi-staging',
     PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic' }).ok, true);
   assert.equal(validateBackend({ PAYMONGO_GLOBAL_TEST_BILLING: 'true', PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS: '500' }).ok, true);
   assert.equal(validateBackend({ PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic' }).ok, false);
@@ -141,21 +141,13 @@ test('only authorized Production LIVE and staging TEST deployment identities pas
 
 for (const project of ['inventaapi-not-authorized', 'demo-build-fixture', '', undefined]) {
   test(`deployment rejects unsupported or missing Firebase identity ${String(project)}`, () => {
-    const result = validateBackend({ FIREBASE_PROJECT_ID: project });
-    assert.equal(result.ok, false); assert.ok(result.errors.some(e => e.name === 'FIREBASE_PROJECT_ID'));
-  });
-}
-
-for (const name of ['DATA_PROJECT_ID']) {
-  test(`conflicting ${name} fails even when both project identifiers are authorized`, () => {
-    const r = validateBackend({ [name]: 'inventaapi-staging' });
-    assert.equal(r.ok, false); assert.ok(r.errors.some(e => e.code === 'FIREBASE_PROJECT_CONFLICT' && e.name === name));
-    assert.equal(validateBackend({ [name]: 'inventaapi-db' }).ok, true);
+    const result = validateBackend({ DATA_PROJECT_ID: project });
+    assert.equal(result.ok, false); assert.ok(result.errors.some(e => e.name === 'DATA_PROJECT_ID'));
   });
 }
 
 test('explicit local tests may use a demo identity only against a database on this machine', () => {
-  const local = { NODE_ENV: 'test', FIREBASE_PROJECT_ID: 'demo-local-validation',
+  const local = { NODE_ENV: 'test', DATA_PROJECT_ID: 'demo-local-validation',
     PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic', SUPABASE_DB_URL: 'postgresql://postgres@localhost:55432/postgres' };
   assert.equal(validateBackend(local, 'test').ok, true);
   for (const change of [{ SUPABASE_DB_URL: 'postgresql://postgres@db.external.net:5432/postgres' },
@@ -168,10 +160,9 @@ test('explicit local tests may use a demo identity only against a database on th
 
 for (const [name, changes, expected] of [
   ['Production LIVE demo', { PAYMONGO_GLOBAL_TEST_BILLING: 'true', PAYMONGO_GLOBAL_TEST_AMOUNT_CENTAVOS: '500' }, 0],
-  ['staging TEST', { FIREBASE_PROJECT_ID: 'inventaapi-staging', PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic' }, 0],
-  ['unsupported project', { FIREBASE_PROJECT_ID: 'inventaapi-not-authorized' }, 1],
-  ['missing project', { FIREBASE_PROJECT_ID: undefined }, 1],
-  ['conflicting identity', { DATA_PROJECT_ID: 'inventaapi-staging' }, 1],
+  ['staging TEST', { DATA_PROJECT_ID: 'inventaapi-staging', PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic' }, 0],
+  ['unsupported project', { DATA_PROJECT_ID: 'inventaapi-not-authorized' }, 1],
+  ['missing project', { DATA_PROJECT_ID: undefined }, 1],
   ['Production TEST', { PAYMONGO_MODE: 'test', PAYMONGO_SECRET_KEY: 'sk_test_synthetic' }, 1],
 ]) test(`validator CLI exit status: ${name}`, () => {
   const inherited = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(k => process.env[k]).map(k => [k, process.env[k]]));

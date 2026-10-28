@@ -7,7 +7,7 @@ import { subscribeAccountUsage, invalidateAccountUsage } from '../../../dashboar
 import { createQuotaRefresh } from '../../../dashboard/src/lib/quota-refresh.ts';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createFreeTrialHandlers } from '../../../services/free-trial.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 const ids = n => Array.from({ length: n }, (_, i) => `product-${i}`);
 const catalog = n => ({ productsIncluded: n, productsAvailable: Math.max(50 - n, 0), activeKeys: 1, expiresAt: '2026-10-10T00:00:00Z' });
@@ -113,7 +113,7 @@ test('first-key 49/50/51 boundaries and existing 40+10 count unique products, no
 });
 
 for (const segment of ['Hardware', 'Grocery', 'Pharmacy']) test(`${segment}: backend first Trial key persists selected full/partial scope and one active key`, async () => {
-  const db = memoryFirestore({
+  const db = memoryStore({
     'users/owner': { role: 'Developer', plan: 'Free', businessSegment: segment },
     'products/full': { name: 'Synthetic full', segment },
     'products/partial': { name: 'Synthetic partial', segment, variants: [{ flavor: 'a', size: 'each' }, { flavor: 'b', size: 'each' }] },
@@ -139,7 +139,7 @@ for (const segment of ['Hardware', 'Grocery', 'Pharmacy']) test(`${segment}: bac
 });
 
 test('Hardware first-key backend rejects Grocery scope without creating any key', async () => {
-  const db = memoryFirestore({ 'users/owner': { role: 'Developer', plan: 'Free', businessSegment: 'Hardware' },
+  const db = memoryStore({ 'users/owner': { role: 'Developer', plan: 'Free', businessSegment: 'Hardware' },
     'products/food': { segment: 'Grocery' } });
   const options = { getDb: () => db, verifyIdToken: async () => ({ uid: 'owner' }), clock: () => new Date('2026-10-05T00:00:00Z') };
   await invoke(createFreeTrialHandlers(options).session);
@@ -209,7 +209,7 @@ test('Customer wiring uses server trialCatalog for Products/Overview, locks card
 });
 
 async function fixture(initial = ids(3), paidPlan = null, extras = {}) {
-  const db = memoryFirestore({ 'users/owner': { role: 'Developer', plan: paidPlan ?? 'Free', businessSegment: 'Grocery', selectedSegment: 'Grocery',
+  const db = memoryStore({ 'users/owner': { role: 'Developer', plan: paidPlan ?? 'Free', businessSegment: 'Grocery', selectedSegment: 'Grocery',
     ...(paidPlan ? { subscription_status: 'active', subscriptionExpiresAt: '2026-10-25T00:00:00Z', apiRequestLimit: paidPlan === 'Pro Max' ? null : 500 } : {}) },
     'api_keys/key-a': { userId: 'owner', status: 'active', linkedProductIds: initial, scopeVersion: 0 },
     ...(paidPlan ? { 'account_request_contracts/owner': { version: 1, plans: {

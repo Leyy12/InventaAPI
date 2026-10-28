@@ -51,7 +51,7 @@ export function inventoryUsage(account: AccountEntitlement | undefined, products
     note: `${Math.max(0, account.limit - used)} requests remaining`, percent: Math.min(100, used / account.limit * 100) };
 }
 
-// Only stored, timezone-qualified ISO timestamps and known Firestore shapes
+// Only stored, timezone-qualified ISO timestamps and known stored timestamp shapes
 // are supported. Date-only strings and numeric millisecond guesses are rejected.
 export function normalizeKeyTimestamp(value: unknown): Date | null {
   try {

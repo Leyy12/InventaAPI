@@ -9,10 +9,10 @@ const DAAS_API_KEY = process.env.DAAS_API_KEY || 'daas_fallback_key';
 
 
 import { getAuth } from '../services/supabase-auth.js';
-import { getFirestore } from '../database/firestore.js';
+import { getDataStore } from '../database/data-store.js';
 
 // Sign-in token verification middleware (Supabase Auth)
-export const verifyFirebaseToken = async (req, res, next) => {
+export const verifyAuthToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -22,7 +22,7 @@ export const verifyFirebaseToken = async (req, res, next) => {
 
     try {
         const decodedToken = await getAuth().verifyIdToken(token);
-        req.firebaseUser = decodedToken;
+        req.authUser = decodedToken;
         next();
     } catch (error) {
         console.error("[Auth] Token verification failed:", error);
@@ -30,14 +30,14 @@ export const verifyFirebaseToken = async (req, res, next) => {
     }
 };
 
-// Admin role check using Firestore
+// Admin role check using the stored user profile
 export const requireAdmin = async (req, res, next) => {
-    if (!req.firebaseUser || !req.firebaseUser.uid) {
+    if (!req.authUser || !req.authUser.uid) {
         return res.status(401).json({ error: "Unauthorized. User identity not found." });
     }
 
     try {
-        const userDoc = await getFirestore().collection("users").doc(req.firebaseUser.uid).get();
+        const userDoc = await getDataStore().collection("users").doc(req.authUser.uid).get();
         
         if (!userDoc.exists) {
             return res.status(403).json({ error: "Forbidden. User profile not found." });

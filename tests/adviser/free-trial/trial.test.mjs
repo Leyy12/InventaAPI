@@ -11,8 +11,8 @@ import { createProductSubmissionHandlers } from '../../../services/product-submi
 import { quotaSummary, customerReportScope } from '../../../services/reporting.js';
 import { authenticateCredential, freeMonthlyUsage } from '../../../services/api-key-security.js';
 import { createEntitlementPoller } from '../../../dashboard/src/lib/entitlement-poller.ts';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
-import { memoryFirestore as catalogDb, invoke as submissionInvoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
+import { memoryStore as catalogDb, invoke as submissionInvoke } from '../r2a/memory-store.mjs';
 
 const START = '2026-09-23T12:00:00.000Z', END = '2026-09-30T12:00:00.000Z';
 const owner = { role: 'Developer', plan: 'Free', apiRequestLimit: 50, businessSegment: 'Hardware', selectedSegment: 'Grocery' };
@@ -23,7 +23,7 @@ const read = path => readFileSync(new URL('../../../' + path, import.meta.url), 
 function fixture(account = {}, extra = {}, metadata = {}, auth = {}) {
   let at = START;
   const clock = () => new Date(at);
-  const db = memoryFirestore({ 'users/owner': { ...owner, ...account }, 'api_keys/key-a': key,
+  const db = memoryStore({ 'users/owner': { ...owner, ...account }, 'api_keys/key-a': key,
     ...(['Pro', 'Pro Max'].includes(account.plan) ? { 'account_request_contracts/owner': { version: 1, plans: {
       [account.plan === 'Pro Max' ? 'pro_max' : 'pro']: { version: 1, period: 'utc_daily', limit: account.plan === 'Pro Max' ? null : 500 },
     } } } : {}),
@@ -415,7 +415,7 @@ test('route, scoped UI, server counter and URL-only wiring', () => {
   assert.match(read('server.js'), /app\.use\('\/api\/v1\/free-trial'/);
   assert.match(read('routes/freetrial.js'), /revokeRefreshTokens: uid => getAuth\(\)\.revokeRefreshTokens\(uid\)/);
   assert.match(read('services/free-trial.js'), /verifyIdToken\(match\[1\], true\)/);
-  assert.match(read('dashboard/src/lib/firebase/auth-context.tsx'), /activeCustomerSegment/);
+  assert.match(read('dashboard/src/lib/supabase/auth-context.tsx'), /activeCustomerSegment/);
   assert.match(read('dashboard/src/app/dashboard/products/page.tsx'), /scopeCustomerProducts\(products, appUser\)/);
   assert.match(read('dashboard/src/app/dashboard/page.tsx'), /Active Business Segment/);
   const add = read('dashboard/src/components/products/AddProductModal.tsx');
@@ -423,7 +423,7 @@ test('route, scoped UI, server counter and URL-only wiring', () => {
   const trial = read('dashboard/src/components/subscription/FreeTrialContent.tsx');
   assert.match(trial, /generation\.current !== request/); assert.match(trial, /setResult\(null\)/);
   assert.doesNotMatch(trial, /\/free-trial\/activate|onClick=\{activate\}/);
-  assert.match(read('dashboard/src/lib/firebase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\);\s+await readSubscription\(currentUser\)/);
+  assert.match(read('dashboard/src/lib/supabase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\);\s+await readSubscription\(currentUser\)/);
   assert.doesNotMatch(trial, /await refreshUserDoc\(\)/);
   assert.doesNotMatch(trial, /localStorage|sessionStorage|updateDoc|setDoc/);
   assert.match(read('routes/daas.js'), /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit/u);
@@ -580,8 +580,6 @@ test('Customer session/pricing/UI contain automatic Free Trial contract and no m
     'dashboard/src/app/dashboard/plan-billing/page.tsx', 'dashboard/src/config/plans.ts']) {
     assert.doesNotMatch(read(file), /Pro Trial|50 requests|forever|onClick=\{activate\}/);
   }
-  const rules = read('firestore.rules');
-  assert.equal((rules.match(/'trialConsumed'/g) || []).length, 2);
 });
 test('Trial ignores exhausted Free month; time expiry enforces paywall without key revocation', async () => {
   const f = fixture({}, { 'account_free_monthly_usage/owner': { window: '2026-09', used: 50 } });

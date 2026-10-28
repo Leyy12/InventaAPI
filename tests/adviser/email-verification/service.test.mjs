@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { memoryFirestore, invoke } from '../r2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../r2a/memory-store.mjs';
 import { createEmailVerificationHandlers, verificationEmail, VERIFICATION_COLLECTION } from '../../../services/email-verification.js';
 import { REGISTRATION_MESSAGE } from '../../../services/system-settings-contract.mjs';
 
@@ -12,7 +12,7 @@ const identities = { juan: { uid: 'juan-uid', email }, other: { uid: 'other-uid'
 const codes = ['482913', '105377', '660021', '930412', '771845', '204816'];
 
 function fixture({ settings, registered = [], incomplete = [], deliver, markVerified, createAccount } = {}) {
-  const db = memoryFirestore(settings ? { 'system/settings': settings } : {});
+  const db = memoryStore(settings ? { 'system/settings': settings } : {});
   const state = { now: Date.parse('2026-10-20T08:00:00.000Z'), generated: 0, tokens: 0, mail: [], verified: [], reports: [], removed: [], created: [] };
   const handlers = createEmailVerificationHandlers({ getDb: () => db,
     emailRegistered: async address => { if (address === 'lookup-outage@gmail.com') throw Error('synthetic Auth outage'); return registered.includes(address); },

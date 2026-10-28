@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createFreeTrialHandlers } from '../../../services/free-trial.js';
 import { authenticateCredential } from '../../../services/api-key-security.js';
-import { memoryFirestore, invoke } from '../phase2a/memory-firestore.mjs';
+import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 const now = new Date('2026-09-22T12:00:00.000Z');
 const end = '2026-09-29T12:00:00.000Z';
@@ -16,7 +16,7 @@ const activeTrial = { ...free, hasUsedFreeTrial: true, trialVersion: 1,
 const counter = { used: 0, startedAt: now.toISOString(), expiresAt: end };
 
 function fixture(account = free, extra = {}) {
-  const db = memoryFirestore({ 'users/owner': account, ...extra });
+  const db = memoryStore({ 'users/owner': account, ...extra });
   const verifyIdToken = async token => token === 'owner-token' ? { uid: 'owner' } : null;
   const keys = createApiKeyHandlers({ getDb: () => db, verifyIdToken, clock: () => now });
   const trial = createFreeTrialHandlers({ getDb: () => db, verifyIdToken,
@@ -106,10 +106,11 @@ test('navigation, legacy route and locked onboarding UI retain the authoritative
   assert.match(sidebar, /planLower === "free trial"/);
   assert.match(sidebar, /planLower === "upgrade required"/);
   assert.match(navbar, /customer-mobile-navigation/);
-  assert.match(navbar, /aria-current=/);
+  // Mobile links are the shared sidebar body (MobileSidebar), which marks the current page.
+  assert.match(navbar, /<MobileSidebar /); assert.match(sidebar, /aria-current=/);
   assert.match(config, /source: '\/dashboard\/free-trial', destination: '\/dashboard\/plan-billing'/);
   assert.match(billing, /<FreeTrialContent embedded \/>/);
-  assert.match(source('dashboard/src/lib/firebase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\)/u);
+  assert.match(source('dashboard/src/lib/supabase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\)/u);
   assert.match(overview, /<CustomerUsageSummary\s*\/>/u);
   assert.match(keys, /Free Trial Ended\. Existing keys remain visible and revocable/);
   // The released management-only page has no generation request/error state.

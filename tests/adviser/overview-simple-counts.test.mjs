@@ -11,7 +11,7 @@ for (const productsIncluded of [0, 10, 50]) {
     test(`Overview renders authoritative ${productsIncluded} products and ${activeKeys} keys without card denominators`, async () => {
       const h = hooks();
       const Usage = load('dashboard/src/components/reports/CustomerUsageSummary.tsx', 'Usage', h, {
-        'next/link': 'a', '@/lib/firebase/auth-context': {},
+        'next/link': 'a', '@/lib/supabase/auth-context': {},
         '@/lib/api-keys': { apiKeyRequest() { throw Error('External I/O prohibited'); } },
         '@/lib/reports': { quotaSummary: () => null },
         '@/config/plans': { requestAllowanceLabel },

@@ -15,7 +15,7 @@ function customerFixture(transport) {
   const Modal = load('dashboard/src/components/products/AddProductModal.tsx', 'AddProductModal', h, {
     'lucide-react': new Proxy({}, { get: () => 'svg' }),
     '@/lib/product-image-url': { normalizeProductImageUrl },
-    '@/lib/firebase/auth-context': { useAuth: () => ({ user, appUser: { plan: 'Free', businessSegment: 'Grocery' } }) },
+    '@/lib/supabase/auth-context': { useAuth: () => ({ user, appUser: { plan: 'Free', businessSegment: 'Grocery' } }) },
     '../../../../services/customer-segment.js': { restrictedSegmentAccount: () => true, activeCustomerSegment: () => 'Grocery' },
     './ProductImageField': 'image-field', './SubmissionFeedbackDialog': 'feedback',
     '@/lib/product-media-client': { uploadProductImage: async (_, workflow, operation) => {
@@ -80,7 +80,7 @@ function adminFixture(mutate) {
     content: { name: 'Bottle', brand: 'Brand', segment: 'Grocery', category: 'Beverages', description: 'Description', sku: 'SKU', image_url: '', variants: [{ size: '250ml', price: 10 }] } };
   const Page = load('admin-panel/src/app/submissions/page.tsx', 'SubmissionsPage', h, {
     'lucide-react': new Proxy({}, { get: () => 'svg' }),
-    '@/lib/firebase/admin-auth-context': { useAdminAuth: () => ({ user }) },
+    '@/lib/supabase/admin-auth-context': { useAdminAuth: () => ({ user }) },
     '@/lib/submission-review': { reviewSubmission },
     '@/components/products/SubmissionReviewDialog': { __esModule: true, default: 'review-dialog', SubmissionImage: 'image', ReviewStatus: 'status', submittedDate: x => x, reviewButtonClass: 'button' },
   }, { fetch: async (url, init) => {
