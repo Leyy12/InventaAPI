@@ -382,7 +382,7 @@ export default function ApiPlaygroundPage() {
                       <Copy className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  <pre className="bg-slate-950 border border-slate-800 rounded-lg p-4 text-xs text-slate-300 overflow-x-auto max-h-64 font-mono">
+                  <pre className="bg-[#0b1220] text-[#e2e8f0] border border-[#1e293b] rounded-lg p-4 text-xs overflow-x-auto max-h-64 font-mono">
                     {JSON.stringify(response, null, 2)}
                   </pre>
                 </div>
