@@ -857,12 +857,12 @@ function TooltipButton({
 }) {
   const tooltipId = useId();
 
-  // One plain style for every action; only Delete turns red, and only on hover.
+  // No fill: each action is told apart by its icon colour, with a soft tint on hover.
   const variants = {
-    view: "hover:text-slate-100",
-    edit: "hover:text-slate-100",
-    archive: "hover:text-slate-100",
-    danger: "hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400",
+    view: "text-blue-400 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-300",
+    edit: "text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-300",
+    archive: "text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-300",
+    danger: "text-red-400 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-300",
   };
 
   const activeVariant = variants[tone];
@@ -874,7 +874,7 @@ function TooltipButton({
         aria-label={label}
         aria-describedby={tooltipId}
         onClick={onClick}
-        className={`inline-flex select-none items-center justify-center rounded-lg w-8 h-8 border border-slate-700 bg-transparent text-slate-400 outline-none transition-colors duration-150 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400 ${activeVariant}`}
+        className={`inline-flex select-none items-center justify-center rounded-lg w-8 h-8 border border-slate-700 bg-transparent outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-slate-400 ${activeVariant}`}
       >
         <Icon className="w-4 h-4" strokeWidth={2} />
       </button>
@@ -1062,11 +1062,11 @@ export default function MasterProductCatalogPage() {
       {/* ── Stats Row ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         {[
-          { icon: <Package className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Total Products", value: total.toLocaleString(), sub: `${active} active · ${archived} archived`, color: "text-white" },
-          { icon: <ShoppingCart className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Grocery", value: grocery.toLocaleString(), sub: pct(grocery), color: "text-white" },
-          { icon: <Wrench className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Hardware", value: hardware.toLocaleString(), sub: pct(hardware), color: "text-white" },
-          { icon: <Pill className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Pharmacy", value: pharmacy.toLocaleString(), sub: pct(pharmacy), color: "text-white" },
-          { icon: <FolderArchive className="w-4 h-4 text-slate-300" />, bg: "bg-slate-700/70", label: "Archived", value: archived.toLocaleString(), sub: pct(archived), color: "text-white" },
+          { icon: <Package className="w-4 h-4 text-indigo-400" />, bg: "border border-slate-700", label: "Total Products", value: total.toLocaleString(), sub: `${active} active · ${archived} archived`, color: "text-white" },
+          { icon: <ShoppingCart className="w-4 h-4 text-blue-400" />, bg: "border border-slate-700", label: "Grocery", value: grocery.toLocaleString(), sub: pct(grocery), color: "text-white" },
+          { icon: <Wrench className="w-4 h-4 text-orange-400" />, bg: "border border-slate-700", label: "Hardware", value: hardware.toLocaleString(), sub: pct(hardware), color: "text-white" },
+          { icon: <Pill className="w-4 h-4 text-emerald-400" />, bg: "border border-slate-700", label: "Pharmacy", value: pharmacy.toLocaleString(), sub: pct(pharmacy), color: "text-white" },
+          { icon: <FolderArchive className="w-4 h-4 text-amber-400" />, bg: "border border-slate-700", label: "Archived", value: archived.toLocaleString(), sub: pct(archived), color: "text-white" },
         ].map(c => (
           <div key={c.label} className="flex items-center gap-3 rounded-xl p-3.5 border border-white/5 bg-slate-800/40">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${c.bg}`}>{c.icon}</div>
