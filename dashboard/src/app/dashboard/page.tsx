@@ -9,12 +9,41 @@ import { customerReportScope } from "@/lib/reports";
 import { activeCustomerSegment } from '../../../../services/customer-segment.js';
 import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
 
+// "Welcome" for a brand-new account's first visit, "Welcome back" afterwards.
+// New = created in the last 24 hours and first seen on this browser within the last 30 minutes.
+const NEW_ACCOUNT_MS = 24 * 60 * 60 * 1000;
+const FIRST_VISIT_MS = 30 * 60 * 1000;
+function createdMillis(value: unknown): number {
+  if (value && typeof value === "object" && "toMillis" in value && typeof (value as { toMillis: unknown }).toMillis === "function") {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  return typeof value === "string" ? Date.parse(value) : NaN;
+}
+function isFirstVisit(uid: string, createdAt: unknown, now = Date.now()): boolean {
+  const created = createdMillis(createdAt);
+  if (!Number.isFinite(created) || now - created > NEW_ACCOUNT_MS) return false;
+  const key = `inventa-first-seen-${uid}`;
+  try {
+    const stored = Number(localStorage.getItem(key));
+    if (!stored) { localStorage.setItem(key, String(now)); return true; }
+    return now - stored < FIRST_VISIT_MS;
+  } catch {
+    return true;
+  }
+}
+
 export default function DashboardPage() {
   const { user, appUser, loading, refreshUserDoc, entitlement } = useAuth();
   const requestAllowance = useAccountRequestAllowance();
 
   
   const [paymentStatus, setPaymentStatus] = useState<"none" | "verifying" | "success" | "failed" | "delayed">("none");
+  const [firstVisit, setFirstVisit] = useState<boolean | null>(null);
+  const welcomeUid = appUser?.uid;
+  const welcomeCreatedAt = (appUser as { createdAt?: unknown } | null)?.createdAt;
+  useEffect(() => {
+    if (welcomeUid) setFirstVisit(isFirstVisit(welcomeUid, welcomeCreatedAt));
+  }, [welcomeUid, welcomeCreatedAt]);
 
 
   // A redirect is only a hint to poll. Only an authenticated, order-specific
@@ -168,7 +197,10 @@ export default function DashboardPage() {
       {/* ─── Header ─── */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-white mb-1">
-          Welcome back, {appUser?.fullName?.split(" ")[0] || "Developer"}
+          {/* Hidden for the moment before the greeting is decided, so it never flips. */}
+          <span className={firstVisit === null ? "invisible" : undefined}>
+            {firstVisit ? "Welcome" : "Welcome back"}, {appUser?.fullName?.split(" ")[0] || "Developer"}
+          </span>
         </h1>
         <p className="text-slate-400 text-sm">Here&apos;s what&apos;s happening with your InventaAPI projects today.</p>
       </div>
