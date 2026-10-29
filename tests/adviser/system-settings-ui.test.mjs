@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hooks, load, nodes, flush } from './workspace-refresh/harness.mjs';
 import { MAINTENANCE_MESSAGE } from '../../services/system-settings-contract.mjs';
-import { TRIAL_MAX_PRODUCTS } from '../../functions/entitlement-limits.mjs';
 const icons = new Proxy({}, { get: (_, name) => String(name) });
 const text = value => Array.isArray(value) ? value.map(text).join(' ') : value && typeof value === 'object'
   ? text(value.props?.children) : String(value ?? '');
@@ -12,7 +11,8 @@ const button = (h, name) => find(h, node => node.type === 'button' && text(node)
 async function settingsFixture(options = {}) {
   const h = hooks(), calls = [];
   const user = { uid: 'synthetic-admin', getIdToken: async () => 'synthetic-token' };
-  let stored = { settings: { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: options.freeTrialLimit ?? null, pro: 500, pro_max: options.maxLimit ?? null } },
+  let stored = { settings: { maintenanceMode: options.maintenanceMode ?? false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null },
+    maintenanceStartsAt: options.startsAt ?? null, maintenanceEndsAt: options.endsAt ?? null },
     version: 'v1', source: options.missing ? 'defaults' : 'stored', warnings: [], planLimitPeriod: 'UTC daily. Existing paid promises protected.' };
   let getError = options.getError;
   const fakeFetch = async (url, request) => {
@@ -25,8 +25,7 @@ async function settingsFixture(options = {}) {
       status = options.saveError || 200;
       if (status === 200) {
         const changes = JSON.parse(request.body).changes;
-        stored = { ...stored, version: 'v2', source: 'stored', settings: { ...stored.settings, ...changes,
-          planRequestLimits: { ...stored.settings.planRequestLimits, ...changes.planRequestLimits } } };
+        stored = { ...stored, version: 'v2', source: 'stored', settings: { ...stored.settings, ...changes } };
         body = options.reloadFailure ? { success: true, saved: true, reloadRequired: true } : { success: true, saved: true, ...stored };
       } else body = { success: false, error: 'Safe server error' };
     } else { status = getError || 200; body = status === 200 ? { success: true, ...structuredClone(stored) } : { success: false, error: 'Unavailable' }; }
@@ -34,7 +33,6 @@ async function settingsFixture(options = {}) {
   };
   const component = load('admin-panel/src/app/settings/page.tsx', 'SettingsPage', h, {
     'next/link': 'Link', 'lucide-react': icons, '@/lib/supabase/admin-auth-context': { useAdminAuth: () => ({ user }) }, '@/components/admin/BackupRestoreCard': () => null,
-    '../../../../functions/entitlement-limits.mjs': { TRIAL_MAX_PRODUCTS },
   }, { fetch: fakeFetch, process: { env: { NEXT_PUBLIC_API_URL: 'https://synthetic.invalid', NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT: options.environment || 'Production' } } });
   h.mount(component);
   const dialog = find(h, node => node.type === 'dialog'), dialogState = { open: false };
@@ -52,46 +50,59 @@ test('actual settings page loads authoritative state and replaces unsupported co
   const f = await settingsFixture(), copy = text(f.h.output);
   assert.equal(button(f.h, 'Save Settings').props.disabled, true);
   assert.match(copy, /Production/); assert.match(copy, /v1\.0\.0/); assert.match(copy, /Connected/); assert.match(copy, /single probe/);
-  assert.match(copy, /Not tracked/); assert.match(copy, /Plan Limits/);
+  assert.match(copy, /Not tracked/); assert.doesNotMatch(copy, /Plan Limits/);
   assert.doesNotMatch(copy, /Restart Server|Clear Cache|Strict API Validation|Max Requests Per Minute/);
-  assert.equal(nodes(f.h.output, node => node.type === 'select').length, 1);
+  assert.equal(nodes(f.h.output, node => node.type === 'select').length, 0);
   assert.equal(find(f.h, node => node.type === 'Link').props.href, '/audit'); f.stop();
 });
 
-test('Trial capacity is read-only linked products, independent of stored request policy and paid-plan edits', async () => {
-  const f = await settingsFixture({ freeTrialLimit: 123 });
-  const trial = find(f.h, node => node.props?.['aria-label'] === 'Free Trial linked products');
-  assert.equal(trial.props.value, 50);
-  assert.equal(trial.props.readOnly, true);
-  assert.equal(trial.props.onChange, undefined);
-  assert.match(text(f.h.output), /Linked products/);
-  assert.doesNotMatch(text(f.h.output), /Plan Request Limits|Unlimited requests|UTC daily limit/);
-  assert.equal(nodes(f.h.output, node => node.props?.['aria-label'] === 'Free Trial request mode').length, 0);
-  assert.equal(button(f.h, 'Save Settings').props.disabled, true);
-  await f.change('pro-request-limit', 1000); await f.submit();
-  assert.deepEqual(f.patches()[0].body.changes, { planRequestLimits: { pro: 1000 } });
-  assert.equal(find(f.h, node => node.props?.['aria-label'] === 'Free Trial linked products').props.value, 50);
+test('Plan Limits card is gone: no plan inputs render and saves never send plan limits', async () => {
+  const f = await settingsFixture(), copy = text(f.h.output);
+  assert.doesNotMatch(copy, /Plan Limits|Requests\/day|Linked products/);
+  for (const name of ['Free Trial linked products', 'Pro daily request allowance', 'Pro Max daily request allowance', 'Pro Max request mode'])
+    assert.equal(nodes(f.h.output, node => node.props?.['aria-label'] === name).length, 0);
+  await f.change('Allow New Registrations', false); await f.submit();
+  assert.deepEqual(f.patches()[0].body.changes, { allowNewRegistrations: false });
   f.stop();
 });
 
-test('Pro Max retains finite editing and switching back to Unlimited without mutating Trial policy', async () => {
-  const f = await settingsFixture({ freeTrialLimit: 123 });
-  await f.change('Pro Max request mode', 'finite');
-  await f.change('pro_max-request-limit', 2000); await f.submit();
-  assert.deepEqual(f.patches()[0].body.changes, { planRequestLimits: { pro_max: 2000 } });
-  button(f.h, '∞').props.onClick(); await flush(); await f.submit();
-  assert.deepEqual(f.patches()[1].body.changes, { planRequestLimits: { pro_max: null } });
-  assert.equal(find(f.h, node => node.props?.['aria-label'] === 'Pro Max request mode').props.value, 'unlimited');
-  f.stop();
+const scheduleShown = h => nodes(h.output, node => node.props?.['aria-label'] === 'Maintenance starts').length === 1;
+test('Schedule Maintenance is hidden while Maintenance Mode is off', async () => {
+  const f = await settingsFixture(); assert.equal(scheduleShown(f.h), false);
+  assert.doesNotMatch(text(f.h.output), /Schedule Maintenance/); f.stop();
+});
+test('Schedule Maintenance shows once Maintenance Mode is switched on, and hides again when switched off', async () => {
+  const f = await settingsFixture();
+  await f.change('Maintenance Mode', true); assert.equal(scheduleShown(f.h), true);
+  await f.change('Maintenance Mode', false); assert.equal(scheduleShown(f.h), false); f.stop();
+});
+test('Schedule Maintenance shows when Maintenance Mode is already saved on', async () => {
+  const f = await settingsFixture({ maintenanceMode: true }); assert.equal(scheduleShown(f.h), true); f.stop();
+});
+test('an upcoming saved schedule stays visible with Maintenance Mode off so it can be cleared', async () => {
+  const startsAt = new Date(Date.now() + 86400000).toISOString(), endsAt = new Date(Date.now() + 2 * 86400000).toISOString();
+  const f = await settingsFixture({ startsAt, endsAt }); assert.equal(scheduleShown(f.h), true);
+  button(f.h, 'Clear schedule / end now').props.onClick(); await flush(); await f.submit();
+  assert.deepEqual(f.patches()[0].body.changes, { maintenanceStartsAt: null, maintenanceEndsAt: null });
+  assert.equal(scheduleShown(f.h), false); f.stop();
+});
+test('a schedule that already ended stays hidden while Maintenance Mode is off', async () => {
+  const f = await settingsFixture({ startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2026-01-02T00:00:00.000Z' });
+  assert.equal(scheduleShown(f.h), false); f.stop();
+});
+test('unsaved schedule edits stay visible after Maintenance Mode is switched back off', async () => {
+  const f = await settingsFixture(); await f.change('Maintenance Mode', true);
+  await f.change('Maintenance starts', '2099-01-01T10:00'); await f.change('Maintenance Mode', false);
+  assert.equal(scheduleShown(f.h), true); f.stop();
 });
 for (const environment of ['Production', 'Staging', 'Development', 'Unknown']) test(`actual settings environment renders ${environment}`, async () => {
   const f = await settingsFixture({ environment }); assert.ok(text(f.h.output).includes(environment)); f.stop();
 });
 test('actual Save submits only changed fields and the loaded version, then displays authoritative persistence', async () => {
-  const f = await settingsFixture(); await f.change('pro-request-limit', 1000);
+  const f = await settingsFixture(); await f.change('Allow New Registrations', false);
   assert.match(text(f.h.output), /Unsaved changes/); assert.equal(button(f.h, 'Save Settings').props.disabled, false);
   await f.submit(); assert.equal(f.patches().length, 1);
-  assert.deepEqual(f.patches()[0].body, { version: 'v1', changes: { planRequestLimits: { pro: 1000 } } });
+  assert.deepEqual(f.patches()[0].body, { version: 'v1', changes: { allowNewRegistrations: false } });
   assert.match(text(f.h.output), /saved and reloaded successfully/); assert.doesNotMatch(text(f.h.output), /Unsaved changes/);
   assert.equal(button(f.h, 'Save Settings').props.disabled, true); f.stop();
 });
@@ -116,7 +127,7 @@ for (const saveError of [400, 403, 409, 503]) test(`save failure ${saveError} ne
   f.stop();
 });
 test('save followed by unavailable reload clearly disables further editing without replay', async () => {
-  const f = await settingsFixture({ reloadFailure: true }); await f.change('pro-request-limit', 1000); await f.submit();
+  const f = await settingsFixture({ reloadFailure: true }); await f.change('Allow New Registrations', false); await f.submit();
   assert.equal(f.patches().length, 1); assert.match(text(f.h.output), /saved, but the reload is unavailable/);
   assert.equal(button(f.h, 'Save Settings').props.disabled, true); f.stop();
 });
