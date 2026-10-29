@@ -45,8 +45,7 @@ export default function PlanCards({ plans, onSelect, isDisabled = () => false, c
           <div className="mb-6">
             <h3 className="text-lg font-bold text-slate-300 mb-2">{plans.free.displayName.toUpperCase()}</h3>
             <div className="flex items-baseline gap-1">
-              <span className="text-sm text-slate-400">₱</span>
-              <span className="text-5xl font-extrabold">{plans.free.price}</span>
+              <span className="text-5xl font-extrabold">₱{plans.free.price}</span>
               <span className="text-slate-400 text-sm">{plans.free.billingCycle}</span>
             </div>
             <p className="text-sm text-slate-400 mt-3">{plans.free.tagline}</p>
@@ -71,8 +70,7 @@ export default function PlanCards({ plans, onSelect, isDisabled = () => false, c
           <div className="mb-6">
             <h3 className="text-lg font-bold text-slate-300 mb-2">{plans.pro.displayName.toUpperCase()}</h3>
             <div className="flex items-baseline gap-1">
-              <span className="text-sm text-slate-400">₱</span>
-              <span className="text-5xl font-extrabold">{plans.pro.price?.toLocaleString()}</span>
+              <span className="text-5xl font-extrabold">₱{plans.pro.price?.toLocaleString()}</span>
               <span className="text-slate-400 text-sm">{plans.pro.billingCycle}</span>
             </div>
             <p className="text-sm text-slate-400 mt-3">{plans.pro.tagline}</p>
@@ -93,7 +91,7 @@ export default function PlanCards({ plans, onSelect, isDisabled = () => false, c
           <div className="mb-6">
             <h3 className="text-lg font-bold text-slate-300 mb-2">{plans.pro_max.displayName.toUpperCase()}</h3>
             <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-extrabold">{plans.pro_max.priceDisplay}</span>
+              <span className="text-5xl font-extrabold">{plans.pro_max.priceDisplay}</span>
               <span className="text-slate-400 text-sm">{plans.pro_max.billingCycle}</span>
             </div>
             <p className="text-sm text-slate-400 mt-3">{plans.pro_max.tagline}</p>
