@@ -13,7 +13,7 @@ async function settingsFixture(options = {}) {
   const user = { uid: 'synthetic-admin', getIdToken: async () => 'synthetic-token' };
   let stored = { settings: { maintenanceMode: options.maintenanceMode ?? false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null },
     maintenanceStartsAt: options.startsAt ?? null, maintenanceEndsAt: options.endsAt ?? null },
-    version: 'v1', source: options.missing ? 'defaults' : 'stored', warnings: [], planLimitPeriod: 'UTC daily. Existing paid promises protected.' };
+    version: 'v1', source: options.missing ? 'defaults' : 'stored', warnings: [] };
   let getError = options.getError;
   const fakeFetch = async (url, request) => {
     assert.ok(url.startsWith('/api/v1/admin/system/') || url === 'https://synthetic.invalid/daas/v1/health');
