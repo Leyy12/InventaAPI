@@ -58,12 +58,12 @@ test('shared UI/server change predicate counts unique IDs and permits only legac
 test('public Pro Max capabilities have a fixed one-to-one proof map; no new marketing line can silently appear', () => {
   assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], [
     'monthly_segment_quota', 'all_segments', 'segment_api_keys', 'auto_segment_routing',
-    'real_sales_feed', 'api_playground', 'usage_history', 'renewable_30_day_term',
+    'api_playground', 'usage_history', 'renewable_30_day_term',
   ]);
   assert.deepEqual([...SUBSCRIPTION_PLANS.pro_max.incrementalFeatures], [
     '15,000 API requests per month for each segment', 'All Business Segments',
     'Up to 3 API keys — one per segment', 'Products sorted into the right key automatically',
-    'Real Sales Analytics Feed', 'API Playground',
+    'API Playground',
     'Usage & Integration History', '30-day renewable subscription',
   ]);
   assert.equal(PRO_MAX_CAPABILITY_IDS.length, SUBSCRIPTION_PLANS.pro_max.incrementalFeatures.length);
@@ -77,7 +77,8 @@ test('Free, Pro, Pro Max public plans retain truthful inherited capabilities and
   assert.equal(SUBSCRIPTION_PLANS.pro.highlighted, true);
   assert.ok(!SUBSCRIPTION_PLANS.free.features.includes('Product Recommendations'));
   assert.ok(SUBSCRIPTION_PLANS.free.features.includes('One Business Segment'));
-  assert.ok(SUBSCRIPTION_PLANS.pro.incrementalFeatures.includes('Real Sales Analytics Feed'));
+  // Sales Analytics is switched off, so no plan advertises it.
+  assert.doesNotMatch(JSON.stringify(SUBSCRIPTION_PLANS), /Sales Analytics/u);
   assert.ok(!JSON.stringify(SUBSCRIPTION_PLANS).match(/\bSLA\b|Custom Endpoints|Priority Support|AI-powered|confidence score/iu));
   // The shared plan cards route each plan, Pro Max included, to its signup entry.
   assert.match(source('dashboard/src/components/auth/AuthEntry.tsx'), /onSelect=\{plan => router\.push\(customerSignupDestination\(plan\)\)\}/u);
@@ -144,15 +145,16 @@ test('sales and unavailable historical requests remain in bounded account-owned 
   assert.deepEqual(db.read('api_telemetry/r'), historical);
 });
 
-test('Customer routes and API Playground expose paid sales without removed recommendations', () => {
+test('Sales endpoints stay wired behind an off switch, without removed recommendations', () => {
   const routes = source('routes/daas.js');
-  assert.match(routes, /router\.post\('\/sales', authenticateApiKey, enforceRequestLimit, intelligence\.sale\)/u);
+  assert.match(routes, /const SALES_ANALYTICS_ENABLED = false;/u);
+  assert.match(routes, /router\.post\('\/sales', salesSwitch, authenticateApiKey, enforceRequestLimit, intelligence\.sale\)/u);
   assert.doesNotMatch(routes, /recommendations/u);
-  assert.match(routes, /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence\.feed\)/u);
+  assert.match(routes, /router\.get\('\/sales-feed', salesSwitch, authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence\.feed\)/u);
   assert.match(source('server.js'), /app\.use\('\/api\/v1\/customer\/insights', customerInsightsRouter\)/u);
   assert.match(source('services/scheduled-jobs.js'), /'Pro Max', 'pro max'/u);
   assert.equal(existsSync(new URL('../../../dashboard/src/app/dashboard/recommendations/page.tsx', import.meta.url)), false);
-  assert.match(source('dashboard/src/app/dashboard/analytics/page.tsx'), /SalesAnalyticsPanel/u);
+  assert.doesNotMatch(source('dashboard/src/app/dashboard/analytics/page.tsx'), /SalesAnalyticsPanel/u);
   assert.match(source('dashboard/src/components/reports/SalesAnalyticsPanel.tsx'), /customer\/insights\/sales-feed/u);
   assert.doesNotMatch(source('dashboard/src/app/dashboard/api-playground/page.tsx'), /recommendations/iu);
   assert.match(source('dashboard/src/app/dashboard/api-playground/page.tsx'), /\/daas\/v1\/sales-feed/u);

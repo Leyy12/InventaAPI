@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/supabase/auth-context";
+import SettingsTabs from "@/components/layout/SettingsTabs";
 import { Settings2, Building2 } from "lucide-react";
 import Link from "next/link";
 import { restrictedSegmentAccount, activeCustomerSegment } from '../../../../../services/customer-segment.js';
@@ -28,6 +29,7 @@ export default function SettingsPage() {
         </h1>
         <p className="text-slate-400">Manage your account preferences and configurations.</p>
       </div>
+      <SettingsTabs />
 
       <div className="glass-card rounded-xl p-6 md:p-8">
         <p id="subscription" className="mb-8 text-sm text-slate-300">Manage your subscription in <Link href="/dashboard/plan-billing" className="font-semibold text-indigo-300">Plan & Billing</Link>.</p>

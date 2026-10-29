@@ -274,7 +274,11 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
 
 // Authenticated integrations submit completed sales; the same account quota,
 // IP limiter, key ownership, and segment rules apply as to catalog requests.
-router.post('/sales', authenticateApiKey, enforceRequestLimit, intelligence.sale);
-router.get('/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence.feed);
+// Sales Analytics is switched off for now. Set this to true to turn both endpoints back on.
+const SALES_ANALYTICS_ENABLED = false;
+const salesSwitch = (_req, res, next) => SALES_ANALYTICS_ENABLED ? next()
+  : res.status(404).json({ status: 'error', code: 'SALES_ANALYTICS_UNAVAILABLE', message: 'Sales Analytics is not available.' });
+router.post('/sales', salesSwitch, authenticateApiKey, enforceRequestLimit, intelligence.sale);
+router.get('/sales-feed', salesSwitch, authenticateApiKey, requirePaidSubscription, enforceRequestLimit, intelligence.feed);
 
 export default router;

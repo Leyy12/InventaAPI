@@ -19,20 +19,7 @@ export default function DocsPage() {
       <p>The successful catalog envelope uses <code>status: &quot;success&quot;</code>, <code>meta</code> and <code>products</code>, not <code>success/data</code>. Product IDs are strings. Read product fields and variants from the response; do not assume every product has a variant or SKU.</p>
       <pre className="code-panel rounded-lg p-4 overflow-x-auto text-xs">{JSON.stringify({ status: 'success', message: 'No authorized products available', meta: { count: 0, keyName: 'Example key', plan: 'Free' }, products: [] }, null, 2)}</pre>
       <p className="text-xs text-slate-400">Illustrative empty-result envelope. Exact messages and optional metadata vary. There is no DaaS /products/:id route; search uses the catalog query above.</p>
-      <p><code>GET /daas/v1/health</code> is a health check, not a product request. Sales endpoints below use the same account-level quota and security/IP limits as catalog requests.</p>
-    </section>
-    <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
-      <h2 className="text-xl font-semibold text-white">Completed sales integration</h2>
-      <p><code>POST /daas/v1/sales</code> accepts one completed PHP sale from the authenticated key&apos;s own linked, currently eligible catalog products. Send <code>x-api-key</code> in the header. Paid account quotas apply; Trial calls do not consume a product allowance. An Upgrade Required account cannot ingest.</p>
-      <pre className="code-panel rounded-lg p-4 overflow-x-auto text-xs">{JSON.stringify({ externalTransactionId: 'YOUR_STABLE_POS_REFERENCE', occurredAt: '2026-09-27T10:00:00.000Z', currency: 'PHP', items: [{ productId: 'AUTHORIZED_PRODUCT_ID', quantity: 2, unitPrice: 12.50 }] }, null, 2)}</pre>
-      <p>Quantity is a positive whole number, unitPrice is PHP with at most two decimal places, and occurredAt must include a timezone. The server derives line and transaction totals in centavos. Do not send customer names, emails, addresses, phone numbers, card details, credentials, or a client total; extra fields are rejected.</p>
-      <p><code>externalTransactionId</code> is unique per account. Retrying the same canonical sale returns <code>created: false</code> without double-counting. Reusing the reference for different content returns <code>409 SALE_CONFLICT</code>. A different key on the account cannot replay another integration&apos;s sale.</p>
-    </section>
-    <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
-      <h2 className="text-xl font-semibold text-white">Real sales reporting</h2>
-      <p><code>GET /daas/v1/sales-feed</code> is for active Pro/Pro Max (and compatible legacy paid) plans, not Free or Trial. It returns your own completed sales: PHP summary, UTC daily time series, and top products. With no sales it returns zeros, empty arrays, and <code>hasData: false</code>—never sample figures.</p>
-      <p>Optional <code>from</code> and <code>to</code> are inclusive UTC dates in <code>YYYY-MM-DD</code> format. Default is the last 30 days; maximum is 90 days. Invalid/future/unbounded ranges return <code>400 INVALID_RANGE</code>. Very large result sets fail closed with <code>503 SALES_REPORT_TOO_LARGE</code>; select a shorter range.</p>
-      <p>The Customer dashboard reads the same reports via your signed-in session at <code>/api/v1/customer/insights/sales-feed</code>, without exposing an API key to the browser. These dashboard reads do not consume a DaaS key allowance; they remain account-owned and server-authorized.</p>
+      <p><code>GET /daas/v1/health</code> is a health check, not a product request.</p>
     </section>
     <section className="glass-card rounded-xl border border-slate-700 p-6 space-y-3">
       <h2 className="text-xl font-semibold text-white">Account usage and recorded history</h2>
