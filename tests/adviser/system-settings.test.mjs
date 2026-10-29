@@ -69,7 +69,8 @@ test('settings commit preserves compatible fields, reloads persisted state, and 
   const f = fixture({ ...DEFAULT_SYSTEM_SETTINGS, compatible: { retained: true }, secret: 'private-body-sentinel' });
   const saved = await f.save({ maintenanceMode: true, allowNewRegistrations: false, planRequestLimits: { pro: 1000 } });
   assert.equal(saved.statusCode, 200); assert.equal(saved.body.saved, true);
-  assert.deepEqual(saved.body.settings, { maintenanceMode: true, allowNewRegistrations: false, planRequestLimits: { free_trial: null, pro: 1000, pro_max: null } });
+  assert.deepEqual(saved.body.settings, { maintenanceMode: true, allowNewRegistrations: false, planRequestLimits: { free_trial: null, pro: 1000, pro_max: null },
+    maintenanceStartsAt: null, maintenanceEndsAt: null });
   assert.deepEqual((await f.read()).body.settings, saved.body.settings);
   assert.deepEqual(f.db.read('system/settings').compatible, { retained: true });
   assert.equal(f.logs().length, 2); assert.equal(f.logs()[0].action, 'System Settings Updated');
@@ -238,4 +239,22 @@ test('registration has no automatic retries and preserves explicit sign-out on s
   const events = []; const result = await completeCustomerSignup({ canRegister: async () => true,
     createUser: async () => { events.push('create'); return { uid: 'new-only' }; }, writeProfile: async () => events.push('profile'), signOut: async () => events.push('signout') });
   assert.equal(result.ok, true); assert.deepEqual(events, ['create', 'profile', 'signout']);
+});
+
+test('scheduled maintenance: both times required, end after start, and it is active only inside the window', async () => {
+  const { maintenanceActive } = await import('../../services/system-settings-contract.mjs');
+  const f = fixture({ ...DEFAULT_SYSTEM_SETTINGS });
+  const bad = await f.save({ maintenanceStartsAt: '2026-10-20T10:00:00.000Z' });
+  assert.equal(bad.statusCode, 400); assert.equal(bad.body.code, 'MAINTENANCE_SCHEDULE_INVALID');
+  const reversed = await f.save({ maintenanceStartsAt: '2026-10-20T10:00:00.000Z', maintenanceEndsAt: '2026-10-20T09:00:00.000Z' });
+  assert.equal(reversed.statusCode, 400);
+  assert.equal((await f.save({ maintenanceStartsAt: 'tomorrow', maintenanceEndsAt: null })).statusCode, 400);
+  const ok = await f.save({ maintenanceStartsAt: '2026-10-20T10:00:00.000Z', maintenanceEndsAt: '2026-10-20T12:00:00.000Z' });
+  assert.equal(ok.statusCode, 200);
+  const settings = ok.body.settings;
+  assert.equal(maintenanceActive(settings, new Date('2026-10-20T09:59:59.999Z')), false);
+  assert.equal(maintenanceActive(settings, new Date('2026-10-20T10:00:00.000Z')), true);
+  assert.equal(maintenanceActive(settings, new Date('2026-10-20T12:00:00.000Z')), false);
+  // Clearing the schedule needs both fields cleared together.
+  assert.equal((await f.save({ maintenanceStartsAt: null, maintenanceEndsAt: null }, (await f.read()).body.version)).statusCode, 200);
 });

@@ -1,16 +1,39 @@
 import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, validPlanRequestLimit } from '../functions/request-limit-policy.mjs';
 export const DEFAULT_SYSTEM_SETTINGS = Object.freeze({ maintenanceMode: false, allowNewRegistrations: true,
-  planRequestLimits: DEFAULT_REQUEST_LIMITS });
-export const SETTINGS_FIELDS = Object.freeze(['maintenanceMode', 'allowNewRegistrations', 'planRequestLimits']);
+  planRequestLimits: DEFAULT_REQUEST_LIMITS, maintenanceStartsAt: null, maintenanceEndsAt: null });
+export const SETTINGS_FIELDS = Object.freeze(['maintenanceMode', 'allowNewRegistrations', 'planRequestLimits',
+  'maintenanceStartsAt', 'maintenanceEndsAt']);
 export const MAINTENANCE_MESSAGE = 'InventaAPI is undergoing maintenance. Please try again later.';
+export const MAINTENANCE_APOLOGY = "InventaAPI is currently under scheduled maintenance. We're sorry for the inconvenience. Please sign in again after maintenance ends.";
+const SCHEDULE_FIELDS = ['maintenanceStartsAt', 'maintenanceEndsAt'];
+// A schedule time is a canonical UTC ISO string, or null for "not scheduled".
+const scheduleTime = value => value === null
+  || typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) && new Date(value).toISOString() === value;
+
+// Maintenance is on when the admin switched it on, or during the scheduled window.
+export function maintenanceActive(settings, now = new Date()) {
+  if (settings.maintenanceMode) return true;
+  const start = Date.parse(settings.maintenanceStartsAt ?? ''), end = Date.parse(settings.maintenanceEndsAt ?? '');
+  return Number.isFinite(start) && Number.isFinite(end) && start <= now.getTime() && now.getTime() < end;
+}
+// A schedule needs both times, with the end after the start.
+export function validMaintenanceSchedule(settings) {
+  const start = settings.maintenanceStartsAt, end = settings.maintenanceEndsAt;
+  if (start === null && end === null) return true;
+  return start !== null && end !== null && Date.parse(end) > Date.parse(start);
+}
 export const REGISTRATION_MESSAGE = 'New account registration is temporarily unavailable. Existing customers can still sign in.';
 
 export function effectiveSystemSettings(data = {}) {
   for (const name of ['maintenanceMode', 'allowNewRegistrations']) {
     if (data[name] !== undefined && typeof data[name] !== 'boolean') throw new Error('Invalid stored system policy');
   }
+  for (const name of SCHEDULE_FIELDS) {
+    if (data[name] !== undefined && !scheduleTime(data[name])) throw new Error('Invalid stored system policy');
+  }
   return { maintenanceMode: data.maintenanceMode ?? false, allowNewRegistrations: data.allowNewRegistrations ?? true,
-    planRequestLimits: requestLimitPolicy(data) };
+    planRequestLimits: requestLimitPolicy(data),
+    maintenanceStartsAt: data.maintenanceStartsAt ?? null, maintenanceEndsAt: data.maintenanceEndsAt ?? null };
 }
 
 export function validSettingsChanges(changes) {
@@ -18,7 +41,8 @@ export function validSettingsChanges(changes) {
     || !Object.keys(changes).length || Object.keys(changes).some(key => !SETTINGS_FIELDS.includes(key))) return false;
   return Object.entries(changes).every(([key, value]) => key === 'planRequestLimits'
     ? value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
-      && Object.entries(value).every(([plan, limit]) => validPlanRequestLimit(plan, limit)) : typeof value === 'boolean');
+      && Object.entries(value).every(([plan, limit]) => validPlanRequestLimit(plan, limit))
+    : SCHEDULE_FIELDS.includes(key) ? scheduleTime(value) : typeof value === 'boolean');
 }
 
 /** @param {{ development?: boolean, vercelEnvironment?: string, dataProjectId?: string, cloudRunService?: string, apiOrigin?: string }} [configuration] */

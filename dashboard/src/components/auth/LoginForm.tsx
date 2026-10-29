@@ -11,6 +11,7 @@ import { KeyRound, Mail, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, MailCh
 import type { PlanId } from "@/config/plans";
 import { profileRole, adminLoginDestination, rememberCustomerLoginEntry, customerSignupDestination } from '../../../../services/auth-navigation';
 import { establishCustomerTrial, readSubscription } from '@/lib/subscription';
+import { readMaintenanceStatus, maintenanceNotice } from '@/lib/maintenance-status';
 import { sendPasswordResetCode, resetPasswordWithCode, normalizeSignupEmail, validSignupEmail, validNewPassword,
   PASSWORD_MIN_LENGTH, VERIFICATION_CODE_TTL_SECONDS } from '../../../../services/customer-registration.mjs';
 
@@ -59,6 +60,16 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
     if (resetSentTo) resetCodeInput.current?.focus();
   }, [resetSentTo]);
 
+  // Scheduled or switched-on maintenance: customers can't sign in and see an apology.
+  const [maintenanceMessage, setMaintenanceMessage] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    void readMaintenanceStatus(controller.signal).then(status => {
+      if (!controller.signal.aborted && status?.active) setMaintenanceMessage(maintenanceNotice(status));
+    });
+    return () => controller.abort();
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     onStart?.();
@@ -94,6 +105,14 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
         const adminUrl = adminLoginDestination(process.env.NEXT_PUBLIC_ADMIN_APP_ORIGIN, window.location.hostname);
         if (adminUrl && new URL(adminUrl).origin !== window.location.origin) window.location.replace(adminUrl);
         else setError('Use the separate Admin application. Contact the operator for its address.');
+        return;
+      }
+
+      const maintenance = await readMaintenanceStatus();
+      if (maintenance?.active) {
+        await signOut(auth);
+        setMaintenanceMessage(maintenanceNotice(maintenance));
+        setLoading(false);
         return;
       }
 
@@ -318,6 +337,12 @@ export default function LoginForm({ onComplete, onStart, pendingPlan, onOpenSubs
           <p className="text-slate-400 text-sm mt-1">{forgotMode ? "We'll email you a 6-digit code to choose a new password." : loginSubtitle}</p>
         </div>
 
+        {maintenanceMessage && (
+          <div role="status" className="mb-6 p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm">
+            <p className="font-semibold">Scheduled maintenance</p>
+            <p className="mt-1">{maintenanceMessage}</p>
+          </div>
+        )}
         {(error || initialError) && (
           <div role="alert" className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-400 text-sm animate-in fade-in duration-200">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />

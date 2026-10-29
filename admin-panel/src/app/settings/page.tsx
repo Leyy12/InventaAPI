@@ -7,12 +7,22 @@ import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import { TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '../../../../functions/entitlement-limits.mjs';
 
 type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
-type Configuration = { maintenanceMode: boolean; allowNewRegistrations: boolean; planRequestLimits: PlanLimits };
+type Configuration = { maintenanceMode: boolean; allowNewRegistrations: boolean; planRequestLimits: PlanLimits;
+  maintenanceStartsAt: string | null; maintenanceEndsAt: string | null };
 type Snapshot = { settings: Configuration; version: string; source: 'stored' | 'defaults'; warnings: string[]; planLimitPeriod: string };
 type Information = { apiVersion: string | null; databaseStatus: 'Connected' | 'Unavailable' | 'Not configured'; checkedAt: string; uptime: string };
 type Phase = 'loading' | 'ready' | 'missing' | 'unauthorized' | 'unavailable' | 'conflict';
-const initial: Configuration = { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null } };
-const editableFields = ['maintenanceMode', 'allowNewRegistrations'] as const;
+const initial: Configuration = { maintenanceMode: false, allowNewRegistrations: true, planRequestLimits: { free_trial: null, pro: 500, pro_max: null },
+  maintenanceStartsAt: null, maintenanceEndsAt: null };
+const editableFields = ['maintenanceMode', 'allowNewRegistrations', 'maintenanceStartsAt', 'maintenanceEndsAt'] as const;
+// The schedule is stored in UTC and edited in the admin's local time.
+const toLocalInput = (iso: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso), pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+const fromLocalInput = (value: string) => { const time = new Date(value); return value && Number.isFinite(time.getTime()) ? time.toISOString() : null; };
+const showTime = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const planFields = ['free_trial', 'pro', 'pro_max'] as const;
 const editablePlanFields = ['pro', 'pro_max'] as const;
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5002' : '');
@@ -24,10 +34,13 @@ const quickClass = 'w-full px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 
 function verifiedSnapshot(body: Snapshot & { success?: boolean }): Snapshot {
   if (body.success !== true || !body.settings || typeof body.version !== 'string'
     || typeof body.settings.maintenanceMode !== 'boolean' || typeof body.settings.allowNewRegistrations !== 'boolean'
+    || ![body.settings.maintenanceStartsAt, body.settings.maintenanceEndsAt].every(value => value == null || typeof value === 'string')
     || !body.settings.planRequestLimits || !planFields.every(plan => { const limit = body.settings.planRequestLimits[plan];
       return Number.isSafeInteger(limit) && (limit as number) > 0 || plan !== 'pro' && limit === null; })
     || !['stored', 'defaults'].includes(body.source) || !Array.isArray(body.warnings)) throw new Error('Invalid settings response');
-  return body;
+  // Older responses have no schedule fields: treat them as "not scheduled".
+  return { ...body, settings: { ...body.settings, maintenanceStartsAt: body.settings.maintenanceStartsAt ?? null,
+    maintenanceEndsAt: body.settings.maintenanceEndsAt ?? null } };
 }
 
 export default function SettingsPage() {
@@ -148,11 +161,34 @@ export default function SettingsPage() {
             {snapshot?.warnings.map(warning => <p key={warning} role="status" className="text-amber-300">{warning}</p>)}
             <fieldset disabled={!ready || saving} className="space-y-6 disabled:opacity-60">
               <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div><h3 className="text-sm font-bold text-white">Maintenance Mode</h3><p className="text-xs text-slate-400 mt-1">Pause Customer business operations. Admin recovery, sign-in and payment completion remain available.</p></div>
+                <div><h3 className="text-sm font-bold text-white">Maintenance Mode</h3><p className="text-xs text-slate-400 mt-1">Turns maintenance on now. Customers are signed out and can&apos;t sign in until it&apos;s off. The customer API (/daas) keeps working, and Admins can still sign in.</p></div>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input aria-label="Maintenance Mode" type="checkbox" className="sr-only peer" checked={draft.maintenanceMode} onChange={e => setDraft({ ...draft, maintenanceMode: e.target.checked })} />
                   <span className="w-11 h-6 bg-slate-700 rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 peer-checked:bg-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
                 </label>
+              </div>
+              <div className="space-y-3 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                <div><h3 className="text-sm font-bold text-white">Schedule Maintenance</h3>
+                  <p className="text-xs text-slate-400 mt-1">Maintenance starts and ends on its own at these times (your local time). Customers get an email and a notification when you save a schedule.</p></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="space-y-1 text-xs text-slate-300">Starts
+                    <input type="datetime-local" aria-label="Maintenance starts" value={toLocalInput(draft.maintenanceStartsAt)}
+                      onChange={e => setDraft({ ...draft, maintenanceStartsAt: fromLocalInput(e.target.value) })} className={controlClass} /></label>
+                  <label className="space-y-1 text-xs text-slate-300">Ends
+                    <input type="datetime-local" aria-label="Maintenance ends" value={toLocalInput(draft.maintenanceEndsAt)}
+                      onChange={e => setDraft({ ...draft, maintenanceEndsAt: fromLocalInput(e.target.value) })} className={controlClass} /></label>
+                </div>
+                {draft.maintenanceStartsAt && draft.maintenanceEndsAt && Date.parse(draft.maintenanceEndsAt) <= Date.parse(draft.maintenanceStartsAt)
+                  && <p role="alert" className="text-xs text-rose-300">The end must be after the start.</p>}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-slate-400">{snapshot?.settings.maintenanceStartsAt && snapshot.settings.maintenanceEndsAt
+                    ? Date.now() >= Date.parse(snapshot.settings.maintenanceEndsAt) ? `Last maintenance ended ${showTime(snapshot.settings.maintenanceEndsAt)}.`
+                      : Date.now() >= Date.parse(snapshot.settings.maintenanceStartsAt) ? `In maintenance now, until ${showTime(snapshot.settings.maintenanceEndsAt)}.`
+                      : `Scheduled: ${showTime(snapshot.settings.maintenanceStartsAt)} – ${showTime(snapshot.settings.maintenanceEndsAt)}.`
+                    : 'No maintenance scheduled.'}</p>
+                  {(draft.maintenanceStartsAt || draft.maintenanceEndsAt) && <button type="button" onClick={() => setDraft({ ...draft, maintenanceStartsAt: null, maintenanceEndsAt: null })}
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Clear schedule / end now</button>}
+                </div>
               </div>
               <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
                 <div><h3 className="text-sm font-bold text-white">Allow New Registrations</h3><p className="text-xs text-slate-400 mt-1">Control creation of new Customer profiles. Existing customers can still sign in.</p></div>

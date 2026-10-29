@@ -23,6 +23,7 @@ for (const pendingPlan of [null, 'free', 'pro', 'pro_max']) {
       'lucide-react': icons, '../../../../services/auth-navigation': navigation,
       '../../../../services/product-contract.js': { PRODUCT_SEGMENTS: ['Grocery', 'Pharmacy', 'Hardware'] },
       '../../../../services/customer-segment.js': {}, '@/lib/subscription': {},
+      '@/lib/maintenance-status': { readMaintenanceStatus: async () => null, maintenanceNotice: () => '' },
       '../../../../services/customer-registration.mjs': {},
     });
     h.mount(component, { pendingPlan, onComplete() {} });
