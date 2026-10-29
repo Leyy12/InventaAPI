@@ -13,7 +13,7 @@ import { Zap, ShieldCheck, Building2 } from "lucide-react";
 // Each advertised Pro Max capability has an explicit system test mapping.
 export const PRO_MAX_CAPABILITY_IDS = [
   'monthly_segment_quota', 'all_segments', 'segment_api_keys', 'auto_segment_routing',
-  'real_sales_feed', 'api_playground', 'usage_history', 'renewable_30_day_term',
+  'api_playground', 'usage_history', 'renewable_30_day_term',
 ] as const;
 
 export const SUBSCRIPTION_PLANS = {
@@ -48,9 +48,7 @@ export const SUBSCRIPTION_PLANS = {
     ],
     
     // Exclusions (for visual comparison)
-    exclusions: [
-      "Real Sales Analytics Feed"
-    ],
+    exclusions: [],
     
     // UI
     ctaText: "Get Started Free",
@@ -85,7 +83,6 @@ export const SUBSCRIPTION_PLANS = {
       PRO_REQUEST_LABEL,
       "One API key — add products to it anytime",
       "Your business segment's catalog",
-      "Real Sales Analytics Feed",
       "API Playground",
       "Usage & Integration History",
       "30-Day Renewable Subscription"
@@ -128,7 +125,6 @@ export const SUBSCRIPTION_PLANS = {
       "All Business Segments",
       `Up to ${PRO_MAX_SEGMENT_KEYS} API keys — one per segment`,
       "Products sorted into the right key automatically",
-      "Real Sales Analytics Feed",
       "API Playground",
       "Usage & Integration History",
       "30-day renewable subscription"

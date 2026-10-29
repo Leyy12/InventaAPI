@@ -428,7 +428,7 @@ test('route, scoped UI, server counter and URL-only wiring', () => {
   assert.match(read('dashboard/src/lib/supabase/auth-context.tsx'), /await establishCustomerTrial\(currentUser\);\s+await readSubscription\(currentUser\)/);
   assert.doesNotMatch(trial, /await refreshUserDoc\(\)/);
   assert.doesNotMatch(trial, /localStorage|sessionStorage|updateDoc|setDoc/);
-  assert.match(read('routes/daas.js'), /router\.get\('\/sales-feed', authenticateApiKey, requirePaidSubscription, enforceRequestLimit/u);
+  assert.match(read('routes/daas.js'), /router\.get\('\/sales-feed', salesSwitch, authenticateApiKey, requirePaidSubscription, enforceRequestLimit/u);
   assert.match(read('services/account-quota.js'), /paidSubscriptionRequired && \(entitlement\.level < 1 \|\| entitlement\.activeTrial\)/u);
   assert.ok(/max: 60/.test(read('server.js')));
 });

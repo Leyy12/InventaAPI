@@ -175,10 +175,13 @@ async function withPolicy(f, run) {
       ...(body ? { authorization: 'Bearer admin', 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   try { await run(call, executed); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
-test('maintenance blocks real HTTP business dispatch before quotas/mutations while preserving recovery and fulfillment', async () => {
+test('maintenance blocks real HTTP business dispatch before quotas/mutations while preserving recovery, fulfillment and the customer API', async () => {
   const f = fixture({ ...DEFAULT_SYSTEM_SETTINGS, maintenanceMode: true });
   await withPolicy(f, async (call, executed) => {
-    for (const [path, method] of [['/daas/v1/catalog', 'GET'], ['/API/v1/API-KEYS/', 'POST'], ['/api/v1/product-submissions', 'POST'],
+    // The customer DaaS API keeps serving during maintenance.
+    assert.equal((await call('/daas/v1/catalog')).status, 200);
+    executed.length = 0;
+    for (const [path, method] of [['/API/v1/API-KEYS/', 'POST'], ['/api/v1/product-submissions', 'POST'],
       ['/api/v1/checkout/create-gcash', 'POST'], ['/api/v1/product-media/upload/customer', 'POST'], ['/api/v1/free-trial/activate', 'POST']]) {
       const result = await call(path, method); assert.equal(result.status, 503); assert.equal((await result.json()).code, 'MAINTENANCE_MODE');
     }

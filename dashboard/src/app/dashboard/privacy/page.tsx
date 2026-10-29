@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { Shield, Trash2, AlertTriangle } from "lucide-react";
+import SettingsTabs from "@/components/layout/SettingsTabs";
 
 export default function PrivacySettingsPage() {
   const { user, logout, confirmAccountDeletion } = useAuth();
@@ -43,10 +44,11 @@ export default function PrivacySettingsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
           <Shield className="w-8 h-8 text-indigo-400" />
-          Privacy & Data Settings
+          Settings
         </h1>
-        <p className="text-slate-400">Manage your data in compliance with the Data Privacy Act of 2012</p>
+        <p className="text-slate-400">Privacy &amp; data: manage your data in compliance with the Data Privacy Act of 2012</p>
       </div>
+      <SettingsTabs />
 
       <div className="grid grid-cols-1 gap-6 mt-8 max-w-2xl">
 

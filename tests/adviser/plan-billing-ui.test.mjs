@@ -48,7 +48,7 @@ test('Upgrade cards use canonical plan config and preserve server purchase permi
   assert.match(billing, /Get \$\{plan\.name\}/u);
   assert.match(billing, /Standard security, abuse protection, and IP rate limits still apply\./u);
   for (const benefit of ['PRO_REQUEST_LABEL', 'PRO_MAX_REQUEST_LABEL', 'All Business Segments',
-    'Real Sales Analytics Feed', 'One API key — add products to it anytime', 'Up to ${PRO_MAX_SEGMENT_KEYS} API keys — one per segment', 'API Playground']) {
+    'One API key — add products to it anytime', 'Up to ${PRO_MAX_SEGMENT_KEYS} API keys — one per segment', 'API Playground']) {
     assert.ok(plans.includes(benefit), `canonical plan config must contain ${benefit}`);
   }
   assert.doesNotMatch(plans, /Product Recommendations/);

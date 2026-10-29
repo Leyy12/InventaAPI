@@ -42,7 +42,9 @@ export function systemPolicyApplies(method, path) {
   if (route === '/api/v1/api-keys' || route.startsWith('/api/v1/api-keys/')) {
     if (method === 'GET' || method === 'HEAD' || method === 'DELETE') return false;
   }
-  if (route.startsWith('/daas/v1/') && route !== '/daas/v1/health') return true;
+  // The customer DaaS API (/daas/v1/...) keeps running during maintenance so
+  // customers' websites and stores are never interrupted.
+  if (route.startsWith('/daas/')) return false;
   if (['/api/v1/products', '/api/v1/product-submissions', '/api/v1/api-keys', '/api/v1/customer/insights',
     '/api/v1/notifications', '/api/v1/contact'].some(prefix => route === prefix || route.startsWith(`${prefix}/`))) return true;
   return method !== 'GET' && method !== 'HEAD' && (route === '/api/v1/checkout/create-gcash'

@@ -12,7 +12,9 @@ const read = path => readFileSync(file(path), 'utf8');
 test('shared desktop/mobile navigation preserves exact remaining order without a dead icon', () => {
   const navigation = read('dashboard/src/components/layout/dashboard-navigation.ts');
   assert.deepEqual([...navigation.matchAll(/name: '([^']+)'/g)].map(match => match[1]),
-    ['Overview', 'Products', 'API Keys', 'Documentation', 'Analytics', 'Privacy', 'Plan & Billing', 'Settings']);
+    ['Overview', 'Products', 'API Keys', 'Documentation', 'Analytics', 'Plan & Billing', 'Settings']);
+  // Privacy is a tab inside Settings.
+  assert.match(read('dashboard/src/components/layout/SettingsTabs.tsx'), /href: "\/dashboard\/privacy"/);
   assert.doesNotMatch(navigation, /recommendation|Lightbulb/i);
   assert.match(read('dashboard/src/components/layout/Sidebar.tsx'), /dashboardRoutes/);
   // The mobile drawer is the same sidebar body (MobileSidebar), so it shares the routes.
@@ -52,7 +54,7 @@ for (const plan of ['free', 'pro', 'pro_max']) {
 
 test('paid capability proof map retains sales, quota, keys and integration capabilities', () => {
   assert.deepEqual([...PRO_MAX_CAPABILITY_IDS], ['monthly_segment_quota', 'all_segments', 'segment_api_keys', 'auto_segment_routing',
-    'real_sales_feed', 'api_playground', 'usage_history', 'renewable_30_day_term']);
+    'api_playground', 'usage_history', 'renewable_30_day_term']);
   assert.equal(SUBSCRIPTION_PLANS.pro.price, 500);
   assert.equal(SUBSCRIPTION_PLANS.pro_max.price, 1300);
   assert.equal(SUBSCRIPTION_PLANS.pro.requestLimit, 15000);
