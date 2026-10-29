@@ -1,4 +1,5 @@
 import express from 'express';
+import { createCustomerNotifier, messages } from '../services/customer-notify.js';
 import { getAuth } from '../services/supabase-auth.js';
 import { createAdminEntitlements } from '../services/admin-entitlements.js';
 import { getDataStore, FieldPath } from '../database/data-store.js';
@@ -11,7 +12,8 @@ import { createRequire } from 'node:module';
 const router = express.Router();
 const systemSettings = createSystemSettingsHandlers({ getDb: () => getDataStore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked),
-  apiVersion: createRequire(import.meta.url)('../package.json').version });
+  apiVersion: createRequire(import.meta.url)('../package.json').version,
+  notifier: createCustomerNotifier(), messages });
 router.get('/system/settings', systemSettings.read);
 router.patch('/system/settings', systemSettings.save);
 router.get('/system/information', systemSettings.information);

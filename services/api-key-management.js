@@ -62,7 +62,16 @@ function keyName(value) {
   return value.trim();
 }
 
-export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new Date(), monthlyCutoverAt = null, vaultSecret = null }) {
+export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new Date(), monthlyCutoverAt = null, vaultSecret = null,
+  notifier = null, messages = null }) {
+  // Best-effort email + bell after a key change; never affects the change itself.
+  const tell = async (db, actor, message) => {
+    if (!notifier || !messages) return;
+    try {
+      const email = actor.email || (await db.collection('users').doc(actor.uid).get()).data()?.email;
+      await notifier.notify(db, { userId: actor.uid, email, ...message });
+    } catch { /* notification is optional */ }
+  };
   const sealed = issued => {
     const value = sealCredential(issued.credential, issued.id, vaultSecret);
     return value ? { credentialSealed: value } : {};
@@ -310,6 +319,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         return record;
       });
       await audit(db, 'API Key Generated', actor, issued.id);
+      if (messages) await tell(db, actor, messages.keyCreated(name));
       return res.json({ success: true, ...publicKeyMetadata(issued.id, key, context.entitlement, context.usage), key: issued.credential });
     }),
     replace: authenticated(async (req, res, actor, db) => {
@@ -494,6 +504,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         return out;
       });
       for (const result of results) await audit(db, result.created ? 'API Key Generated' : 'API Key Products Updated', actor, result.keyId);
+      if (messages) await tell(db, actor, messages.productsAdded(results));
       return res.json({ success: true, results });
     }),
     revoke: authenticated(async (req, res, actor, db) => {
