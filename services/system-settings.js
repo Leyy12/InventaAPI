@@ -2,7 +2,7 @@ import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { validDocumentId } from './api-key-security.js';
 import { requestPolicyVersion } from '../functions/request-limit-policy.mjs';
 import { DEFAULT_SYSTEM_SETTINGS, effectiveSystemSettings, validSettingsChanges, deploymentEnvironment,
-  systemPolicyApplies, MAINTENANCE_MESSAGE } from './system-settings-contract.mjs';
+  systemPolicyApplies, MAINTENANCE_MESSAGE, maintenanceActive, validMaintenanceSchedule } from './system-settings-contract.mjs';
 
 class SettingsError extends Error {
   constructor(status, code, message) { super(message); Object.assign(this, { status, code }); }
@@ -59,6 +59,9 @@ export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion,
       const ref = settingsRef(db), snapshot = await tx.get(ref);
       if (version(snapshot) !== body.version) throw new SettingsError(409, 'SETTINGS_CONFLICT', 'Another Admin changed settings. Refresh Settings and review your changes.');
       const previous = effectiveSystemSettings(snapshot.data());
+      if (!validMaintenanceSchedule({ ...previous, ...body.changes })) {
+        throw new SettingsError(400, 'MAINTENANCE_SCHEDULE_INVALID', 'Set both a maintenance start and end, with the end after the start.');
+      }
       const changedFields = Object.keys(body.changes).filter(key => key !== 'planRequestLimits' && previous[key] !== body.changes[key]);
       const planChanges = Object.entries(body.changes.planRequestLimits || {}).filter(([plan, limit]) => previous.planRequestLimits[plan] !== limit)
         .map(([plan, limit]) => ({ plan, before: previous.planRequestLimits[plan], after: limit }));
@@ -107,7 +110,9 @@ export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion,
   });
   const publicStatus = wrap(async (_req, res) => {
     const policy = effectiveSystemSettings((await settingsRef(getDb()).get()).data());
-    return res.json({ success: true, maintenanceMode: policy.maintenanceMode, allowNewRegistrations: policy.allowNewRegistrations,
+    // maintenanceMode here is whether maintenance is in effect right now (switched on or scheduled).
+    return res.json({ success: true, maintenanceMode: maintenanceActive(policy, now()), allowNewRegistrations: policy.allowNewRegistrations,
+      maintenanceStartsAt: policy.maintenanceStartsAt, maintenanceEndsAt: policy.maintenanceEndsAt, serverTime: now().toISOString(),
       planRequestLimits: policy.planRequestLimits, requestPolicyVersion: requestPolicyVersion(policy.planRequestLimits) });
   });
   return { read, save, information, publicStatus };
@@ -119,7 +124,7 @@ export function createSystemPolicyMiddleware({ getDb }) {
     try {
       // Fresh reads across serverless instances: never cache a stale enabled policy.
       req.systemPolicy = effectiveSystemSettings((await settingsRef(getDb()).get()).data());
-      if (!req.systemPolicy.maintenanceMode) return next();
+      if (!maintenanceActive(req.systemPolicy)) return next();
       res.set('Cache-Control', 'no-store'); res.set('Retry-After', '60');
       return res.status(503).json({ success: false, code: 'MAINTENANCE_MODE', error: MAINTENANCE_MESSAGE });
     } catch {

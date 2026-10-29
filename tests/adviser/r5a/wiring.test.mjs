@@ -543,6 +543,7 @@ async function exerciseLoginEntry({ pendingPlan = null, failure = null } = {}) {
     },
     rememberCustomerLoginEntry: entry => { events.push(entry); rememberCustomerLoginEntry(entry); },
     pendingPlan, setError(message) { if (message) events.push(`error:${message}`); }, setLoading() {},
+    readMaintenanceStatus: async () => null, maintenanceNotice: () => '', setMaintenanceMessage() {},
     console: { log() {}, error() {} },
   };
   try {

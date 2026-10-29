@@ -134,6 +134,8 @@ async function customerBoundary(pathname = '/dashboard/products', maintenance = 
   const child = { type: 'ExistingBusinessPage', props: { children: 'Existing Customer content' } };
   const component = load('dashboard/src/components/shared/CustomerMaintenanceBoundary.tsx', 'exports.default', h, {
     '../../../../services/system-settings-contract.mjs': { MAINTENANCE_MESSAGE },
+    'next/navigation': { useRouter: () => ({ replace() {} }) },
+    '@/lib/supabase/auth-context': { useAuth: () => ({ user: null, logout: async () => ({ ok: true }) }) },
   }, { fetch: async (url, options) => {
     assert.equal(url, '/api/v1/system/status'); calls.push(options);
     if (failure) throw Error('offline');
@@ -142,13 +144,14 @@ async function customerBoundary(pathname = '/dashboard/products', maintenance = 
   h.mount(component, { pathname, children: child }); await flush();
   return { h, child, calls, async poll(next, offline = false) { maintenance = next; failure = offline; timers[0](); await flush(); }, stop() { h.stop(); } };
 }
-test('Customer boundary pauses business surfaces and recovers without reload or replacing stable page identities', async () => {
+test('Customer boundary shows the page normally, and a sign-out screen while maintenance is on', async () => {
   const f = await customerBoundary(); assert.equal(f.h.output, f.child);
   await f.poll(false); assert.equal(f.h.output, f.child);
-  await f.poll(true); assert.match(text(f.h.output), /undergoing maintenance/); assert.notEqual(f.h.output, f.child);
+  await f.poll(true); assert.match(text(f.h.output), /Signing you out for maintenance/); assert.notEqual(f.h.output, f.child);
   await f.poll(false); assert.equal(f.h.output, f.child);
   await f.poll(false, true); assert.match(text(f.h.output), /could not be verified/); f.stop();
 });
-for (const path of ['/dashboard/plan-billing', '/dashboard/settings', '/dashboard/privacy']) test(`maintenance preserves payment/security surface ${path}`, async () => {
-  const f = await customerBoundary(path, true); assert.equal(f.h.output, f.child); f.stop();
+// During maintenance every customer page signs the customer out (the sign-in page shows the apology).
+for (const path of ['/dashboard/plan-billing', '/dashboard/settings', '/dashboard/privacy']) test(`maintenance signs the customer out on ${path} too`, async () => {
+  const f = await customerBoundary(path, true); assert.match(text(f.h.output), /Signing you out for maintenance/); f.stop();
 });
