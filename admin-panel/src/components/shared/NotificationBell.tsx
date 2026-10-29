@@ -31,6 +31,8 @@ const iconForType = (type: Notification["type"]) => {
       return <Check className="w-4 h-4 text-emerald-400" />;
     case "product_request_rejected":
       return <X className="w-4 h-4 text-rose-400" />;
+    case "subscription_purchased":
+      return <Check className="w-4 h-4 text-emerald-400" />;
     case "subscription_expiring":
     case "trial_expiring":
       return <AlertTriangle className="w-4 h-4 text-amber-400" />;

@@ -3,6 +3,7 @@ import { getDataStore, FieldPath } from '../database/data-store.js';
 import { getAuth } from '../services/supabase-auth.js';
 import { createApiKeyHandlers } from '../services/api-key-management.js';
 import { createApiHistoryHandler } from '../services/api-history.js';
+import { createCustomerNotifier, messages } from '../services/customer-notify.js';
 
 const router = express.Router();
 const handlers = createApiKeyHandlers({
@@ -10,6 +11,7 @@ const handlers = createApiKeyHandlers({
   vaultSecret: process.env.API_KEY_ENCRYPTION_SECRET,
   getDb: () => getDataStore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
+  notifier: createCustomerNotifier(), messages,
 });
 
 // Every handler verifies the bearer token, derives identity, and checks ownership.

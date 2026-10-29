@@ -22,7 +22,7 @@ const state = snapshot => ({ settings: effectiveSystemSettings(snapshot.data()),
   configurationRefresh: 'Read on each affected API request; no settings cache.',
   securityProtection: 'Required; cannot be disabled.' });
 
-export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion, env = process.env, now = () => new Date(),
+export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion, env = process.env, now = () => new Date(), notifier = null, messages = null,
   report = () => console.warn('[Audit] System settings activity append unavailable') }) {
   const authenticate = async req => {
     const token = /^Bearer ([^\s]+)$/u.exec(req.headers?.authorization || '')?.[1];
@@ -92,6 +92,17 @@ export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion,
           entityType: 'system_settings', entityId: 'settings', details: `Changed plan request limits: ${result.planChanges.map(change => change.plan).join(', ')}.`,
           metadata: { changes: result.planChanges } });
       } catch { try { report(); } catch { /* completed commit remains authoritative */ } }
+    }
+    // A new or changed maintenance window: tell every customer (email + bell), once per window.
+    const schedule = { ...result.previous, ...body.changes };
+    if (notifier && messages && result.changedFields.some(field => field === 'maintenanceStartsAt' || field === 'maintenanceEndsAt')
+      && schedule.maintenanceStartsAt && schedule.maintenanceEndsAt && Date.parse(schedule.maintenanceEndsAt) > at.getTime()) {
+      try {
+        const customers = (await db.collection('users').get()).docs
+          .map(doc => ({ id: doc.id, ...doc.data() })).filter(user => String(user.role).toLowerCase() !== 'admin');
+        await notifier.notifyMany(db, customers, user => ({ id: `maintenance-${Date.parse(schedule.maintenanceStartsAt)}-${user.id}`,
+          ...messages.maintenanceScheduled(schedule.maintenanceStartsAt, schedule.maintenanceEndsAt) }));
+      } catch { try { report(); } catch { /* the saved schedule stands */ } }
     }
     // Persistence succeeded even if a subsequent authoritative reload fails.
     try { return res.json({ success: true, saved: result.existed || result.changedFields.length > 0 || result.planChanges.length > 0,

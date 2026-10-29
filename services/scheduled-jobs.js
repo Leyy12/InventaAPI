@@ -17,6 +17,25 @@ export async function downgradeExpiredSubscriptions(db, normalize = normalizeExp
   return { downgraded, failed };
 }
 
+// Active Pro / Pro Max plans ending within 3 days get one reminder (email + bell).
+export async function sendPlanExpiryReminders(db, { notify, messages, now = new Date(), log = console }) {
+  let reminded = 0, failed = 0;
+  const soon = now.getTime() + 3 * 86400000;
+  for (const plan of ['Pro', 'Pro Max']) {
+    const users = await db.collection('users').where('plan', '==', plan).get();
+    for (const user of users.docs) {
+      const account = user.data(), end = Date.parse(account.subscriptionExpiresAt ?? '');
+      if (account.subscription_status !== 'active' || !Number.isFinite(end) || end <= now.getTime() || end > soon) continue;
+      try {
+        const result = await notify(db, { userId: user.id, email: account.email, id: `plan-expiring-${user.id}-${end}`,
+          ...messages.planExpiring(plan, account.subscriptionExpiresAt) });
+        if (result.created) reminded++;
+      } catch { failed++; log.error('[PLAN REMINDER]', { uid: user.id }); }
+    }
+  }
+  return { reminded, failed };
+}
+
 // Trials ending within 3 days get one warning email. UTC, paged, one indexed field.
 export async function sendTrialWarnings(db, { from, sendEmail, now = new Date(), log = console }) {
   let query = db.collection('users').where('trialExpiresAt', '>', now.toISOString())

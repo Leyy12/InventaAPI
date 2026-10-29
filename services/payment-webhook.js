@@ -161,7 +161,25 @@ export async function fulfillPayment(db, payment, time) {
   });
 }
 
-export function createPaymentWebhook({ getDb, getConfig, clock = () => new Date(), report = () => {} }) {
+export function createPaymentWebhook({ getDb, getConfig, clock = () => new Date(), report = () => {}, notifier = null, messages = null }) {
+  // After a successful payment: "Your plan is active" (email + bell). Never affects fulfillment.
+  const confirmPayment = async (db, payment) => {
+    if (!notifier || !messages) return;
+    try {
+      const orders = await db.collection('payment_orders').where('paymentId', '==', payment.paymentId).limit(1).get();
+      const userId = orders.docs[0]?.data().userId;
+      if (!userId) return;
+      const account = (await db.collection('users').doc(userId).get()).data();
+      if (!account?.subscriptionExpiresAt) return;
+      await notifier.notify(db, { userId, email: account.email, id: `payment-${payment.paymentId}`,
+        ...messages.paymentReceived(account.plan, account.subscriptionExpiresAt) });
+      // Admins: one notification in the admin bell, plus an email to every admin.
+      const admins = (await db.collection('users').where('role', '==', 'admin').get()).docs.map(doc => doc.data());
+      const adminMessage = messages.adminNewSubscription(account, account.plan, account.subscriptionExpiresAt);
+      const first = await notifier.notify(db, { userId: 'admin', email: admins[0]?.email, id: `admin-payment-${payment.paymentId}`, ...adminMessage });
+      if (first.created) for (const admin of admins.slice(1)) await notifier.emailOnly(admin.email, adminMessage.title, adminMessage.body);
+    } catch (error) { report({ code: 'PAYMENT_NOTIFICATION_UNAVAILABLE', message: error.message }); }
+  };
   return async (req, res) => {
     let verifiedPayment;
     try {
@@ -180,6 +198,7 @@ export function createPaymentWebhook({ getDb, getConfig, clock = () => new Date(
       signedCheckoutOffers.set(payment, structuredClone(event.data.attributes.data.attributes));
       const result = await fulfillPayment(db, payment, clock);
       if (result.reviewRequired) report({ code: 'PAYMENT_RECONCILIATION_REQUIRED', orderPaymentId: payment.paymentId, eventId: payment.eventId });
+      if (!result.duplicate && !result.reviewRequired) await confirmPayment(db, payment);
       // Acknowledge fulfillment only after its durable atomic commit.
       return res.json({ received: true, processed: !result.duplicate && !result.reviewRequired, ...result,
         ...(result.duplicate ? { reason: 'duplicate' } : {}) });
