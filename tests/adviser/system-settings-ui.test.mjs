@@ -67,33 +67,85 @@ test('Plan Limits card is gone: no plan inputs render and saves never send plan 
 });
 
 const scheduleShown = h => nodes(h.output, node => node.props?.['aria-label'] === 'Maintenance starts').length === 1;
-test('Schedule Maintenance is hidden while Maintenance Mode is off', async () => {
-  const f = await settingsFixture(); assert.equal(scheduleShown(f.h), false);
+const switchOn = h => find(h, node => node.props?.['aria-label'] === 'Maintenance Mode').props.checked;
+const saveDisabled = h => button(h, 'Save Settings').props.disabled;
+const later = days => new Date(Date.now() + days * 86400000).toISOString();
+// datetime-local text for a time `days` from now, in local time (what the admin types).
+const localInput = days => { const d = new Date(Date.now() + days * 86400000), pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+test('Maintenance Mode is off and the schedule is hidden when nothing is scheduled', async () => {
+  const f = await settingsFixture(); assert.equal(switchOn(f.h), false); assert.equal(scheduleShown(f.h), false);
   assert.doesNotMatch(text(f.h.output), /Schedule Maintenance/); f.stop();
 });
-test('Schedule Maintenance shows once Maintenance Mode is switched on, and hides again when switched off', async () => {
+test('switching Maintenance Mode on only opens the schedule: it does not start maintenance or allow an empty save', async () => {
   const f = await settingsFixture();
-  await f.change('Maintenance Mode', true); assert.equal(scheduleShown(f.h), true);
+  await f.change('Maintenance Mode', true);
+  assert.equal(switchOn(f.h), true); assert.equal(scheduleShown(f.h), true);
+  assert.equal(saveDisabled(f.h), true); assert.match(text(f.h.output), /Set a start and an end time/);
+  await f.submit(); assert.equal(f.patches().length, 0);
   await f.change('Maintenance Mode', false); assert.equal(scheduleShown(f.h), false); f.stop();
 });
-test('Schedule Maintenance shows when Maintenance Mode is already saved on', async () => {
-  const f = await settingsFixture({ maintenanceMode: true }); assert.equal(scheduleShown(f.h), true); f.stop();
-});
-test('an upcoming saved schedule stays visible with Maintenance Mode off so it can be cleared', async () => {
-  const startsAt = new Date(Date.now() + 86400000).toISOString(), endsAt = new Date(Date.now() + 2 * 86400000).toISOString();
-  const f = await settingsFixture({ startsAt, endsAt }); assert.equal(scheduleShown(f.h), true);
-  button(f.h, 'Clear schedule / end now').props.onClick(); await flush(); await f.submit();
-  assert.deepEqual(f.patches()[0].body.changes, { maintenanceStartsAt: null, maintenanceEndsAt: null });
-  assert.equal(scheduleShown(f.h), false); f.stop();
-});
-test('a schedule that already ended stays hidden while Maintenance Mode is off', async () => {
-  const f = await settingsFixture({ startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2026-01-02T00:00:00.000Z' });
-  assert.equal(scheduleShown(f.h), false); f.stop();
-});
-test('unsaved schedule edits stay visible after Maintenance Mode is switched back off', async () => {
+test('a schedule is confirmed, then saved as start/end times only (maintenance starts on its own)', async () => {
   const f = await settingsFixture(); await f.change('Maintenance Mode', true);
-  await f.change('Maintenance starts', '2099-01-01T10:00'); await f.change('Maintenance Mode', false);
-  assert.equal(scheduleShown(f.h), true); f.stop();
+  await f.change('Maintenance starts', localInput(1)); await f.change('Maintenance ends', localInput(2));
+  assert.equal(saveDisabled(f.h), false);
+  await f.submit(); assert.equal(f.dialogState.open, true); assert.equal(f.patches().length, 0);
+  assert.match(text(f.h.output), /starts automatically on/);
+  button(f.h, 'Cancel').props.onClick(); await flush(); assert.equal(f.dialogState.open, false); assert.equal(f.patches().length, 0);
+  await f.submit(); button(f.h, 'Schedule and Save').props.onClick(); await flush();
+  assert.equal(f.patches().length, 1);
+  const changes = f.patches()[0].body.changes;
+  assert.deepEqual(Object.keys(changes).sort(), ['maintenanceEndsAt', 'maintenanceStartsAt']);
+  assert.ok(Date.parse(changes.maintenanceStartsAt) > Date.now());
+  assert.equal(switchOn(f.h), true); assert.match(text(f.h.output), /Scheduled:/); f.stop();
+});
+test('Start now fills the start time and the confirmation says it starts right away', async () => {
+  const f = await settingsFixture(); await f.change('Maintenance Mode', true);
+  button(f.h, 'Start now').props.onClick(); await flush(); await f.change('Maintenance ends', localInput(1));
+  await f.submit(); assert.match(text(f.h.output), /starts right away/);
+  button(f.h, 'Schedule and Save').props.onClick(); await flush();
+  assert.ok(Date.parse(f.patches()[0].body.changes.maintenanceStartsAt) <= Date.now()); f.stop();
+});
+test('an end before the start, or an end already passed, cannot be saved', async () => {
+  const f = await settingsFixture(); await f.change('Maintenance Mode', true);
+  await f.change('Maintenance starts', localInput(2)); await f.change('Maintenance ends', localInput(1));
+  assert.match(text(f.h.output), /end must be after the start/); assert.equal(saveDisabled(f.h), true);
+  await f.change('Maintenance starts', localInput(-2)); await f.change('Maintenance ends', localInput(-1));
+  assert.match(text(f.h.output), /already passed/); assert.equal(saveDisabled(f.h), true);
+  await f.submit(); assert.equal(f.patches().length, 0); f.stop();
+});
+test('an upcoming saved schedule shows the switch on; switching off cancels it', async () => {
+  const f = await settingsFixture({ startsAt: later(1), endsAt: later(2) });
+  assert.equal(switchOn(f.h), true); assert.equal(scheduleShown(f.h), true); assert.match(text(f.h.output), /Scheduled:/);
+  await f.change('Maintenance Mode', false); await f.submit();
+  assert.deepEqual(f.patches()[0].body.changes, { maintenanceStartsAt: null, maintenanceEndsAt: null });
+  assert.equal(switchOn(f.h), false); assert.equal(scheduleShown(f.h), false); f.stop();
+});
+test('running scheduled maintenance shows "In maintenance now"', async () => {
+  const f = await settingsFixture({ startsAt: later(-1), endsAt: later(1) });
+  assert.equal(switchOn(f.h), true); assert.match(text(f.h.output), /In maintenance now/); f.stop();
+});
+test('a schedule that already ended leaves the switch off; switching on starts from empty times', async () => {
+  const f = await settingsFixture({ startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2026-01-02T00:00:00.000Z' });
+  assert.equal(switchOn(f.h), false); assert.equal(scheduleShown(f.h), false);
+  await f.change('Maintenance Mode', true);
+  assert.equal(find(f.h, node => node.props?.['aria-label'] === 'Maintenance starts').props.value, '');
+  assert.equal(saveDisabled(f.h), true);
+  await f.change('Maintenance Mode', false); assert.doesNotMatch(text(f.h.output), /Unsaved changes/); f.stop();
+});
+test('maintenance already switched on (older setting) can be ended with the switch', async () => {
+  const f = await settingsFixture({ maintenanceMode: true });
+  assert.equal(switchOn(f.h), true); assert.match(text(f.h.output), /Maintenance is on now, with no end time/);
+  await f.change('Maintenance Mode', false); await f.submit();
+  assert.deepEqual(f.patches()[0].body.changes, { maintenanceMode: false }); f.stop();
+});
+test('setting times on an older "on now" maintenance hands control to the schedule', async () => {
+  const f = await settingsFixture({ maintenanceMode: true });
+  button(f.h, 'Start now').props.onClick(); await flush(); await f.change('Maintenance ends', localInput(1));
+  await f.submit(); button(f.h, 'Schedule and Save').props.onClick(); await flush();
+  const changes = f.patches()[0].body.changes;
+  assert.equal(changes.maintenanceMode, false); assert.ok(changes.maintenanceStartsAt && changes.maintenanceEndsAt); f.stop();
 });
 for (const environment of ['Production', 'Staging', 'Development', 'Unknown']) test(`actual settings environment renders ${environment}`, async () => {
   const f = await settingsFixture({ environment }); assert.ok(text(f.h.output).includes(environment)); f.stop();
@@ -105,13 +157,6 @@ test('actual Save submits only changed fields and the loaded version, then displ
   assert.deepEqual(f.patches()[0].body, { version: 'v1', changes: { allowNewRegistrations: false } });
   assert.match(text(f.h.output), /saved and reloaded successfully/); assert.doesNotMatch(text(f.h.output), /Unsaved changes/);
   assert.equal(button(f.h, 'Save Settings').props.disabled, true); f.stop();
-});
-test('maintenance requires explicit confirmation; cancel sends no mutation and confirm commits once', async () => {
-  const f = await settingsFixture(); await f.change('Maintenance Mode', true); await f.submit();
-  assert.equal(f.dialogState.open, true); assert.equal(f.patches().length, 0);
-  button(f.h, 'Cancel').props.onClick(); await flush(); assert.equal(f.dialogState.open, false); assert.equal(f.patches().length, 0);
-  await f.submit(); button(f.h, 'Enable and Save').props.onClick(); await flush();
-  assert.equal(f.patches().length, 1); assert.deepEqual(f.patches()[0].body.changes, { maintenanceMode: true }); f.stop();
 });
 for (const getError of [401, 403, 503]) test(`load failure ${getError} leaves controls and Save disabled`, async () => {
   const f = await settingsFixture({ getError }); assert.equal(button(f.h, 'Save Settings').props.disabled, true);

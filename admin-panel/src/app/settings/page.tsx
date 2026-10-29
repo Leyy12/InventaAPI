@@ -22,6 +22,9 @@ const toLocalInput = (iso: string | null) => {
 };
 const fromLocalInput = (value: string) => { const time = new Date(value); return value && Number.isFinite(time.getTime()) ? time.toISOString() : null; };
 const showTime = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+// Maintenance is on, or a saved window has not ended yet (upcoming or running).
+const maintenanceWindowOpen = (settings: Configuration) => settings.maintenanceMode
+  || (!!settings.maintenanceEndsAt && Date.now() < Date.parse(settings.maintenanceEndsAt));
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5002' : '');
 const deployment = process.env.NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT;
 const environment = ['Production', 'Staging', 'Development'].includes(deployment || '') ? deployment : 'Unknown';
@@ -49,15 +52,32 @@ export default function SettingsPage() {
   const [health, setHealth] = useState('Not checked');
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [confirmMaintenance, setConfirmMaintenance] = useState(false);
+  // The Maintenance Mode switch opens the schedule. Maintenance itself starts and ends on its own at the saved times.
+  const [scheduling, setScheduling] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const generation = useRef(0);
   const ready = phase === 'ready' || phase === 'missing';
   const dirty = !!snapshot && editableFields.some(field => draft[field] !== snapshot.settings[field]);
-  // Schedule Maintenance shows only while Maintenance Mode is on. It also stays visible while a
-  // saved schedule hasn't ended or schedule edits are unsaved, so a schedule is never hidden.
-  const savedEnd = snapshot?.settings.maintenanceEndsAt;
-  const showSchedule = draft.maintenanceMode || (!!savedEnd && Date.now() < Date.parse(savedEnd))
-    || (!!snapshot && (draft.maintenanceStartsAt !== snapshot.settings.maintenanceStartsAt || draft.maintenanceEndsAt !== snapshot.settings.maintenanceEndsAt));
+  const { maintenanceStartsAt: startsAt, maintenanceEndsAt: endsAt } = draft;
+  const endBeforeStart = !!startsAt && !!endsAt && Date.parse(endsAt) <= Date.parse(startsAt);
+  const endInPast = !!endsAt && Date.parse(endsAt) <= Date.now();
+  const scheduleIncomplete = scheduling && !draft.maintenanceMode && !(startsAt && endsAt);
+  const scheduleChanged = !!snapshot && (startsAt !== snapshot.settings.maintenanceStartsAt || endsAt !== snapshot.settings.maintenanceEndsAt);
+  const canSave = ready && dirty && !saving && !scheduleIncomplete && !endBeforeStart && !(scheduleChanged && endInPast);
+  const setSchedule = (changes: Partial<Configuration>) =>
+    // Editing the times hands control to the schedule (this also replaces an older "on now" switch).
+    setDraft(current => ({ ...current, maintenanceMode: false, ...changes }));
+  const toggleMaintenance = (on: boolean) => {
+    setScheduling(on);
+    if (!snapshot) return;
+    setDraft(current => on
+      // Start from empty times when the saved window already ended.
+      ? (current.maintenanceEndsAt && Date.parse(current.maintenanceEndsAt) <= Date.now() ? { ...current, maintenanceStartsAt: null, maintenanceEndsAt: null } : current)
+      // Off cancels an upcoming or running maintenance; otherwise it just discards unsaved times.
+      : maintenanceWindowOpen(snapshot.settings) ? { ...current, maintenanceMode: false, maintenanceStartsAt: null, maintenanceEndsAt: null }
+        : { ...current, maintenanceMode: false, maintenanceStartsAt: snapshot.settings.maintenanceStartsAt, maintenanceEndsAt: snapshot.settings.maintenanceEndsAt });
+  };
+  const startNow = () => { const now = new Date(); now.setSeconds(0, 0); setSchedule({ maintenanceStartsAt: now.toISOString() }); };
 
   const request = useCallback(async (path: string, method = 'GET', body?: unknown, timeoutMs = 15000) => {
     if (!user) throw Object.assign(new Error('Admin session required'), { status: 401 });
@@ -80,7 +100,7 @@ export default function SettingsPage() {
     try {
       if (configuration.status === 'rejected') throw configuration.reason;
       const loaded = verifiedSnapshot(configuration.value);
-      setSnapshot(loaded); setDraft(loaded.settings); setPhase(loaded.source === 'defaults' ? 'missing' : 'ready');
+      setSnapshot(loaded); setDraft(loaded.settings); setScheduling(maintenanceWindowOpen(loaded.settings)); setPhase(loaded.source === 'defaults' ? 'missing' : 'ready');
     } catch (error) {
       setSnapshot(null);
       const status = (error as { status?: number }).status;
@@ -99,7 +119,7 @@ export default function SettingsPage() {
 
   const save = async () => {
     setConfirmMaintenance(false);
-    if (!snapshot || !ready || !dirty || saving) return;
+    if (!snapshot || !canSave) return;
     setSaving(true); setMessage('');
     const current = generation.current;
     try {
@@ -111,7 +131,7 @@ export default function SettingsPage() {
         setSnapshot(null); setPhase('unavailable'); setMessage('Settings were saved, but the reload is unavailable. Refresh Settings before editing again.');
       } else {
         const loaded = verifiedSnapshot(payload);
-        setSnapshot(loaded); setDraft(loaded.settings); setPhase('ready'); setMessage('Settings saved and reloaded successfully.');
+        setSnapshot(loaded); setDraft(loaded.settings); setScheduling(maintenanceWindowOpen(loaded.settings)); setPhase('ready'); setMessage('Settings saved and reloaded successfully.');
       }
     } catch (error) {
       if (current !== generation.current) return;
@@ -127,8 +147,9 @@ export default function SettingsPage() {
   };
   const handleSave = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!ready || !dirty || saving) return;
-    if (draft.maintenanceMode && !snapshot?.settings.maintenanceMode) setConfirmMaintenance(true);
+    if (!canSave) return;
+    // A new schedule emails every customer, so confirm it first.
+    if (scheduleChanged && startsAt && endsAt) setConfirmMaintenance(true);
     else void save();
   };
   const checkHealth = async () => {
@@ -156,36 +177,38 @@ export default function SettingsPage() {
             {phase === 'missing' && <p role="status" className="text-amber-300">No settings document exists. The displayed defaults are effective; your first change will initialize settings.</p>}
             {snapshot?.warnings.map(warning => <p key={warning} role="status" className="text-amber-300">{warning}</p>)}
             <fieldset disabled={!ready || saving} className="space-y-6 disabled:opacity-60">
-              <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div><h3 className="text-sm font-bold text-white">Maintenance Mode</h3><p className="text-xs text-slate-400 mt-1">Turns maintenance on now. Customers are signed out and can&apos;t sign in until it&apos;s off. The customer API (/daas) keeps working, and Admins can still sign in.</p></div>
-                <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                  <input aria-label="Maintenance Mode" type="checkbox" className="sr-only peer" checked={draft.maintenanceMode} onChange={e => setDraft({ ...draft, maintenanceMode: e.target.checked })} />
-                  <span className="w-11 h-6 bg-slate-700 rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 peer-checked:bg-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
-                </label>
+              <div className="space-y-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                <div className="flex items-center justify-between gap-4">
+                  <div><h3 className="text-sm font-bold text-white">Maintenance Mode</h3><p className="text-xs text-slate-400 mt-1">Turn on to schedule maintenance. It starts and ends automatically at the times you set. During maintenance customers are signed out and can&apos;t sign in; the customer API (/daas) keeps working and Admins can still sign in. Turn off to cancel or end it.</p></div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input aria-label="Maintenance Mode" type="checkbox" className="sr-only peer" checked={scheduling} onChange={e => toggleMaintenance(e.target.checked)} />
+                    <span className="w-11 h-6 bg-slate-700 rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 peer-checked:bg-indigo-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+                  </label>
+                </div>
+                {scheduling && <div className="space-y-3 border-t border-slate-800 pt-4">
+                  <div><h3 className="text-sm font-bold text-white">Schedule Maintenance</h3>
+                    <p className="text-xs text-slate-400 mt-1">Set when maintenance starts and ends (your local time). Customers get an email and a notification when you save.</p></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="space-y-1 text-xs text-slate-300">Starts
+                      <input type="datetime-local" aria-label="Maintenance starts" value={toLocalInput(startsAt)}
+                        onChange={e => setSchedule({ maintenanceStartsAt: fromLocalInput(e.target.value) })} className={controlClass} /></label>
+                    <label className="space-y-1 text-xs text-slate-300">Ends
+                      <input type="datetime-local" aria-label="Maintenance ends" value={toLocalInput(endsAt)}
+                        onChange={e => setSchedule({ maintenanceEndsAt: fromLocalInput(e.target.value) })} className={controlClass} /></label>
+                  </div>
+                  {endBeforeStart && <p role="alert" className="text-xs text-rose-300">The end must be after the start.</p>}
+                  {!endBeforeStart && scheduleChanged && endInPast && <p role="alert" className="text-xs text-rose-300">The end time has already passed.</p>}
+                  {scheduleIncomplete && <p className="text-xs text-amber-300">Set a start and an end time, then Save Settings.</p>}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-slate-400">{snapshot?.settings?.maintenanceMode ? 'Maintenance is on now, with no end time. Set times to schedule its end, or turn the switch off to end it.'
+                      : snapshot?.settings?.maintenanceStartsAt && snapshot?.settings.maintenanceEndsAt && Date.now() < Date.parse(snapshot?.settings.maintenanceEndsAt)
+                      ? Date.now() >= Date.parse(snapshot?.settings.maintenanceStartsAt) ? `In maintenance now, until ${showTime(snapshot?.settings.maintenanceEndsAt)}.`
+                        : `Scheduled: ${showTime(snapshot?.settings.maintenanceStartsAt)} – ${showTime(snapshot?.settings.maintenanceEndsAt)}.`
+                      : 'No maintenance scheduled.'}</p>
+                    <button type="button" onClick={startNow} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Start now</button>
+                  </div>
+                </div>}
               </div>
-              {showSchedule && <div className="space-y-3 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div><h3 className="text-sm font-bold text-white">Schedule Maintenance</h3>
-                  <p className="text-xs text-slate-400 mt-1">Maintenance starts and ends on its own at these times (your local time). Customers get an email and a notification when you save a schedule.</p></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="space-y-1 text-xs text-slate-300">Starts
-                    <input type="datetime-local" aria-label="Maintenance starts" value={toLocalInput(draft.maintenanceStartsAt)}
-                      onChange={e => setDraft({ ...draft, maintenanceStartsAt: fromLocalInput(e.target.value) })} className={controlClass} /></label>
-                  <label className="space-y-1 text-xs text-slate-300">Ends
-                    <input type="datetime-local" aria-label="Maintenance ends" value={toLocalInput(draft.maintenanceEndsAt)}
-                      onChange={e => setDraft({ ...draft, maintenanceEndsAt: fromLocalInput(e.target.value) })} className={controlClass} /></label>
-                </div>
-                {draft.maintenanceStartsAt && draft.maintenanceEndsAt && Date.parse(draft.maintenanceEndsAt) <= Date.parse(draft.maintenanceStartsAt)
-                  && <p role="alert" className="text-xs text-rose-300">The end must be after the start.</p>}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs text-slate-400">{snapshot?.settings.maintenanceStartsAt && snapshot.settings.maintenanceEndsAt
-                    ? Date.now() >= Date.parse(snapshot.settings.maintenanceEndsAt) ? `Last maintenance ended ${showTime(snapshot.settings.maintenanceEndsAt)}.`
-                      : Date.now() >= Date.parse(snapshot.settings.maintenanceStartsAt) ? `In maintenance now, until ${showTime(snapshot.settings.maintenanceEndsAt)}.`
-                      : `Scheduled: ${showTime(snapshot.settings.maintenanceStartsAt)} – ${showTime(snapshot.settings.maintenanceEndsAt)}.`
-                    : 'No maintenance scheduled.'}</p>
-                  {(draft.maintenanceStartsAt || draft.maintenanceEndsAt) && <button type="button" onClick={() => setDraft({ ...draft, maintenanceStartsAt: null, maintenanceEndsAt: null })}
-                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Clear schedule / end now</button>}
-                </div>
-              </div>}
               <div className="flex items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
                 <div><h3 className="text-sm font-bold text-white">Allow New Registrations</h3><p className="text-xs text-slate-400 mt-1">Control creation of new Customer profiles. Existing customers can still sign in.</p></div>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -197,7 +220,7 @@ export default function SettingsPage() {
           </div>
           <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex flex-wrap gap-3 items-center justify-between">
             <div className="text-sm text-slate-300"><p role="status">{message}</p>{dirty && <p className="text-amber-300">Unsaved changes</p>}</div>
-            <button type="submit" disabled={!ready || saving || !dirty} className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Settings'}</button>
+            <button type="submit" disabled={!canSave} className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{saving ? 'Saving…' : 'Save Settings'}</button>
           </div>
         </form>
       </div>
@@ -224,10 +247,12 @@ export default function SettingsPage() {
         <BackupRestoreCard request={request} />
       </div>
     </div>
-    <dialog ref={dialog} aria-labelledby="maintenance-confirm-title" onCancel={() => setConfirmMaintenance(false)} className="bg-slate-900 text-white rounded-xl border border-slate-700 p-6 max-w-md backdrop:bg-black/60">
-      <h2 id="maintenance-confirm-title" className="text-xl font-bold">Enable maintenance mode?</h2>
-      <p className="text-slate-300 mt-3">Customer business operations will pause. Admin recovery, existing sign-in and payment completion remain available.</p>
-      <div className="flex justify-end gap-3 mt-6"><button type="button" autoFocus onClick={() => setConfirmMaintenance(false)} className="rounded-lg px-4 py-2 bg-slate-800">Cancel</button><button type="button" disabled={saving} onClick={() => { void save(); }} className="rounded-lg px-4 py-2 bg-indigo-600">Enable and Save</button></div>
+    <dialog ref={dialog} aria-labelledby="maintenance-confirm-title" onCancel={() => setConfirmMaintenance(false)} className="m-auto bg-slate-900 text-white rounded-xl border border-slate-700 p-6 max-w-md backdrop:bg-black/60">
+      <h2 id="maintenance-confirm-title" className="text-xl font-bold">Schedule maintenance?</h2>
+      {startsAt && endsAt && <p className="text-slate-300 mt-3">{Date.parse(startsAt) <= Date.now()
+        ? `Maintenance starts right away and ends automatically on ${showTime(endsAt)}. Customers are signed out now.`
+        : `Maintenance starts automatically on ${showTime(startsAt)} and ends on ${showTime(endsAt)}.`} Every customer gets an email and a notification.</p>}
+      <div className="flex justify-end gap-3 mt-6"><button type="button" autoFocus onClick={() => setConfirmMaintenance(false)} className="rounded-lg px-4 py-2 bg-slate-800">Cancel</button><button type="button" disabled={saving} onClick={() => { void save(); }} className="rounded-lg px-4 py-2 bg-indigo-600">Schedule and Save</button></div>
     </dialog>
   </div>;
 }
