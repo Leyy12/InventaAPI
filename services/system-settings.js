@@ -47,10 +47,7 @@ const activeAdmin = account => {
 };
 const state = snapshot => ({ settings: effectiveSystemSettings(snapshot.data()), version: version(snapshot),
   source: snapshot.exists ? 'stored' : 'defaults',
-  warnings: [],
-  planLimitPeriod: 'UTC daily; shared across all active API keys. Existing paid promises are protected.',
-  configurationRefresh: 'Read on each affected API request; no settings cache.',
-  securityProtection: 'Required; cannot be disabled.' });
+  warnings: [] });
 
 export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion, env = process.env, now = () => new Date(), notifier = null, messages = null,
   report = () => console.warn('[Audit] System settings activity append unavailable') }) {
