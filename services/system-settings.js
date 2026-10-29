@@ -1,12 +1,42 @@
 import { accountBlocked } from '../functions/subscription-lifecycle.mjs';
 import { validDocumentId } from './api-key-security.js';
 import { requestPolicyVersion } from '../functions/request-limit-policy.mjs';
+import { Timestamp } from '../functions/postgres-data-store.mjs';
 import { DEFAULT_SYSTEM_SETTINGS, effectiveSystemSettings, validSettingsChanges, deploymentEnvironment,
   systemPolicyApplies, MAINTENANCE_MESSAGE, maintenanceActive, validMaintenanceSchedule } from './system-settings-contract.mjs';
 
 class SettingsError extends Error {
   constructor(status, code, message) { super(message); Object.assign(this, { status, code }); }
 }
+
+// Backup files: products (with their categories) + plan/registration settings.
+// Never customers, API keys, payments or usage.
+export const BACKUP_FORMAT = 'inventaapi-backup';
+const MAX_BACKUP_PRODUCTS = 20000;
+const isTimestamp = value => value instanceof Timestamp || (!!value && typeof value === 'object' && typeof value._seconds === 'number'
+  && typeof value._nanoseconds === 'number' && Object.keys(value).length === 2);
+const millis = value => typeof value.toMillis === 'function' ? value.toMillis() : value._seconds * 1000 + Math.floor(value._nanoseconds / 1e6);
+const portable = value => {
+  if (isTimestamp(value)) return { $timestamp: new Date(millis(value)).toISOString() };
+  if (value instanceof Date) return { $timestamp: value.toISOString() };
+  if (Array.isArray(value)) return value.map(portable);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, portable(item)]));
+  return value;
+};
+const plainObject = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const restored = value => {
+  if (Array.isArray(value)) return value.map(restored);
+  if (plainObject(value)) {
+    const keys = Object.keys(value);
+    if (keys.length === 1 && keys[0] === '$timestamp') {
+      const ms = Date.parse(value.$timestamp);
+      if (!Number.isFinite(ms)) throw new SettingsError(400, 'BACKUP_INVALID', 'The backup file has an invalid date.');
+      return Timestamp.fromMillis(ms);
+    }
+    return Object.fromEntries(keys.map(key => [key, restored(value[key])]));
+  }
+  return value;
+};
 const settingsRef = db => db.collection('system').doc('settings');
 const version = snapshot => !snapshot.exists ? 'missing'
   : `${snapshot.updateTime.seconds}:${snapshot.updateTime.nanoseconds}`;
@@ -126,7 +156,60 @@ export function createSystemSettingsHandlers({ getDb, verifyIdToken, apiVersion,
       maintenanceStartsAt: policy.maintenanceStartsAt, maintenanceEndsAt: policy.maintenanceEndsAt, serverTime: now().toISOString(),
       planRequestLimits: policy.planRequestLimits, requestPolicyVersion: requestPolicyVersion(policy.planRequestLimits) });
   });
-  return { read, save, information, publicStatus };
+
+  const backup = wrap(async (req, res) => {
+    const { db, actor } = await authenticate(req);
+    const [products, settings] = await Promise.all([db.collection('products').get(), settingsRef(db).get()]);
+    const at = now();
+    const stored = effectiveSystemSettings(settings.data());
+    const file = { format: BACKUP_FORMAT, version: 1, createdAt: at.toISOString(),
+      contents: 'Products (with categories) and system settings. No customers, API keys, payments or usage.',
+      settings: { allowNewRegistrations: stored.allowNewRegistrations, planRequestLimits: stored.planRequestLimits },
+      products: products.docs.map(doc => ({ id: doc.id, data: portable(doc.data()) })) };
+    try {
+      await db.collection('audit_logs').add({ action: 'Backup Downloaded', userId: actor.uid, timestamp: at,
+        entityType: 'system_backup', entityId: 'backup', details: `Downloaded a backup of ${file.products.length} products and settings.` });
+    } catch { try { report(); } catch { /* audit is best effort */ } }
+    return res.json({ success: true, backup: file });
+  });
+  const restore = wrap(async (req, res) => {
+    const { db, actor } = await authenticate(req);
+    const file = req.body?.backup;
+    const invalid = message => new SettingsError(400, 'BACKUP_INVALID', message);
+    if (!plainObject(file) || file.format !== BACKUP_FORMAT || file.version !== 1) throw invalid('This is not an InventaAPI backup file.');
+    if (!Array.isArray(file.products) || file.products.length > MAX_BACKUP_PRODUCTS) throw invalid('The backup file has no valid product list.');
+    const ids = new Set();
+    const products = file.products.map(item => {
+      if (!plainObject(item) || !validDocumentId(item.id) || !plainObject(item.data) || ids.has(item.id)) throw invalid('The backup file has an invalid product.');
+      ids.add(item.id);
+      return { id: item.id, data: restored(item.data) };
+    });
+    const settings = plainObject(file.settings) ? file.settings : {};
+    const changes = Object.fromEntries(['allowNewRegistrations', 'planRequestLimits'].filter(key => settings[key] !== undefined).map(key => [key, settings[key]]));
+    if (Object.keys(changes).length && !validSettingsChanges(changes)) throw invalid('The backup file has invalid settings.');
+    const at = now();
+    // Products in the file are written back; products added since the backup are kept.
+    for (let start = 0; start < products.length; start += 400) {
+      const batch = db.batch();
+      for (const product of products.slice(start, start + 400)) batch.set(db.collection('products').doc(product.id), product.data);
+      await batch.commit();
+    }
+    if (Object.keys(changes).length) {
+      await db.runTransaction(async tx => {
+        const ref = settingsRef(db), snapshot = await tx.get(ref);
+        const previous = effectiveSystemSettings(snapshot.data());
+        const values = { ...changes, ...(changes.planRequestLimits ? { planRequestLimits: { ...previous.planRequestLimits, ...changes.planRequestLimits } } : {}),
+          updatedAt: at, updatedBy: actor.uid };
+        if (snapshot.exists) tx.update(ref, values); else tx.set(ref, { ...DEFAULT_SYSTEM_SETTINGS, ...values });
+      });
+    }
+    try {
+      await db.collection('audit_logs').add({ action: 'Backup Restored', userId: actor.uid, timestamp: at,
+        entityType: 'system_backup', entityId: 'backup', details: `Restored ${products.length} products${Object.keys(changes).length ? ' and settings' : ''} from a backup made ${String(file.createdAt || 'at an unknown time').slice(0, 40)}.` });
+    } catch { try { report(); } catch { /* audit is best effort */ } }
+    return res.json({ success: true, restoredProducts: products.length, restoredSettings: Object.keys(changes) });
+  });
+  return { read, save, information, publicStatus, backup, restore };
 }
 
 export function createSystemPolicyMiddleware({ getDb }) {
