@@ -17,6 +17,8 @@ const systemSettings = createSystemSettingsHandlers({ getDb: () => getDataStore(
 router.get('/system/settings', systemSettings.read);
 router.patch('/system/settings', systemSettings.save);
 router.get('/system/information', systemSettings.information);
+router.get('/system/backup', systemSettings.backup);
+router.post('/system/restore', systemSettings.restore);
 router.get('/api-keys/inventory', createAdminKeyInventoryHandler({ getDb: () => getDataStore(),
   verifyIdToken: (token, revoked) => getAuth().verifyIdToken(token, revoked), documentId: FieldPath.documentId() }));
 router.get('/traffic', createAdminTrafficHandler({ getDb: () => getDataStore(),

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Settings, Save, Server, Shield } from 'lucide-react';
 import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
+import BackupRestoreCard from '@/components/admin/BackupRestoreCard';
 import { TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '../../../../functions/entitlement-limits.mjs';
 
 type PlanLimits = { free_trial: number | null; pro: number; pro_max: number | null };
@@ -61,12 +62,12 @@ export default function SettingsPage() {
     || editablePlanFields.some(plan => draft.planRequestLimits[plan] !== snapshot.settings.planRequestLimits[plan]));
   const changePlan = (plan: typeof editablePlanFields[number], limit: number | null) => setDraft(current => ({ ...current, planRequestLimits: { ...current.planRequestLimits, [plan]: limit } }));
 
-  const request = useCallback(async (path: string, method = 'GET', body?: unknown) => {
+  const request = useCallback(async (path: string, method = 'GET', body?: unknown, timeoutMs = 15000) => {
     if (!user) throw Object.assign(new Error('Admin session required'), { status: 401 });
     const token = await user.getIdToken();
     const response = await fetch(`/api/v1/admin/system/${path}`, { method, cache: 'no-store',
       headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
+      ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(timeoutMs) });
     const payload = await response.json();
     if (!response.ok) throw Object.assign(new Error(payload.error || 'System settings unavailable'), { status: response.status });
     return payload;
@@ -257,6 +258,7 @@ export default function SettingsPage() {
           </div>
           <p role="status" className="text-xs text-slate-400 mt-3">{health}</p>
         </div>
+        <BackupRestoreCard request={request} />
       </div>
     </div>
     <dialog ref={dialog} aria-labelledby="maintenance-confirm-title" onCancel={() => setConfirmMaintenance(false)} className="bg-slate-900 text-white rounded-xl border border-slate-700 p-6 max-w-md backdrop:bg-black/60">
