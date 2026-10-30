@@ -85,7 +85,7 @@ x-api-key: YOUR_API_KEY`}</pre>
       <p className="font-semibold text-white">Usage fields in <code>meta</code> (Pro and Pro Max)</p>
       <ul className="list-disc pl-5 space-y-1">
         <li><code>quota</code>: this month&apos;s products for your account (<code>used</code> including this response, <code>limit</code>, <code>remaining</code>, <code>resetsAt</code>).</li>
-        <li><code>variantsSent</code>: how many variants this response used. Pro Max also returns <code>segmentUsage</code>, each segment&apos;s share this month.</li>
+        <li><code>variantsSent</code>: how many variants this response sent; <code>variantsCounted</code>: how many of them were new for this app and counted; <code>app</code>: the detected source (<code>source</code>, <code>kind</code>, <code>new</code>). Pro Max also returns <code>segmentUsage</code>, each segment&apos;s share this month.</li>
         <li><code>quotaLimited</code> and <code>quotaMessage</code>: present when the allowance ran out and the response was cut short.</li>
       </ul>
       <pre className={code}>{JSON.stringify(proMaxExample, null, 2)}</pre>
@@ -96,6 +96,9 @@ x-api-key: YOUR_API_KEY`}</pre>
       <h2 className={h2}>How the monthly allowance is counted</h2>
       <ul className="list-disc pl-5 space-y-1">
         <li>Every product <strong>variant</strong> a catalog response sends counts as one; a product without variants counts as one. Example: one product with 8 variants uses 8.</li>
+        <li>Each variant counts <strong>once per app per month</strong>. Syncing the same products again from the same website or server is free: a key with 5 products that gains a 6th uses 6, not 11. The same products sent to a different website or server count again for that app.</li>
+        <li>Apps are detected automatically, with nothing to register: a website by its domain (the browser&apos;s <code>Origin</code> / <code>Referer</code>), otherwise a server or app by its IP range. Every call is listed in the request history with its source; the first call from a new source is marked &quot;New app&quot;.</li>
+        <li>On the API Keys page, <strong>Apps using your API key</strong> lists every detected app. Block one you don&apos;t recognise: its calls then get <code>403 CONSUMER_BLOCKED</code>.</li>
         <li>Pro: 15,000 per month. Pro Max: 20,000 per month, <strong>shared</strong> by Grocery, Pharmacy and Hardware. Your Overview shows how much each segment used.</li>
         <li>When fewer are left than a page needs, only what fits is sent and <code>quotaLimited</code> is set. Once nothing is left, calls get <code>429</code> until the 1st of next month (UTC).</li>
         <li>Searches with no results use nothing. The same request repeated within 2 seconds reuses the first answer and is not counted again. Each IP address can also make up to 60 requests per minute.</li>
@@ -109,7 +112,7 @@ x-api-key: YOUR_API_KEY`}</pre>
       <p>Always check the HTTP status before using data. A network error is not an empty catalog.</p>
       <ul className="list-disc pl-5 space-y-1">
         <li><code>401</code>: invalid, revoked or missing key.</li>
-        <li><code>403 UPGRADE_REQUIRED</code>: no active Trial or paid plan. Other <code>403</code>: account, plan or product scope denied.</li>
+        <li><code>403 UPGRADE_REQUIRED</code>: no active Trial or paid plan. <code>403 CONSUMER_BLOCKED</code>: the key owner blocked this website or app. Other <code>403</code>: account, plan or product scope denied.</li>
         <li><code>429</code>: the monthly product allowance is used up, or too many requests from one IP address (60 per minute). Respect the reset time in <code>quota</code> or the <code>Retry-After</code> header.</li>
         <li>503 with QUOTA_CUTOVER_PENDING: paid account activation hold. Other <code>500</code>/<code>503</code>: server or verification unavailable.</li>
         <li><code>400</code>: malformed sale or date range. <code>409</code>: conflicting sale reference.</li>

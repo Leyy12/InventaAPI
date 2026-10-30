@@ -13,6 +13,7 @@ import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segm
 import { paidQuotaPlan, readMonthlySummary } from './paid-monthly-quota.js';
 import { monthlyRequestLimit, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT } from '../functions/entitlement-limits.mjs';
 import { PRO_MAX_SEGMENTS } from './paid-monthly-quota.js';
+import { CONSUMER_COLLECTION, publicConsumer } from './api-consumers.js';
 
 // Products one paid key may hold: Pro 7,500; Pro Max 15,000 (its one key covers all three segments).
 const keyProductLimit = plan => plan === 'pro_max' ? PRO_MAX_KEY_PRODUCT_LIMIT : PRO_KEY_PRODUCT_LIMIT;
@@ -548,6 +549,28 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       });
       await audit(db, 'API Key Revoked', actor, ref.id);
       return res.json({ success: true, message: 'API key revoked.' });
+    }),
+    // Apps (websites / servers) detected using this account's keys, newest first.
+    consumers: authenticated(async (req, res, actor, db) => {
+      const snapshot = await db.collection(CONSUMER_COLLECTION).where('userId', '==', actor.uid).get();
+      const apps = snapshot.docs.map(doc => publicConsumer(doc.id, doc.data()))
+        .sort((a, b) => String(b.lastSeen || '').localeCompare(String(a.lastSeen || ''))).slice(0, 200);
+      return res.json({ success: true, apps });
+    }),
+    // Block or unblock one detected app. Blocked apps get 403 CONSUMER_BLOCKED.
+    blockConsumer: authenticated(async (req, res, actor, db) => {
+      const id = req.params.consumerId;
+      if (!validDocumentId(id)) throw new ApiSecurityError(400, 'INVALID_APP', 'Unknown app.');
+      if (typeof req.body?.blocked !== 'boolean') throw new ApiSecurityError(400, 'INVALID_APP', 'Send { "blocked": true } or { "blocked": false }.');
+      const ref = db.collection(CONSUMER_COLLECTION).doc(id);
+      const app = await db.runTransaction(async tx => {
+        const doc = await tx.get(ref);
+        if (!doc.exists || doc.data().userId !== actor.uid) throw new ApiSecurityError(404, 'APP_NOT_FOUND', 'App not found.');
+        tx.update(ref, { blocked: req.body.blocked });
+        return publicConsumer(id, { ...doc.data(), blocked: req.body.blocked });
+      });
+      await audit(db, req.body.blocked ? 'API App Blocked' : 'API App Unblocked', actor, id);
+      return res.json({ success: true, app });
     }),
   };
 }

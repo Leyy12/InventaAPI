@@ -33,15 +33,18 @@ function History({ user }: { user: User }) {
         </button>
       </div></div>
     {open && <>
-      <p className="text-sm text-slate-400">Up to 50 recorded requests, newest first. Key names are labels at request time, not downstream consumer identities. Dates use your browser timezone.</p>
+      <p className="text-sm text-slate-400">Up to 50 recorded requests, newest first. Source is the website domain or server IP the call came from; &quot;New app&quot; marks its first call. Dates use your browser timezone.</p>
       <p className="text-xs text-slate-400">Best-effort route telemetry, not a complete history or quota counter. Requests rejected before the route handler (including quota rejection) are not currently recorded here.</p>
       {state.status === 'loading' && <p role="status">Loading history…</p>}
       {state.status === 'error' && <p role="alert" className="text-rose-300">Unable to load request history. Refresh to retry. Previous rows have been cleared.</p>}
       {state.status === 'ready' && (state.records.length === 0 ? <p>No recorded requests available.</p> : <>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr>{['Key name (at request)', 'Date', 'Endpoint', 'HTTP status'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+          <thead><tr>{['Key name (at request)', 'Date', 'Source (domain / IP)', 'Endpoint', 'HTTP status'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
           <tbody>{rows.map((row, index) => <tr key={`${current}-${index}`} className="border-t border-slate-700">
             <td className="p-3">{row.keyName ?? 'Key name unavailable'}</td><td className="p-3">{historyDate(row.timestamp)}</td>
+            <td className="p-3"><span className="text-slate-200">{row.domain ?? row.ip ?? 'Not recorded'}</span>
+              {row.domain && row.ip && <span className="block text-xs text-slate-400">{row.ip}</span>}
+              {row.newApp && <span className="ml-2 rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs text-emerald-300">New app</span>}</td>
             <td className="p-3">{row.endpoint ? `${row.method ?? ''} ${row.endpoint}` : 'Not recorded'}</td><td className="p-3">{requestStatus(row.statusCode)}</td>
           </tr>)}</tbody></table></div>
         <nav aria-label="Request history pages" className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">

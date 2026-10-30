@@ -23,6 +23,9 @@ router.get('/history', createApiHistoryHandler({
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
   documentId: FieldPath.documentId(),
 }));
+// Apps (websites / servers) detected using the account's keys; block or unblock one.
+router.get('/consumers', handlers.consumers);
+router.patch('/consumers/:consumerId', handlers.blockConsumer);
 router.get('/:id', handlers.view);
 router.get('/:id/secret', handlers.reveal);
 router.post('/:id/replace', handlers.replace);

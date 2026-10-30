@@ -1,4 +1,6 @@
-export type HistoryRecord = { keyName: string | null; timestamp: string | null; endpoint: string | null; method: string | null; statusCode: number | null };
+export type HistoryRecord = { keyName: string | null; timestamp: string | null; endpoint: string | null; method: string | null; statusCode: number | null;
+  // Where the call came from (automatic app detection); absent on older records.
+  source?: string | null; domain?: string | null; ip?: string | null; newApp?: boolean };
 export type HistoryState = { status: 'loading' | 'ready' | 'error'; records: HistoryRecord[]; hasMore: boolean };
 
 export function requestStatus(code: number | null) {

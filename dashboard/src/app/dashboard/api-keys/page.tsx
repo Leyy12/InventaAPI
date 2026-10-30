@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/supabase/auth-context";
 import { apiKeyRequest } from "@/lib/api-keys";
 import { REVOCATION_WARNING } from "@/lib/api-key-generation";
 import RequestHistory from "@/components/api/RequestHistory";
+import KeyApps from "@/components/api/KeyApps";
 import CodeSnippet from "@/components/shared/CodeSnippet";
 import { requestAllowanceLabel, paidAllowanceLabel } from '@/config/plans';
 import { useAccountRequestAllowance } from '@/lib/plan-request-policy';
@@ -134,6 +135,7 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance, paidAll
         <p className="text-sm text-slate-300">Store secrets securely and never put them in public repositories or client-side code. Revoking a key immediately disables that credential; revocation does not create another key.</p>
       </div>
       <p className="text-sm text-slate-400">Free Trial includes one API key with up to 50 linked products for 7 days; you can use it in as many projects as you like. API calls do not consume products. Manage the catalog and create keys in Products. After expiry, upgrade to Pro or Pro Max; there is no Free monthly fallback.</p>
+      <KeyApps />
       <RequestHistory />
 
       <section className="glass-card rounded-xl border border-slate-700">
