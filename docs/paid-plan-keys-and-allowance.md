@@ -4,7 +4,7 @@ Current rules for Free Trial, Pro and Pro Max. Older documents that mention a
 daily request quota, monthly request counting or one Pro Max key per segment
 describe earlier releases; this file wins.
 
-| Plan | Keys | Products per key | Monthly allowance |
+| Plan | Keys | Products per key (each variant counts) | Monthly allowance |
 | --- | --- | --- | --- |
 | Free Trial (7 days) | 1 | 50 | none (calls do not use anything up) |
 | Pro | 1 | 7,500 | 15,000 products (variants delivered) |
@@ -22,7 +22,8 @@ Constants live in `functions/entitlement-limits.mjs`: `TRIAL_MAX_ACTIVE_KEYS`,
 - Add products (`POST /api/v1/api-keys/add-products`, Pro and Pro Max) puts the
   selection into that key and creates it the first time ("Pro Max API key" for
   Pro Max). Pro accepts products from its business segment; Pro Max from all three.
-- Too many products: `400 KEY_PRODUCT_LIMIT` (also when editing a key's products
+- Too many products: `400 KEY_PRODUCT_LIMIT`, counting each variant as one (a
+  partial selection counts its selected variants) (also when editing a key's products
   with `PATCH /api/v1/api-keys/:id/products`).
 - A key can be used in any number of projects; nothing limits where it is used.
 
@@ -94,3 +95,11 @@ response was cut short. `meta.requestsUsed` repeats `quota.used` for older clien
 - `tests/adviser/plan-request-limits.test.mjs`, `tests/adviser/paid-key-products.test.mjs`
 - `tests/adviser/product-allowance/catalog.test.mjs` (real route: variants counted,
   partial last product, Pro and Pro Max limits, per-segment shares, `?segment=`)
+
+## Request history: delete
+
+`POST /api/v1/api-keys/history/delete` with `{ "ids": [...] }` (1–200 of the
+caller's own rows) or `{ "all": true }`. Rows are hidden from the customer's view
+only (`api_history_hidden/<uid>`: ids, plus `clearedBefore` for "clear all"); the
+`api_telemetry` records stay for admin traffic statistics. History rows now carry
+their `id` so they can be selected.

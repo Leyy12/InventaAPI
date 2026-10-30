@@ -41,7 +41,7 @@ export default function DocsPage() {
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
           <thead className="text-slate-400"><tr>
-            <th className="py-2 pr-4">Plan</th><th className="py-2 pr-4">API keys</th><th className="py-2 pr-4">Products per key</th><th className="py-2">Monthly allowance</th>
+            <th className="py-2 pr-4">Plan</th><th className="py-2 pr-4">API keys</th><th className="py-2 pr-4">Products per key (each variant counts)</th><th className="py-2">Monthly allowance</th>
           </tr></thead>
           <tbody className="align-top">
             <tr className="border-t border-slate-700">
@@ -104,7 +104,7 @@ x-api-key: YOUR_API_KEY`}</pre>
         <li>Searches with no results use nothing. The same request repeated within 2 seconds reuses the first answer and is not counted again. Each IP address can also make up to 60 requests per minute.</li>
         <li>The Free Trial has no monthly allowance: calls do not use up products or shorten the Trial. After the Trial ends, protected API access pauses until a paid plan is active.</li>
       </ul>
-      <p>Your current usage is on the dashboard Overview and the API Keys page. Key Name in request history is the key alias recorded at request time; older records may have unavailable fields.</p>
+      <p>Your current usage is on the dashboard Overview and the API Keys page. In the request history you can tick rows (or Select all) and delete them, or Clear all; this only removes them from your view. Key Name in request history is the key alias recorded at request time; older records may have unavailable fields.</p>
     </section>
 
     <section className={card}>
@@ -121,7 +121,7 @@ x-api-key: YOUR_API_KEY`}</pre>
       <ul className="list-disc pl-5 space-y-1">
         <li><code>409 API_KEY_DAILY_GENERATION_LIMIT</code>: a key was already generated today; <code>nextEligibleAt</code> gives the next 00:00 UTC.</li>
         <li><code>409 PRO_SINGLE_KEY</code> / <code>PRO_MAX_SINGLE_KEY</code> / <code>TRIAL_KEY_LIMIT</code>: your plan includes one key. Add products to it instead.</li>
-        <li><code>400 KEY_PRODUCT_LIMIT</code>: the key is full (Pro 7,500, Pro Max 15,000 products).</li>
+        <li><code>400 KEY_PRODUCT_LIMIT</code>: the key is full (Pro 7,500, Pro Max 15,000 products, each variant counting as one).</li>
       </ul>
       <p>Errors use flat <code>error</code> (code) and <code>message</code> fields; some include quota metadata. Do not retry by generating keys.</p>
       <p>Need help? <a href="mailto:support@inventaapi.com" className="text-indigo-300">Contact support</a>.</p>

@@ -2,7 +2,7 @@ import express from 'express';
 import { getDataStore, FieldPath } from '../database/data-store.js';
 import { getAuth } from '../services/supabase-auth.js';
 import { createApiKeyHandlers } from '../services/api-key-management.js';
-import { createApiHistoryHandler } from '../services/api-history.js';
+import { createApiHistoryHandler, createApiHistoryDeleteHandler } from '../services/api-history.js';
 import { createCustomerNotifier, messages } from '../services/customer-notify.js';
 
 const router = express.Router();
@@ -22,6 +22,11 @@ router.get('/history', createApiHistoryHandler({
   getDb: () => getDataStore(),
   verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
   documentId: FieldPath.documentId(),
+}));
+// Delete rows from the customer's own history view ({ ids } or { all: true }).
+router.post('/history/delete', createApiHistoryDeleteHandler({
+  getDb: () => getDataStore(),
+  verifyIdToken: (token, checkRevoked) => getAuth().verifyIdToken(token, checkRevoked),
 }));
 // Apps (websites / servers) detected using the account's keys; block or unblock one.
 router.get('/consumers', handlers.consumers);

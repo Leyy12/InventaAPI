@@ -20,7 +20,9 @@ test('static wiring: all management routes use tested authenticated handlers', (
   // History remains token-scoped; replacement adds a separately tested
   // authenticated, transactionally guarded management handler.
   assert.match(routes, /router\.get\('\/history', createApiHistoryHandler\(/u);
-  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 12);
+  // History deletion is token-scoped and tested separately (product-allowance/history-delete).
+  assert.match(routes, /router\.post\('\/history\/delete', createApiHistoryDeleteHandler\(/u);
+  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 13);
 });
 
 test('static wiring: protected DaaS endpoints consume account quota, with paid sales checked in transaction', () => {

@@ -16,6 +16,8 @@ function Apps({ user }: { user: User }) {
   const [apps, setApps] = useState<App[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  // Hidden until the customer opens it, like the request history; loaded only then.
+  const [open, setOpen] = useState(false);
   const load = useCallback(async () => {
     setError('');
     try {
@@ -23,7 +25,7 @@ function Apps({ user }: { user: User }) {
       setApps(Array.isArray(data.apps) ? data.apps : []);
     } catch { setError('Unable to load apps. Refresh to retry.'); }
   }, [user]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (open) void load(); }, [open, load]);
   async function toggle(app: App) {
     setBusy(app.id);
     try {
@@ -35,8 +37,14 @@ function Apps({ user }: { user: User }) {
   return <section aria-label="Apps using your API key" className="glass-card rounded-xl border border-slate-700 p-6 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <h2 className="text-xl font-semibold text-white">Apps using your API key</h2>
-      <button onClick={() => void load()} className="text-indigo-300">Refresh</button>
+      <div className="flex items-center gap-4">
+        {open && <button onClick={() => void load()} className="text-indigo-300">Refresh</button>}
+        <button onClick={() => setOpen(value => !value)} aria-expanded={open} className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800">
+          {open ? 'Hide apps' : 'Show apps'}
+        </button>
+      </div>
     </div>
+    {open && <>
     <p className="text-sm text-slate-400">Detected automatically: a website by its domain, otherwise a server or app by its IP range. Each product variant is counted once per app per month. Block any app you don&apos;t recognise.</p>
     {error && <p role="alert" className="text-rose-300">{error}</p>}
     {!apps && !error && <p role="status">Loading apps…</p>}
@@ -54,6 +62,7 @@ function Apps({ user }: { user: User }) {
           className={`rounded-lg border px-3 py-1 text-sm disabled:opacity-50 ${app.blocked ? 'border-slate-600 text-slate-200' : 'border-rose-500/60 text-rose-300'}`}>
           {app.blocked ? 'Unblock' : 'Block'}</button></td>
       </tr>)}</tbody></table></div>}
+    </>}
   </section>;
 }
 
