@@ -82,11 +82,11 @@ function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
   const card = 'rounded-xl border border-slate-700/50 bg-[#0d1526] p-6';
   const bySegment = products?.bySegment;
   const freeSlots = products ? Math.max(0, products.limit - products.total) : 0;
-  // Pro: requests + one products card side by side. Pro Max: requests across the
-  // full width, with the three segment cards aligned underneath in one grid.
+  // One row of equal cards: Pro shows requests + products; Pro Max shows requests
+  // + Grocery, Pharmacy and Hardware (wrapping to 2, then 1, on smaller screens).
   return <section aria-label="Account API usage" className="space-y-3">
-    <div className={`grid grid-cols-1 gap-4 ${bySegment ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-      <div className={`${card} ${bySegment ? 'sm:col-span-3' : ''}`}>
+    <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${bySegment ? 'xl:grid-cols-4' : ''}`}>
+      <div className={card}>
         <p className="text-sm text-slate-400">Requests this month</p>
         <p className="mt-3 text-2xl font-semibold text-white">{requests.used.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {monthly.limit.toLocaleString()}</span></p>
         {bar(requestPercent)}
