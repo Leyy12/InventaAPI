@@ -79,23 +79,40 @@ function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
   const bar = (percent: number) => <div className="mt-3 h-1.5 rounded-full bg-slate-800" aria-hidden="true">
     <div className={`h-1.5 rounded-full ${percent >= 90 ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
   </div>;
+  const card = 'rounded-xl border border-slate-700/50 bg-[#0d1526] p-6';
+  const bySegment = products?.bySegment;
+  const freeSlots = products ? Math.max(0, products.limit - products.total) : 0;
   return <section aria-label="Account API usage" className="space-y-3">
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className={card}>
         <p className="text-sm text-slate-400">Requests this month</p>
         <p className="mt-3 text-2xl font-semibold text-white">{requests.used.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {monthly.limit.toLocaleString()}</span></p>
         {bar(requestPercent)}
         <p className="mt-2 text-xs text-slate-400">{requests.remaining.toLocaleString()} requests remaining</p>
       </div>
-      {products && <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+      {/* Pro: one products card (its key holds one segment). */}
+      {products && !bySegment && <div className={card}>
         <p className="text-sm text-slate-400">Products on your API key</p>
         <p className="mt-3 text-2xl font-semibold text-white">{products.total.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {products.limit.toLocaleString()}</span></p>
         {bar(productPercent)}
-        <p className="mt-2 text-xs text-slate-400">{products.bySegment
-          ? products.bySegment.map(item => `${item.segment} ${item.count.toLocaleString()}`).join(' · ')
-          : `${Math.max(0, products.limit - products.total).toLocaleString()} more products can be added`}</p>
+        <p className="mt-2 text-xs text-slate-400">{freeSlots.toLocaleString()} more products can be added</p>
       </div>}
     </div>
+    {/* Pro Max: one card per segment, like the earlier per-segment layout. */}
+    {products && bySegment && <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        {bySegment.map(item => {
+          const percent = Math.min(100, (item.count / products.limit) * 100);
+          return <div key={item.segment} className={card}>
+            <p className="text-sm text-slate-400">{item.segment} products</p>
+            <p className="mt-3 text-2xl font-semibold text-white">{item.count.toLocaleString()} <span className="text-sm font-normal text-slate-400">{item.count === 1 ? 'product' : 'products'} on your key</span></p>
+            {bar(percent)}
+            <p className="mt-2 text-xs text-slate-400">{freeSlots.toLocaleString()} more products can be added (any segment)</p>
+          </div>;
+        })}
+      </div>
+      <p className="text-xs text-slate-400">Your Pro Max API key holds {products.total.toLocaleString()} of {products.limit.toLocaleString()} products across all three segments.</p>
+    </>}
     <p className="text-xs text-slate-400">Each API call counts as one request. {monthly.plan === 'pro' ? 'Pro' : 'Pro Max'} includes {monthly.limit.toLocaleString()} requests per month for your account; resets {resets} (UTC).</p>
   </section>;
 }
