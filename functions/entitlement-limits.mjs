@@ -15,13 +15,18 @@ export function trialCatalogChangeAllowed(previousIds, nextIds) {
   return next.size <= TRIAL_MAX_PRODUCTS;
 }
 
-// Paid plans count API REQUESTS per UTC calendar month (each catalog call is one),
-// in one allowance for the whole account: Pro 15,000, Pro Max 20,000.
-export const PRO_MONTHLY_REQUEST_LIMIT = 15000;
-export const PRO_MAX_MONTHLY_REQUEST_LIMIT = 20000;
-export const monthlyRequestLimit = plan => (plan === 'pro_max' || plan === 'Pro Max') ? PRO_MAX_MONTHLY_REQUEST_LIMIT : PRO_MONTHLY_REQUEST_LIMIT;
-// Older name kept for existing imports: the Pro allowance.
-export const PAID_MONTHLY_REQUEST_LIMIT = PRO_MONTHLY_REQUEST_LIMIT;
+// Paid plans count PRODUCT VARIANTS DELIVERED per UTC calendar month: every
+// variant a catalog response sends uses one (a product without variants uses one).
+// One allowance for the whole account: Pro 15,000, Pro Max 20,000 (shared by its
+// three segments; per-segment usage is only shown, not limited).
+export const PRO_MONTHLY_PRODUCT_LIMIT = 15000;
+export const PRO_MAX_MONTHLY_PRODUCT_LIMIT = 20000;
+export const monthlyProductLimit = plan => (plan === 'pro_max' || plan === 'Pro Max') ? PRO_MAX_MONTHLY_PRODUCT_LIMIT : PRO_MONTHLY_PRODUCT_LIMIT;
+// Older names kept for existing imports.
+export const monthlyRequestLimit = monthlyProductLimit;
+export const PRO_MONTHLY_REQUEST_LIMIT = PRO_MONTHLY_PRODUCT_LIMIT;
+export const PRO_MAX_MONTHLY_REQUEST_LIMIT = PRO_MAX_MONTHLY_PRODUCT_LIMIT;
+export const PAID_MONTHLY_REQUEST_LIMIT = PRO_MONTHLY_PRODUCT_LIMIT;
 // Every plan has ONE API key. Pro's key holds products from its business segment;
 // Pro Max's key holds products from all three segments (Grocery, Pharmacy, Hardware).
 export const PRO_MAX_SEGMENT_KEYS = 3; // segments covered by the one Pro Max key

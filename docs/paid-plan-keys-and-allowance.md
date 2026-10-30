@@ -1,19 +1,19 @@
-# Paid plans: API keys, key size and monthly requests
+# Paid plans: API keys, key size and monthly product allowance
 
 Current rules for Free Trial, Pro and Pro Max. Older documents that mention a
-daily request quota, a product/variant allowance or one Pro Max key per segment
+daily request quota, monthly request counting or one Pro Max key per segment
 describe earlier releases; this file wins.
 
 | Plan | Keys | Products per key | Monthly allowance |
 | --- | --- | --- | --- |
 | Free Trial (7 days) | 1 | 50 | none (calls do not use anything up) |
-| Pro | 1 | 7,500 | 15,000 API requests |
-| Pro Max | 1 (all three segments) | 15,000 | 20,000 API requests |
+| Pro | 1 | 7,500 | 15,000 products (variants delivered) |
+| Pro Max | 1 (all three segments) | 15,000 | 20,000 products, shared by the three segments |
 
 Constants live in `functions/entitlement-limits.mjs`: `TRIAL_MAX_ACTIVE_KEYS`,
 `TRIAL_MAX_PRODUCTS`, `PRO_KEY_PRODUCT_LIMIT`, `PRO_MAX_KEY_PRODUCT_LIMIT`,
-`PRO_MONTHLY_REQUEST_LIMIT`, `PRO_MAX_MONTHLY_REQUEST_LIMIT` and
-`monthlyRequestLimit(plan)`.
+`PRO_MONTHLY_PRODUCT_LIMIT`, `PRO_MAX_MONTHLY_PRODUCT_LIMIT` and
+`monthlyProductLimit(plan)` (older `*_REQUEST_LIMIT` names are aliases).
 
 ## Keys
 
@@ -26,16 +26,25 @@ Constants live in `functions/entitlement-limits.mjs`: `TRIAL_MAX_ACTIVE_KEYS`,
   with `PATCH /api/v1/api-keys/:id/products`).
 - A key can be used in any number of projects; nothing limits where it is used.
 
-## Monthly requests
+## Monthly product allowance
 
-- Every `GET /daas/v1/catalog` call that passes authentication counts as one
-  request, however many products it returns. `consumeAccountQuota` adds it in the
-  same transaction that checks the limit, so concurrent calls cannot exceed it.
-- One allowance per account for both plans:
-  `account_paid_monthly_usage/<uid>_<YYYY-MM>_account`. Resets on the 1st (UTC).
-- When used up: `429 Rate Limit Exceeded` with `quota` metadata.
-- Not counted: a repeat of the same request within 2 seconds (repeat guard) and
-  `/daas/v1/health`.
+- Unit: **product variants delivered**. Every variant a `GET /daas/v1/catalog`
+  response sends counts as one; a product without variants counts as one.
+- One limited allowance per account:
+  `account_paid_monthly_usage/<uid>_<YYYY-MM>_account`. Pro Max also keeps a
+  display-only counter per segment (`..._Grocery`, `..._Pharmacy`, `..._Hardware`).
+- Flow:
+  1. `consumeAccountQuota` (admission) refuses with 429 once the account total
+     reaches the limit; it counts nothing and returns `productCharge`.
+  2. The catalog route formats the page and calls `chargeMonthlyProducts` with
+     each product's segment and variant count. In one transaction it grants at
+     most what is left, decides how many variants of each product may be sent
+     (page order; the last may be partial), adds the total to the account and each
+     segment's share to its counter. Concurrent calls cannot exceed the limit.
+  3. Nothing granted: 429.
+- Not counted: empty keys, searches with no results, a repeat of the same request
+  within 2 seconds (repeat guard), `/daas/v1/health`. The per-IP limit of 60 DaaS
+  requests per minute still applies.
 
 ## Catalog request and response
 
@@ -45,19 +54,22 @@ Constants live in `functions/entitlement-limits.mjs`: `TRIAL_MAX_ACTIVE_KEYS`,
 the Pro Max key, which holds all three. Unknown values match nothing.
 
 `meta.quota` for Pro / Pro Max:
-`{ used, limit, remaining, resetsAt, period: "monthly", unit: "requests", scope: "account" }`.
-`meta.requestsUsed` repeats `quota.used` for older clients.
+`{ used, limit, remaining, resetsAt, period: "monthly", unit: "products", scope: "account" }`.
+`meta.variantsSent` is what this response used; Pro Max adds `meta.segmentUsage`
+(`[{ segment, used }]`). `meta.quotaLimited` / `quotaMessage` appear when the
+response was cut short. `meta.requestsUsed` repeats `quota.used` for older clients.
 
 ## Dashboard
 
-- Overview shows two cards: **Requests this month** (used / limit and requests
-  remaining) and **Products on your API key** (total / key limit; Pro Max also
-  shows how many are Grocery, Pharmacy and Hardware).
-- The API key list response carries this as `monthlyUsage` (`buckets[0]` is the
-  account's requests; `products` is `{ total, limit, bySegment? }`).
+- Overview: Pro shows one card (products used / 15,000, remaining). Pro Max shows
+  four: the shared total (used / 20,000, remaining) and Grocery, Pharmacy and
+  Hardware with each segment's share and the products of that segment on the key.
+- The API key list response carries this as `monthlyUsage`: `buckets[0]` is the
+  account total, `segments` (Pro Max) the per-segment shares, and `products` is
+  `{ total, limit, bySegment? }`.
 
 ## Tests
 
 - `tests/adviser/plan-request-limits.test.mjs`, `tests/adviser/paid-key-products.test.mjs`
-- `tests/adviser/product-allowance/catalog.test.mjs` (real route: one request per
-  call, Pro and Pro Max limits, `?segment=`)
+- `tests/adviser/product-allowance/catalog.test.mjs` (real route: variants counted,
+  partial last product, Pro and Pro Max limits, per-segment shares, `?segment=`)

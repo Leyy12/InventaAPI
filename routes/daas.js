@@ -6,6 +6,7 @@ import { createDaaSSecurity } from '../services/daas-security.js';
 import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 import { createRepeatGuard } from '../services/daas-repeat-guard.js';
 import { normalizeSegment } from '../services/product-contract.js';
+import { chargeMonthlyProducts } from '../services/paid-monthly-quota.js';
 
 // Data lives in the Supabase database (database/data-store.js).
 let adminDb = null;
@@ -195,8 +196,35 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
             availability: productAvailability[product.id]
         }));
 
-        const formattedProducts = pageFormatted;
-        const quota = req.requestUsage;
+        // Pro / Pro Max: every variant sent uses one of the month's allowance (a
+        // product without variants uses one). Send no more than what is left; the
+        // last product may carry only the variants that fit.
+        const variantCount = product => Math.max(1, Array.isArray(product.variants) ? product.variants.length : 0);
+        const pageVariants = pageFormatted.reduce((sum, product) => sum + variantCount(product), 0);
+        let formattedProducts = pageFormatted;
+        let quota = req.requestUsage;
+        let sentVariants = pageVariants;
+        let segmentUsage = null;
+        if (req.productCharge && pageFormatted.length > 0) {
+            const charged = await chargeMonthlyProducts(getDb(), { ...req.productCharge,
+                items: pageFormatted.map(product => ({ segment: normalizeSegment(product.segment) || 'general', cost: variantCount(product) })) });
+            quota = charged.usage;
+            segmentUsage = charged.segments;
+            if (charged.granted === 0) {
+                return res.status(429).json({
+                    success: false, error: 'Rate Limit Exceeded',
+                    message: `Monthly allowance of ${quota.limit.toLocaleString('en-US')} products (each variant counts as one) is used up. It resets on the 1st of next month (UTC).`,
+                    quota,
+                });
+            }
+            formattedProducts = pageFormatted.flatMap((product, i) => {
+                const take = charged.allowed[i];
+                if (take <= 0) return [];
+                return take >= variantCount(product) ? [product] : [{ ...product, variants: product.variants.slice(0, take) }];
+            });
+            sentVariants = charged.granted;
+        }
+        const limitedByQuota = sentVariants < pageVariants;
         const hasNextPage = startIndex + pageSlice.length < totalBeforePage;
 
         const latencyMs = Date.now() - req.startTime;
@@ -233,6 +261,9 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 plan_cap: maxPerPage,
                 requestsUsed: quota?.used ?? null,
                 quota,
+                ...(segmentUsage ? { segmentUsage } : {}),
+                variantsSent: sentVariants,
+                ...(limitedByQuota ? { quotaLimited: true, quotaMessage: `Only ${sentVariants} of ${pageVariants} product variants were sent: the monthly allowance is used up.` } : {}),
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
                 timestamp: ts.toISOString(),

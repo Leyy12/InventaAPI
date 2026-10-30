@@ -1,6 +1,6 @@
 // Run with --experimental-test-module-mocks. Real Express catalog route, in-memory data.
-// Paid plans count API requests: each catalog call is one (Pro 15,000, Pro Max
-// 20,000 a month, one allowance for the account).
+// Paid plans count product variants delivered: Pro 15,000, Pro Max 20,000 a month
+// (one account allowance; Pro Max also records each segment's share).
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
@@ -54,45 +54,51 @@ async function serve(t) {
   return server;
 }
 
-test('Pro: each call is one request however many products it returns; 15,000 a month, then 429', async t => {
+const segUsed = (uid, segment) => db.read(`account_paid_monthly_usage/${uid}_${month}_${segment}`)?.used ?? 0;
+
+test('Pro: each variant sent uses one of 15,000; the last product is cut to what is left; then 429', async t => {
   const server = await serve(t);
   setUsed('owner', 0);
-  const page = await get(server, '/daas/v1/catalog?perPage=25', proKey);
+  const page = await get(server, '/daas/v1/catalog?perPage=10', proKey);
   assert.equal(page.status, 200);
-  assert.equal(page.body.products.length, 25);
-  assert.equal(used('owner'), 1, '25 products with 2 variants each still use 1 request');
-  assert.deepEqual([page.body.meta.quota.used, page.body.meta.quota.limit, page.body.meta.quota.unit], [1, 15000, 'requests']);
+  assert.equal(page.body.products.length, 10);
+  assert.equal(used('owner'), 20, '10 products with 2 variants each use 20');
+  assert.deepEqual([page.body.meta.variantsSent, page.body.meta.quota.used, page.body.meta.quota.limit], [20, 20, 15000]);
 
   await pause();
   const empty = await get(server, '/daas/v1/catalog?search=zzz-no-match', proKey);
   assert.equal(empty.status, 200);
-  assert.equal(used('owner'), 2, 'a search with no matches is still a request');
+  assert.equal(used('owner'), 20, 'a search with no matches uses nothing');
 
-  setUsed('owner', 14999);
+  setUsed('owner', 14985);
   await pause();
-  const last = await get(server, '/daas/v1/catalog?perPage=5', proKey);
-  assert.equal(last.status, 200);
-  assert.equal(last.body.meta.quota.remaining, 0);
+  const cut = await get(server, '/daas/v1/catalog?perPage=10', proKey);
+  assert.equal(cut.status, 200);
+  assert.deepEqual(cut.body.products.map(p => p.variants.length), [2, 2, 2, 2, 2, 2, 2, 1]);
+  assert.equal(cut.body.meta.quotaLimited, true);
+  assert.equal(used('owner'), 15000);
+
   await pause();
-  const over = await get(server, '/daas/v1/catalog?perPage=5', proKey);
+  const over = await get(server, '/daas/v1/catalog?perPage=10', proKey);
   assert.equal(over.status, 429);
-  assert.match(over.body.message, /15,000 requests/);
+  assert.match(over.body.message, /15,000 products/);
   assert.equal(used('owner'), 15000);
 });
 
-test('Pro Max: one key, 20,000 requests a month for the account; ?segment= filters', async t => {
+test('Pro Max: one 20,000 total shared by segments; each segment share recorded; ?segment= filters', async t => {
   const server = await serve(t);
   setUsed('maxowner', 0);
   const all = await get(server, '/daas/v1/catalog', maxKey);
   assert.deepEqual(all.body.products.map(p => p.name).sort(), ['Aspirin', 'Tuna']);
-  assert.deepEqual([all.body.meta.quota.used, all.body.meta.quota.limit], [1, 20000]);
+  assert.deepEqual([used('maxowner'), segUsed('maxowner', 'Grocery'), segUsed('maxowner', 'Pharmacy')], [3, 2, 1]);
+  assert.deepEqual(all.body.meta.segmentUsage, [{ segment: 'Grocery', used: 2 }, { segment: 'Pharmacy', used: 1 }, { segment: 'Hardware', used: 0 }]);
   await pause();
   const pharmacy = await get(server, '/daas/v1/catalog?segment=pharmacy', maxKey);
   assert.deepEqual(pharmacy.body.products.map(p => p.name), ['Aspirin']);
-  assert.equal(used('maxowner'), 2);
+  assert.deepEqual([used('maxowner'), segUsed('maxowner', 'Grocery'), segUsed('maxowner', 'Pharmacy')], [4, 2, 2]);
   setUsed('maxowner', 20000);
   await pause();
   const over = await get(server, '/daas/v1/catalog?segment=Grocery', maxKey);
   assert.equal(over.status, 429);
-  assert.match(over.body.message, /20,000 requests/);
+  assert.match(over.body.message, /20,000 products/);
 });

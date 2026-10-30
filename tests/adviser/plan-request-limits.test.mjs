@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { memoryStore, invoke } from './r2a/memory-store.mjs';
 import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, requestPolicyVersion, newRequestContract } from '../../functions/request-limit-policy.mjs';
 import { consumeAccountQuota } from '../../services/account-quota.js';
+import { chargeMonthlyProducts } from '../../services/paid-monthly-quota.js';
 import { issueCredential } from '../../services/api-key-security.js';
 import { createApiKeyHandlers } from '../../services/api-key-management.js';
 import { createFreeTrialHandlers } from '../../services/free-trial.js';
@@ -40,36 +41,47 @@ test('malformed private promise state cannot be overwritten by Trial activation'
     assert.equal(db.read('users/customer').trialStartedAt, undefined);
   }
 });
-// Active Pro and Pro Max count API requests per UTC month for the account: Pro
-// 15,000, Pro Max 20,000. Daily settings, stored daily contracts and profile claims
-// do not change that allowance.
-test('Pro keys share one monthly allowance of 15,000 requests; daily settings and contracts do not change it', async () => {
+// Active Pro and Pro Max count PRODUCT VARIANTS delivered per UTC month in one
+// account allowance: Pro 15,000, Pro Max 20,000 (shared by its segments). Daily
+// settings, stored daily contracts and profile claims do not change it.
+const charge = (f, admitted, items, at = now) => chargeMonthlyProducts(f.db, { ...admitted.productCharge, items, clock: () => at });
+test('Pro: 15,000 variants a month for the account; concurrent pages never exceed it', async () => {
   const f = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 1000 }, used: 999, contracts: { pro: newRequestContract(100) },
     profileExtra: { requestAllowanceContracts: { pro: newRequestContract(null) }, planRequestLimits: { pro: null } } });
-  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 14999 });
-  const outcomes = await Promise.allSettled([f.consume(0), f.consume(1)]);
-  assert.equal(outcomes.filter(value => value.status === 'fulfilled').length, 1);
-  const rejected = outcomes.find(value => value.status === 'rejected').reason;
-  assert.equal(rejected.status, 429); assert.match(rejected.message, /15,000 requests/);
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 14950 });
+  const [a, b] = await Promise.all([f.consume(0), f.consume(1)]);
+  assert.deepEqual([a.usage.used, a.usage.limit, a.usage.unit], [14950, 15000, 'products']);
+  const page = [{ segment: 'Grocery', cost: 30 }, { segment: 'Grocery', cost: 20 }];
+  const results = await Promise.all([charge(f, a, page), charge(f, b, page)]);
+  assert.equal(results.reduce((sum, r) => sum + r.granted, 0), 50, 'never more than what is left');
   assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_account').used, 15000);
+  await assert.rejects(f.consume(0), error => error.status === 429 && /15,000 products/.test(error.message));
   assert.equal(f.db.read('account_api_usage/customer').used, 999, 'the daily counter is not used for paid plans');
   f.advance(new Date('2026-11-01T00:00:00Z'));
   f.db.seed('users/customer', { ...account('Pro'), subscriptionExpiresAt: '2026-12-01T00:00:00Z' });
   const next = await f.consume(0);
-  assert.deepEqual([next.usage.used, next.usage.limit, next.usage.unit, next.usage.scope], [1, 15000, 'requests', 'account']);
+  assert.deepEqual([next.usage.used, next.usage.limit], [0, 15000]);
   assert.equal(next.usage.resetsAt, '2026-12-01T00:00:00.000Z');
+  assert.equal((await charge(f, next, [{ segment: 'Grocery', cost: 8 }], new Date('2026-11-01T00:00:00Z'))).usage.used, 8);
 });
-test('Pro Max has one account allowance of 20,000 requests, whatever segment a key or product has', async () => {
+test('a page larger than what is left is cut: the last product carries only the variants that fit', async () => {
+  const f = quotaFixture();
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 14990 });
+  const admitted = await f.consume(0);
+  const result = await charge(f, admitted, [{ segment: 'Grocery', cost: 8 }, { segment: 'Grocery', cost: 8 }, { segment: 'Grocery', cost: 8 }]);
+  assert.deepEqual([result.granted, result.allowed, result.usage.used, result.usage.remaining], [10, [8, 2, 0], 15000, 0]);
+  assert.equal(result.segments, null, 'Pro has no per-segment counters');
+});
+test('Pro Max: 20,000 shared by all segments; each segment\'s share is recorded for display', async () => {
   const f = quotaFixture({ plan: 'Pro Max', limits: { ...DEFAULT_REQUEST_LIMITS, pro_max: 10 }, contracts: { pro_max: newRequestContract(10) }, used: 9 });
-  f.db.seed(`api_keys/${f.keys[0].id}`, { ...f.db.read(`api_keys/${f.keys[0].id}`), segment: 'Grocery' });
-  // Older per-segment counters are no longer used.
-  f.db.seed('account_paid_monthly_usage/customer_2026-10_Grocery', { window: '2026-10', used: 15000 });
-  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 19998 });
-  const first = await f.consume(0);
-  assert.deepEqual([first.usage.used, first.usage.limit, first.usage.remaining], [19999, 20000, 1]);
-  assert.equal((await f.consume(1)).usage.used, 20000);
-  await assert.rejects(f.consume(0), error => error.status === 429 && /20,000 requests/.test(error.message));
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 19990 });
+  const admitted = await f.consume(0);
+  assert.deepEqual([admitted.usage.used, admitted.usage.limit], [19990, 20000]);
+  const result = await charge(f, admitted, [{ segment: 'Pharmacy', cost: 6 }, { segment: 'Grocery', cost: 8 }, { segment: 'Hardware', cost: 1 }]);
+  assert.deepEqual([result.granted, result.allowed], [10, [6, 4, 0]]);
+  assert.deepEqual(result.segments, [{ segment: 'Grocery', used: 4 }, { segment: 'Pharmacy', used: 6 }, { segment: 'Hardware', used: 0 }]);
   assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_account').used, 20000);
+  await assert.rejects(f.consume(0), error => error.status === 429 && /20,000 products/.test(error.message));
   assert.equal(f.db.read('account_api_usage/customer').used, 9);
 });
 test('invalid configuration fails closed without quota use, while credential revocation remains available', async () => {

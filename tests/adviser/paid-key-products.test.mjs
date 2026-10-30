@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApiKeyHandlers, mergeScope } from '../../services/api-key-management.js';
 import { consumeAccountQuota } from '../../services/account-quota.js';
+import { chargeMonthlyProducts } from '../../services/paid-monthly-quota.js';
 import { memoryStore, invoke } from './phase2a/memory-store.mjs';
 
 // Pro: products go into one API key in the account's segment.
@@ -113,22 +114,24 @@ test('Pro Max: an account with older per-segment keys adds into one of them, not
   assert.equal((await f.keys()).length, 2);
 });
 
-test('Pro Max: the one key uses one account allowance of 20,000 requests; the list shows requests and products', async () => {
+test('Pro Max: the one key draws from one 20,000 allowance; the list shows the total, segment shares and products', async () => {
   const f = setup('Pro Max');
   const [created] = (await f.add({ linkedProductIds: ['rice', 'milk', 'aspirin'] })).body.results;
   const consume = () => consumeAccountQuota(f.db, { keyId: created.keyId, userId: 'owner', credential: created.key, clock: () => new Date(NOW) });
   const ok = await consume();
-  assert.deepEqual([ok.usage.used, ok.usage.limit, ok.usage.unit], [1, 20000, 'requests']);
+  assert.deepEqual([ok.usage.used, ok.usage.limit, ok.usage.unit], [0, 20000, 'products']);
+  await chargeMonthlyProducts(f.db, { ...ok.productCharge, items: [{ segment: 'Grocery', cost: 2 }, { segment: 'Pharmacy', cost: 3 }], clock: () => new Date(NOW) });
   const listed = (await invoke(f.handlers.list)).body;
-  assert.deepEqual(listed.monthlyUsage.buckets, [{ bucket: 'account', used: 1, remaining: 19999 }]);
+  assert.deepEqual(listed.monthlyUsage.buckets, [{ bucket: 'account', used: 5, remaining: 19995 }]);
+  assert.deepEqual(listed.monthlyUsage.segments, [{ segment: 'Grocery', used: 2 }, { segment: 'Pharmacy', used: 3 }, { segment: 'Hardware', used: 0 }]);
   assert.deepEqual(listed.monthlyUsage.products, { total: 3, limit: 15000,
     bySegment: [{ segment: 'Grocery', count: 2 }, { segment: 'Pharmacy', count: 1 }, { segment: 'Hardware', count: 0 }] });
   assert.equal(listed.keys[0].requestLimit, 20000);
   f.db.collection('account_paid_monthly_usage').doc('owner_2026-10_account').set({ window: '2026-10', used: 20000 });
-  await assert.rejects(consume(), error => error.status === 429 && /20,000 requests/.test(error.message));
+  await assert.rejects(consume(), error => error.status === 429 && /20,000 products/.test(error.message));
 });
 
-test('Pro: the list shows 15,000 requests and products on the key without a segment split', async () => {
+test('Pro: the list shows the 15,000 allowance and products on the key without a segment split', async () => {
   const f = setup('Pro');
   await f.add({ linkedProductIds: ['rice'] });
   const listed = (await invoke(f.handlers.list)).body;
