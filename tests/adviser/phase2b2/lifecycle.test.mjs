@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dateMillis, evaluateEntitlement, normalizeExpiredAccount, renewalPeriod } from '../../../functions/subscription-lifecycle.mjs';
-import { consumeAccountQuota } from '../../../services/account-quota.js';
+// Paid plans count products delivered: each call here is a catalog call that sends one product.
+import { consumeAndDeliver as consumeAccountQuota } from '../product-allowance/deliver.mjs';
 import { authenticateCredential, issueCredential } from '../../../services/api-key-security.js';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createPaymentHandlers } from '../../../services/payment-checkout.js';

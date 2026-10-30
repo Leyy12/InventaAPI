@@ -92,7 +92,9 @@ for (const index of [0, 1]) test(`historical demonstration ${index + 1}: status,
 
 test('existing credentials consume the shared monthly Pro allowance without profile/contract backfill', async () => {
   const f = fixture(), profile = f.db.read(`users/${f.uid}`), pending = pendingRecords(f);
-  const result = await f.consume(); assert.equal(result.usage.used, 1); assert.equal(result.usage.limit, 15000);
+  // Admission alone uses nothing; delivered products are charged afterwards.
+  const result = await f.consume(); assert.equal(result.usage.used, 0); assert.equal(result.usage.limit, 15000);
+  assert.equal(result.productCharge.bucket, 'account');
   assert.equal(result.usage.period, 'monthly');
   assert.deepEqual(f.db.read(`users/${f.uid}`), profile); assert.equal(f.db.read(`account_request_contracts/${f.uid}`), undefined);
   assert.deepEqual(pendingRecords(f), pending);

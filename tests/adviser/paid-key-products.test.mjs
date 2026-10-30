@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createApiKeyHandlers, mergeScope } from '../../services/api-key-management.js';
 import { consumeAccountQuota } from '../../services/account-quota.js';
 import { memoryStore, invoke } from './phase2a/memory-store.mjs';
+import { chargeMonthlyProducts } from '../../services/paid-monthly-quota.js';
 
 // Pro: products go into one API key in the account's segment.
 // Pro Max: each product goes into its segment's key (at most one per segment).
@@ -107,7 +108,10 @@ test('Pro Max: each segment key draws from its own 15,000 monthly allowance', as
   const consume = r => consumeAccountQuota(f.db, { keyId: r.keyId, userId: 'owner', credential: r.key, clock: () => new Date(NOW) });
   await assert.rejects(consume(grocery), error => error.status === 429 && /Grocery segment/.test(error.message));
   const ok = await consume(pharmacy);
-  assert.deepEqual([ok.usage.bucket, ok.usage.used, ok.usage.remaining], ['Pharmacy', 1, 14999]);
+  // Admission alone uses nothing: products are charged when they are delivered.
+  assert.deepEqual([ok.usage.bucket, ok.usage.used, ok.usage.remaining, ok.usage.unit], ['Pharmacy', 0, 15000, 'products']);
+  const charged = await chargeMonthlyProducts(f.db, { ...ok.productCharge, requested: 1, clock: () => new Date(NOW) });
+  assert.deepEqual([charged.granted, charged.usage.used], [1, 1]);
   const listed = (await invoke(f.handlers.list)).body;
   assert.deepEqual(listed.monthlyUsage.buckets.map(b => [b.bucket, b.used]), [['Grocery', 15000], ['Pharmacy', 1], ['Hardware', 0]]);
 });

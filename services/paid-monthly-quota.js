@@ -1,8 +1,9 @@
-// Monthly request allowance for active Pro and Pro Max subscriptions.
+// Monthly PRODUCT allowance for active Pro and Pro Max subscriptions: each
+// product a catalog response delivers uses one of the 15,000.
 // Pro: one allowance for the whole account. Pro Max: one allowance per
 // Business Segment, chosen by the segment of the API key making the request.
 // Free Trial keeps its own (daily / catalog) accounting in account-quota.js.
-import { PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
+import { PAID_MONTHLY_PRODUCT_LIMIT as PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
 import { normalizeSegment } from './product-contract.js';
 import { ApiSecurityError } from './api-key-security.js';
 
@@ -43,7 +44,22 @@ export function monthlyUsed(stored, window) {
 
 export function monthlyUsage(bucket, used, window, resetsAt) {
   return { window, used, limit: PAID_MONTHLY_REQUEST_LIMIT, remaining: Math.max(0, PAID_MONTHLY_REQUEST_LIMIT - used),
-    resetsAt, period: 'monthly', scope: bucket === 'account' ? 'account' : 'segment', bucket };
+    resetsAt, period: 'monthly', unit: 'products', scope: bucket === 'account' ? 'account' : 'segment', bucket };
+}
+
+// Charges the products a response is about to deliver. Grants at most what is
+// left this month, so concurrent calls can never take the total past the limit.
+// Returns how many products may be sent and the updated usage.
+export async function chargeMonthlyProducts(db, { userId, bucket, window, resetsAt, requested, clock = () => new Date() }) {
+  const count = Number.isSafeInteger(requested) && requested > 0 ? requested : 0;
+  const ref = db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(userId, window, bucket));
+  return db.runTransaction(async tx => {
+    const doc = await tx.get(ref);
+    const used = monthlyUsed(doc.exists ? doc.data() : undefined, window);
+    const granted = Math.min(count, Math.max(0, PAID_MONTHLY_REQUEST_LIMIT - used));
+    if (granted > 0) tx.set(ref, { userId, window, bucket, used: used + granted, updatedAt: clock().toISOString() });
+    return { granted, usage: monthlyUsage(bucket, used + granted, window, resetsAt) };
+  });
 }
 
 // The buckets shown to the customer: Pro has one, Pro Max one per segment
@@ -61,6 +77,6 @@ export async function readMonthlySummary(tx, db, uid, plan, keys, now) {
     const stored = (await tx.get(db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(uid, window, bucket)))).data();
     buckets.push({ bucket, used: monthlyUsed(stored, window) });
   }
-  return { period: 'monthly', window, resetsAt, limit: PAID_MONTHLY_REQUEST_LIMIT, plan,
+  return { period: 'monthly', unit: 'products', window, resetsAt, limit: PAID_MONTHLY_REQUEST_LIMIT, plan,
     buckets: buckets.map(item => ({ ...item, remaining: Math.max(0, PAID_MONTHLY_REQUEST_LIMIT - item.used) })) };
 }

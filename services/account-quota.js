@@ -6,7 +6,7 @@ import { TRIAL_MIN_PRODUCTS, TRIAL_MAX_PRODUCTS, TRIAL_MAX_ACTIVE_KEYS } from '.
 import { authorizedProductIds } from './daas-catalog.js';
 import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
-import { PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
+import { PAID_MONTHLY_PRODUCT_LIMIT as PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
 import { MONTHLY_USAGE_COLLECTION, paidQuotaPlan, monthWindow, quotaBucket, monthlyUsageId, monthlyUsed, monthlyUsage } from './paid-monthly-quota.js';
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
@@ -86,19 +86,21 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       if (!usageDoc.exists) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Daily Trial request usage requires verification.');
     }
     if (paidPlan) {
+      // Admission only: products are charged after the response is built
+      // (chargeMonthlyProducts), because only then is the count known.
       const used = monthlyUsed(monthlyDoc.exists ? monthlyDoc.data() : undefined, month.window);
       if (used >= PAID_MONTHLY_REQUEST_LIMIT) {
         const where = bucket === 'account' ? 'account' : `${bucket} segment`;
         return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded',
-          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} requests for this ${where} is used up. It resets on the 1st of next month (UTC).`, {
+          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} products for this ${where} is used up. It resets on the 1st of next month (UTC).`, {
             quota: monthlyUsage(bucket, used, month.window, month.resetsAt),
           }) };
       }
-      transaction.set(monthlyRef, { userId, window: month.window, bucket, used: used + 1, updatedAt: now.toISOString() });
-      // Per-key diagnostics for existing admin screens; never used as allowance.
+      // Per-key request count for existing admin screens; never used as allowance.
       const keyUsed = key.resetAt === month.resetsAt && Number.isSafeInteger(key.requestsUsed) && key.requestsUsed >= 0 ? key.requestsUsed : 0;
       transaction.update(keyRef, { lastUsed: now.toISOString(), requestsUsed: Math.min(keyUsed + 1, Number.MAX_SAFE_INTEGER), resetAt: month.resetsAt });
-      return { key: { ...key, id: keyId }, account: effectiveAccount, usage: monthlyUsage(bucket, used + 1, month.window, month.resetsAt) };
+      return { key: { ...key, id: keyId }, account: effectiveAccount, usage: monthlyUsage(bucket, used, month.window, month.resetsAt),
+        productCharge: { userId, bucket, window: month.window, resetsAt: month.resetsAt } };
     }
     // Finite Trial promises share the existing UTC daily accounting path.
     // Paid quota retains its established clean-window cutover semantics.
