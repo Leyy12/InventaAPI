@@ -68,27 +68,35 @@ function Usage({ user, upgradeRequired, activeTrial, requestAllowance }: { user:
     {quota && !quota.pending && <p className="text-xs text-slate-400">Shared by all your keys. Resets at {quota.resetsAt}. {quota.percent === null ? "" : `${quota.percent.toFixed(1)}% used.`}</p>}
   </section>;
 }
-const bucketLabel = (bucket: string) => bucket === 'account' ? 'This month' : bucket === 'general' ? 'Older keys' : bucket;
-// Active Pro: one monthly allowance. Pro Max: one per segment (Grocery, Pharmacy, Hardware).
+// Active Pro / Pro Max: requests used this month (one account allowance) and the
+// products on the account's one API key.
 function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
   const resets = new Date(monthly.resetsAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  const requests = monthly.buckets.find(item => item.bucket === 'account') ?? { used: 0, remaining: monthly.limit };
+  const requestPercent = Math.min(100, (requests.used / monthly.limit) * 100);
+  const products = monthly.products;
+  const productPercent = products ? Math.min(100, (products.total / products.limit) * 100) : 0;
+  const bar = (percent: number) => <div className="mt-3 h-1.5 rounded-full bg-slate-800" aria-hidden="true">
+    <div className={`h-1.5 rounded-full ${percent >= 90 ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
+  </div>;
   return <section aria-label="Account API usage" className="space-y-3">
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-      {monthly.buckets.map(item => {
-        const percent = Math.min(100, (item.used / monthly.limit) * 100);
-        return <div key={item.bucket} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
-          <p className="text-sm text-slate-400">{monthly.plan === 'pro' ? 'Products this month' : `${bucketLabel(item.bucket)} products`}</p>
-          <p className="mt-3 text-2xl font-semibold text-white">{item.used.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {monthly.limit.toLocaleString()}</span></p>
-          <div className="mt-3 h-1.5 rounded-full bg-slate-800" aria-hidden="true">
-            <div className={`h-1.5 rounded-full ${percent >= 90 ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
-          </div>
-          <p className="mt-2 text-xs text-slate-400">{item.remaining.toLocaleString()} remaining</p>
-        </div>;
-      })}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+        <p className="text-sm text-slate-400">Requests this month</p>
+        <p className="mt-3 text-2xl font-semibold text-white">{requests.used.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {monthly.limit.toLocaleString()}</span></p>
+        {bar(requestPercent)}
+        <p className="mt-2 text-xs text-slate-400">{requests.remaining.toLocaleString()} requests remaining</p>
+      </div>
+      {products && <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
+        <p className="text-sm text-slate-400">Products on your API key</p>
+        <p className="mt-3 text-2xl font-semibold text-white">{products.total.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {products.limit.toLocaleString()}</span></p>
+        {bar(productPercent)}
+        <p className="mt-2 text-xs text-slate-400">{products.bySegment
+          ? products.bySegment.map(item => `${item.segment} ${item.count.toLocaleString()}`).join(' · ')
+          : `${Math.max(0, products.limit - products.total).toLocaleString()} more products can be added`}</p>
+      </div>}
     </div>
-    <p className="text-xs text-slate-400">{monthly.plan === 'pro'
-      ? `Shared by your API key. ${monthly.limit.toLocaleString()} products per month (each product variant the API sends counts as one); resets ${resets} (UTC).`
-      : `Each segment has its own ${monthly.limit.toLocaleString()} products per month (each product variant the API sends counts as one); resets ${resets} (UTC).`}</p>
+    <p className="text-xs text-slate-400">Each API call counts as one request. {monthly.plan === 'pro' ? 'Pro' : 'Pro Max'} includes {monthly.limit.toLocaleString()} requests per month for your account; resets {resets} (UTC).</p>
   </section>;
 }
 

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createApiKeyHandlers, mergeScope } from '../../services/api-key-management.js';
 import { consumeAccountQuota } from '../../services/account-quota.js';
 import { memoryStore, invoke } from './phase2a/memory-store.mjs';
-import { chargeMonthlyBuckets } from '../../services/paid-monthly-quota.js';
 
 // Pro: products go into one API key in the account's segment.
 // Pro Max: each product goes into its segment's key (at most one per segment).
@@ -114,36 +113,41 @@ test('Pro Max: an account with older per-segment keys adds into one of them, not
   assert.equal((await f.keys()).length, 2);
 });
 
-test('Pro Max: the one key draws from each product segment\'s own 15,000 monthly allowance', async () => {
+test('Pro Max: the one key uses one account allowance of 20,000 requests; the list shows requests and products', async () => {
   const f = setup('Pro Max');
-  const [created] = (await f.add({ linkedProductIds: ['rice', 'aspirin'] })).body.results;
-  f.db.collection('account_paid_monthly_usage').doc('owner_2026-10_Grocery').set({ window: '2026-10', used: 15000 });
+  const [created] = (await f.add({ linkedProductIds: ['rice', 'milk', 'aspirin'] })).body.results;
   const consume = () => consumeAccountQuota(f.db, { keyId: created.keyId, userId: 'owner', credential: created.key, clock: () => new Date(NOW) });
-  // Grocery is used up but Pharmacy is not, so the call is still admitted.
   const ok = await consume();
-  assert.deepEqual(ok.usage.buckets.map(b => [b.bucket, b.used]), [['Grocery', 15000], ['Pharmacy', 0], ['Hardware', 0]]);
-  const charged = await chargeMonthlyBuckets(f.db, { ...ok.productCharge, requested: { Grocery: 2, Pharmacy: 3 }, clock: () => new Date(NOW) });
-  assert.deepEqual(charged.granted, { Grocery: 0, Pharmacy: 3 });
+  assert.deepEqual([ok.usage.used, ok.usage.limit, ok.usage.unit], [1, 20000, 'requests']);
   const listed = (await invoke(f.handlers.list)).body;
-  assert.deepEqual(listed.monthlyUsage.buckets.map(b => [b.bucket, b.used]), [['Grocery', 15000], ['Pharmacy', 3], ['Hardware', 0]]);
-  for (const segment of ['Pharmacy', 'Hardware']) {
-    f.db.collection('account_paid_monthly_usage').doc(`owner_2026-10_${segment}`).set({ window: '2026-10', used: 15000 });
-  }
-  await assert.rejects(consume(), error => error.status === 429 && /every segment/.test(error.message));
+  assert.deepEqual(listed.monthlyUsage.buckets, [{ bucket: 'account', used: 1, remaining: 19999 }]);
+  assert.deepEqual(listed.monthlyUsage.products, { total: 3, limit: 15000,
+    bySegment: [{ segment: 'Grocery', count: 2 }, { segment: 'Pharmacy', count: 1 }, { segment: 'Hardware', count: 0 }] });
+  assert.equal(listed.keys[0].requestLimit, 20000);
+  f.db.collection('account_paid_monthly_usage').doc('owner_2026-10_account').set({ window: '2026-10', used: 20000 });
+  await assert.rejects(consume(), error => error.status === 429 && /20,000 requests/.test(error.message));
 });
 
-test('Pro Max: the one key may hold up to 1,500 products', async () => {
-  const many = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`products/g${i}`, { name: `G${i}`, segment: 'Grocery' }]));
+test('Pro: the list shows 15,000 requests and products on the key without a segment split', async () => {
+  const f = setup('Pro');
+  await f.add({ linkedProductIds: ['rice'] });
+  const listed = (await invoke(f.handlers.list)).body;
+  assert.equal(listed.monthlyUsage.limit, 15000);
+  assert.deepEqual(listed.monthlyUsage.products, { total: 1, limit: 7500 });
+});
+
+test('a Pro key holds up to 7,500 products; a Pro Max key holds more', async () => {
+  const many = Object.fromEntries(Array.from({ length: 7501 }, (_, i) => [`products/g${i}`, { name: `G${i}`, segment: 'Grocery' }]));
   const ids = Object.keys(many).map(path => path.split('/')[1]);
-  const max = setup('Pro Max', many);
-  assert.equal((await max.add({ linkedProductIds: ids.slice(0, 400) })).statusCode, 200);
-  const grown = await max.add({ linkedProductIds: ids.slice(400) });
-  assert.equal(grown.statusCode, 200);
-  assert.equal(grown.body.results[0].total, 501);
   const pro = setup('Pro', many);
-  assert.equal((await pro.add({ linkedProductIds: ids.slice(0, 400) })).statusCode, 200);
-  const over = await pro.add({ linkedProductIds: ids.slice(400) });
+  assert.equal((await pro.add({ linkedProductIds: ids.slice(0, 7000) })).statusCode, 200);
+  const over = await pro.add({ linkedProductIds: ids.slice(7000) });
   assert.equal(over.statusCode, 400); assert.equal(over.body.error, 'KEY_PRODUCT_LIMIT');
+  const max = setup('Pro Max', many);
+  assert.equal((await max.add({ linkedProductIds: ids.slice(0, 7000) })).statusCode, 200);
+  const grown = await max.add({ linkedProductIds: ids.slice(7000) });
+  assert.equal(grown.statusCode, 200);
+  assert.equal(grown.body.results[0].total, 7501);
 });
 
 test('Free Trial and inactive accounts cannot use Add products', async () => {
