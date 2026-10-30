@@ -60,7 +60,8 @@ test('Trial activation unlocks issuance, but an existing same-day marker is neve
   assert.equal((await f.create()).body.error, 'UPGRADE_REQUIRED');
   assert.equal((await invoke(f.trial.activate)).statusCode, 200);
   assert.equal((await f.create()).statusCode, 200);
-  assert.equal((await f.create()).body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
+  // A second key is refused: Trial has one key (the one-key rule is checked first).
+  assert.equal((await f.create()).body.error, 'TRIAL_KEY_LIMIT');
 
   const markerId = `${createHash('sha256').update('owner').digest('hex')}_2026-09-22`;
   const g = fixture(free, { [`api_key_generation_days/${markerId}`]: { userId: 'owner', window: '2026-09-22' } });
