@@ -250,19 +250,19 @@ test('UTC midnight, new session/device and revocation never restart Trial or res
   assert.equal(f.db.read('users/owner').trialStartedAt, start); await assert.rejects(f.consume(), { status: 401 });
 });
 
-test('Trial permits up to 5 active keys reusing one shared catalog across UTC days; segment authority remains unchanged', async () => {
+test('Trial permits one active key; a new key needs the old one revoked; segment authority remains unchanged', async () => {
   const f = fixture(), options = { body: { keyName: 'Synthetic', linkedProductIds: productIds } };
   assert.equal((await invoke(f.keys.create, options)).body.error, 'UPGRADE_REQUIRED');
-  await f.activate(); assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
-  assert.equal((await f.status()).body.activeKeys, 2); assert.equal((await f.status()).body.productsIncluded, 50);
-  assert.equal((await invoke(f.keys.create, options)).body.error, 'API_KEY_DAILY_GENERATION_LIMIT');
-  for (const day of ['24', '25', '26']) {
-    f.time(`2026-09-${day}T00:00:00.000Z`); assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
-  }
-  assert.equal((await f.status()).body.activeKeys, 5);
-  f.time('2026-09-27T00:00:00.000Z'); assert.equal((await invoke(f.keys.create, options)).body.error, 'TRIAL_KEY_LIMIT');
+  await f.activate();
+  // The account already has one active key: a second is refused.
+  assert.equal((await invoke(f.keys.create, options)).body.error, 'TRIAL_KEY_LIMIT');
   assert.equal((await invoke(f.keys.create, { body: { keyName: 'New product', linkedProductIds: ['tool-49'] } })).body.error, 'TRIAL_KEY_LIMIT');
+  assert.equal((await f.status()).body.activeKeys, 1); assert.equal((await f.status()).body.maximumActiveKeys, 1);
+  assert.equal((await f.status()).body.productsIncluded, 50);
+  await invoke(f.keys.revoke, { id: 'key-a' });
   assert.equal((await invoke(f.keys.create, { body: { keyName: 'Tamper', linkedProductIds: ['food', ...productIds] } })).statusCode, 403);
+  assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
+  assert.equal((await f.status()).body.activeKeys, 1); assert.equal((await f.status()).body.productsIncluded, 50);
   assert.equal(f.db.read('account_trial_usage/owner').used, 0);
 });
 
@@ -395,7 +395,7 @@ test('usage projection shows Trial catalog counts and expiry, never a request al
   const data = (await invoke(f.keys.list)).body; assert.equal(data.keys[0].quotaPeriod, 'trial_catalog');
   assert.equal(data.usage.used, null); assert.equal(data.usage.limit, null); assert.equal(quotaSummary(data.usage, f.clock()), null);
   assert.deepEqual(data.trialCatalog, { productsIncluded: 50, minimumProducts: 0, maximumProducts: 50,
-    productsAvailable: 0, activeKeys: 1, maximumActiveKeys: 5, expiresAt: END });
+    productsAvailable: 0, activeKeys: 1, maximumActiveKeys: 1, expiresAt: END });
 });
 
 for (const segment of ['Grocery', 'Pharmacy', 'Hardware']) test('Hardware submission versus ' + segment + ' payload', async () => {
@@ -682,7 +682,7 @@ test('legacy over-cap replacement remains atomic; another key cannot add product
   assert.deepEqual(f.db.read(`api_keys/${replaced.body.id}`).linkedProductIds, scope(51));
   assert.equal(f.db.read('api_keys/key-a').status, 'revoked');
   assert.equal((await f.status()).body.activeKeys, 1);
-  assert.equal((await invoke(f.keys.create, { body: { keyName: 'No bypass', linkedProductIds: ['tool-51'] } })).body.error, 'TRIAL_PRODUCT_MAXIMUM');
+  assert.equal((await invoke(f.keys.create, { body: { keyName: 'No bypass', linkedProductIds: ['tool-51'] } })).body.error, 'TRIAL_KEY_LIMIT');
   assert.equal((await f.status()).body.activeKeys, 1);
   assert.equal((await updateCatalog(f, scope(52), 0, replaced.body.id)).body.error, 'TRIAL_PRODUCT_MAXIMUM');
 });
@@ -727,17 +727,19 @@ test('duplicate IDs and partial variants count as unique products, never as extr
     linkedVariantSelections: { 'tool-49': ['a|b', 'c|d'] }, linkedProducts: [{ id: 'tool-0', name: 'forged' }] } });
   assert.equal(partial.statusCode, 200); assert.equal((await f.status()).body.productsIncluded, 50);
 });
-test('simultaneous Trial creation permits one key per UTC day; a later key reuses products but cannot exceed 50', async () => {
+test('simultaneous Trial creation creates exactly one key; a later second key is refused', async () => {
   const f = fixture({}, { 'api_keys/key-a': null }); await invoke(f.handlers.session);
   const options = { body: { keyName: 'Concurrent', linkedProductIds: scope(50) } };
   const results = await Promise.all(Array.from({ length: 8 }, () => invoke(f.keys.create, options)));
   assert.equal(results.filter(r => r.statusCode === 200).length, 1);
-  assert.ok(results.filter(r => r.statusCode !== 200).every(r => r.body.error === 'API_KEY_DAILY_GENERATION_LIMIT'));
+  // The others are refused by the daily rule or the one-key rule, whichever is checked first.
+  assert.ok(results.filter(r => r.statusCode !== 200).every(r => ['API_KEY_DAILY_GENERATION_LIMIT', 'TRIAL_KEY_LIMIT'].includes(r.body.error)));
   assert.equal((await f.status()).body.activeKeys, 1);
   f.time('2026-09-24T12:00:00.000Z');
-  assert.equal((await invoke(f.keys.create, { body: { keyName: 'Extra', linkedProductIds: ['tool-50'] } })).body.error, 'TRIAL_PRODUCT_MAXIMUM');
-  assert.equal((await invoke(f.keys.create, options)).statusCode, 200);
-  assert.equal((await f.status()).body.activeKeys, 2); assert.equal((await f.status()).body.productsIncluded, 50);
+  // The next day a second key is still refused: Trial has one key.
+  assert.equal((await invoke(f.keys.create, { body: { keyName: 'Extra', linkedProductIds: ['tool-50'] } })).body.error, 'TRIAL_KEY_LIMIT');
+  assert.equal((await invoke(f.keys.create, options)).body.error, 'TRIAL_KEY_LIMIT');
+  assert.equal((await f.status()).body.activeKeys, 1); assert.equal((await f.status()).body.productsIncluded, 50);
 });
 test('atomic Trial replacement preserves products, expiry and history and invalidates the old credential', async () => {
   const f = fixture(); await invoke(f.handlers.session);
@@ -799,7 +801,10 @@ test('Trial accounts over the active-key cap fail closed until extras are revoke
   const f = fixture({}, extra); await invoke(f.handlers.session);
   await assert.rejects(f.consume(), { status: 403, code: 'TRIAL_KEY_LIMIT' });
   assert.equal((await invoke(f.keys.replace)).body.error, 'TRIAL_KEY_LIMIT');
-  await invoke(f.keys.revoke, { id: 'key-b' }); assert.equal((await f.consume()).usage.productsIncluded, 50);
+  await invoke(f.keys.revoke, { id: 'key-b' });
+  await assert.rejects(f.consume(), { status: 403, code: 'TRIAL_KEY_LIMIT' }, 'still more than one active key');
+  for (const id of ['c', 'd', 'e', 'f']) await invoke(f.keys.revoke, { id: `key-${id}` });
+  assert.equal((await f.consume()).usage.productsIncluded, 50);
   assert.equal(f.db.read('api_keys/key-b').status, 'revoked');
 });
 test('exact expiry blocks requests, generation, product edits and rotation but preserves key history', async () => {

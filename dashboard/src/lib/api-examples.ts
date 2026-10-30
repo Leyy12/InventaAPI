@@ -3,7 +3,7 @@ export function apiExamples(endpoint: string) {
   const url = new URL(endpoint);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash
     || !['/daas/v1/catalog', '/daas/v1/health'].includes(url.pathname)
-    || [...url.searchParams.keys()].some(key => !['q', 'search', 'page', 'perPage'].includes(key))) throw new Error('Invalid example endpoint');
+    || [...url.searchParams.keys()].some(key => !['q', 'search', 'page', 'perPage', 'segment'].includes(key))) throw new Error('Invalid example endpoint');
   const safeUrl = url.toString().replace(/['"$`\\]/gu, char => '%' + char.charCodeAt(0).toString(16));
   return {
     curl: `curl --fail-with-body '${safeUrl}' \\\n  -H 'x-api-key: YOUR_API_KEY'`,

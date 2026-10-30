@@ -82,7 +82,7 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       }
       const active = trialKeys.docs.filter(doc => doc.data().status === 'active');
       if (active.length > TRIAL_MAX_ACTIVE_KEYS || !active.some(doc => doc.id === keyId)) return { denied: new ApiSecurityError(403,
-        'TRIAL_KEY_LIMIT', `Free Trial permits up to ${TRIAL_MAX_ACTIVE_KEYS} active API keys. Revoke additional keys.`) };
+        'TRIAL_KEY_LIMIT', 'Free Trial includes one active API key. Revoke the extra keys on the API Keys page.') };
       const products = authorizedProductIds(key).length;
       // Preserve legacy over-cap reads; every catalog mutation forbids additions.
       // Zero products is also a valid Trial catalog (no product data authorized).

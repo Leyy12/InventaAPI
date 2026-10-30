@@ -38,7 +38,7 @@ export const SUBSCRIPTION_PLANS = {
     // Features (base features only)
     features: [
       `Up to ${TRIAL_MAX_PRODUCTS} products`,
-      `Up to ${TRIAL_MAX_ACTIVE_KEYS} API keys`,
+      TRIAL_MAX_ACTIVE_KEYS === 1 ? "1 API key" : `Up to ${TRIAL_MAX_ACTIVE_KEYS} API keys`,
       "One Business Segment",
       "Product Catalog endpoint",
       "API Key Management",

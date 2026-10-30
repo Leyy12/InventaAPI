@@ -133,13 +133,13 @@ function TrialPanel({ user, embedded }: { user: User; embedded: boolean }) {
       </div>
 
       {trialCapacityMessage(trial.productsIncluded) && <p role="status" className="mt-4 text-sm text-amber-300">{trialCapacityMessage(trial.productsIncluded)}</p>}
-      <p className="mt-3 text-xs leading-5 text-slate-400">Your one-time 7-day Free Trial includes up to {TRIAL_MAX_PRODUCTS} account-level products shared by up to {TRIAL_MAX_ACTIVE_KEYS} active API keys. API requests do not reduce your product allowance, and unused product slots do not increase the API-key limit.</p>
+      <p className="mt-3 text-xs leading-5 text-slate-400">Your one-time 7-day Free Trial includes one API key with up to {TRIAL_MAX_PRODUCTS} products. You can use that key in as many projects as you like, and API requests do not reduce your product allowance.</p>
     </section>;
   }
 
   return <div className="max-w-3xl mx-auto space-y-6">
     {!embedded && <h1 className="text-3xl font-bold text-white flex items-center gap-2"><Zap className="text-amber-400" />Free Trial</h1>}
-    <p className="text-slate-400">Your one-time Free Trial starts automatically when your Customer session is verified. It lasts 7 days, includes up to 50 currently selected products, shared by up to {TRIAL_MAX_ACTIVE_KEYS} active API keys, in your owned business segment. API calls do not consume this product allowance.</p>
+    <p className="text-slate-400">Your one-time Free Trial starts automatically when your Customer session is verified. It lasts 7 days, includes one API key with up to {TRIAL_MAX_PRODUCTS} currently selected products in your owned business segment. API calls do not consume this product allowance.</p>
     {error && <p role="alert" className="text-rose-300">{error} <button onClick={() => setRefresh(value => value + 1)}>Retry status</button></p>}
     {!trial ? <p role="status">Checking trial eligibility and usage…</p> :
       <section className="glass-card rounded-2xl border border-amber-500/30 p-8 space-y-4">
