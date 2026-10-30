@@ -4,7 +4,8 @@ import { memoryStore, invoke } from '../phase2b1/memory-store.mjs';
 import { validateSale, recordSale, salesRange, readSales, aggregateSales,
   paidSalesEligible } from '../../../services/customer-intelligence.js';
 import { createCustomerIntelligenceHandlers, createDaaSIntelligenceHandlers } from '../../../services/customer-intelligence-handlers.js';
-import { consumeAccountQuota } from '../../../services/account-quota.js';
+// Paid plans count products delivered: each call here is a catalog call that sends one product.
+import { consumeAndDeliver as consumeAccountQuota } from '../product-allowance/deliver.mjs';
 import { evaluateEntitlement } from '../../../functions/subscription-lifecycle.mjs';
 
 const NOW = new Date('2026-09-27T12:00:00.000Z');

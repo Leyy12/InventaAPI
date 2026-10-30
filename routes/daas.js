@@ -5,6 +5,7 @@ import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts 
 import { createDaaSSecurity } from '../services/daas-security.js';
 import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 import { createRepeatGuard } from '../services/daas-repeat-guard.js';
+import { chargeMonthlyProducts } from '../services/paid-monthly-quota.js';
 
 // Data lives in the Supabase database (database/data-store.js).
 let adminDb = null;
@@ -176,9 +177,26 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
         const page = (!isNaN(requestedPage) && requestedPage >= 1) ? Math.min(requestedPage, totalPages) : 1;
         const startIndex = (page - 1) * perPage;
         const pageSlice = products.slice(startIndex, startIndex + perPage);
-        const hasNextPage = startIndex + pageSlice.length < totalBeforePage;
+        let delivered = pageSlice;
+        let quota = req.requestUsage;
+        // Pro / Pro Max: every product sent uses one of the month's 15,000 products.
+        // Send no more than what is left; the rest stays on later pages.
+        if (req.productCharge && pageSlice.length > 0) {
+            const charged = await chargeMonthlyProducts(getDb(), { ...req.productCharge, requested: pageSlice.length });
+            quota = charged.usage;
+            if (charged.granted === 0) {
+                return res.status(429).json({
+                    success: false, error: 'Rate Limit Exceeded',
+                    message: `Monthly allowance of ${quota.limit.toLocaleString('en-US')} products is used up. It resets on the 1st of next month (UTC).`,
+                    quota,
+                });
+            }
+            delivered = pageSlice.slice(0, charged.granted);
+        }
+        const limitedByQuota = delivered.length < pageSlice.length;
+        const hasNextPage = startIndex + delivered.length < totalBeforePage;
 
-        products = pageSlice;
+        products = delivered;
 
         // productAvailability is the consumer-specific authorization timestamp map.
         // availableToConsumerSince = when THIS consumer gained access to THIS product.
@@ -223,8 +241,9 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 keyName: req.apiKeyData.name,
                 plan: req.userPlan,
                 plan_cap: maxPerPage,
-                requestsUsed: req.requestUsage.used,
-                quota: req.requestUsage,
+                requestsUsed: quota.used,
+                quota,
+                ...(limitedByQuota ? { quotaLimited: true, quotaMessage: `Only ${delivered.length} of ${pageSlice.length} products were sent: the monthly product allowance is used up.` } : {}),
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
                 timestamp: ts.toISOString(),
@@ -234,7 +253,7 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                     total: totalBeforePage,
                     totalPages,
                     hasNextPage,
-                    nextPage: hasNextPage ? page + 1 : null
+                    nextPage: hasNextPage ? (limitedByQuota ? page : page + 1) : null
                 }
             },
             products: formattedProducts

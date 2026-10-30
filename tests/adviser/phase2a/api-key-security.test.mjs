@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { issueCredential, authenticateCredential, parseCredential, publicKeyMetadata } from '../../../services/api-key-security.js';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createDaaSSecurity, requirePlan } from '../../../services/daas-security.js';
-import { consumeAccountQuota } from '../../../services/account-quota.js';
+// Paid plans count products delivered: each call here is a catalog call that sends one product.
+import { consumeAndDeliver as consumeAccountQuota } from '../product-allowance/deliver.mjs';
 import { authorizedProductIds } from '../../../services/daas-catalog.js';
 import { memoryStore, invoke } from './memory-store.mjs';
 

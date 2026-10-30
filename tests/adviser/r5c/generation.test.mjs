@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { authenticateCredential, accountEntitlement } from '../../../services/api-key-security.js';
-import { consumeAccountQuota } from '../../../services/account-quota.js';
+// Paid plans count products delivered: each call here is a catalog call that sends one product.
+import { consumeAndDeliver as consumeAccountQuota } from '../product-allowance/deliver.mjs';
 import { memoryStore, invoke } from '../phase2a/memory-store.mjs';
 
 // Generation-policy tests use a legacy paid (Unlimited) account so neither the

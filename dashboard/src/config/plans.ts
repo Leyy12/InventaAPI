@@ -6,8 +6,8 @@
 import { PAID_MONTHLY_REQUEST_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
 
 const MONTHLY = PAID_MONTHLY_REQUEST_LIMIT.toLocaleString("en-US");
-export const PRO_REQUEST_LABEL = `${MONTHLY} API requests per month`;
-export const PRO_MAX_REQUEST_LABEL = `${MONTHLY} API requests per month for each segment`;
+export const PRO_REQUEST_LABEL = `${MONTHLY} products per month`;
+export const PRO_MAX_REQUEST_LABEL = `${MONTHLY} products per month for each segment`;
 import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
@@ -163,7 +163,7 @@ export function plansForRequestLimits(limits: PlanRequestLimits | null) {
     free: { ...SUBSCRIPTION_PLANS.free, requestLimit: limits?.free_trial,
       requestLimitDisplay: requestAllowanceLabel(limits?.free_trial, true),
       features: [...SUBSCRIPTION_PLANS.free.features, requestAllowanceLabel(limits?.free_trial, true)] },
-    // Paid plans count requests per month (fixed); only the Trial uses the configurable policy.
+    // Paid plans count products delivered per month (fixed); only the Trial uses the configurable policy.
     pro: SUBSCRIPTION_PLANS.pro,
     pro_max: SUBSCRIPTION_PLANS.pro_max,
   };

@@ -77,7 +77,7 @@ function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
       {monthly.buckets.map(item => {
         const percent = Math.min(100, (item.used / monthly.limit) * 100);
         return <div key={item.bucket} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
-          <p className="text-sm text-slate-400">{monthly.plan === 'pro' ? 'Requests this month' : `${bucketLabel(item.bucket)} requests`}</p>
+          <p className="text-sm text-slate-400">{monthly.plan === 'pro' ? 'Products this month' : `${bucketLabel(item.bucket)} products`}</p>
           <p className="mt-3 text-2xl font-semibold text-white">{item.used.toLocaleString()} <span className="text-sm font-normal text-slate-400">/ {monthly.limit.toLocaleString()}</span></p>
           <div className="mt-3 h-1.5 rounded-full bg-slate-800" aria-hidden="true">
             <div className={`h-1.5 rounded-full ${percent >= 90 ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
@@ -87,8 +87,8 @@ function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
       })}
     </div>
     <p className="text-xs text-slate-400">{monthly.plan === 'pro'
-      ? `Shared by your API key. ${monthly.limit.toLocaleString()} requests per month; resets ${resets} (UTC).`
-      : `Each segment has its own ${monthly.limit.toLocaleString()} requests per month; resets ${resets} (UTC).`}</p>
+      ? `Shared by your API key. ${monthly.limit.toLocaleString()} products per month (every product the API sends counts); resets ${resets} (UTC).`
+      : `Each segment has its own ${monthly.limit.toLocaleString()} products per month (every product the API sends counts); resets ${resets} (UTC).`}</p>
   </section>;
 }
 

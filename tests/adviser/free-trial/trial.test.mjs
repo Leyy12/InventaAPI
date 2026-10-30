@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createFreeTrialHandlers } from '../../../services/free-trial.js';
 import { evaluateEntitlement, renewalPeriod } from '../../../functions/subscription-lifecycle.mjs';
-import { consumeAccountQuota } from '../../../services/account-quota.js';
+// Paid plans count products delivered: each call here is a catalog call that sends one product.
+import { consumeAndDeliver as consumeAccountQuota } from '../product-allowance/deliver.mjs';
 import { createApiKeyHandlers } from '../../../services/api-key-management.js';
 import { createDaaSSecurity, requirePlan } from '../../../services/daas-security.js';
 import { activeCustomerSegment, loginSegmentAllowed, scopeCustomerProducts } from '../../../services/customer-segment.js';
