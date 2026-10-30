@@ -94,7 +94,7 @@ test('existing credentials consume the shared monthly Pro allowance without prof
   const f = fixture(), profile = f.db.read(`users/${f.uid}`), pending = pendingRecords(f);
   // Admission alone uses nothing; delivered products are charged afterwards.
   const result = await f.consume(); assert.equal(result.usage.used, 0); assert.equal(result.usage.limit, 15000);
-  assert.equal(result.productCharge.bucket, 'account');
+  assert.equal(result.productCharge.plan, 'pro');
   assert.equal(result.usage.period, 'monthly');
   assert.deepEqual(f.db.read(`users/${f.uid}`), profile); assert.equal(f.db.read(`account_request_contracts/${f.uid}`), undefined);
   assert.deepEqual(pendingRecords(f), pending);

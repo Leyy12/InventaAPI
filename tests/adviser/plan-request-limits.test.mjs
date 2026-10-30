@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { memoryStore, invoke } from './r2a/memory-store.mjs';
 import { DEFAULT_REQUEST_LIMITS, requestLimitPolicy, requestPolicyVersion, newRequestContract } from '../../functions/request-limit-policy.mjs';
 import { consumeAccountQuota } from '../../services/account-quota.js';
-import { chargeMonthlyProducts } from '../../services/paid-monthly-quota.js';
+import { chargeMonthlyBuckets } from '../../services/paid-monthly-quota.js';
 import { issueCredential } from '../../services/api-key-security.js';
 import { createApiKeyHandlers } from '../../services/api-key-management.js';
 import { createFreeTrialHandlers } from '../../services/free-trial.js';
@@ -43,7 +43,13 @@ test('malformed private promise state cannot be overwritten by Trial activation'
 });
 // Active Pro and Pro Max count PRODUCTS DELIVERED per UTC month (15,000). Daily
 // settings, stored daily contracts and profile claims do not change that allowance.
-const charge = (f, admitted, requested, at = now) => chargeMonthlyProducts(f.db, { ...admitted.productCharge, requested, clock: () => at });
+// One catalog charge: a number goes to Pro's account allowance; Pro Max passes { Segment: n }.
+const charge = async (f, admitted, requested, at = now) => {
+  const map = typeof requested === 'number' ? { account: requested } : requested;
+  const result = await chargeMonthlyBuckets(f.db, { ...admitted.productCharge, requested: map, clock: () => at });
+  const [only] = Object.keys(map);
+  return { granted: Object.values(result.granted).reduce((a, b) => a + b, 0), usage: result.usage[only], all: result };
+};
 test('Pro keys share one monthly product allowance; daily settings and contracts do not change it', async () => {
   const f = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 1000 }, used: 999, contracts: { pro: newRequestContract(100) },
     profileExtra: { requestAllowanceContracts: { pro: newRequestContract(null) }, planRequestLimits: { pro: null } } });
@@ -71,17 +77,16 @@ test('a page larger than what is left is cut to the remaining products', async (
   assert.equal((await charge(f, admitted, 5)).granted, 0);
   assert.equal((await charge(f, admitted, 0)).granted, 0);
 });
-test('Pro Max counts each segment key separately; an untagged older key uses its own allowance', async () => {
+test('Pro Max: one key, each variant charged to its product segment; refused only when every segment is used up', async () => {
   const f = quotaFixture({ plan: 'Pro Max', limits: { ...DEFAULT_REQUEST_LIMITS, pro_max: 10 }, contracts: { pro_max: newRequestContract(10) }, used: 9 });
-  const tag = (i, segment) => f.db.seed(`api_keys/${f.keys[i].id}`, { ...f.db.read(`api_keys/${f.keys[i].id}`), segment });
-  tag(0, 'Grocery'); tag(1, 'Pharmacy');
   f.db.seed('account_paid_monthly_usage/customer_2026-10_Grocery', { window: '2026-10', used: 15000 });
+  const admitted = await f.consume(0);
+  assert.deepEqual(admitted.usage.buckets.map(b => [b.bucket, b.remaining]), [['Grocery', 0], ['Pharmacy', 15000], ['Hardware', 15000]]);
+  const result = await charge(f, admitted, { Grocery: 2, Pharmacy: 3 });
+  assert.deepEqual(result.all.granted, { Grocery: 0, Pharmacy: 3 });
+  assert.equal(result.all.usage.Pharmacy.scope, 'segment');
+  for (const segment of ['Pharmacy', 'Hardware']) f.db.seed(`account_paid_monthly_usage/customer_2026-10_${segment}`, { window: '2026-10', used: 15000 });
   await assert.rejects(f.consume(0), { status: 429 });
-  const pharmacy = await f.consume(1);
-  const charged = await charge(f, pharmacy, 3);
-  assert.deepEqual([charged.usage.used, charged.usage.limit, charged.usage.scope, charged.usage.bucket], [3, 15000, 'segment', 'Pharmacy']);
-  tag(1, null);
-  assert.equal((await f.consume(1)).usage.bucket, 'general');
   assert.equal(f.db.read('account_api_usage/customer').used, 9);
 });
 test('invalid configuration fails closed without quota use, while credential revocation remains available', async () => {

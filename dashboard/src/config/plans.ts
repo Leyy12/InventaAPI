@@ -3,7 +3,7 @@
  * Used by both pricing page and upgrade modal
  */
 
-import { PAID_MONTHLY_REQUEST_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
+import { PAID_MONTHLY_REQUEST_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
 
 const MONTHLY = PAID_MONTHLY_REQUEST_LIMIT.toLocaleString("en-US");
 export const PRO_REQUEST_LABEL = `${MONTHLY} products per month`;
@@ -123,8 +123,8 @@ export const SUBSCRIPTION_PLANS = {
     incrementalFeatures: [
       PRO_MAX_REQUEST_LABEL,
       "All Business Segments",
-      `Up to ${PRO_MAX_SEGMENT_KEYS} API keys — one per segment`,
-      "Products sorted into the right key automatically",
+      `One API key for all ${PRO_MAX_SEGMENT_KEYS} segments (up to ${PRO_MAX_KEY_PRODUCT_LIMIT.toLocaleString("en-US")} products)`,
+      "Each segment keeps its own monthly allowance",
       "API Playground",
       "Usage & Integration History",
       "30-day renewable subscription"

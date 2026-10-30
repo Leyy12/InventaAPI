@@ -88,7 +88,7 @@ function CustomerCatalogSession() {
     || (paywalledUserId === user?.uid && !paidAccess);
   const canGenerate = !!entitlement && !upgradeRequired;
   const activeTrial = entitlement?.activeTrial === true;
-  // Paid key rules: Pro adds products to its one key; Pro Max sorts them into one key per segment.
+  // Paid key rules: Pro and Pro Max each add products to their one key (Pro Max's covers all segments).
   const paidKeyPlan = entitlement?.activePro === true
     ? entitlement.plan === 'Pro Max' ? 'pro_max' : entitlement.plan === 'Pro' ? 'pro' : null : null;
   const [paidResults, setPaidResults] = useState<PaidAddResult[] | null>(null);

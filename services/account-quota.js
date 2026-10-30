@@ -7,7 +7,14 @@ import { authorizedProductIds } from './daas-catalog.js';
 import { requestLimitPolicy, promisedRequestAllowance } from '../functions/request-limit-policy.mjs';
 import { resolveRequestContracts, preserveRequestContracts } from '../functions/request-contract-evidence.mjs';
 import { PAID_MONTHLY_PRODUCT_LIMIT as PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
-import { MONTHLY_USAGE_COLLECTION, paidQuotaPlan, monthWindow, quotaBucket, monthlyUsageId, monthlyUsed, monthlyUsage } from './paid-monthly-quota.js';
+import { MONTHLY_USAGE_COLLECTION, PRO_MAX_SEGMENTS, paidQuotaPlan, monthWindow, monthlyUsageId, monthlyUsed, monthlyUsage } from './paid-monthly-quota.js';
+
+// Pro Max usage: one entry per segment allowance.
+export function segmentSummary(used, month) {
+  return { period: 'monthly', unit: 'products', scope: 'segment', window: month.window, resetsAt: month.resetsAt,
+    limit: PAID_MONTHLY_REQUEST_LIMIT, buckets: used.map(item => ({ bucket: item.bucket, used: item.used,
+      remaining: Math.max(0, PAID_MONTHLY_REQUEST_LIMIT - item.used) })) };
+}
 
 function provablyPostCutover(accountSnapshot, cutoverAt, now) {
   // Only deployment configuration and database snapshot metadata qualify.
@@ -50,9 +57,13 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
     // Active Pro / Pro Max: monthly allowance (read here so every read precedes the writes below).
     const paidPlan = paidQuotaPlan(entitlement);
     const month = paidPlan ? monthWindow(now) : null;
-    const bucket = paidPlan ? quotaBucket(paidPlan, key) : null;
-    const monthlyRef = paidPlan ? db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(userId, month.window, bucket)) : null;
-    const monthlyDoc = monthlyRef ? await transaction.get(monthlyRef) : null;
+    // Pro: one account allowance. Pro Max: one key, an allowance per segment
+    // (each delivered variant is charged to its product's segment by the route).
+    const buckets = paidPlan === 'pro' ? ['account'] : paidPlan ? [...PRO_MAX_SEGMENTS] : [];
+    const monthlyDocs = [];
+    for (const name of buckets) {
+      monthlyDocs.push(await transaction.get(db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(userId, month.window, name))));
+    }
     preserveRequestContracts(transaction, resolved);
     if (entitlement.normalization) transaction.update(userRef, entitlement.normalization);
     const effectiveAccount = { ...account, ...entitlement.normalization, plan: entitlement.plan, apiRequestLimit: entitlement.limit };
@@ -86,21 +97,23 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       if (!usageDoc.exists) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Daily Trial request usage requires verification.');
     }
     if (paidPlan) {
-      // Admission only: products are charged after the response is built
-      // (chargeMonthlyProducts), because only then is the count known.
-      const used = monthlyUsed(monthlyDoc.exists ? monthlyDoc.data() : undefined, month.window);
-      if (used >= PAID_MONTHLY_REQUEST_LIMIT) {
-        const where = bucket === 'account' ? 'account' : `${bucket} segment`;
+      // Admission only: variants are charged after the response is built
+      // (chargeMonthlyBuckets), because only then is the count known.
+      const used = buckets.map((name, i) => ({ bucket: name, used: monthlyUsed(monthlyDocs[i].exists ? monthlyDocs[i].data() : undefined, month.window) }));
+      if (used.every(item => item.used >= PAID_MONTHLY_REQUEST_LIMIT)) {
+        const where = paidPlan === 'pro' ? 'this account' : 'every segment';
         return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded',
-          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} products (each variant counts as one) for this ${where} is used up. It resets on the 1st of next month (UTC).`, {
-            quota: monthlyUsage(bucket, used, month.window, month.resetsAt),
+          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} products (each variant counts as one) for ${where} is used up. It resets on the 1st of next month (UTC).`, {
+            quota: paidPlan === 'pro' ? monthlyUsage('account', used[0].used, month.window, month.resetsAt)
+              : segmentSummary(used, month),
           }) };
       }
       // Per-key request count for existing admin screens; never used as allowance.
       const keyUsed = key.resetAt === month.resetsAt && Number.isSafeInteger(key.requestsUsed) && key.requestsUsed >= 0 ? key.requestsUsed : 0;
       transaction.update(keyRef, { lastUsed: now.toISOString(), requestsUsed: Math.min(keyUsed + 1, Number.MAX_SAFE_INTEGER), resetAt: month.resetsAt });
-      return { key: { ...key, id: keyId }, account: effectiveAccount, usage: monthlyUsage(bucket, used, month.window, month.resetsAt),
-        productCharge: { userId, bucket, window: month.window, resetsAt: month.resetsAt } };
+      return { key: { ...key, id: keyId }, account: effectiveAccount,
+        usage: paidPlan === 'pro' ? monthlyUsage('account', used[0].used, month.window, month.resetsAt) : segmentSummary(used, month),
+        productCharge: { userId, plan: paidPlan, window: month.window, resetsAt: month.resetsAt } };
     }
     // Finite Trial promises share the existing UTC daily accounting path.
     // Paid quota retains its established clean-window cutover semantics.

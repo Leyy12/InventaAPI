@@ -125,7 +125,7 @@ function AccountKeysSession({ user, entitlementStatus, requestAllowance, paidAll
         <Link href="/dashboard/plan-billing#upgrade" className="font-semibold text-cyan-300">Upgrade to Pro or Pro Max</Link>
       </div>}
       {entitlementStatus === null && <p role="status" className="text-slate-400">Verifying account entitlement…</p>}
-      <p className="text-sm text-slate-300">{paidPlan === 'Pro Max' ? `Request allowance: ${paidAllowance}. Each segment key has its own allowance.`
+      <p className="text-sm text-slate-300">{paidPlan === 'Pro Max' ? `Request allowance: ${paidAllowance}. Pro Max includes one API key for all three segments; each segment keeps its own allowance.`
         : paidPlan === 'Pro' ? `Request allowance: ${paidAllowance}. Pro includes one API key; add products to it from Products.`
         : `Account request allowance: ${requestAllowanceLabel(requestAllowance)}. Shared across all active API keys.`}</p>
 

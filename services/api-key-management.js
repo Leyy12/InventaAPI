@@ -10,17 +10,23 @@ import { authorizedProductIds } from './daas-catalog.js';
 import { openCredential, sealCredential } from './credential-vault.js';
 import { normalizeSegment } from './product-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
-import { paidQuotaPlan, quotaBucket, readMonthlySummary } from './paid-monthly-quota.js';
-import { PRO_MAX_SEGMENT_KEYS, PAID_MONTHLY_REQUEST_LIMIT } from '../functions/entitlement-limits.mjs';
+import { paidQuotaPlan, readMonthlySummary } from './paid-monthly-quota.js';
+import { PAID_MONTHLY_REQUEST_LIMIT, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT } from '../functions/entitlement-limits.mjs';
+
+// Products one paid key may hold: Pro 500; Pro Max 1,500 (its one key covers all three segments).
+const keyProductLimit = plan => plan === 'pro_max' ? PRO_MAX_KEY_PRODUCT_LIMIT : PRO_KEY_PRODUCT_LIMIT;
 
 // Paid keys: the monthly allowance this key draws from replaces the daily figures.
 function withMonthly(metadata, key, context) {
   const monthly = context.monthly;
   if (!monthly) return metadata;
-  const bucket = quotaBucket(monthly.plan, key);
-  const current = monthly.buckets.find(item => item.bucket === bucket) || { used: 0 };
-  return { ...metadata, requestLimit: monthly.limit, requestsUsed: current.used, resetAt: monthly.resetsAt,
-    usageScope: bucket === 'account' ? 'account' : 'segment', quotaPeriod: 'monthly', segment: normalizeSegment(key.segment) || null };
+  // Pro Max: the one key draws from every segment's allowance; show the total used.
+  const used = monthly.plan === 'pro'
+    ? (monthly.buckets.find(item => item.bucket === 'account') || { used: 0 }).used
+    : monthly.buckets.reduce((sum, item) => sum + item.used, 0);
+  return { ...metadata, requestLimit: monthly.limit, requestsUsed: used, resetAt: monthly.resetsAt,
+    usageScope: monthly.plan === 'pro' ? 'account' : 'segment', quotaPeriod: 'monthly',
+    segment: monthly.plan === 'pro' ? normalizeSegment(key.segment) || null : null };
 }
 
 // Adds products to an existing selection. A product added in full replaces a
@@ -51,7 +57,9 @@ function scopeFromBody(body, allowLegacyReduction = false) {
   // Legacy input contributes IDs only; partial scope always takes precedence.
   const ids = [...new Set([...full, ...legacy.map(value => value.id)])].filter(id => !Object.hasOwn(partial, id));
   const scope = { linkedProductIds: ids, linkedVariantSelections: partial, linkedProducts: [] };
-  if (!allowLegacyReduction && authorizedProductIds(scope).length > 500) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'At most 500 product IDs per key.');
+  if (!allowLegacyReduction && authorizedProductIds(scope).length > PRO_MAX_KEY_PRODUCT_LIMIT) {
+    throw new ApiSecurityError(400, 'INVALID_SCOPE', `At most ${PRO_MAX_KEY_PRODUCT_LIMIT.toLocaleString('en-US')} product IDs per key.`);
+  }
   return scope;
 }
 
@@ -226,12 +234,15 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     }
     return segments;
   }
+  const PRO_MAX_KEY_GROUP = 'all segments';
   const newestFirst = (a, b) => String(b.data().createdAt?.toISOString?.() ?? b.data().createdAt ?? '')
     .localeCompare(String(a.data().createdAt?.toISOString?.() ?? a.data().createdAt ?? ''));
   const PRO_ONE_KEY = 'Pro includes one API key. Use "Add to my API key" on the Products page to add products to it.';
+  const PRO_MAX_ONE_KEY = 'Pro Max includes one API key for all three segments. Use "Add to my API key" on the Products page to add products to it.';
   const proSegmentOnly = segment => `Pro adds products from your ${segment} segment only. Pro Max covers all three segments.`;
 
-  // Generate endpoint for paid plans: Pro may hold one key; Pro Max one key per segment.
+  // Generate endpoint for paid plans: Pro and Pro Max each hold ONE key. Pro's key
+  // stays in its segment; Pro Max's key may hold products from all three segments.
   async function paidKeySegment(tx, db, uid, plan, scope, context, entitlement) {
     const keys = await tx.get(db.collection('api_keys').where('userId', '==', uid));
     const active = keys.docs.filter(doc => doc.data().status === 'active');
@@ -241,17 +252,13 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const segment = activeCustomerSegment({ ...context.account, plan: entitlement.plan });
       if (!segment) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Select your business segment first.');
       if ([...segments.values()].some(value => value !== segment)) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', proSegmentOnly(segment));
+      if (segments.size > PRO_KEY_PRODUCT_LIMIT) throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your API key can hold at most ${PRO_KEY_PRODUCT_LIMIT} products.`);
       return segment;
     }
-    const chosen = new Set(segments.values());
-    if (chosen.size !== 1 || chosen.has(null)) {
-      throw new ApiSecurityError(400, 'SEGMENT_KEY_SCOPE', 'Each Pro Max API key covers one segment. Use "Add selected products" to sort products into their segment keys.');
-    }
-    const [segment] = chosen;
-    if (active.some(doc => normalizeSegment(doc.data().segment) === segment)) {
-      throw new ApiSecurityError(409, 'SEGMENT_KEY_EXISTS', `You already have a ${segment} API key. Add products to it with "Add selected products".`);
-    }
-    return segment;
+    if (active.length) throw new ApiSecurityError(409, 'PRO_MAX_SINGLE_KEY', PRO_MAX_ONE_KEY);
+    if ([...segments.values()].some(value => !value)) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'A selected product has no business segment.');
+    if (segments.size > PRO_MAX_KEY_PRODUCT_LIMIT) throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your Pro Max API key can hold at most ${PRO_MAX_KEY_PRODUCT_LIMIT.toLocaleString('en-US')} products.`);
+    return null; // one key for every segment: not tagged with a segment
   }
 
   return {
@@ -401,6 +408,10 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const context = await accountContext(db, actor.uid);
       if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
       const scope = scopeFromBody(req.body || {}, context.entitlement.activeTrial);
+      const editPlan = paidQuotaPlan(context.entitlement);
+      if (editPlan && authorizedProductIds(scope).length > keyProductLimit(editPlan)) {
+        throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your API key can hold at most ${keyProductLimit(editPlan).toLocaleString('en-US')} products.`);
+      }
       if (!context.entitlement.activeTrial) await validateScope(db, scope, context);
       const count = await db.runTransaction(async tx => {
         const entitlement = await currentAccount(tx, db, actor.uid, context, true);
@@ -426,8 +437,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       await audit(db, 'API Key Products Updated', actor, ref.id);
       return res.json({ success: true, ...scope, productAvailabilityCount: count });
     }),
-    // Pro: adds the selection to the account's one API key (created the first time).
-    // Pro Max: sends each product to its segment's key, creating that key if needed.
+    // Pro and Pro Max: add the selection to the account's ONE API key (created the
+    // first time). Pro accepts products from its segment; Pro Max from all three.
     addProducts: authenticated(async (req, res, actor, db) => {
       const context = await accountContext(db, actor.uid);
       if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
@@ -436,7 +447,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const scope = scopeFromBody(req.body || {});
       const ids = authorizedProductIds(scope);
       if (!ids.length) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'Select at least one product.');
-      const issued = Array.from({ length: PRO_MAX_SEGMENT_KEYS }, () => issueCredential());
+      const issued = [issueCredential()];
       const results = await db.runTransaction(async tx => {
         const entitlement = await currentAccount(tx, db, actor.uid, context, true);
         if (paidQuotaPlan(entitlement) !== plan) throw new ApiSecurityError(409, 'ENTITLEMENT_CHANGED', 'Account changed. Retry with current entitlement.');
@@ -466,21 +477,27 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
             addTo(segment, id);
           }
         } else {
+          // Pro Max: the one combined key (untagged), or, for an account that still
+          // has older per-segment keys, the oldest of those.
+          const untagged = active.filter(doc => !normalizeSegment(doc.data().segment)).sort(newestFirst);
+          proKey = untagged[0] || [...active].sort(newestFirst).at(-1) || null;
           for (const id of ids) {
             if (!segments.get(id)) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'A selected product has no business segment.');
-            addTo(segments.get(id), id);
+            addTo(PRO_MAX_KEY_GROUP, id);
           }
         }
         verifyTrialBoundary(entitlement);
         const out = [];
         let next = 0;
         for (const [segment, group] of groups) {
-          const target = plan === 'pro' ? proKey : active.find(doc => normalizeSegment(doc.data().segment) === segment) || null;
+          const target = proKey;
           const existing = target ? target.data() : {};
           if (target) assertActiveKey(existing, now);
           const merged = mergeScope(existing, group.full, group.partial);
           const total = authorizedProductIds(merged).length;
-          if (total > 500) throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your ${segment} API key can hold at most 500 products.`);
+          if (total > keyProductLimit(plan)) {
+            throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your API key can hold at most ${keyProductLimit(plan).toLocaleString('en-US')} products.`);
+          }
           const before = new Set(authorizedProductIds(existing));
           const availability = { ...(existing.productAvailability || {}) };
           for (const id of authorizedProductIds(merged)) if (!before.has(id) && !Object.hasOwn(availability, id)) availability[id] = { availableSince: now };
@@ -488,18 +505,18 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
           if (target) {
             const version = Number.isSafeInteger(existing.scopeVersion) ? existing.scopeVersion : 0;
             tx.update(db.collection('api_keys').doc(target.id), { ...merged, scopeVersion: version + 1, productAvailability: availability,
-              ...(normalizeSegment(existing.segment) ? {} : { segment }) });
-            out.push({ segment, keyId: target.id, name: existing.name || '', created: false, added, total });
+              ...(plan === 'pro' && !normalizeSegment(existing.segment) ? { segment } : {}) });
+            out.push({ segment: plan === 'pro' ? segment : null, keyId: target.id, name: existing.name || '', created: false, added, total });
             continue;
           }
           const credential = issued[next++];
-          const name = `${segment} API key`;
+          const name = plan === 'pro' ? `${segment} API key` : 'Pro Max API key';
           tx.set(db.collection('api_keys').doc(credential.id), {
-            ...credential.stored, ...sealed(credential), ...merged, scopeVersion: 0, name, segment,
+            ...credential.stored, ...sealed(credential), ...merged, scopeVersion: 0, name, ...(plan === 'pro' ? { segment } : {}),
             userId: actor.uid, userEmail: actor.email || '', status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
             plan: entitlement.plan, requestLimit: PAID_MONTHLY_REQUEST_LIMIT, productAvailability: availability,
           });
-          out.push({ segment, keyId: credential.id, name, created: true, added, total, key: credential.credential });
+          out.push({ segment: plan === 'pro' ? segment : null, keyId: credential.id, name, created: true, added, total, key: credential.credential });
         }
         return out;
       });
