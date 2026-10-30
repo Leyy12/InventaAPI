@@ -1,5 +1,7 @@
 # Current candidate entitlement: 50 / 500 / unlimited
 
+> **Superseded for paid limits:** Pro and Pro Max now have one API key each and a monthly allowance of 15,000 product variants (Pro Max: per segment). See [paid-plan-keys-and-allowance.md](paid-plan-keys-and-allowance.md). The rest of this document is kept as a historical record.
+
 Local candidate only; not authorization to deploy or mutate Production.
 
 The pure `functions/entitlement-limits.mjs` module defines Trial minimum 0,
