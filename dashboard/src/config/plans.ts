@@ -81,7 +81,7 @@ export const SUBSCRIPTION_PLANS = {
     // Incremental features (adds to Free)
     incrementalFeatures: [
       PRO_REQUEST_LABEL,
-      `One API key with up to ${n(PRO_KEY_PRODUCT_LIMIT)} products — add to it anytime`,
+      `One API key with up to ${n(PRO_KEY_PRODUCT_LIMIT)} products (each variant counts) — add to it anytime`,
       "Your business segment's catalog",
       "API Playground",
       "Usage & Integration History",
@@ -123,7 +123,7 @@ export const SUBSCRIPTION_PLANS = {
     incrementalFeatures: [
       PRO_MAX_REQUEST_LABEL,
       "All Business Segments",
-      `One API key for all ${PRO_MAX_SEGMENT_KEYS} segments (up to ${n(PRO_MAX_KEY_PRODUCT_LIMIT)} products)`,
+      `One API key for all ${PRO_MAX_SEGMENT_KEYS} segments (up to ${n(PRO_MAX_KEY_PRODUCT_LIMIT)} products, each variant counts)`,
       "API Playground",
       "Usage & Integration History",
       "30-day renewable subscription"

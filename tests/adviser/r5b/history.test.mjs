@@ -11,6 +11,10 @@ function setup(records = [], account = { role: 'Developer', plan: 'Free' }, opti
     if (name === 'users') return { doc(uid) { assert.equal(uid, 'owner'); return { async get() {
       accountReads++; return { data: () => options.afterRead && accountReads > 1 ? options.afterRead : account };
     } }; } };
+    // Rows the customer deleted from their view (none unless a test sets options.hidden).
+    if (name === 'api_history_hidden') {
+      return { doc(uid) { assert.equal(uid, 'owner'); return { get: async () => ({ data: () => options.hidden }) }; } };
+    }
     assert.equal(name, 'api_telemetry');
     let owner, bound;
     const q = {
@@ -36,7 +40,7 @@ test('only token owner history; token role/owner claims cannot override profile 
   const result = await invoke(handler);
   assert.equal(result.statusCode, 200); assert.equal(result.body.records.length, 1);
   assert.equal(result.headers['Cache-Control'], 'no-store');
-  assert.deepEqual(calls, [['where','userId','==','owner'],['orderBy','timestamp','desc'],['orderBy','__name__','desc'],['limit',51]]);
+  assert.deepEqual(calls, [['where','userId','==','owner'],['orderBy','timestamp','desc'],['orderBy','__name__','desc'],['limit',201]]);
 });
 for (const token of [null, 'invalid', 'revoked']) test('reject authentication: ' + token, async () => {
   const { handler, calls } = setup(); assert.equal((await invoke(handler, { token })).statusCode, 401); assert.equal(calls.length, 0);
@@ -63,9 +67,10 @@ test('two independently authenticated Customers each receive only their own reco
   for(const uid of ['customer-a','customer-b']) {
     const db={collection(name){
       if(name==='users') return {doc(id){assert.equal(id,uid);return {get:async()=>({data:()=>({role:'Developer'})})};}};
+      if(name==='api_history_hidden') return {doc(id){assert.equal(id,uid);return {get:async()=>({data:()=>undefined})};}};
       assert.equal(name,'api_telemetry');let selected;
       const query={where(field,op,id){assert.equal(field,'userId');assert.equal(op,'==');selected=id;return query;},
-        orderBy(){return query;},limit(n){assert.equal(n,51);return query;},
+        orderBy(){return query;},limit(n){assert.equal(n,201);return query;},
         async get(){return {docs:records.filter(r=>r.userId===selected).map(r=>({id:r.id,data:()=>r}))};}};
       return query;
     }};
@@ -120,7 +125,7 @@ test('multiple keys and revoked legacy records need no credential lookup', async
   const result = (await invoke(setup(records).handler)).body.records;
   assert.deepEqual(result.map(r=>r.keyName), ['Legacy integration','Second integration']);
   // Rows also carry where the call came from (automatic app detection), shown to the key owner.
-  assert.ok(result.every(r=>Object.keys(r).sort().join(',') === 'domain,endpoint,ip,keyName,method,newApp,source,statusCode,timestamp'));
+  assert.ok(result.every(r=>Object.keys(r).sort().join(',') === 'domain,endpoint,id,ip,keyName,method,newApp,source,statusCode,timestamp'));
   assert.ok(result.every(r=>r.source === null && r.domain === null && r.ip === null && r.newApp === false), 'older rows have no source');
 });
 test('allowlist excludes credentials, legacy IDs, owner, IP, tokens, hashes and unknown routes', () => {
@@ -130,3 +135,13 @@ test('allowlist excludes credentials, legacy IDs, owner, IP, tokens, hashes and 
 for (const name of [null, '', 'daas_old_secret', 'daas_v2_'+'a'.repeat(32)+'.'+'b'.repeat(64), 'Bearer secret', 'eyJtoken', 'c'.repeat(64), 'x'.repeat(121), 'bad\nname']) {
   test('unsafe/missing key alias suppressed: ' + String(name).slice(0,18), () => assert.equal(historyRecord(row('a','owner',{keyName:name})).keyName,null));
 }
+
+// Deleting from the history view hides rows for the customer only.
+test('deleted rows and everything before "clear all" are hidden from the history view', async () => {
+  const rows = [row('a'), row('b'), row('c')];
+  const hidden = setup(rows, undefined, { hidden: { ids: { b: 1 } } });
+  const visible = (await invoke(hidden.handler)).body.records.map(r => r.id);
+  assert.ok(!visible.includes('b')); assert.equal(visible.length, 2);
+  const cleared = setup(rows, undefined, { hidden: { clearedBefore: '2100-01-01T00:00:00.000Z', ids: {} } });
+  assert.equal((await invoke(cleared.handler)).body.records.length, 0);
+});

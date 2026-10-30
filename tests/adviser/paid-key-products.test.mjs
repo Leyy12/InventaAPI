@@ -124,7 +124,7 @@ test('Pro Max: the one key draws from one 20,000 allowance; the list shows the t
   const listed = (await invoke(f.handlers.list)).body;
   assert.deepEqual(listed.monthlyUsage.buckets, [{ bucket: 'account', used: 5, remaining: 19995 }]);
   assert.deepEqual(listed.monthlyUsage.segments, [{ segment: 'Grocery', used: 2 }, { segment: 'Pharmacy', used: 3 }, { segment: 'Hardware', used: 0 }]);
-  assert.deepEqual(listed.monthlyUsage.products, { total: 3, limit: 15000,
+  assert.deepEqual(listed.monthlyUsage.products, { total: 3, limit: 15000, unit: 'variants',
     bySegment: [{ segment: 'Grocery', count: 2 }, { segment: 'Pharmacy', count: 1 }, { segment: 'Hardware', count: 0 }] });
   assert.equal(listed.keys[0].requestLimit, 20000);
   f.db.collection('account_paid_monthly_usage').doc('owner_2026-10_account').set({ window: '2026-10', used: 20000 });
@@ -136,7 +136,7 @@ test('Pro: the list shows the 15,000 allowance and products on the key without a
   await f.add({ linkedProductIds: ['rice'] });
   const listed = (await invoke(f.handlers.list)).body;
   assert.equal(listed.monthlyUsage.limit, 15000);
-  assert.deepEqual(listed.monthlyUsage.products, { total: 1, limit: 7500 });
+  assert.deepEqual(listed.monthlyUsage.products, { total: 1, limit: 7500, unit: 'variants' });
 });
 
 test('a Pro key holds up to 7,500 products; a Pro Max key holds more', async () => {
@@ -151,6 +151,25 @@ test('a Pro key holds up to 7,500 products; a Pro Max key holds more', async () 
   const grown = await max.add({ linkedProductIds: ids.slice(7000) });
   assert.equal(grown.statusCode, 200);
   assert.equal(grown.body.results[0].total, 7501);
+});
+
+test('the key limit and products summary count each variant as one product', async () => {
+  const tuna = { name: 'Tuna', segment: 'Grocery', variants: Array.from({ length: 8 }, (_, i) => ({ sku: `T${i}` })) };
+  const many = Object.fromEntries(Array.from({ length: 7493 }, (_, i) => [`products/g${i}`, { name: `G${i}`, segment: 'Grocery' }]));
+  const f = setup('Pro', { 'products/tuna': tuna, ...many });
+  const ids = Object.keys(many).map(path => path.split('/')[1]);
+  assert.equal((await f.add({ linkedProductIds: ['tuna'] })).statusCode, 200);
+  const listed = (await invoke(f.handlers.list)).body;
+  assert.deepEqual(listed.monthlyUsage.products, { total: 8, limit: 7500, unit: 'variants' }, '1 product with 8 variants counts 8');
+  // 8 + 7,492 = 7,500 fits; one more does not.
+  assert.equal((await f.add({ linkedProductIds: ids.slice(0, 7492) })).statusCode, 200);
+  const over = await f.add({ linkedProductIds: [ids[7492]] });
+  assert.equal(over.statusCode, 400); assert.equal(over.body.error, 'KEY_PRODUCT_LIMIT');
+  assert.match(over.body.message, /each variant counts as one/);
+  // A partial selection counts only its selected variants.
+  const g = setup('Pro', { 'products/tuna': tuna });
+  await g.add({ linkedProductIds: [], linkedVariantSelections: { tuna: ['T0|', 'T1|'] } });
+  assert.equal((await invoke(g.handlers.list)).body.monthlyUsage.products.total, 2);
 });
 
 test('Free Trial and inactive accounts cannot use Add products', async () => {

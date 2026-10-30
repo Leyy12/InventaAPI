@@ -18,7 +18,26 @@ function History({ user }: { user: User }) {
     void reader.refresh();
     return () => reader.stop();
   }, [open, reader]);
-  const refresh = () => { setPage(1); void reader.refresh(); };
+  const refresh = () => { setPage(1); setSelected(new Set()); void reader.refresh(); };
+  // Delete rows from the history view: tick rows (or "Select all"), then delete;
+  // "Clear all" removes everything recorded so far.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const selectableIds = state.records.map(row => row.id).filter((id): id is string => typeof id === 'string');
+  const allSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id));
+  const toggleRow = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
+  async function remove(all: boolean) {
+    if (!all && selected.size === 0) return;
+    if (!window.confirm(all ? 'Clear your whole request history? This cannot be undone.' : `Delete ${selected.size} selected ${selected.size === 1 ? 'row' : 'rows'}?`)) return;
+    setDeleting(true); setDeleteError('');
+    try {
+      await apiKeyRequest(user, '/history/delete', { method: 'POST', body: JSON.stringify(all ? { all: true } : { ids: [...selected] }) });
+      refresh();
+    } catch { setDeleteError('Unable to delete history. Please retry.'); }
+    finally { setDeleting(false); }
+  }
 
   const totalPages = Math.max(1, Math.ceil(state.records.length / PAGE_SIZE));
   const current = Math.min(page, totalPages);
@@ -38,9 +57,16 @@ function History({ user }: { user: User }) {
       {state.status === 'loading' && <p role="status">Loading history…</p>}
       {state.status === 'error' && <p role="alert" className="text-rose-300">Unable to load request history. Refresh to retry. Previous rows have been cleared.</p>}
       {state.status === 'ready' && (state.records.length === 0 ? <p>No recorded requests available.</p> : <>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all history rows" /> Select all</label>
+          <button onClick={() => void remove(false)} disabled={deleting || selected.size === 0} className="rounded-lg border border-rose-500/60 px-3 py-1 text-sm text-rose-300 disabled:opacity-40">Delete selected{selected.size ? ` (${selected.size})` : ''}</button>
+          <button onClick={() => void remove(true)} disabled={deleting} className="rounded-lg border border-slate-600 px-3 py-1 text-sm text-slate-200 disabled:opacity-40">Clear all</button>
+          {deleteError && <span role="alert" className="text-sm text-rose-300">{deleteError}</span>}
+        </div>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr>{['Key name (at request)', 'Date', 'Source (domain / IP)', 'Endpoint', 'HTTP status'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+          <thead><tr><th className="p-3"><span className="sr-only">Select</span></th>{['Key name (at request)', 'Date', 'Source (domain / IP)', 'Endpoint', 'HTTP status'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
           <tbody>{rows.map((row, index) => <tr key={`${current}-${index}`} className="border-t border-slate-700">
+            <td className="p-3">{row.id && <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id as string)} aria-label="Select this history row" />}</td>
             <td className="p-3">{row.keyName ?? 'Key name unavailable'}</td><td className="p-3">{historyDate(row.timestamp)}</td>
             <td className="p-3"><span className="text-slate-200">{row.domain ?? row.ip ?? 'Not recorded'}</span>
               {row.domain && row.ip && <span className="block text-xs text-slate-400">{row.ip}</span>}

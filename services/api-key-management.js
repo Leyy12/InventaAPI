@@ -15,8 +15,25 @@ import { monthlyRequestLimit, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT }
 import { PRO_MAX_SEGMENTS } from './paid-monthly-quota.js';
 import { CONSUMER_COLLECTION, publicConsumer } from './api-consumers.js';
 
-// Products one paid key may hold: Pro 7,500; Pro Max 15,000 (its one key covers all three segments).
+// Products one paid key may hold, each VARIANT counting as one (a product without
+// variants counts as one): Pro 7,500; Pro Max 15,000 (its one key covers all three segments).
 const keyProductLimit = plan => plan === 'pro_max' ? PRO_MAX_KEY_PRODUCT_LIMIT : PRO_KEY_PRODUCT_LIMIT;
+const keyFullError = plan => new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT',
+  `Your API key can hold at most ${keyProductLimit(plan).toLocaleString('en-US')} products (each variant counts as one).`);
+// How many variants a product contributes: a partial selection counts its selected
+// variants; a full product all of its variants (one when it has none).
+const productVariants = (data, selection) => Array.isArray(selection) && selection.length ? selection.length
+  : Array.isArray(data?.variants) && data.variants.length ? data.variants.length : 1;
+// Variants a whole scope holds; `read(id)` returns the product snapshot.
+async function scopeVariantCount(read, scope) {
+  const partial = scope?.linkedVariantSelections && typeof scope.linkedVariantSelections === 'object' ? scope.linkedVariantSelections : {};
+  const counts = await Promise.all(authorizedProductIds(scope).map(async id => {
+    if (Array.isArray(partial[id]) && partial[id].length) return partial[id].length;
+    const doc = await read(id);
+    return productVariants(doc?.exists ? doc.data() : null, null);
+  }));
+  return counts.reduce((sum, n) => sum + n, 0);
+}
 
 // Paid keys: the monthly allowance this key draws from replaces the daily figures.
 function withMonthly(metadata, key, context) {
@@ -242,17 +259,27 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
 
   // "Products on your key" for the Overview cards: total, the plan's limit and,
   // for Pro Max, how many come from each segment (skipped for very large keys).
-  async function keyProductSummary(db, plan, ids) {
-    const unique = [...new Set(ids)];
-    const summary = { total: unique.length, limit: keyProductLimit(plan) };
-    if (plan !== 'pro_max' || unique.length > 2000) return summary;
-    const counts = Object.fromEntries(PRO_MAX_SEGMENTS.map(segment => [segment, 0]));
-    const docs = await Promise.all(unique.map(id => db.collection('products').doc(id).get()));
-    for (const doc of docs) {
-      const segment = doc.exists ? normalizeSegment(doc.data().segment || doc.data().businessType) : null;
-      if (segment && Object.hasOwn(counts, segment)) counts[segment]++;
+  // "Products on your key" for the Overview cards, counting each variant as one:
+  // total, the plan's limit and, for Pro Max, how many come from each segment.
+  async function keyProductSummary(db, plan, scopes) {
+    const selection = {};
+    for (const scope of scopes) {
+      const partial = scope?.linkedVariantSelections && typeof scope.linkedVariantSelections === 'object' ? scope.linkedVariantSelections : {};
+      for (const id of authorizedProductIds(scope)) if (!Object.hasOwn(selection, id) || !Array.isArray(partial[id])) selection[id] = partial[id] ?? null;
     }
-    return { ...summary, bySegment: PRO_MAX_SEGMENTS.map(segment => ({ segment, count: counts[segment] })) };
+    const ids = Object.keys(selection);
+    const docs = await Promise.all(ids.map(id => db.collection('products').doc(id).get()));
+    const counts = Object.fromEntries(PRO_MAX_SEGMENTS.map(segment => [segment, 0]));
+    let total = 0;
+    docs.forEach((doc, i) => {
+      const data = doc.exists ? doc.data() : null;
+      const n = productVariants(data, selection[ids[i]]);
+      total += n;
+      const segment = data ? normalizeSegment(data.segment || data.businessType) : null;
+      if (segment && Object.hasOwn(counts, segment)) counts[segment] += n;
+    });
+    const summary = { total, limit: keyProductLimit(plan), unit: 'variants' };
+    return plan === 'pro_max' ? { ...summary, bySegment: PRO_MAX_SEGMENTS.map(segment => ({ segment, count: counts[segment] })) } : summary;
   }
 
   // Generate endpoint for paid plans: Pro and Pro Max each hold ONE key. Pro's key
@@ -266,12 +293,12 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       const segment = activeCustomerSegment({ ...context.account, plan: entitlement.plan });
       if (!segment) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', 'Select your business segment first.');
       if ([...segments.values()].some(value => value !== segment)) throw new ApiSecurityError(403, 'PLAN_SEGMENT_RESTRICTION', proSegmentOnly(segment));
-      if (segments.size > PRO_KEY_PRODUCT_LIMIT) throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your API key can hold at most ${PRO_KEY_PRODUCT_LIMIT} products.`);
+      if (await scopeVariantCount(id => tx.get(db.collection('products').doc(id)), scope) > PRO_KEY_PRODUCT_LIMIT) throw keyFullError('pro');
       return segment;
     }
     if (active.length) throw new ApiSecurityError(409, 'PRO_MAX_SINGLE_KEY', PRO_MAX_ONE_KEY);
     if ([...segments.values()].some(value => !value)) throw new ApiSecurityError(400, 'INVALID_SCOPE', 'A selected product has no business segment.');
-    if (segments.size > PRO_MAX_KEY_PRODUCT_LIMIT) throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your Pro Max API key can hold at most ${PRO_MAX_KEY_PRODUCT_LIMIT.toLocaleString('en-US')} products.`);
+    if (await scopeVariantCount(id => tx.get(db.collection('products').doc(id)), scope) > PRO_MAX_KEY_PRODUCT_LIMIT) throw keyFullError('pro_max');
     return null; // one key for every segment: not tagged with a segment
   }
 
@@ -285,7 +312,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         .map(doc => withMonthly(publicKeyMetadata(doc.id, doc.data(), context.entitlement, context.usage), doc.data(), context)),
       usage: { ...context.usage, limit: context.entitlement.limit, scope: 'account' },
       ...(context.monthly ? { monthlyUsage: { ...context.monthly,
-        products: await keyProductSummary(db, context.monthly.plan, activeKeys.flatMap(doc => authorizedProductIds(doc.data()))) } } : {}),
+        products: await keyProductSummary(db, context.monthly.plan, activeKeys.map(doc => doc.data())) } } : {}),
       ...(context.entitlement.activeTrial ? { trialCatalog: { productsIncluded, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS,
         productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: TRIAL_MAX_ACTIVE_KEYS,
         expiresAt: context.entitlement.expiresAt } } : {}) });
@@ -424,8 +451,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       if (context.entitlement.upgradeRequired) throw upgradeRequiredError();
       const scope = scopeFromBody(req.body || {}, context.entitlement.activeTrial);
       const editPlan = paidQuotaPlan(context.entitlement);
-      if (editPlan && authorizedProductIds(scope).length > keyProductLimit(editPlan)) {
-        throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your API key can hold at most ${keyProductLimit(editPlan).toLocaleString('en-US')} products.`);
+      if (editPlan && await scopeVariantCount(id => db.collection('products').doc(id).get(), scope) > keyProductLimit(editPlan)) {
+        throw keyFullError(editPlan);
       }
       if (!context.entitlement.activeTrial) await validateScope(db, scope, context);
       const count = await db.runTransaction(async tx => {
@@ -510,9 +537,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
           if (target) assertActiveKey(existing, now);
           const merged = mergeScope(existing, group.full, group.partial);
           const total = authorizedProductIds(merged).length;
-          if (total > keyProductLimit(plan)) {
-            throw new ApiSecurityError(400, 'KEY_PRODUCT_LIMIT', `Your API key can hold at most ${keyProductLimit(plan).toLocaleString('en-US')} products.`);
-          }
+          if (await scopeVariantCount(id => tx.get(db.collection('products').doc(id)), merged) > keyProductLimit(plan)) throw keyFullError(plan);
           const before = new Set(authorizedProductIds(existing));
           const availability = { ...(existing.productAvailability || {}) };
           for (const id of authorizedProductIds(merged)) if (!before.has(id) && !Object.hasOwn(availability, id)) availability[id] = { availableSince: now };
