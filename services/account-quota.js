@@ -92,7 +92,7 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       if (used >= PAID_MONTHLY_REQUEST_LIMIT) {
         const where = bucket === 'account' ? 'account' : `${bucket} segment`;
         return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded',
-          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} products for this ${where} is used up. It resets on the 1st of next month (UTC).`, {
+          `Monthly allowance of ${PAID_MONTHLY_REQUEST_LIMIT.toLocaleString('en-US')} products (each variant counts as one) for this ${where} is used up. It resets on the 1st of next month (UTC).`, {
             quota: monthlyUsage(bucket, used, month.window, month.resetsAt),
           }) };
       }

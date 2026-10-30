@@ -87,8 +87,8 @@ function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
       })}
     </div>
     <p className="text-xs text-slate-400">{monthly.plan === 'pro'
-      ? `Shared by your API key. ${monthly.limit.toLocaleString()} products per month (every product the API sends counts); resets ${resets} (UTC).`
-      : `Each segment has its own ${monthly.limit.toLocaleString()} products per month (every product the API sends counts); resets ${resets} (UTC).`}</p>
+      ? `Shared by your API key. ${monthly.limit.toLocaleString()} products per month (each product variant the API sends counts as one); resets ${resets} (UTC).`
+      : `Each segment has its own ${monthly.limit.toLocaleString()} products per month (each product variant the API sends counts as one); resets ${resets} (UTC).`}</p>
   </section>;
 }
 
