@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApiKeyHandlers, mergeScope } from '../../services/api-key-management.js';
 import { consumeAccountQuota } from '../../services/account-quota.js';
 import { memoryStore, invoke } from './phase2a/memory-store.mjs';
-import { chargeMonthlyProducts } from '../../services/paid-monthly-quota.js';
+import { chargeMonthlyBuckets } from '../../services/paid-monthly-quota.js';
 
 // Pro: products go into one API key in the account's segment.
 // Pro Max: each product goes into its segment's key (at most one per segment).
@@ -74,46 +74,76 @@ test('Pro: generating a second key is refused', async () => {
   assert.equal((await f.keys()).length, 1);
 });
 
-test('Pro Max: one add sorts products into one key per segment and returns each new secret once', async () => {
+test('Pro Max: one add puts products from every segment into ONE key and returns its secret once', async () => {
   const f = setup('Pro Max');
   const result = await f.add({ linkedProductIds: ['rice', 'aspirin', 'hammer', 'milk'] });
   assert.equal(result.statusCode, 200);
-  const bySegment = Object.fromEntries(result.body.results.map(r => [r.segment, r]));
-  assert.deepEqual(Object.keys(bySegment).sort(), ['Grocery', 'Hardware', 'Pharmacy']);
-  assert.equal(bySegment.Grocery.total, 2);
-  assert.ok(result.body.results.every(r => r.created && /^daas_v2_/.test(r.key)));
-  const stored = await f.keys();
-  assert.equal(stored.length, 3);
-  for (const key of stored) assert.equal(key.name, `${key.segment} API key`);
-  // Adding more reuses the matching segment key and creates nothing new.
+  assert.equal(result.body.results.length, 1);
+  const [created] = result.body.results;
+  assert.deepEqual([created.segment, created.created, created.total, created.name], [null, true, 4, 'Pro Max API key']);
+  assert.match(created.key, /^daas_v2_/);
+  const [stored] = await f.keys();
+  assert.equal((await f.keys()).length, 1);
+  assert.equal(stored.segment, undefined, 'the one key is not tied to a segment');
+  // Adding more reuses the same key and creates nothing new.
   const more = await f.add({ linkedProductIds: ['milk'], linkedVariantSelections: { aspirin: ['500mg'] } });
-  assert.deepEqual(more.body.results.map(r => [r.segment, r.created]).sort(), [['Grocery', false], ['Pharmacy', false]]);
-  assert.equal((await f.keys()).length, 3);
+  assert.deepEqual(more.body.results.map(r => [r.keyId, r.created, 'key' in r]), [[created.keyId, false, false]]);
+  assert.equal((await f.keys()).length, 1);
 });
 
-test('Pro Max: Generate refuses a second key for a segment and keys that mix segments', async () => {
+test('Pro Max: Generate allows mixed segments once and refuses a second key', async () => {
   const f = setup('Pro Max');
-  const mixed = await invoke(f.handlers.create, { body: { keyName: 'Mixed', linkedProductIds: ['rice', 'aspirin'] } });
-  assert.equal(mixed.statusCode, 400); assert.equal(mixed.body.error, 'SEGMENT_KEY_SCOPE');
-  await f.add({ linkedProductIds: ['rice'] });
-  const again = await invoke(f.handlers.create, { body: { keyName: 'Grocery 2', linkedProductIds: ['milk'] } });
-  assert.equal(again.statusCode, 409); assert.equal(again.body.error, 'SEGMENT_KEY_EXISTS');
+  const mixed = await invoke(f.handlers.create, { body: { keyName: 'All stores', linkedProductIds: ['rice', 'aspirin', 'hammer'] } });
+  assert.equal(mixed.statusCode, 200);
+  assert.equal((await f.keys())[0].segment, undefined);
+  // A second key is refused by the one-key rule (checked on an account whose key came from Add products).
+  const g = setup('Pro Max');
+  await g.add({ linkedProductIds: ['rice'] });
+  const again = await invoke(g.handlers.create, { body: { keyName: 'Second', linkedProductIds: ['milk'] } });
+  assert.equal(again.statusCode, 409); assert.equal(again.body.error, 'PRO_MAX_SINGLE_KEY');
+  assert.equal((await g.keys()).length, 1);
 });
 
-test('Pro Max: each segment key draws from its own 15,000 monthly allowance', async () => {
+test('Pro Max: an account with older per-segment keys adds into one of them, not a new key', async () => {
+  const f = setup('Pro Max', {
+    'api_keys/g': { userId: 'owner', status: 'active', key: 'daas_g', name: 'Grocery API key', segment: 'Grocery', linkedProductIds: ['rice'], createdAt: '2026-10-01T00:00:00.000Z' },
+    'api_keys/p': { userId: 'owner', status: 'active', key: 'daas_p', name: 'Pharmacy API key', segment: 'Pharmacy', linkedProductIds: ['aspirin'], createdAt: '2026-10-02T00:00:00.000Z' },
+  });
+  const result = await f.add({ linkedProductIds: ['hammer'] });
+  assert.deepEqual(result.body.results.map(r => [r.keyId, r.created, r.total]), [['g', false, 2]]);
+  assert.equal((await f.keys()).length, 2);
+});
+
+test('Pro Max: the one key draws from each product segment\'s own 15,000 monthly allowance', async () => {
   const f = setup('Pro Max');
-  const { results } = (await f.add({ linkedProductIds: ['rice', 'aspirin'] })).body;
-  const grocery = results.find(r => r.segment === 'Grocery'), pharmacy = results.find(r => r.segment === 'Pharmacy');
+  const [created] = (await f.add({ linkedProductIds: ['rice', 'aspirin'] })).body.results;
   f.db.collection('account_paid_monthly_usage').doc('owner_2026-10_Grocery').set({ window: '2026-10', used: 15000 });
-  const consume = r => consumeAccountQuota(f.db, { keyId: r.keyId, userId: 'owner', credential: r.key, clock: () => new Date(NOW) });
-  await assert.rejects(consume(grocery), error => error.status === 429 && /Grocery segment/.test(error.message));
-  const ok = await consume(pharmacy);
-  // Admission alone uses nothing: products are charged when they are delivered.
-  assert.deepEqual([ok.usage.bucket, ok.usage.used, ok.usage.remaining, ok.usage.unit], ['Pharmacy', 0, 15000, 'products']);
-  const charged = await chargeMonthlyProducts(f.db, { ...ok.productCharge, requested: 1, clock: () => new Date(NOW) });
-  assert.deepEqual([charged.granted, charged.usage.used], [1, 1]);
+  const consume = () => consumeAccountQuota(f.db, { keyId: created.keyId, userId: 'owner', credential: created.key, clock: () => new Date(NOW) });
+  // Grocery is used up but Pharmacy is not, so the call is still admitted.
+  const ok = await consume();
+  assert.deepEqual(ok.usage.buckets.map(b => [b.bucket, b.used]), [['Grocery', 15000], ['Pharmacy', 0], ['Hardware', 0]]);
+  const charged = await chargeMonthlyBuckets(f.db, { ...ok.productCharge, requested: { Grocery: 2, Pharmacy: 3 }, clock: () => new Date(NOW) });
+  assert.deepEqual(charged.granted, { Grocery: 0, Pharmacy: 3 });
   const listed = (await invoke(f.handlers.list)).body;
-  assert.deepEqual(listed.monthlyUsage.buckets.map(b => [b.bucket, b.used]), [['Grocery', 15000], ['Pharmacy', 1], ['Hardware', 0]]);
+  assert.deepEqual(listed.monthlyUsage.buckets.map(b => [b.bucket, b.used]), [['Grocery', 15000], ['Pharmacy', 3], ['Hardware', 0]]);
+  for (const segment of ['Pharmacy', 'Hardware']) {
+    f.db.collection('account_paid_monthly_usage').doc(`owner_2026-10_${segment}`).set({ window: '2026-10', used: 15000 });
+  }
+  await assert.rejects(consume(), error => error.status === 429 && /every segment/.test(error.message));
+});
+
+test('Pro Max: the one key may hold up to 1,500 products', async () => {
+  const many = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`products/g${i}`, { name: `G${i}`, segment: 'Grocery' }]));
+  const ids = Object.keys(many).map(path => path.split('/')[1]);
+  const max = setup('Pro Max', many);
+  assert.equal((await max.add({ linkedProductIds: ids.slice(0, 400) })).statusCode, 200);
+  const grown = await max.add({ linkedProductIds: ids.slice(400) });
+  assert.equal(grown.statusCode, 200);
+  assert.equal(grown.body.results[0].total, 501);
+  const pro = setup('Pro', many);
+  assert.equal((await pro.add({ linkedProductIds: ids.slice(0, 400) })).statusCode, 200);
+  const over = await pro.add({ linkedProductIds: ids.slice(400) });
+  assert.equal(over.statusCode, 400); assert.equal(over.body.error, 'KEY_PRODUCT_LIMIT');
 });
 
 test('Free Trial and inactive accounts cannot use Add products', async () => {

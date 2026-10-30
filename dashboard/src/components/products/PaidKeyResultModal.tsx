@@ -6,7 +6,7 @@ import { Check, Copy, Key, X } from "lucide-react";
 // One row per API key the products went into. A newly created key carries its
 // secret here once; it can be copied again later from the API Keys page.
 export type PaidAddResult = {
-  segment: string; keyId: string; name: string; created: boolean; added: number; total: number; key?: string;
+  segment: string | null; keyId: string; name: string; created: boolean; added: number; total: number; key?: string;
 };
 
 export default function PaidKeyResultModal({ results, onClose }: { results: PaidAddResult[]; onClose: () => void }) {
@@ -39,9 +39,9 @@ export default function PaidKeyResultModal({ results, onClose }: { results: Paid
             <li key={result.keyId} className="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 font-semibold text-white"><Key className="h-4 w-4 text-indigo-400" />{result.name || `${result.segment} API key`}</p>
+                  <p className="flex items-center gap-2 font-semibold text-white"><Key className="h-4 w-4 text-indigo-400" />{result.name || (result.segment ? `${result.segment} API key` : 'Pro Max API key')}</p>
                   <p className="mt-1 text-xs text-slate-400">
-                    {result.segment} · {result.added} {result.added === 1 ? "product" : "products"} added · {result.total} in this key
+                    {result.segment ?? 'All segments'} · {result.added} {result.added === 1 ? "product" : "products"} added · {result.total} in this key
                     {result.created ? " · new key" : ""}
                   </p>
                 </div>

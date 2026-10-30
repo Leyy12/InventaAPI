@@ -20,6 +20,9 @@ export function trialCatalogChangeAllowed(previousIds, nextIds) {
 export const PAID_MONTHLY_PRODUCT_LIMIT = 15000;
 // Older name kept so existing imports keep working; it is the same product allowance.
 export const PAID_MONTHLY_REQUEST_LIMIT = PAID_MONTHLY_PRODUCT_LIMIT;
-// Pro adds products to one API key in its own segment; Pro Max keeps one key
-// per segment (Grocery, Pharmacy, Hardware), so at most three.
-export const PRO_MAX_SEGMENT_KEYS = 3;
+// Pro adds products to one API key in its own segment. Pro Max also has ONE API
+// key, holding products from all three segments (Grocery, Pharmacy, Hardware);
+// each segment keeps its own monthly allowance.
+export const PRO_MAX_SEGMENT_KEYS = 3; // segments covered by the one Pro Max key
+export const PRO_KEY_PRODUCT_LIMIT = 500;
+export const PRO_MAX_KEY_PRODUCT_LIMIT = 1500;
