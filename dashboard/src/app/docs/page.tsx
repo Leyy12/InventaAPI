@@ -10,7 +10,7 @@ const proMaxExample = {
   meta: {
     count: 1, total: 1, keyName: 'Pro Max API key', plan: 'Pro Max', requestsUsed: 81,
     quota: {
-      period: 'monthly', unit: 'requests', scope: 'account', used: 81, limit: 20000, remaining: 19919,
+      period: 'monthly', unit: 'requests', scope: 'account', used: 81, limit: null, remaining: null, unlimited: true,
       resetsAt: '2026-11-01T00:00:00.000Z',
     },
     pagination: { page: 1, perPage: 1, total: 1, totalPages: 1, hasNextPage: false, nextPage: null },
@@ -51,13 +51,13 @@ export default function DocsPage() {
               <td className="py-2 pr-4 font-semibold text-white">Pro</td>
               <td className="py-2 pr-4">One key for your business segment</td>
               <td className="py-2 pr-4">Up to 7,500</td>
-              <td className="py-2">15,000 API requests per month</td>
+              <td className="py-2">Unlimited API requests</td>
             </tr>
             <tr className="border-t border-slate-700">
               <td className="py-2 pr-4 font-semibold text-white">Pro Max</td>
               <td className="py-2 pr-4">One key for all three segments (Grocery, Pharmacy, Hardware)</td>
               <td className="py-2 pr-4">Up to 15,000</td>
-              <td className="py-2">20,000 API requests per month</td>
+              <td className="py-2">Unlimited API requests</td>
             </tr>
           </tbody>
         </table>
@@ -81,22 +81,21 @@ x-api-key: YOUR_API_KEY`}</pre>
       <p>The response has <code>status: &quot;success&quot;</code>, <code>meta</code> and <code>products</code> (not <code>success/data</code>). Product IDs are strings. Read fields and variants from each product; do not assume every product has a variant or SKU.</p>
       <p className="font-semibold text-white">Usage fields in <code>meta</code> (Pro and Pro Max)</p>
       <ul className="list-disc pl-5 space-y-1">
-        <li><code>quota</code>: this month&apos;s requests for your account: <code>used</code> (including this call), <code>limit</code>, <code>remaining</code> and <code>resetsAt</code>.</li>
+        <li><code>quota</code>: requests recorded for your account this month (<code>used</code>, including this call). Paid plans have no monthly limit, so <code>limit</code> and <code>remaining</code> are <code>null</code> and <code>unlimited</code> is <code>true</code>.</li>
       </ul>
       <pre className={code}>{JSON.stringify(proMaxExample, null, 2)}</pre>
       <p className="text-xs text-slate-400">Illustrative Pro Max response. Exact messages and optional metadata vary. There is no DaaS /products/:id route; use search above. <code>GET /daas/v1/health</code> is a health check, not a product request.</p>
     </section>
 
     <section className={card}>
-      <h2 className={h2}>How the monthly allowance is counted</h2>
+      <h2 className={h2}>Requests and rate limits</h2>
       <ul className="list-disc pl-5 space-y-1">
-        <li>Every call to <code>/daas/v1/catalog</code> counts as <strong>one request</strong>, however many products it returns (searches with no results too).</li>
-        <li>Pro: 15,000 requests per month. Pro Max: 20,000 requests per month, shared by all three segments on its one key.</li>
-        <li>Once the month&apos;s requests are used up, calls get <code>429</code> until the 1st of next month (UTC).</li>
-        <li>Paging through a large catalog uses one request per page. The same request repeated within 2 seconds reuses the first answer and is not counted again. <code>/daas/v1/health</code> is never counted.</li>
+        <li>Pro and Pro Max have <strong>unlimited API requests</strong>; there is no monthly cap. Each call is still recorded for your request history.</li>
+        <li>To protect the service, each IP address can make up to 60 catalog requests per minute. Above that, calls get <code>429</code> with a <code>Retry-After</code> header; wait and retry.</li>
+        <li>The same request repeated within 2 seconds reuses the first answer. <code>/daas/v1/health</code> is never recorded.</li>
         <li>The Free Trial has no monthly request allowance: calls do not use up products or shorten the Trial. After the Trial ends, protected API access pauses until a paid plan is active.</li>
       </ul>
-      <p>Your current usage is on the dashboard Overview and the API Keys page. Key Name in request history is the key alias recorded at request time; older records may have unavailable fields.</p>
+      <p>The products on your key are shown on the dashboard Overview. Key Name in request history is the key alias recorded at request time; older records may have unavailable fields.</p>
     </section>
 
     <section className={card}>
@@ -105,7 +104,7 @@ x-api-key: YOUR_API_KEY`}</pre>
       <ul className="list-disc pl-5 space-y-1">
         <li><code>401</code>: invalid, revoked or missing key.</li>
         <li><code>403 UPGRADE_REQUIRED</code>: no active Trial or paid plan. Other <code>403</code>: account, plan or product scope denied.</li>
-        <li><code>429</code>: the monthly request allowance is used up, or the separate short-window IP rate limit. Respect the reset time in <code>quota</code> or the <code>Retry-After</code> header.</li>
+        <li><code>429</code>: too many requests from one IP address in a short time (60 per minute). Respect the <code>Retry-After</code> header.</li>
         <li>503 with QUOTA_CUTOVER_PENDING: paid account activation hold. Other <code>500</code>/<code>503</code>: server or verification unavailable.</li>
         <li><code>400</code>: malformed sale or date range. <code>409</code>: conflicting sale reference.</li>
       </ul>

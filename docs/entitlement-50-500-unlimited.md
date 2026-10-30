@@ -1,6 +1,6 @@
 # Current candidate entitlement: 50 / 500 / unlimited
 
-> **Superseded for paid limits:** every plan now has one API key; Pro holds up to 7,500 products and 15,000 API requests a month, Pro Max up to 15,000 products and 20,000 requests a month. See [paid-plan-keys-and-allowance.md](paid-plan-keys-and-allowance.md). The rest of this document is kept as a historical record.
+> **Superseded for paid limits:** every plan now has one API key; Pro holds up to 7,500 products, Pro Max up to 15,000, and both have unlimited API requests (60 per minute per IP). See [paid-plan-keys-and-allowance.md](paid-plan-keys-and-allowance.md). The rest of this document is kept as a historical record.
 
 Local candidate only; not authorization to deploy or mutate Production.
 

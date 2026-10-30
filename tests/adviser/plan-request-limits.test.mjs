@@ -40,36 +40,31 @@ test('malformed private promise state cannot be overwritten by Trial activation'
     assert.equal(db.read('users/customer').trialStartedAt, undefined);
   }
 });
-// Active Pro and Pro Max count API requests per UTC month for the account: Pro
-// 15,000, Pro Max 20,000. Daily settings, stored daily contracts and profile claims
-// do not change that allowance.
-test('Pro keys share one monthly allowance of 15,000 requests; daily settings and contracts do not change it', async () => {
+// Active Pro and Pro Max have NO monthly request limit: every call is counted on one
+// account counter per UTC month. Daily settings, stored daily contracts and profile
+// claims do not create a limit.
+test('Pro: requests are counted monthly with no limit; daily settings and contracts do not create one', async () => {
   const f = quotaFixture({ limits: { ...DEFAULT_REQUEST_LIMITS, pro: 1000 }, used: 999, contracts: { pro: newRequestContract(100) },
     profileExtra: { requestAllowanceContracts: { pro: newRequestContract(null) }, planRequestLimits: { pro: null } } });
   f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 14999 });
   const outcomes = await Promise.allSettled([f.consume(0), f.consume(1)]);
-  assert.equal(outcomes.filter(value => value.status === 'fulfilled').length, 1);
-  const rejected = outcomes.find(value => value.status === 'rejected').reason;
-  assert.equal(rejected.status, 429); assert.match(rejected.message, /15,000 requests/);
-  assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_account').used, 15000);
+  assert.equal(outcomes.filter(value => value.status === 'fulfilled').length, 2);
+  assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_account').used, 15001);
   assert.equal(f.db.read('account_api_usage/customer').used, 999, 'the daily counter is not used for paid plans');
   f.advance(new Date('2026-11-01T00:00:00Z'));
   f.db.seed('users/customer', { ...account('Pro'), subscriptionExpiresAt: '2026-12-01T00:00:00Z' });
   const next = await f.consume(0);
-  assert.deepEqual([next.usage.used, next.usage.limit, next.usage.unit, next.usage.scope], [1, 15000, 'requests', 'account']);
+  assert.deepEqual([next.usage.used, next.usage.limit, next.usage.remaining, next.usage.unlimited, next.usage.unit],
+    [1, null, null, true, 'requests']);
   assert.equal(next.usage.resetsAt, '2026-12-01T00:00:00.000Z');
 });
-test('Pro Max has one account allowance of 20,000 requests, whatever segment a key or product has', async () => {
+test('Pro Max: one account count with no limit, whatever segment a key or product has', async () => {
   const f = quotaFixture({ plan: 'Pro Max', limits: { ...DEFAULT_REQUEST_LIMITS, pro_max: 10 }, contracts: { pro_max: newRequestContract(10) }, used: 9 });
   f.db.seed(`api_keys/${f.keys[0].id}`, { ...f.db.read(`api_keys/${f.keys[0].id}`), segment: 'Grocery' });
-  // Older per-segment counters are no longer used.
-  f.db.seed('account_paid_monthly_usage/customer_2026-10_Grocery', { window: '2026-10', used: 15000 });
-  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 19998 });
+  f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 25000 });
   const first = await f.consume(0);
-  assert.deepEqual([first.usage.used, first.usage.limit, first.usage.remaining], [19999, 20000, 1]);
-  assert.equal((await f.consume(1)).usage.used, 20000);
-  await assert.rejects(f.consume(0), error => error.status === 429 && /20,000 requests/.test(error.message));
-  assert.equal(f.db.read('account_paid_monthly_usage/customer_2026-10_account').used, 20000);
+  assert.deepEqual([first.usage.used, first.usage.limit, first.usage.bucket], [25001, null, 'account']);
+  assert.equal((await f.consume(1)).usage.used, 25002);
   assert.equal(f.db.read('account_api_usage/customer').used, 9);
 });
 test('invalid configuration fails closed without quota use, while credential revocation remains available', async () => {
@@ -103,11 +98,11 @@ test('API-key metadata uses the same effective policy without credential recreat
   const keys = createApiKeyHandlers({ getDb: () => f.db, verifyIdToken: async () => ({ uid: 'customer' }), clock: () => now });
   const listed = await invoke(keys.list, { token: 'synthetic' }); assert.equal(listed.statusCode, 200);
   assert.equal(listed.body.usage.limit, 1000); assert.equal(listed.body.usage.used, 100);
-  // Paid keys show the monthly allowance they draw from.
+  // Paid keys show the month's request count (no limit).
   f.db.seed('account_paid_monthly_usage/customer_2026-10_account', { window: '2026-10', used: 42 });
   const monthly = await invoke(keys.list, { token: 'synthetic' });
-  assert.deepEqual(monthly.body.monthlyUsage.buckets, [{ bucket: 'account', used: 42, remaining: 14958 }]);
-  assert.ok(monthly.body.keys.every(key => key.requestLimit === 15000 && key.requestsUsed === 42 && key.quotaPeriod === 'monthly'));
+  assert.deepEqual(monthly.body.monthlyUsage.buckets, [{ bucket: 'account', used: 42, remaining: null }]);
+  assert.ok(monthly.body.keys.every(key => key.requestLimit === null && key.requestsUsed === 42 && key.quotaPeriod === 'monthly'));
   assert.equal(monthly.body.monthlyUsage.resetsAt, '2026-11-01T00:00:00.000Z');
   assert.equal(f.db.read('account_api_usage/customer').used, 100);
 });

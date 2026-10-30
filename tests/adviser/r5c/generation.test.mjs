@@ -304,12 +304,12 @@ for (const [plan, cap, expected] of [['Free', 50, 50], ['Free', 7, 7], ['Pro', 5
     const made = await create();
     if (plan === 'Pro') {
       // Pro holds one API key: the existing key is kept and a second one is refused
-      // (before any marker is written). Requests count against the monthly allowance.
+      // (before any marker is written). Requests are counted monthly with no limit.
       assert.equal(made.statusCode, 409); assert.equal(made.body.error, 'PRO_SINGLE_KEY');
       assert.deepEqual(await counts(db), [1, 0]);
       assert.deepEqual(db.read(counter), usage);
       const first = await consumeAccountQuota(db, { userId: 'owner', keyId: 'old', credential: legacy.key, clock });
-      assert.deepEqual([first.usage.period, first.usage.used, first.usage.limit], ['monthly', 1, 15000]);
+      assert.deepEqual([first.usage.period, first.usage.used, first.usage.limit], ['monthly', 1, null]);
       assert.equal(db.read('account_paid_monthly_usage/owner_2026-09_account').used, 1);
       assert.deepEqual(db.read(counter), usage);
       return;

@@ -3,11 +3,11 @@
  * Used by both pricing page and upgrade modal
  */
 
-import { PRO_MONTHLY_REQUEST_LIMIT, PRO_MAX_MONTHLY_REQUEST_LIMIT, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
+import { PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
 
 const n = (value: number) => value.toLocaleString("en-US");
-export const PRO_REQUEST_LABEL = `${n(PRO_MONTHLY_REQUEST_LIMIT)} API requests per month`;
-export const PRO_MAX_REQUEST_LABEL = `${n(PRO_MAX_MONTHLY_REQUEST_LIMIT)} API requests per month`;
+export const PRO_REQUEST_LABEL = "Unlimited API requests";
+export const PRO_MAX_REQUEST_LABEL = "Unlimited API requests";
 import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
@@ -72,7 +72,7 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: PRO_MONTHLY_REQUEST_LIMIT,
+    requestLimit: null,
     requestLimitDisplay: PRO_REQUEST_LABEL,
     
     // Description
@@ -113,7 +113,7 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: PRO_MAX_MONTHLY_REQUEST_LIMIT,
+    requestLimit: null,
     requestLimitDisplay: PRO_MAX_REQUEST_LABEL,
     
     // Description
@@ -162,7 +162,7 @@ export function plansForRequestLimits(limits: PlanRequestLimits | null) {
     free: { ...SUBSCRIPTION_PLANS.free, requestLimit: limits?.free_trial,
       requestLimitDisplay: requestAllowanceLabel(limits?.free_trial, true),
       features: [...SUBSCRIPTION_PLANS.free.features, requestAllowanceLabel(limits?.free_trial, true)] },
-    // Paid plans count API requests per month (fixed); only the Trial uses the configurable policy.
+    // Paid plans have unlimited API requests; only the Trial uses the configurable policy.
     pro: SUBSCRIPTION_PLANS.pro,
     pro_max: SUBSCRIPTION_PLANS.pro_max,
   };

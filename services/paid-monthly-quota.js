@@ -1,7 +1,6 @@
-// Monthly REQUEST allowance for active Pro and Pro Max subscriptions: each
-// catalog call counts as one, in one allowance for the whole account
-// (Pro 15,000, Pro Max 20,000 a month). Free Trial keeps its own accounting in
-// account-quota.js.
+// Monthly request COUNT for active Pro and Pro Max subscriptions: each catalog
+// call is recorded as one, for the whole account. There is no monthly limit
+// (limit: null). Free Trial keeps its own accounting in account-quota.js.
 import { monthlyRequestLimit } from '../functions/entitlement-limits.mjs';
 import { ApiSecurityError } from './api-key-security.js';
 
@@ -40,7 +39,7 @@ export function monthlyUsed(stored, window) {
 
 export function monthlyUsage(bucket, used, window, resetsAt, plan = 'pro') {
   const limit = monthlyRequestLimit(plan);
-  return { window, used, limit, remaining: Math.max(0, limit - used),
+  return { window, used, limit, remaining: limit === null ? null : Math.max(0, limit - used), unlimited: limit === null,
     resetsAt, period: 'monthly', unit: 'requests', scope: 'account', bucket };
 }
 
@@ -55,5 +54,5 @@ export async function readMonthlySummary(tx, db, uid, plan, _keys, now) {
   const stored = (await tx.get(db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(uid, window, 'account')))).data();
   const used = monthlyUsed(stored, window);
   return { period: 'monthly', unit: 'requests', window, resetsAt, limit, plan,
-    buckets: [{ bucket: 'account', used, remaining: Math.max(0, limit - used) }] };
+    buckets: [{ bucket: 'account', used, remaining: limit === null ? null : Math.max(0, limit - used) }] };
 }

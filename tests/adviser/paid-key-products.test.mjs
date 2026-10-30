@@ -113,26 +113,26 @@ test('Pro Max: an account with older per-segment keys adds into one of them, not
   assert.equal((await f.keys()).length, 2);
 });
 
-test('Pro Max: the one key uses one account allowance of 20,000 requests; the list shows requests and products', async () => {
+test('Pro Max: the one key has no request limit; the list shows the count and products by segment', async () => {
   const f = setup('Pro Max');
   const [created] = (await f.add({ linkedProductIds: ['rice', 'milk', 'aspirin'] })).body.results;
   const consume = () => consumeAccountQuota(f.db, { keyId: created.keyId, userId: 'owner', credential: created.key, clock: () => new Date(NOW) });
   const ok = await consume();
-  assert.deepEqual([ok.usage.used, ok.usage.limit, ok.usage.unit], [1, 20000, 'requests']);
+  assert.deepEqual([ok.usage.used, ok.usage.limit, ok.usage.unit], [1, null, 'requests']);
   const listed = (await invoke(f.handlers.list)).body;
-  assert.deepEqual(listed.monthlyUsage.buckets, [{ bucket: 'account', used: 1, remaining: 19999 }]);
+  assert.deepEqual(listed.monthlyUsage.buckets, [{ bucket: 'account', used: 1, remaining: null }]);
   assert.deepEqual(listed.monthlyUsage.products, { total: 3, limit: 15000,
     bySegment: [{ segment: 'Grocery', count: 2 }, { segment: 'Pharmacy', count: 1 }, { segment: 'Hardware', count: 0 }] });
-  assert.equal(listed.keys[0].requestLimit, 20000);
+  assert.equal(listed.keys[0].requestLimit, null);
   f.db.collection('account_paid_monthly_usage').doc('owner_2026-10_account').set({ window: '2026-10', used: 20000 });
-  await assert.rejects(consume(), error => error.status === 429 && /20,000 requests/.test(error.message));
+  assert.equal((await consume()).usage.used, 20001, 'no monthly cap');
 });
 
-test('Pro: the list shows 15,000 requests and products on the key without a segment split', async () => {
+test('Pro: the list shows no request limit and the products on the key without a segment split', async () => {
   const f = setup('Pro');
   await f.add({ linkedProductIds: ['rice'] });
   const listed = (await invoke(f.handlers.list)).body;
-  assert.equal(listed.monthlyUsage.limit, 15000);
+  assert.equal(listed.monthlyUsage.limit, null);
   assert.deepEqual(listed.monthlyUsage.products, { total: 1, limit: 7500 });
 });
 

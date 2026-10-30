@@ -324,7 +324,7 @@ test('paid Pro supersedes trial; trial time never extends paid renewal base', as
   const period = renewalPeriod(f.db.read('users/owner'), f.clock()); assert.equal(period.start, START);
   await f.db.collection('users').doc('owner').update({ plan: 'Pro', subscription_status: 'active', subscriptionExpiresAt: period.end });
   await f.db.collection('account_request_contracts').doc('owner').set({ version: 1, plans: { pro: { version: 1, period: 'utc_daily', limit: 500 } } });
-  assert.equal((await f.consume()).usage.limit, 15000); assert.equal(f.db.read('account_trial_usage/owner').used, 0);
+  assert.equal((await f.consume()).usage.limit, null); assert.equal(f.db.read('account_trial_usage/owner').used, 0);
   assert.equal((await f.status()).body.status, 'paid'); assert.equal((await f.activate()).statusCode, 409);
   f.time(period.end); await assert.rejects(f.consume(), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(f.db.read('users/owner').hasUsedFreeTrial, true);
@@ -512,8 +512,8 @@ test('automatic session never resets active, expired or consumed legacy Trial', 
 });
 
 test('automatic session preserves paid Pro/Pro Max and legacy Enterprise/Unlimited exactly, including historical Trial evidence', async () => {
-  // Active Pro / Pro Max count monthly requests (15,000 / 20,000); legacy Enterprise / Unlimited stay unlimited.
-  for (const [plan, limit, used] of [['Pro', 500, 15000], ['Pro Max', null, 20000], ['Enterprise', null, null], ['Unlimited', null, null]]) {
+  // Active Pro / Pro Max: requests counted monthly with no limit; legacy Enterprise / Unlimited stay unlimited.
+  for (const [plan, limit, used] of [['Pro', 500, null], ['Pro Max', null, null], ['Enterprise', null, null], ['Unlimited', null, null]]) {
     const f = fixture({ plan, apiRequestLimit: limit, subscription_status: 'active', subscriptionExpiresAt: END,
       hasUsedFreeTrial: true });
     const before = f.db.read('users/owner');
@@ -611,12 +611,12 @@ test('failed request metadata commit cannot change Trial history or catalog', as
   assert.deepEqual(f.db.read('api_keys/key-a').linkedProductIds, productIds);
 });
 
-test('paid Pro counts monthly, independent of the daily counter and saved Free month', async () => {
+test('paid Pro counts monthly with no limit, independent of the daily counter and saved Free month', async () => {
   const f = fixture({ plan: 'Pro', subscription_status: 'active', subscriptionExpiresAt: END },
     { 'account_api_usage/owner': { window: '2026-09-23', used: 5000 },
       'account_paid_monthly_usage/owner_2026-09_account': { window: '2026-09', used: 15000 } });
-  await assert.rejects(f.consume(), { status: 429 });
-  f.time('2026-09-24T00:00:00.000Z'); await assert.rejects(f.consume(), { status: 429 });
+  assert.equal((await f.consume()).usage.used, 15001);
+  f.time('2026-09-24T00:00:00.000Z'); assert.equal((await f.consume()).usage.used, 15002);
   assert.equal(f.db.read('account_api_usage/owner').used, 5000);
   assert.equal(f.db.read('account_free_monthly_usage/owner').used, 2);
 });

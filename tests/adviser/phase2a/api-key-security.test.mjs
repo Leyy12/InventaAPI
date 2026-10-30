@@ -239,43 +239,46 @@ test('scope validates identifiers and enforces the server account segment on cre
   }
 });
 
-test('Pro keys share one monthly allowance; a second key is refused and revocation never resets usage', async () => {
+// Paid plans have no monthly request limit: every call is recorded on one account
+// counter and none is refused for volume.
+test('Pro keys share one monthly request count; a second key is refused and revocation never resets the count', async () => {
   const { db, handlers } = setup({ 'users/owner': proAccount, 'api_keys/key-b': { ...legacy, key: 'daas_second_credential', requestsUsed: 0 } });
-  assert.equal((await consume(db)).usage.remaining, 14999);
-  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 14998);
+  const first = await consume(db);
+  assert.deepEqual([first.usage.used, first.usage.limit, first.usage.remaining, first.usage.unlimited], [1, null, null, true]);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.used, 2);
   const created = await invoke(handlers.create, { body: { keyName: 'Key C' } });
   assert.equal(created.statusCode, 409); assert.equal(created.body.error, 'PRO_SINGLE_KEY');
   assert.equal((await invoke(handlers.revoke)).statusCode, 200);
-  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.remaining, 14997);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.used, 3);
   await db.collection('account_paid_monthly_usage').doc('owner_2026-09_account').update({ used: 15000 });
-  await assert.rejects(consume(db, 'key-b', 'daas_second_credential'), error => error.status === 429);
+  assert.equal((await consume(db, 'key-b', 'daas_second_credential')).usage.used, 15001, 'no monthly cap');
   await db.collection('api_keys').doc('key-b').delete();
-  assert.equal(db.read(MONTHLY).used, 15000);
+  assert.equal(db.read(MONTHLY).used, 15001);
   assert.equal(db.read('account_api_usage/owner'), undefined, 'paid plans no longer touch the daily counter');
 });
 
-test('competing keys at the last remaining unit cannot both succeed', async () => {
+test('competing keys are both accepted and both counted exactly once', async () => {
   const { db } = setup({ 'users/owner': proAccount, ...monthly(14999),
     'api_keys/key-b': { ...legacy, key: 'daas_second_credential' } });
   const results = await Promise.allSettled([consume(db), consume(db, 'key-b', 'daas_second_credential')]);
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
-  assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 1);
-  assert.equal(db.read(MONTHLY).used, 15000);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 2);
+  assert.equal(db.read(MONTHLY).used, 15001);
   assert.ok(db.retries > 0, 'concurrent conflict must replay the transaction');
 });
 
-test('many simultaneous requests cannot exceed account allowance', async () => {
+test('many simultaneous requests are all accepted and none is lost from the count', async () => {
   const { db } = setup({ 'users/owner': proAccount, ...monthly(14993) });
   const results = await Promise.allSettled(Array.from({ length: 25 }, () => consume(db)));
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, 7);
-  assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 429).length, 18);
-  assert.equal(db.read(MONTHLY).used, 15000);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 25);
+  assert.equal(db.read(MONTHLY).used, 15018);
 });
 
 test('quota ignores key snapshots, per-key counter manipulation, and subscription flags', async () => {
   const { db } = setup({ 'api_keys/key-a': { ...legacy, plan: 'Enterprise', requestLimit: 999999, requestsUsed: 0, resetAt: '2100-01-01' },
     'users/owner': { ...proAccount, subscription_status: 'active' }, ...monthly(15000) });
-  await assert.rejects(consume(db), error => error.status === 429);
+  const result = await consume(db);
+  assert.equal(result.usage.limit, null, 'a key snapshot cannot invent a limit');
+  assert.equal(db.read(MONTHLY).used, 15001);
 });
 
 test('paid daily rollover uses UTC server time and ignores stored reset timestamp claims', async () => {
@@ -446,16 +449,16 @@ test('concurrent first requests share one committed hold and cannot initialize a
   assert.equal(db.read('account_api_usage/owner').used, 501);
 });
 
-test('Pro request 15,000 succeeds, 15,001 denies without increment, next UTC month restores access', async () => {
+test('Pro requests past 15,000 are still accepted; the count restarts next UTC month', async () => {
   const { db } = setup({ 'users/owner': proAccount, ...monthly(14999) });
-  const last = await consume(db);
-  assert.equal(last.usage.limit, 15000); assert.equal(last.usage.used, 15000); assert.equal(last.usage.remaining, 0);
-  assert.equal(last.usage.period, 'monthly'); assert.equal(last.usage.resetsAt, '2026-10-01T00:00:00.000Z');
-  await assert.rejects(consume(db), error => error.status === 429 && error.code === 'Rate Limit Exceeded');
-  assert.equal(db.read(MONTHLY).used, 15000);
+  const next = await consume(db);
+  assert.equal(next.usage.limit, null); assert.equal(next.usage.used, 15000); assert.equal(next.usage.remaining, null);
+  assert.equal(next.usage.period, 'monthly'); assert.equal(next.usage.resetsAt, '2026-10-01T00:00:00.000Z');
+  assert.equal((await consume(db)).usage.used, 15001);
+  assert.equal(db.read(MONTHLY).used, 15001);
   assert.equal(db.read('users/owner').apiRequestLimit, 5000, 'historical snapshot stays intact');
   const reset = await consume(db, 'key-a', legacy.key, { clock: () => new Date('2026-10-01T00:00:00.000Z') });
-  assert.equal(reset.usage.used, 1); assert.equal(reset.usage.remaining, 14999);
+  assert.equal(reset.usage.used, 1); assert.equal(reset.usage.remaining, null);
   assert.equal(reset.usage.resetsAt, '2026-11-01T00:00:00.000Z');
   assert.equal(db.read('account_paid_monthly_usage/owner_2026-10_account').used, 1);
 });

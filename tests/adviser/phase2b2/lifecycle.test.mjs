@@ -52,8 +52,8 @@ for (const [label, now, active] of [['before', NOW, true], ['exact', new Date(EN
   });
   test(`API ${label}: same credential enforces canonical allowance`, async () => {
     const db = setup();
-    // Active Pro requests count against the monthly allowance (15,000 per account).
-    if (active) assert.equal((await consume(db, now)).usage.limit, 15000);
+    // Active Pro requests are counted monthly with no limit (limit null).
+    if (active) assert.equal((await consume(db, now)).usage.limit, null);
     else await assert.rejects(consume(db, now), { status: 403, code: 'UPGRADE_REQUIRED' });
     assert.equal(db.read('users/owner').plan, active ? 'Pro' : 'Free');
     assert.equal(db.read('api_keys/one').key, 'daas_one');
@@ -61,7 +61,7 @@ for (const [label, now, active] of [['before', NOW, true], ['exact', new Date(EN
   });
 }
 test('same key before/after expiry, second key cannot retain Pro or reset shared usage', async () => {
-  const db = setup(); assert.equal((await consume(db)).usage.limit, 15000);
+  const db = setup(); assert.equal((await consume(db)).usage.limit, null);
   await assert.rejects(consume(db, new Date(END), 'two'), { status: 403, code: 'UPGRADE_REQUIRED' });
   assert.equal(db.read('account_paid_monthly_usage/owner_2026-09_account').used, 1);
   db.seed('account_free_monthly_usage/owner', { window: '2026-09', used: 50 });

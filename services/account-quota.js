@@ -87,16 +87,17 @@ export async function consumeAccountQuota(db, { keyId, userId, credential, allow
       if (!usageDoc.exists) throw new ApiSecurityError(503, 'USAGE_UNAVAILABLE', 'Daily Trial request usage requires verification.');
     }
     if (paidPlan) {
-      // Each call is one request (Pro 15,000 / Pro Max 20,000 a month).
+      // Each call is recorded as one request; paid plans have no monthly limit
+      // (limit null), so nothing is refused here.
       const limit = monthlyRequestLimit(paidPlan);
       const used = monthlyUsed(monthlyDoc.exists ? monthlyDoc.data() : undefined, month.window);
-      if (used >= limit) {
+      if (limit !== null && used >= limit) {
         return { denied: new ApiSecurityError(429, 'Rate Limit Exceeded',
           `Monthly allowance of ${limit.toLocaleString('en-US')} requests for this account is used up. It resets on the 1st of next month (UTC).`, {
             quota: monthlyUsage('account', used, month.window, month.resetsAt, paidPlan),
           }) };
       }
-      transaction.set(monthlyRef, { userId, window: month.window, bucket: 'account', used: used + 1, updatedAt: now.toISOString() });
+      transaction.set(monthlyRef, { userId, window: month.window, bucket: 'account', used: Math.min(used + 1, Number.MAX_SAFE_INTEGER), updatedAt: now.toISOString() });
       // Per-key diagnostics for existing admin screens; never used as allowance.
       const keyUsed = key.resetAt === month.resetsAt && Number.isSafeInteger(key.requestsUsed) && key.requestsUsed >= 0 ? key.requestsUsed : 0;
       transaction.update(keyRef, { lastUsed: now.toISOString(), requestsUsed: Math.min(keyUsed + 1, Number.MAX_SAFE_INTEGER), resetAt: month.resetsAt });

@@ -1,8 +1,8 @@
 export type TrialCatalog = { productsIncluded: number; productsAvailable: number; activeKeys: number; expiresAt: string };
-// Active Pro / Pro Max: API requests per UTC month for the account (Pro 15,000, Pro Max 20,000),
-// plus the products on the account's one API key (Pro Max: split by segment).
-export type MonthlyUsage = { period: 'monthly'; window: string; resetsAt: string; limit: number; plan: 'pro' | 'pro_max';
-  buckets: { bucket: string; used: number; remaining: number }[];
+// Active Pro / Pro Max: requests counted per UTC month (no limit: limit is null), plus the
+// products on the account's one API key (Pro Max: split by segment).
+export type MonthlyUsage = { period: 'monthly'; window: string; resetsAt: string; limit: number | null; plan: 'pro' | 'pro_max';
+  buckets: { bucket: string; used: number; remaining: number | null }[];
   products?: { total: number; limit: number; bySegment?: { segment: string; count: number }[] } };
 export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown; trialCatalog?: TrialCatalog; monthlyUsage?: MonthlyUsage };
 

@@ -1,6 +1,6 @@
 // Run with --experimental-test-module-mocks. Real Express catalog route, in-memory data.
-// Paid plans count API requests: each catalog call is one (Pro 15,000, Pro Max
-// 20,000 a month, one allowance for the account).
+// Paid plans have no monthly request limit; each catalog call is recorded as one
+// request on the account's monthly count.
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
@@ -54,45 +54,35 @@ async function serve(t) {
   return server;
 }
 
-test('Pro: each call is one request however many products it returns; 15,000 a month, then 429', async t => {
+test('Pro: each call is recorded as one request; there is no monthly limit', async t => {
   const server = await serve(t);
   setUsed('owner', 0);
   const page = await get(server, '/daas/v1/catalog?perPage=25', proKey);
   assert.equal(page.status, 200);
   assert.equal(page.body.products.length, 25);
-  assert.equal(used('owner'), 1, '25 products with 2 variants each still use 1 request');
-  assert.deepEqual([page.body.meta.quota.used, page.body.meta.quota.limit, page.body.meta.quota.unit], [1, 15000, 'requests']);
+  assert.equal(used('owner'), 1, '25 products with 2 variants each are one request');
+  assert.deepEqual([page.body.meta.quota.used, page.body.meta.quota.limit, page.body.meta.quota.unlimited], [1, null, true]);
 
+  setUsed('owner', 50000);
   await pause();
-  const empty = await get(server, '/daas/v1/catalog?search=zzz-no-match', proKey);
-  assert.equal(empty.status, 200);
-  assert.equal(used('owner'), 2, 'a search with no matches is still a request');
-
-  setUsed('owner', 14999);
-  await pause();
-  const last = await get(server, '/daas/v1/catalog?perPage=5', proKey);
-  assert.equal(last.status, 200);
-  assert.equal(last.body.meta.quota.remaining, 0);
-  await pause();
-  const over = await get(server, '/daas/v1/catalog?perPage=5', proKey);
-  assert.equal(over.status, 429);
-  assert.match(over.body.message, /15,000 requests/);
-  assert.equal(used('owner'), 15000);
+  const busy = await get(server, '/daas/v1/catalog?perPage=5', proKey);
+  assert.equal(busy.status, 200, 'still served after 50,000 requests');
+  assert.equal(used('owner'), 50001);
 });
 
-test('Pro Max: one key, 20,000 requests a month for the account; ?segment= filters', async t => {
+test('Pro Max: one key with no request limit; ?segment= filters', async t => {
   const server = await serve(t);
   setUsed('maxowner', 0);
   const all = await get(server, '/daas/v1/catalog', maxKey);
   assert.deepEqual(all.body.products.map(p => p.name).sort(), ['Aspirin', 'Tuna']);
-  assert.deepEqual([all.body.meta.quota.used, all.body.meta.quota.limit], [1, 20000]);
+  assert.deepEqual([all.body.meta.quota.used, all.body.meta.quota.limit], [1, null]);
   await pause();
   const pharmacy = await get(server, '/daas/v1/catalog?segment=pharmacy', maxKey);
   assert.deepEqual(pharmacy.body.products.map(p => p.name), ['Aspirin']);
   assert.equal(used('maxowner'), 2);
-  setUsed('maxowner', 20000);
+  setUsed('maxowner', 99999);
   await pause();
-  const over = await get(server, '/daas/v1/catalog?segment=Grocery', maxKey);
-  assert.equal(over.status, 429);
-  assert.match(over.body.message, /20,000 requests/);
+  const grocery = await get(server, '/daas/v1/catalog?segment=Grocery', maxKey);
+  assert.equal(grocery.status, 200);
+  assert.deepEqual(grocery.body.products.map(p => p.name), ['Tuna']);
 });

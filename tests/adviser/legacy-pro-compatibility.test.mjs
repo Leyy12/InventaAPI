@@ -90,14 +90,14 @@ for (const index of [0, 1]) test(`historical demonstration ${index + 1}: status,
   assert.equal(await normalizeExpiredAccount(f.db, f.uid, () => NOW), false); assert.deepEqual(f.db.dump(), before);
 });
 
-test('existing credentials consume the shared monthly Pro allowance without profile/contract backfill', async () => {
+test('existing credentials are counted monthly with no limit, without profile/contract backfill', async () => {
   const f = fixture(), profile = f.db.read(`users/${f.uid}`), pending = pendingRecords(f);
-  const result = await f.consume(); assert.equal(result.usage.used, 1); assert.equal(result.usage.limit, 15000);
+  const result = await f.consume(); assert.equal(result.usage.used, 1); assert.equal(result.usage.limit, null);
   assert.equal(result.usage.period, 'monthly');
   assert.deepEqual(f.db.read(`users/${f.uid}`), profile); assert.equal(f.db.read(`account_request_contracts/${f.uid}`), undefined);
   assert.deepEqual(pendingRecords(f), pending);
   f.db.seed(`account_paid_monthly_usage/${f.uid}_2026-10_account`, { window: '2026-10', used: 15000 });
-  await assert.rejects(f.consume(), error => error.status === 429);
+  assert.equal((await f.consume()).usage.used, 15001, 'no monthly cap');
 });
 function pendingRecords(f) { return Object.fromEntries(Object.entries(f.db.dump()).filter(([path]) => path.startsWith('payment_orders/pending-'))); }
 
