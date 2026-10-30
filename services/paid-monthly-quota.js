@@ -4,10 +4,15 @@
 // 20,000 a month. Pro Max also records how much each segment (Grocery, Pharmacy,
 // Hardware) used, for display only. Free Trial keeps its own accounting in
 // account-quota.js.
+import { createHash } from 'node:crypto';
 import { monthlyProductLimit } from '../functions/entitlement-limits.mjs';
 import { ApiSecurityError } from './api-key-security.js';
 
 export const MONTHLY_USAGE_COLLECTION = 'account_paid_monthly_usage';
+// Which product variants each app already received this month:
+// <uid>_<YYYY-MM>_<app id> → { keys: { <short variant hash>: 1 } }.
+export const MONTHLY_DELIVERED_COLLECTION = 'account_paid_monthly_delivered';
+export const variantHash = key => createHash('sha1').update(String(key)).digest('base64url').slice(0, 12);
 export const PRO_MAX_SEGMENTS = Object.freeze(['Grocery', 'Pharmacy', 'Hardware']);
 
 // 'pro' | 'pro_max' for an active paid subscription, otherwise null.
@@ -47,16 +52,21 @@ export function monthlyUsage(bucket, used, window, resetsAt, plan = 'pro') {
 }
 
 // Charges what one response is about to deliver. `items` lists the products in
-// page order as { segment, cost } (cost = variants). In one transaction it grants
-// at most what the account has left, decides how many variants of each item may be
-// sent (page order; the last one may be partial), adds the total to the account
-// and, for Pro Max, adds each segment's share to its display counter.
-export async function chargeMonthlyProducts(db, { userId, plan, window, resetsAt, items, clock = () => new Date() }) {
+// page order as { segment, variantKeys } (one key per variant; a product without
+// variants has one key) or, for callers without keys, { segment, cost }.
+// With a `consumerId` (the app the call came from, see api-consumers.js), a
+// variant that app already received this month is sent free; only new ones count.
+// In one transaction it grants at most what the account has left, decides which
+// variants of each item may be sent (page order; already-delivered first), adds
+// the new total to the account, records the new variants for the app and, for Pro
+// Max, adds each segment's share to its display counter.
+export async function chargeMonthlyProducts(db, { userId, plan, window, resetsAt, items, consumerId = null, clock = () => new Date() }) {
   const limit = monthlyProductLimit(plan);
   const accountRef = db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(userId, window, 'account'));
   const segmentRefs = plan === 'pro_max'
     ? Object.fromEntries(PRO_MAX_SEGMENTS.map(segment => [segment, db.collection(MONTHLY_USAGE_COLLECTION).doc(monthlyUsageId(userId, window, segment))]))
     : {};
+  const deliveredRef = consumerId ? db.collection(MONTHLY_DELIVERED_COLLECTION).doc(monthlyUsageId(userId, window, consumerId)) : null;
   return db.runTransaction(async tx => {
     const accountDoc = await tx.get(accountRef);
     const segmentUsed = {};
@@ -64,26 +74,47 @@ export async function chargeMonthlyProducts(db, { userId, plan, window, resetsAt
       const doc = await tx.get(ref);
       segmentUsed[segment] = monthlyUsed(doc.exists ? doc.data() : undefined, window);
     }
+    const deliveredDoc = deliveredRef ? await tx.get(deliveredRef) : null;
+    const storedKeys = deliveredDoc?.exists && deliveredDoc.data()?.window === window
+      && deliveredDoc.data().keys && typeof deliveredDoc.data().keys === 'object' ? deliveredDoc.data().keys : {};
+    const delivered = { ...storedKeys };
     const used = monthlyUsed(accountDoc.exists ? accountDoc.data() : undefined, window);
     let budget = Math.max(0, limit - used);
-    const allowed = items.map(item => {
-      const cost = Number.isSafeInteger(item.cost) && item.cost > 0 ? item.cost : 0;
-      const take = Math.min(cost, budget);
-      budget -= take;
-      return take;
+    let granted = 0, repeated = 0;
+    const shares = {};
+    // Per item: which of its variant keys may be sent, and how many units that is.
+    const plans = items.map(item => {
+      if (!Array.isArray(item.variantKeys)) {
+        const cost = Number.isSafeInteger(item.cost) && item.cost > 0 ? item.cost : 0;
+        const take = Math.min(cost, budget);
+        budget -= take; granted += take;
+        if (take) shares[item.segment] = (shares[item.segment] || 0) + take;
+        return { take, keys: null };
+      }
+      const keys = [];
+      for (const key of item.variantKeys) {
+        const hash = variantHash(key);
+        if (deliveredRef && delivered[hash]) { keys.push(key); repeated++; continue; }
+        if (budget <= 0) continue;
+        budget--; granted++;
+        if (deliveredRef) delivered[hash] = 1;
+        shares[item.segment] = (shares[item.segment] || 0) + 1;
+        keys.push(key);
+      }
+      return { take: keys.length, keys };
     });
-    const granted = allowed.reduce((sum, n) => sum + n, 0);
     const now = clock().toISOString();
     if (granted > 0) {
       tx.set(accountRef, { userId, window, bucket: 'account', used: used + granted, updatedAt: now });
-      const shares = {};
-      items.forEach((item, i) => { if (allowed[i] && Object.hasOwn(segmentRefs, item.segment)) shares[item.segment] = (shares[item.segment] || 0) + allowed[i]; });
       for (const [segment, share] of Object.entries(shares)) {
+        if (!Object.hasOwn(segmentRefs, segment)) continue;
         segmentUsed[segment] += share;
         tx.set(segmentRefs[segment], { userId, window, bucket: segment, used: segmentUsed[segment], updatedAt: now });
       }
+      if (deliveredRef) tx.set(deliveredRef, { userId, window, consumerId, keys: delivered, updatedAt: now });
     }
-    return { granted, allowed, usage: monthlyUsage('account', used + granted, window, resetsAt, plan),
+    return { granted, repeated, allowed: plans.map(p => p.take), allowedKeys: plans.map(p => p.keys),
+      usage: monthlyUsage('account', used + granted, window, resetsAt, plan),
       segments: plan === 'pro_max' ? PRO_MAX_SEGMENTS.map(segment => ({ segment, used: segmentUsed[segment] })) : null };
   });
 }

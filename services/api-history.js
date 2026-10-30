@@ -12,6 +12,8 @@ export function recordedTimestamp(value) {
   } catch { return null; }
 }
 
+const safeText = (value, max) => typeof value === 'string' && value && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value) ? value : null;
+
 export function historyRecord(data) {
   const name = typeof data.keyName === 'string' ? data.keyName.trim() : '';
   // Never fall back to apiKeyId: legacy IDs may themselves be credentials.
@@ -25,6 +27,12 @@ export function historyRecord(data) {
     endpoint: ['/catalog', '/sales', '/sales-feed'].includes(data.endpoint) ? `/daas/v1${data.endpoint}` : null,
     method: ['GET', 'POST'].includes(data.method) ? data.method : null,
     statusCode: Number.isInteger(data.statusCode) && data.statusCode >= 100 && data.statusCode <= 599 ? data.statusCode : null,
+    // Where the call came from (automatic app detection): the website's domain
+    // and/or the caller's IP, and whether this was the app's first call.
+    source: safeText(data.consumerLabel, 260),
+    domain: safeText(data.consumerDomain, 253),
+    ip: safeText(data.consumerIp, 64),
+    newApp: data.newConsumer === true,
   };
 }
 

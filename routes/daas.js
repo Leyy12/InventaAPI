@@ -7,6 +7,8 @@ import { createDaaSIntelligenceHandlers } from '../services/customer-intelligenc
 import { createRepeatGuard } from '../services/daas-repeat-guard.js';
 import { normalizeSegment } from '../services/product-contract.js';
 import { chargeMonthlyProducts } from '../services/paid-monthly-quota.js';
+import { identifyConsumer, recordConsumer, consumerBlockedError } from '../services/api-consumers.js';
+import { sendSecurityError } from '../services/api-key-security.js';
 
 // Data lives in the Supabase database (database/data-store.js).
 let adminDb = null;
@@ -36,7 +38,31 @@ router.get('/health', (req, res) => {
 
 // DaaS Product Catalog Endpoint (Guarded by API Key + Rate Limiting)
 // Returns ONLY products linked to the authenticated API key
-router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, async (req, res) => {
+// Detects which website or app is calling (domain, else IP range) and records it
+// against the key; a blocked app is refused before any product is read.
+async function detectConsumer(req, res, next) {
+    try {
+        const consumer = identifyConsumer(req);
+        const recorded = await recordConsumer(getDb(), { userId: req.apiKeyData.userId, keyId: req.apiKeyData.id, consumer });
+        req.consumer = { ...consumer, id: recorded.id, isNew: recorded.isNew };
+        if (recorded.blocked) {
+            getDb().collection('api_telemetry').add({ apiKeyId: req.apiKeyData.id, userId: req.apiKeyData.userId, keyName: req.apiKeyData.name,
+                endpoint: '/catalog', method: 'GET', statusCode: 403, success: false, latencyMs: 0, timestamp: new Date(), ...consumerTelemetry(req) }).catch(console.error);
+            return sendSecurityError(res, consumerBlockedError());
+        }
+        return next();
+    } catch (error) {
+        console.error('[DaaS] App detection failed:', error.message);
+        return res.status(503).json({ success: false, error: 'SERVICE_UNAVAILABLE', message: 'Unable to verify the calling app. Please retry.' });
+    }
+}
+// Where the call came from, for the owner's request history.
+const consumerTelemetry = req => req.consumer ? {
+    consumerLabel: req.consumer.label, consumerKind: req.consumer.kind,
+    consumerDomain: req.consumer.domain, consumerIp: req.consumer.ip, newConsumer: req.consumer.isNew === true,
+} : {};
+
+router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, detectConsumer, async (req, res) => {
     try {
         const linkedVariantSelections = req.apiKeyData.linkedVariantSelections || {};
         // A repeated ?search= arrives as an array; use the first value so .trim() never throws.
@@ -59,6 +85,7 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 keyName: req.apiKeyData.name,
                 endpoint: '/catalog',
                 method: 'GET',
+                ...consumerTelemetry(req),
                 statusCode: 200,
                 success: true,
                 latencyMs,
@@ -123,6 +150,7 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                     keyName: req.apiKeyData.name,
                     endpoint: '/catalog',
                     method: 'GET',
+                    ...consumerTelemetry(req),
                     statusCode: 200,
                     success: true,
                     latencyMs,
@@ -197,20 +225,26 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
         }));
 
         // Pro / Pro Max: every variant sent uses one of the month's allowance (a
-        // product without variants uses one). Send no more than what is left; the
-        // last product may carry only the variants that fit.
+        // product without variants uses one) — but only once per app per month: a
+        // variant this app already received is sent free. Send no more new
+        // variants than what is left; a product may carry only those that fit.
         const variantCount = product => Math.max(1, Array.isArray(product.variants) ? product.variants.length : 0);
+        const variantKey = (product, variant, index) => `${product.id}#${variant?.sku || (variant ? `${variant.flavor || ''}|${variant.size || ''}|${index}` : 'base')}`;
+        const keysOf = product => Array.isArray(product.variants) && product.variants.length
+            ? product.variants.map((variant, index) => variantKey(product, variant, index)) : [variantKey(product, null, 0)];
         const pageVariants = pageFormatted.reduce((sum, product) => sum + variantCount(product), 0);
         let formattedProducts = pageFormatted;
         let quota = req.requestUsage;
         let sentVariants = pageVariants;
         let segmentUsage = null;
+        let countedVariants = 0;
         if (req.productCharge && pageFormatted.length > 0) {
-            const charged = await chargeMonthlyProducts(getDb(), { ...req.productCharge,
-                items: pageFormatted.map(product => ({ segment: normalizeSegment(product.segment) || 'general', cost: variantCount(product) })) });
+            const charged = await chargeMonthlyProducts(getDb(), { ...req.productCharge, consumerId: req.consumer?.id || null,
+                items: pageFormatted.map(product => ({ segment: normalizeSegment(product.segment) || 'general', variantKeys: keysOf(product) })) });
             quota = charged.usage;
             segmentUsage = charged.segments;
-            if (charged.granted === 0) {
+            countedVariants = charged.granted;
+            if (charged.granted === 0 && charged.repeated === 0) {
                 return res.status(429).json({
                     success: false, error: 'Rate Limit Exceeded',
                     message: `Monthly allowance of ${quota.limit.toLocaleString('en-US')} products (each variant counts as one) is used up. It resets on the 1st of next month (UTC).`,
@@ -218,11 +252,13 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 });
             }
             formattedProducts = pageFormatted.flatMap((product, i) => {
-                const take = charged.allowed[i];
-                if (take <= 0) return [];
-                return take >= variantCount(product) ? [product] : [{ ...product, variants: product.variants.slice(0, take) }];
+                const keys = charged.allowedKeys[i];
+                if (!keys || keys.length === 0) return [];
+                if (keys.length >= variantCount(product) || !Array.isArray(product.variants) || !product.variants.length) return [product];
+                const wanted = new Set(keys);
+                return [{ ...product, variants: product.variants.filter((variant, index) => wanted.has(variantKey(product, variant, index))) }];
             });
-            sentVariants = charged.granted;
+            sentVariants = charged.granted + charged.repeated;
         }
         const limitedByQuota = sentVariants < pageVariants;
         const hasNextPage = startIndex + pageSlice.length < totalBeforePage;
@@ -236,6 +272,7 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
             keyName: req.apiKeyData.name,
             endpoint: '/catalog',
             method: 'GET',
+            ...consumerTelemetry(req),
             statusCode: 200,
             success: true,
             latencyMs,
@@ -263,6 +300,8 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 quota,
                 ...(segmentUsage ? { segmentUsage } : {}),
                 variantsSent: sentVariants,
+                ...(req.productCharge ? { variantsCounted: countedVariants } : {}),
+                ...(req.consumer ? { app: { source: req.consumer.label, kind: req.consumer.kind, new: req.consumer.isNew === true } } : {}),
                 ...(limitedByQuota ? { quotaLimited: true, quotaMessage: `Only ${sentVariants} of ${pageVariants} product variants were sent: the monthly allowance is used up.` } : {}),
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
@@ -289,6 +328,7 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
             keyName: req.apiKeyData?.name || 'unknown',
             endpoint: '/catalog',
             method: 'GET',
+            ...consumerTelemetry(req),
             statusCode: 500,
             success: false,
             latencyMs,
