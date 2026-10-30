@@ -148,7 +148,7 @@ test('DaaS ingestion validates key-linked current products and never accepts cro
   assert.equal(Object.keys(db.dump()).filter(key => key.startsWith('customer_sales/')).length, 1);
 });
 
-test('Pro denies the 15,001st request of the month; Pro Max counts per segment; paid-only gate excludes Trial', async () => {
+test('Pro denies the 15,001st request of the month; Pro Max shares one 20,000 account allowance; paid-only gate excludes Trial', async () => {
   const db = seed();
   db.seed('api_keys/k', { userId: 'a', status: 'active', key: 'daas_a', segment: 'Grocery' });
   db.seed('account_paid_monthly_usage/a_2026-09_account', { window: '2026-09', used: 15000 });
@@ -156,9 +156,10 @@ test('Pro denies the 15,001st request of the month; Pro Max counts per segment; 
     error => error.status === 429);
   db.seed('users/a', account('a', 'Pro Max'));
   const admitted = await consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
-  assert.equal(admitted.usage.used, 1); assert.equal(admitted.usage.limit, 15000); assert.equal(admitted.usage.bucket, 'Grocery');
+  // Pro Max keeps counting on the same account allowance, up to 20,000.
+  assert.equal(admitted.usage.used, 15001); assert.equal(admitted.usage.limit, 20000); assert.equal(admitted.usage.bucket, 'account');
   const beyond = await consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a', clock: () => NOW });
-  assert.equal(beyond.usage.used, 2);
+  assert.equal(beyond.usage.used, 15002);
   db.seed('users/a', { ...account('a'), plan: 'Free', apiRequestLimit: 50, hasUsedFreeTrial: true, trialVersion: 1,
     trialStartedAt: '2026-09-26T12:00:00.000Z', trialExpiresAt: '2026-10-03T12:00:00.000Z' });
   await assert.rejects(consumeAccountQuota(db, { keyId: 'k', userId: 'a', credential: 'daas_a',

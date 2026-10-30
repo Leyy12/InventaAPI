@@ -512,8 +512,8 @@ test('automatic session never resets active, expired or consumed legacy Trial', 
 });
 
 test('automatic session preserves paid Pro/Pro Max and legacy Enterprise/Unlimited exactly, including historical Trial evidence', async () => {
-  // Active Pro / Pro Max count monthly (15,000); legacy Enterprise / Unlimited stay unlimited.
-  for (const [plan, limit, used] of [['Pro', 500, 15000], ['Pro Max', null, 15000], ['Enterprise', null, null], ['Unlimited', null, null]]) {
+  // Active Pro / Pro Max count monthly requests (15,000 / 20,000); legacy Enterprise / Unlimited stay unlimited.
+  for (const [plan, limit, used] of [['Pro', 500, 15000], ['Pro Max', null, 20000], ['Enterprise', null, null], ['Unlimited', null, null]]) {
     const f = fixture({ plan, apiRequestLimit: limit, subscription_status: 'active', subscriptionExpiresAt: END,
       hasUsedFreeTrial: true });
     const before = f.db.read('users/owner');
