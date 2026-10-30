@@ -5,7 +5,6 @@ import { authorizedProductIds, formatDaaSProduct, resolveCurrentCatalogProducts 
 import { createDaaSSecurity } from '../services/daas-security.js';
 import { createDaaSIntelligenceHandlers } from '../services/customer-intelligence-handlers.js';
 import { createRepeatGuard } from '../services/daas-repeat-guard.js';
-import { chargeMonthlyBuckets, productBucket } from '../services/paid-monthly-quota.js';
 import { normalizeSegment } from '../services/product-contract.js';
 
 // Data lives in the Supabase database (database/data-store.js).
@@ -196,50 +195,8 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
             availability: productAvailability[product.id]
         }));
 
-        // Pro / Pro Max: every variant sent uses one of the month's 15,000 (a product
-        // without variants counts as one). Pro charges its one account allowance;
-        // Pro Max charges each product's segment. Send no more than what is left.
-        const variantCount = product => Math.max(1, Array.isArray(product.variants) ? product.variants.length : 0);
-        const pageVariants = pageFormatted.reduce((sum, product) => sum + variantCount(product), 0);
-        let formattedProducts = pageFormatted;
-        let quota = req.requestUsage;
-        let sentVariants = pageVariants;
-        if (req.productCharge && pageFormatted.length > 0) {
-            const plan = req.productCharge.plan;
-            const requested = {};
-            for (const product of pageFormatted) {
-                const bucket = productBucket(plan, product);
-                requested[bucket] = (requested[bucket] || 0) + variantCount(product);
-            }
-            const charged = await chargeMonthlyBuckets(getDb(), { ...req.productCharge, requested });
-            const totalGranted = Object.values(charged.granted).reduce((a, b) => a + b, 0);
-            quota = plan === 'pro' ? charged.usage.account : {
-                ...req.requestUsage,
-                buckets: (req.requestUsage?.buckets || []).map(item => charged.usage[item.bucket]
-                    ? { bucket: item.bucket, used: charged.usage[item.bucket].used, remaining: charged.usage[item.bucket].remaining } : item),
-            };
-            if (totalGranted === 0) {
-                return res.status(429).json({
-                    success: false, error: 'Rate Limit Exceeded',
-                    message: `Monthly allowance of ${(plan === 'pro' ? quota.limit : req.requestUsage.limit).toLocaleString('en-US')} products (each variant counts as one) is used up for ${plan === 'pro' ? 'this account' : `the ${Object.keys(requested).join(', ')} segment(s)`}. It resets on the 1st of next month (UTC).`,
-                    quota,
-                });
-            }
-            // Fill each bucket's granted budget in page order; a product may carry only
-            // the variants that fit, and products whose segment is used up are left out.
-            const budget = { ...charged.granted };
-            formattedProducts = [];
-            for (const product of pageFormatted) {
-                const bucket = productBucket(plan, product);
-                const cost = variantCount(product);
-                if (budget[bucket] <= 0) continue;
-                if (cost <= budget[bucket]) { formattedProducts.push(product); budget[bucket] -= cost; continue; }
-                formattedProducts.push({ ...product, variants: product.variants.slice(0, budget[bucket]) });
-                budget[bucket] = 0;
-            }
-            sentVariants = totalGranted;
-        }
-        const limitedByQuota = sentVariants < pageVariants;
+        const formattedProducts = pageFormatted;
+        const quota = req.requestUsage;
         const hasNextPage = startIndex + pageSlice.length < totalBeforePage;
 
         const latencyMs = Date.now() - req.startTime;
@@ -276,8 +233,6 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 plan_cap: maxPerPage,
                 requestsUsed: quota?.used ?? null,
                 quota,
-                variantsSent: sentVariants,
-                ...(limitedByQuota ? { quotaLimited: true, quotaMessage: `Only ${sentVariants} of ${pageVariants} product variants were sent: the monthly allowance is used up.` } : {}),
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
                 timestamp: ts.toISOString(),

@@ -3,11 +3,11 @@
  * Used by both pricing page and upgrade modal
  */
 
-import { PAID_MONTHLY_REQUEST_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
+import { PRO_MONTHLY_REQUEST_LIMIT, PRO_MAX_MONTHLY_REQUEST_LIMIT, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT, PRO_MAX_SEGMENT_KEYS, TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../functions/entitlement-limits.mjs";
 
-const MONTHLY = PAID_MONTHLY_REQUEST_LIMIT.toLocaleString("en-US");
-export const PRO_REQUEST_LABEL = `${MONTHLY} products per month`;
-export const PRO_MAX_REQUEST_LABEL = `${MONTHLY} products per month for each segment`;
+const n = (value: number) => value.toLocaleString("en-US");
+export const PRO_REQUEST_LABEL = `${n(PRO_MONTHLY_REQUEST_LIMIT)} API requests per month`;
+export const PRO_MAX_REQUEST_LABEL = `${n(PRO_MAX_MONTHLY_REQUEST_LIMIT)} API requests per month`;
 import { Zap, ShieldCheck, Building2 } from "lucide-react";
 
 // Each advertised Pro Max capability has an explicit system test mapping.
@@ -72,7 +72,7 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: PAID_MONTHLY_REQUEST_LIMIT,
+    requestLimit: PRO_MONTHLY_REQUEST_LIMIT,
     requestLimitDisplay: PRO_REQUEST_LABEL,
     
     // Description
@@ -81,7 +81,7 @@ export const SUBSCRIPTION_PLANS = {
     // Incremental features (adds to Free)
     incrementalFeatures: [
       PRO_REQUEST_LABEL,
-      "One API key — add products to it anytime",
+      `One API key with up to ${n(PRO_KEY_PRODUCT_LIMIT)} products — add to it anytime`,
       "Your business segment's catalog",
       "API Playground",
       "Usage & Integration History",
@@ -113,7 +113,7 @@ export const SUBSCRIPTION_PLANS = {
     billingCycle: "/month",
     
     // Limits
-    requestLimit: PAID_MONTHLY_REQUEST_LIMIT,
+    requestLimit: PRO_MAX_MONTHLY_REQUEST_LIMIT,
     requestLimitDisplay: PRO_MAX_REQUEST_LABEL,
     
     // Description
@@ -123,8 +123,7 @@ export const SUBSCRIPTION_PLANS = {
     incrementalFeatures: [
       PRO_MAX_REQUEST_LABEL,
       "All Business Segments",
-      `One API key for all ${PRO_MAX_SEGMENT_KEYS} segments (up to ${PRO_MAX_KEY_PRODUCT_LIMIT.toLocaleString("en-US")} products)`,
-      "Each segment keeps its own monthly allowance",
+      `One API key for all ${PRO_MAX_SEGMENT_KEYS} segments (up to ${n(PRO_MAX_KEY_PRODUCT_LIMIT)} products)`,
       "API Playground",
       "Usage & Integration History",
       "30-day renewable subscription"
@@ -163,7 +162,7 @@ export function plansForRequestLimits(limits: PlanRequestLimits | null) {
     free: { ...SUBSCRIPTION_PLANS.free, requestLimit: limits?.free_trial,
       requestLimitDisplay: requestAllowanceLabel(limits?.free_trial, true),
       features: [...SUBSCRIPTION_PLANS.free.features, requestAllowanceLabel(limits?.free_trial, true)] },
-    // Paid plans count products delivered per month (fixed); only the Trial uses the configurable policy.
+    // Paid plans count API requests per month (fixed); only the Trial uses the configurable policy.
     pro: SUBSCRIPTION_PLANS.pro,
     pro_max: SUBSCRIPTION_PLANS.pro_max,
   };

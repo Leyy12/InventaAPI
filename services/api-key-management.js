@@ -11,21 +11,19 @@ import { openCredential, sealCredential } from './credential-vault.js';
 import { normalizeSegment } from './product-contract.js';
 import { restrictedSegmentAccount, activeCustomerSegment } from './customer-segment.js';
 import { paidQuotaPlan, readMonthlySummary } from './paid-monthly-quota.js';
-import { PAID_MONTHLY_REQUEST_LIMIT, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT } from '../functions/entitlement-limits.mjs';
+import { monthlyRequestLimit, PRO_KEY_PRODUCT_LIMIT, PRO_MAX_KEY_PRODUCT_LIMIT } from '../functions/entitlement-limits.mjs';
+import { PRO_MAX_SEGMENTS } from './paid-monthly-quota.js';
 
-// Products one paid key may hold: Pro 500; Pro Max 1,500 (its one key covers all three segments).
+// Products one paid key may hold: Pro 7,500; Pro Max 15,000 (its one key covers all three segments).
 const keyProductLimit = plan => plan === 'pro_max' ? PRO_MAX_KEY_PRODUCT_LIMIT : PRO_KEY_PRODUCT_LIMIT;
 
 // Paid keys: the monthly allowance this key draws from replaces the daily figures.
 function withMonthly(metadata, key, context) {
   const monthly = context.monthly;
   if (!monthly) return metadata;
-  // Pro Max: the one key draws from every segment's allowance; show the total used.
-  const used = monthly.plan === 'pro'
-    ? (monthly.buckets.find(item => item.bucket === 'account') || { used: 0 }).used
-    : monthly.buckets.reduce((sum, item) => sum + item.used, 0);
+  const used = (monthly.buckets.find(item => item.bucket === 'account') || { used: 0 }).used;
   return { ...metadata, requestLimit: monthly.limit, requestsUsed: used, resetAt: monthly.resetsAt,
-    usageScope: monthly.plan === 'pro' ? 'account' : 'segment', quotaPeriod: 'monthly',
+    usageScope: 'account', quotaPeriod: 'monthly',
     segment: monthly.plan === 'pro' ? normalizeSegment(key.segment) || null : null };
 }
 
@@ -241,6 +239,21 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
   const PRO_MAX_ONE_KEY = 'Pro Max includes one API key for all three segments. Use "Add to my API key" on the Products page to add products to it.';
   const proSegmentOnly = segment => `Pro adds products from your ${segment} segment only. Pro Max covers all three segments.`;
 
+  // "Products on your key" for the Overview cards: total, the plan's limit and,
+  // for Pro Max, how many come from each segment (skipped for very large keys).
+  async function keyProductSummary(db, plan, ids) {
+    const unique = [...new Set(ids)];
+    const summary = { total: unique.length, limit: keyProductLimit(plan) };
+    if (plan !== 'pro_max' || unique.length > 2000) return summary;
+    const counts = Object.fromEntries(PRO_MAX_SEGMENTS.map(segment => [segment, 0]));
+    const docs = await Promise.all(unique.map(id => db.collection('products').doc(id).get()));
+    for (const doc of docs) {
+      const segment = doc.exists ? normalizeSegment(doc.data().segment || doc.data().businessType) : null;
+      if (segment && Object.hasOwn(counts, segment)) counts[segment]++;
+    }
+    return { ...summary, bySegment: PRO_MAX_SEGMENTS.map(segment => ({ segment, count: counts[segment] })) };
+  }
+
   // Generate endpoint for paid plans: Pro and Pro Max each hold ONE key. Pro's key
   // stays in its segment; Pro Max's key may hold products from all three segments.
   async function paidKeySegment(tx, db, uid, plan, scope, context, entitlement) {
@@ -270,7 +283,8 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
       return res.json({ success: true, keys: keys.docs.filter(doc => doc.data().status === 'active')
         .map(doc => withMonthly(publicKeyMetadata(doc.id, doc.data(), context.entitlement, context.usage), doc.data(), context)),
       usage: { ...context.usage, limit: context.entitlement.limit, scope: 'account' },
-      ...(context.monthly ? { monthlyUsage: context.monthly } : {}),
+      ...(context.monthly ? { monthlyUsage: { ...context.monthly,
+        products: await keyProductSummary(db, context.monthly.plan, activeKeys.flatMap(doc => authorizedProductIds(doc.data()))) } } : {}),
       ...(context.entitlement.activeTrial ? { trialCatalog: { productsIncluded, minimumProducts: TRIAL_MIN_PRODUCTS, maximumProducts: TRIAL_MAX_PRODUCTS,
         productsAvailable: Math.max(0, TRIAL_MAX_PRODUCTS - productsIncluded), activeKeys: activeKeys.length, maximumActiveKeys: TRIAL_MAX_ACTIVE_KEYS,
         expiresAt: context.entitlement.expiresAt } } : {}) });
@@ -315,7 +329,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
         const record = {
           ...issued.stored, ...sealed(issued), ...scope, scopeVersion: 0, name, userId: actor.uid, userEmail: actor.email || '',
           status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
-          plan: context.entitlement.plan, requestLimit: paidPlan ? PAID_MONTHLY_REQUEST_LIMIT : context.entitlement.limit,
+          plan: context.entitlement.plan, requestLimit: paidPlan ? monthlyRequestLimit(paidPlan) : context.entitlement.limit,
           ...(segment ? { segment } : {}),
           productAvailability: Object.fromEntries(authorizedProductIds(scope).map(id => [id, { availableSince: now }])),
         };
@@ -514,7 +528,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
           tx.set(db.collection('api_keys').doc(credential.id), {
             ...credential.stored, ...sealed(credential), ...merged, scopeVersion: 0, name, ...(plan === 'pro' ? { segment } : {}),
             userId: actor.uid, userEmail: actor.email || '', status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
-            plan: entitlement.plan, requestLimit: PAID_MONTHLY_REQUEST_LIMIT, productAvailability: availability,
+            plan: entitlement.plan, requestLimit: monthlyRequestLimit(plan), productAvailability: availability,
           });
           out.push({ segment: plan === 'pro' ? segment : null, keyId: credential.id, name, created: true, added, total, key: credential.credential });
         }

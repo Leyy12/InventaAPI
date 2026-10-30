@@ -34,8 +34,6 @@ export function createDaaSSecurity({ getDb, clock = () => new Date(), cutoverAt 
         req.userPlanData = result.account;
         req.userPlan = result.account.plan;
         req.requestUsage = result.usage;
-        // Pro / Pro Max: the route charges the products it actually sends.
-        req.productCharge = result.productCharge || null;
         delete req.apiCredential;
         return next();
       } catch (error) {

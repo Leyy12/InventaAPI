@@ -1,7 +1,9 @@
 export type TrialCatalog = { productsIncluded: number; productsAvailable: number; activeKeys: number; expiresAt: string };
-// Active Pro / Pro Max: requests per UTC month (one bucket for Pro, one per segment for Pro Max).
+// Active Pro / Pro Max: API requests per UTC month for the account (Pro 15,000, Pro Max 20,000),
+// plus the products on the account's one API key (Pro Max: split by segment).
 export type MonthlyUsage = { period: 'monthly'; window: string; resetsAt: string; limit: number; plan: 'pro' | 'pro_max';
-  buckets: { bucket: string; used: number; remaining: number }[] };
+  buckets: { bucket: string; used: number; remaining: number }[];
+  products?: { total: number; limit: number; bySegment?: { segment: string; count: number }[] } };
 export type QuotaSource = { status: 'loading' | 'ready' | 'error'; count: number | null; usage: unknown; trialCatalog?: TrialCatalog; monthlyUsage?: MonthlyUsage };
 
 // One quota read on entry, explicit retry or a relevant account-usage event.

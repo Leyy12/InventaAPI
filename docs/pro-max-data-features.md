@@ -1,6 +1,6 @@
 # Pro Max and customer data features — local implementation contract
 
-> **Superseded for paid limits:** Pro and Pro Max now have one API key each and a monthly allowance of 15,000 product variants (Pro Max: per segment). See [paid-plan-keys-and-allowance.md](paid-plan-keys-and-allowance.md). The rest of this document is kept as a historical record.
+> **Superseded for paid limits:** every plan now has one API key; Pro holds up to 7,500 products and 15,000 API requests a month, Pro Max up to 15,000 products and 20,000 requests a month. See [paid-plan-keys-and-allowance.md](paid-plan-keys-and-allowance.md). The rest of this document is kept as a historical record.
 
 This document describes candidate code only. It is not deployed and the
 replacement client PayMongo account has not been accepted or called.
