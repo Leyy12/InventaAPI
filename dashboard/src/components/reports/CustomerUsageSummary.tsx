@@ -51,7 +51,7 @@ function Usage({ user, upgradeRequired, activeTrial, requestAllowance }: { user:
   if (activeTrial) return <p role={source.status === 'error' ? 'alert' : 'status'} className="text-slate-300">{source.status === 'error'
     ? 'Trial catalog verification unavailable.' : 'Loading Trial catalog…'} {retryControl}</p>;
   const monthly = source.status === 'ready' ? source.monthlyUsage : undefined;
-  if (monthly) return <MonthlyUsageCards monthly={monthly} activeKeys={source.count} />;
+  if (monthly) return <MonthlyUsageCards monthly={monthly} />;
   return <section aria-label="Account API usage" className="space-y-3">
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[["API keys (active status)", source.count ?? unavailable],
@@ -70,13 +70,10 @@ function Usage({ user, upgradeRequired, activeTrial, requestAllowance }: { user:
 }
 const bucketLabel = (bucket: string) => bucket === 'account' ? 'This month' : bucket === 'general' ? 'Older keys' : bucket;
 // Active Pro: one monthly allowance. Pro Max: one per segment (Grocery, Pharmacy, Hardware).
-function MonthlyUsageCards({ monthly, activeKeys }: { monthly: MonthlyUsage; activeKeys: number | null }) {
+function MonthlyUsageCards({ monthly }: { monthly: MonthlyUsage }) {
   const resets = new Date(monthly.resetsAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
   return <section aria-label="Account API usage" className="space-y-3">
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-      <div className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
-        <p className="text-sm text-slate-400">API keys (active)</p><p className="mt-3 text-2xl font-semibold text-white">{activeKeys ?? '—'}</p>
-      </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       {monthly.buckets.map(item => {
         const percent = Math.min(100, (item.used / monthly.limit) * 100);
         return <div key={item.bucket} className="rounded-xl border border-slate-700/50 bg-[#0d1526] p-6">
