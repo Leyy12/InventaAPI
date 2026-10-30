@@ -14,8 +14,8 @@ export function trialCatalogChangeAllowed(previousIds, nextIds) {
   return next.size <= TRIAL_MAX_PRODUCTS;
 }
 
-// Paid plans count PRODUCTS DELIVERED per UTC calendar month: every product a
-// catalog response sends uses one. Pro shares one allowance across the account;
+// Paid plans count PRODUCTS DELIVERED per UTC calendar month: every product
+// variant a catalog response sends uses one (a product without variants uses one). Pro shares one allowance across the account;
 // Pro Max has a separate allowance for each Business Segment.
 export const PAID_MONTHLY_PRODUCT_LIMIT = 15000;
 // Older name kept so existing imports keep working; it is the same product allowance.

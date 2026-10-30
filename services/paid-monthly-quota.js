@@ -1,5 +1,5 @@
 // Monthly PRODUCT allowance for active Pro and Pro Max subscriptions: each
-// product a catalog response delivers uses one of the 15,000.
+// product variant a catalog response delivers uses one of the 15,000.
 // Pro: one allowance for the whole account. Pro Max: one allowance per
 // Business Segment, chosen by the segment of the API key making the request.
 // Free Trial keeps its own (daily / catalog) accounting in account-quota.js.

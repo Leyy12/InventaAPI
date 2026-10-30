@@ -177,37 +177,51 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
         const page = (!isNaN(requestedPage) && requestedPage >= 1) ? Math.min(requestedPage, totalPages) : 1;
         const startIndex = (page - 1) * perPage;
         const pageSlice = products.slice(startIndex, startIndex + perPage);
-        let delivered = pageSlice;
-        let quota = req.requestUsage;
-        // Pro / Pro Max: every product sent uses one of the month's 15,000 products.
-        // Send no more than what is left; the rest stays on later pages.
-        if (req.productCharge && pageSlice.length > 0) {
-            const charged = await chargeMonthlyProducts(getDb(), { ...req.productCharge, requested: pageSlice.length });
-            quota = charged.usage;
-            if (charged.granted === 0) {
-                return res.status(429).json({
-                    success: false, error: 'Rate Limit Exceeded',
-                    message: `Monthly allowance of ${quota.limit.toLocaleString('en-US')} products is used up. It resets on the 1st of next month (UTC).`,
-                    quota,
-                });
-            }
-            delivered = pageSlice.slice(0, charged.granted);
-        }
-        const limitedByQuota = delivered.length < pageSlice.length;
-        const hasNextPage = startIndex + delivered.length < totalBeforePage;
-
-        products = delivered;
-
         // productAvailability is the consumer-specific authorization timestamp map.
         // availableToConsumerSince = when THIS consumer gained access to THIS product.
         // This is authoritative for "new product" detection on the consumer side.
         // It is NOT the same as the product's catalog createdAt.
         const productAvailability = req.apiKeyData.productAvailability || {};
 
-        const formattedProducts = products.map(product => formatDaaSProduct(product, {
+        const pageFormatted = pageSlice.map(product => formatDaaSProduct(product, {
             selectedVariants: linkedVariantSelections[product.id],
             availability: productAvailability[product.id]
         }));
+
+        // Pro / Pro Max: every variant sent uses one of the month's 15,000
+        // (a product without variants counts as one). Send no more than what is left.
+        const variantCount = product => Math.max(1, Array.isArray(product.variants) ? product.variants.length : 0);
+        const pageVariants = pageFormatted.reduce((sum, product) => sum + variantCount(product), 0);
+        let formattedProducts = pageFormatted;
+        let quota = req.requestUsage;
+        let sentVariants = pageVariants;
+        let lastIsPartial = false;
+        if (req.productCharge && pageFormatted.length > 0) {
+            const charged = await chargeMonthlyProducts(getDb(), { ...req.productCharge, requested: pageVariants });
+            quota = charged.usage;
+            if (charged.granted === 0) {
+                return res.status(429).json({
+                    success: false, error: 'Rate Limit Exceeded',
+                    message: `Monthly allowance of ${quota.limit.toLocaleString('en-US')} products (each variant counts as one) is used up. It resets on the 1st of next month (UTC).`,
+                    quota,
+                });
+            }
+            // Fill the granted budget in page order; the last product may carry only some of its variants.
+            let budget = charged.granted;
+            formattedProducts = [];
+            for (const product of pageFormatted) {
+                if (budget <= 0) break;
+                const cost = variantCount(product);
+                if (cost <= budget) { formattedProducts.push(product); budget -= cost; continue; }
+                formattedProducts.push({ ...product, variants: product.variants.slice(0, budget) });
+                lastIsPartial = true;
+                budget = 0;
+            }
+            sentVariants = charged.granted;
+        }
+        const limitedByQuota = sentVariants < pageVariants;
+        const fullySent = formattedProducts.length - (lastIsPartial ? 1 : 0);
+        const hasNextPage = startIndex + fullySent < totalBeforePage;
 
         const latencyMs = Date.now() - req.startTime;
         const ts = new Date();
@@ -243,7 +257,8 @@ router.get('/catalog', repeatGuard, authenticateApiKey, enforceRequestLimit, asy
                 plan_cap: maxPerPage,
                 requestsUsed: quota.used,
                 quota,
-                ...(limitedByQuota ? { quotaLimited: true, quotaMessage: `Only ${delivered.length} of ${pageSlice.length} products were sent: the monthly product allowance is used up.` } : {}),
+                variantsSent: sentVariants,
+                ...(limitedByQuota ? { quotaLimited: true, quotaMessage: `Only ${sentVariants} of ${pageVariants} product variants were sent: the monthly allowance is used up.` } : {}),
                 searchQuery: searchQuery || null,
                 compliance: "DPA 2012 Secure Access",
                 timestamp: ts.toISOString(),
