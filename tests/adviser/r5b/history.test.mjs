@@ -119,7 +119,9 @@ test('multiple keys and revoked legacy records need no credential lookup', async
   const records = [row('b','owner',{keyName:'Legacy integration',status:'revoked'}), row('a','owner',{keyName:'Second integration',apiKeyId:'selector'})];
   const result = (await invoke(setup(records).handler)).body.records;
   assert.deepEqual(result.map(r=>r.keyName), ['Legacy integration','Second integration']);
-  assert.ok(result.every(r=>Object.keys(r).sort().join(',') === 'endpoint,keyName,method,statusCode,timestamp'));
+  // Rows also carry where the call came from (automatic app detection), shown to the key owner.
+  assert.ok(result.every(r=>Object.keys(r).sort().join(',') === 'domain,endpoint,ip,keyName,method,newApp,source,statusCode,timestamp'));
+  assert.ok(result.every(r=>r.source === null && r.domain === null && r.ip === null && r.newApp === false), 'older rows have no source');
 });
 test('allowlist excludes credentials, legacy IDs, owner, IP, tokens, hashes and unknown routes', () => {
   const record = historyRecord(row('id','other',{ key:'daas_secret', credentialHash:'hash', authorization:'Bearer secret', accessToken:'token', ip:'private', error:{stack:'secret'}, payment:{secret:true}, endpoint:'/catalog?apiKey=daas_secret' }));

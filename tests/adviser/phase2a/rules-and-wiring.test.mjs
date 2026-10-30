@@ -11,12 +11,16 @@ test('static wiring: all management routes use tested authenticated handlers', (
     ['post', '/generate', 'create'], ['post', '/add-products', 'addProducts'], ['get', '/', 'list'], ['get', '/:id', 'view'],
     ['post', '/:id/replace', 'replace'], ['get', '/:id/secret', 'reveal'],
     ['patch', '/:id/products', 'products'], ['patch', '/:id', 'rename'], ['delete', '/:id', 'revoke'],
+    // Apps detected using the key: list, and block / unblock one.
+    ['get', '/consumers', 'consumers'], ['patch', '/consumers/:consumerId', 'blockConsumer'],
   ]) assert.ok(routes.includes(`router.${verb}('${path}', handlers.${handler})`));
+  // The app routes must be registered before the generic '/:id' routes.
+  assert.ok(routes.indexOf("router.get('/consumers'") < routes.indexOf("router.get('/:id'"));
   assert.match(routes, /getAuth\(\)\.verifyIdToken\(token, checkRevoked\)/u);
   // History remains token-scoped; replacement adds a separately tested
   // authenticated, transactionally guarded management handler.
   assert.match(routes, /router\.get\('\/history', createApiHistoryHandler\(/u);
-  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 10);
+  assert.equal((routes.match(/router\.(get|post|patch|delete)\(/gu) || []).length, 12);
 });
 
 test('static wiring: protected DaaS endpoints consume account quota, with paid sales checked in transaction', () => {
