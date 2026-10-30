@@ -96,13 +96,13 @@ test('invalid configuration fails closed without quota use, while credential rev
   assert.equal((await invoke(keys.revoke, { token: 'synthetic', params: { id: f.keys[0].id } })).statusCode, 200);
   assert.equal(f.db.read(`api_keys/${f.keys[0].id}`).status, 'revoked');
 });
-test('finite Trial captures a server promise and preserves seven days, 50 products, five keys, and daily admission', async () => {
+test('finite Trial captures a server promise and preserves seven days, 50 products, one key, and daily admission', async () => {
   const f = quotaFixture({ plan: 'Free', limits: { ...DEFAULT_REQUEST_LIMITS, free_trial: 2 }, trial: true });
   const trials = createFreeTrialHandlers({ getDb: () => f.db, verifyIdToken: async () => ({ uid: 'customer' }), clock: () => now });
   const initialized = await invoke(trials.session, { token: 'synthetic' }); assert.equal(initialized.statusCode, 200);
   assert.equal(f.db.read('users/customer').trialExpiresAt, '2026-10-21T12:00:00.000Z');
   assert.equal(f.db.read('account_request_contracts/customer').plans.free_trial.limit, 2);
-  const status = await invoke(trials.status, { token: 'synthetic' }); assert.equal(status.body.maximumProducts, 50); assert.equal(status.body.maximumActiveKeys, 5);
+  const status = await invoke(trials.status, { token: 'synthetic' }); assert.equal(status.body.maximumProducts, 50); assert.equal(status.body.maximumActiveKeys, 1);
   assert.equal((await f.consume()).usage.used, 1); assert.equal((await f.consume()).usage.used, 2);
   await assert.rejects(f.consume(), { status: 429 }); assert.equal(f.db.read('users/customer').trialConsumed, false);
   f.advance(new Date('2026-10-15T00:00:00Z')); assert.equal((await f.consume()).usage.used, 1);

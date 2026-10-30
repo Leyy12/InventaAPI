@@ -42,7 +42,7 @@ Pro Max key per segment describe earlier releases; this file wins.
 - Not charged: empty keys, searches with no results, a repeat of the same request
   within 2 seconds (repeat guard), `/daas/v1/health`. `/daas/v1/sales` and
   `/sales-feed` (switched off) deliver no products.
-- Free Trial is unchanged: no monthly allowance, up to 50 shared products.
+- Free Trial: one API key (`TRIAL_MAX_ACTIVE_KEYS = 1`) with up to 50 products, no monthly allowance.
 
 ## Catalog request and response
 

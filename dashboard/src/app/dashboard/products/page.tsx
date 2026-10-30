@@ -184,7 +184,7 @@ function CustomerCatalogSession() {
     }
     if (data.keys.length > TRIAL_MAX_ACTIVE_KEYS) {
       setTrialSelection(null);
-      throw new Error(`Free Trial permits up to ${TRIAL_MAX_ACTIVE_KEYS} active keys. Revoke additional keys in API Keys first.`);
+      throw new Error('Free Trial includes one API key. Revoke the extra keys in API Keys first.');
     }
     const verifiedKeys = data.keys.map(key => ({ ...key,
       productIds: [...new Set([...key.linkedProductIds, ...Object.keys(key.linkedVariantSelections)])] }));

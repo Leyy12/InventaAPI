@@ -206,7 +206,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
     if (existingId ? active.length > TRIAL_MAX_ACTIVE_KEYS || !active.some(doc => doc.id === existingId)
       : active.length >= TRIAL_MAX_ACTIVE_KEYS) {
       throw new ApiSecurityError(409, 'TRIAL_KEY_LIMIT',
-        `Free Trial permits up to ${TRIAL_MAX_ACTIVE_KEYS} active API keys. Manage or revoke an existing key instead.`);
+        'Free Trial includes one API key. Add products to it, or revoke it before creating a new one.');
     }
     if (scope) trialProductCount(scope, previous, active.filter(doc => doc.id !== existingId).map(doc => doc.data()));
   }

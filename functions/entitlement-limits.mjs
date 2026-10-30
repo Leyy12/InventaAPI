@@ -1,8 +1,9 @@
 // Pure shared contract: Express, scheduled Functions and Customer presentation.
 export const TRIAL_MIN_PRODUCTS = 0;
 export const TRIAL_MAX_PRODUCTS = 50;
-// Trial keys share one 50-product catalog: the union across active keys is capped.
-export const TRIAL_MAX_ACTIVE_KEYS = 5;
+// Free Trial: ONE API key (like Pro and Pro Max) holding up to 50 products. The
+// key can be used in any number of projects; there is no per-project limit.
+export const TRIAL_MAX_ACTIVE_KEYS = 1;
 export const PRO_DAILY_REQUEST_LIMIT = 500;
 
 // Count unique product IDs, not variants. Legacy over-cap catalogs can retain

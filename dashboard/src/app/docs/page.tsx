@@ -47,8 +47,8 @@ export default function DocsPage() {
           <tbody className="align-top">
             <tr className="border-t border-slate-700">
               <td className="py-2 pr-4 font-semibold text-white">Free Trial (7 days)</td>
-              <td className="py-2 pr-4">Up to 5 active keys; one new key per UTC day</td>
-              <td className="py-2 pr-4">Up to 50 products shared by all keys, one segment</td>
+              <td className="py-2 pr-4">One key for your business segment</td>
+              <td className="py-2 pr-4">Up to 50</td>
               <td className="py-2">No monthly allowance; calls do not use up products</td>
             </tr>
             <tr className="border-t border-slate-700">
@@ -66,7 +66,7 @@ export default function DocsPage() {
           </tbody>
         </table>
       </div>
-      <p>Pro and Pro Max add products with <strong>Add to my API key</strong> on the Products page; a second key is refused. Use secure one-for-one replacement if a secret is lost. Monthly allowances reset on the 1st of each month (UTC). Replacing or revoking a key never resets the count.</p>
+      <p>Every plan has one API key, and you can use it in as many projects as you like. Pro and Pro Max add products with <strong>Add to my API key</strong> on the Products page; a second key is refused. Use secure one-for-one replacement if a secret is lost. Monthly allowances reset on the 1st of each month (UTC). Replacing or revoking a key never resets the count.</p>
     </section>
 
     <CodeSnippet />
@@ -118,7 +118,7 @@ x-api-key: YOUR_API_KEY`}</pre>
       <p className="font-semibold text-white">When creating keys or adding products</p>
       <ul className="list-disc pl-5 space-y-1">
         <li><code>409 API_KEY_DAILY_GENERATION_LIMIT</code>: a key was already generated today; <code>nextEligibleAt</code> gives the next 00:00 UTC.</li>
-        <li><code>409 PRO_SINGLE_KEY</code> / <code>PRO_MAX_SINGLE_KEY</code>: your plan includes one key. Add products to it instead.</li>
+        <li><code>409 PRO_SINGLE_KEY</code> / <code>PRO_MAX_SINGLE_KEY</code> / <code>TRIAL_KEY_LIMIT</code>: your plan includes one key. Add products to it instead.</li>
         <li><code>400 KEY_PRODUCT_LIMIT</code>: the key is full (Pro 500, Pro Max 1,500 products).</li>
       </ul>
       <p>Errors use flat <code>error</code> (code) and <code>message</code> fields; some include quota metadata. Do not retry by generating keys.</p>
