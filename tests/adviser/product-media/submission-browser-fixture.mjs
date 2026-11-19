@@ -13,7 +13,7 @@ for (const id of [
   'dashboard/src/components/products/ProductImageField.tsx', 'dashboard/src/lib/product-media-client.ts', 'dashboard/src/lib/product-image-url.ts',
   'admin-panel/src/app/submissions/page.tsx', 'admin-panel/src/components/products/SubmissionReviewDialog.tsx',
   'admin-panel/src/components/products/PrivateProductImage.tsx', 'admin-panel/src/components/products/ProductImagePreview.tsx',
-  'admin-panel/src/lib/product-image-url.ts', 'admin-panel/src/lib/submission-review.ts', 'services/customer-segment.js', 'services/product-contract.js',
+  'admin-panel/src/lib/product-image-url.ts', 'admin-panel/src/lib/submission-review.ts', 'services/customer-segment.js', 'functions/plans-switch.mjs', 'services/product-contract.js',
 ]) source(id, readFileSync(new URL('../../../' + id, import.meta.url), 'utf8'));
 for (const [id, file] of [
   ['react', 'react/cjs/react.production.js'], ['react/jsx-runtime', 'react/cjs/react-jsx-runtime.production.js'],
