@@ -6,10 +6,10 @@ import { apiExamples } from '@/lib/api-examples';
 type Lang = 'curl' | 'javascript' | 'python' | 'php';
 
 const TABS: { id: Lang; tab: string; label: string; file: string }[] = [
-  { id: 'curl', tab: 'cURL Request', label: 'Shell', file: 'request.sh' },
-  { id: 'javascript', tab: 'Node.js Fetch', label: 'JavaScript', file: 'catalog.mjs' },
-  { id: 'python', tab: 'Python Requests', label: 'Python', file: 'catalog.py' },
-  { id: 'php', tab: 'PHP cURL', label: 'PHP', file: 'catalog.php' },
+  { id: 'curl', tab: 'cURL', label: 'Shell', file: 'request.sh' },
+  { id: 'javascript', tab: 'JavaScript', label: 'JavaScript', file: 'catalog.mjs' },
+  { id: 'python', tab: 'Python', label: 'Python', file: 'catalog.py' },
+  { id: 'php', tab: 'PHP', label: 'PHP', file: 'catalog.php' },
 ];
 
 const AUTO_NEXT_MS = 6000;
@@ -26,7 +26,7 @@ function commentPrefix(lang: Lang) { return lang === 'javascript' || lang === 'p
 function isComment(line: string, lang: Lang) { return line.trimStart().startsWith(commentPrefix(lang)); }
 
 export default function IntegrationShowcase({ endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog` }: { endpoint?: string }) {
-  const [language, setLanguage] = useState<Lang>('javascript');
+  const [language, setLanguage] = useState<Lang>('curl');
   const [copied, setCopied] = useState(false);
   const [paused, setPaused] = useState(false);
   const [cycle, setCycle] = useState(0);
