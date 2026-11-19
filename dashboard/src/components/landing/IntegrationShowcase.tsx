@@ -25,7 +25,7 @@ function commentPrefix(lang: Lang) { return lang === 'javascript' || lang === 'p
 
 function isComment(line: string, lang: Lang) { return line.trimStart().startsWith(commentPrefix(lang)); }
 
-export default function IntegrationShowcase({ endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog` }: { endpoint?: string }) {
+export default function IntegrationShowcase({ endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'}/daas/v1/catalog`, compact = false }: { endpoint?: string; compact?: boolean }) {
   const [language, setLanguage] = useState<Lang>('curl');
   const [copied, setCopied] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -61,13 +61,13 @@ export default function IntegrationShowcase({ endpoint = `${process.env.NEXT_PUB
   return (
     <div onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setPaused(false); }}
-      className="mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900/80 shadow-2xl shadow-indigo-500/10" aria-label="Integration examples">
+      className={`${compact ? 'w-full' : 'mx-auto w-full max-w-3xl'} overflow-hidden rounded-xl border border-slate-700 bg-slate-900/80 shadow-2xl shadow-indigo-500/10`} aria-label="Integration examples">
       <style>{`@keyframes inventa-tab-progress{from{transform:scaleX(0)}to{transform:scaleX(1)}}`}</style>
       <div role="tablist" aria-label="Integration language" className="flex overflow-x-auto border-b border-slate-700 px-3">
         {TABS.map(t => (
           <button key={t.id} type="button" role="tab" aria-selected={language === t.id}
             onClick={() => { setLanguage(t.id); setCycle(c => c + 1); setCopied(false); }}
-            className={`relative whitespace-nowrap border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${language === t.id ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+            className={`relative whitespace-nowrap border-b-2 ${compact ? 'px-2.5 py-2.5' : 'px-3 py-3'} text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${language === t.id ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
             {t.tab}
             {language === t.id && !paused && (
               <span key={cycle} aria-hidden="true" className="absolute inset-x-0 -bottom-0.5 h-0.5 origin-left bg-purple-300"
@@ -77,8 +77,8 @@ export default function IntegrationShowcase({ endpoint = `${process.env.NEXT_PUB
         ))}
       </div>
 
-      <div role="tabpanel" className="code-panel !rounded-none !border-0 overflow-x-auto py-4 text-left">
-        <pre className="text-[13px] leading-6"><code>
+      <div role="tabpanel" className={`code-panel !rounded-none !border-0 ${compact ? 'h-64 overflow-auto py-3' : 'overflow-x-auto py-4'} text-left`}>
+        <pre className={compact ? 'text-xs leading-5' : 'text-[13px] leading-6'}><code>
           {lines.map((line, i) => (
             <div key={i} className="flex px-4">
               <span aria-hidden="true" className="w-8 shrink-0 select-none pr-4 text-right text-slate-500">{i + 1}</span>
@@ -88,7 +88,7 @@ export default function IntegrationShowcase({ endpoint = `${process.env.NEXT_PUB
         </code></pre>
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-700 px-4 py-3">
+      <div className="flex items-center justify-between border-t border-slate-700 px-4 ${compact ? 'py-2' : 'py-3'}">
         <span className="text-sm text-slate-300">{active.label}</span>
         <button type="button" onClick={() => void copy()}
           className="inline-flex items-center gap-2 rounded-md bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
