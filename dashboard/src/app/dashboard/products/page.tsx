@@ -888,12 +888,15 @@ DAAS_API_KEY=${generatedKey}
         </div>
 
         <div className="min-w-0">
-          <label htmlFor="key-usage-filter" className="sr-only">Filter products by API key</label>
+          <label htmlFor="key-usage-filter" className="sr-only">Filter products by whether they are in your API key</label>
           <select id="key-usage-filter" value={activeKeyUsageFilter}
             onChange={event => setKeyUsageFilter(event.target.value as KeyUsageFilter)}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
-            <option value="all">API key: All</option>
-            {keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>API key: {key.name}</option>)}
+            <option value="all">API key: All products</option>
+            <option value="used">API key: In my API key</option>
+            <option value="unused">API key: Not in my API key</option>
+            {/* Accounts have one key; per-key choices only matter for an older account that still has several. */}
+            {keyUsage.length > 1 && keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>API key: only {key.name}</option>)}
           </select>
         </div>
 
@@ -943,7 +946,8 @@ DAAS_API_KEY=${generatedKey}
         <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-8 text-center">
           <h2 className="text-lg font-semibold text-white">{selectionFilter === 'selected' ? 'No selected products.'
             : selectionFilter === 'not-selected' ? 'No unselected products.'
-              : activeKeyUsageFilter === 'unused' ? 'Every product here is already in an API key.' : 'No products match these filters.'}</h2>
+              : activeKeyUsageFilter === 'unused' ? 'Every product here is already in your API key.'
+              : activeKeyUsageFilter === 'used' ? 'None of these products are in your API key yet.' : 'No products match these filters.'}</h2>
           <p className="mt-2 text-sm text-slate-400">{searchQuery.trim() ? 'Within your current search and business segment.' : 'Within your current business segment.'}</p>
           <button type="button" onClick={resetPresentationFilters} className="mt-3 text-sm text-indigo-300">View All Products</button>
         </div>

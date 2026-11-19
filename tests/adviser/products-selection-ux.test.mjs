@@ -178,7 +178,9 @@ test('products already in a key stay listed and labelled; filter by one key name
   await f.segment('Grocery');
   const control = f.find(n => n.props.id === 'key-usage-filter');
   assert.equal(control.props.value, 'all');
-  assert.deepEqual(nodes(control, n => n.type === 'option').map(n => text(n).replace(/\s+/g, ' ')), ['API key: All', 'API key: Fixture POS']);
+  // One key per account: the filter offers in / not in the key, not a list of keys.
+  assert.deepEqual(nodes(control, n => n.type === 'option').map(n => text(n).replace(/\s+/g, ' ')),
+    ['API key: All products', 'API key: In my API key', 'API key: Not in my API key']);
   assert.equal(f.cards().length, 60);
   // A product already in the API key can't be picked again (adding it would change nothing).
   await f.click(f.card('grocery-0')); notHighlighted(f.card('grocery-0'));
@@ -187,6 +189,8 @@ test('products already in a key stay listed and labelled; filter by one key name
   await f.click(f.card('grocery-5'));
   await f.keyFilter('unused');
   assert.equal(f.cards().length, 55); assert.ok(!ids(f).includes('grocery-0'));
+  await f.keyFilter('used');
+  assert.deepEqual(ids(f), ['grocery-0', 'grocery-1', 'grocery-2', 'grocery-3', 'grocery-4']);
   await f.keyFilter('key:fixture-key');
   assert.deepEqual(ids(f), ['grocery-0', 'grocery-1', 'grocery-2', 'grocery-3', 'grocery-4']);
   assert.match(text(f.card('grocery-0')), /In key:\s+Fixture POS/);
