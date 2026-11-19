@@ -191,8 +191,8 @@ test('Customer actual API Keys list preserves expanded integration examples acro
     '@/lib/api-keys': { apiKeyRequest: async () => { reads++; return { success: true, keys: [{ id: 'key-fixture', keyPrefix: 'synthetic-prefix', status: 'active', name: 'Fixture' }] }; } },
     '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/api-key-generation': { REVOCATION_WARNING: '' },
     '@/components/reports/CustomerUsageSummary': { default: stub }, '@/components/api/RequestHistory': { default: stub },
-    '@/components/shared/CodeSnippet': { default: stub },
-    '@/config/plans': { requestAllowanceLabel: () => '1,000 requests/day (UTC)' },
+    '@/components/api/KeyApps': { default: stub }, '@/components/shared/CodeSnippet': { default: stub },
+    '@/config/plans': { requestAllowanceLabel: () => '1,000 requests/day (UTC)', paidAllowanceLabel: () => '' },
     '@/lib/plan-request-policy': { useAccountRequestAllowance: () => 1000 },
   }, b);
   h.mount(Component, { user, entitlementStatus: 'active' }); await flush(); assert.equal(reads, 1);
@@ -282,6 +282,8 @@ test('Admin catalog search/segment/status remain stable with one Firestore load 
     'lucide-react': icons,
     '@/lib/product-image-url': { normalizeProductImageUrl: value => value, productImageSource: () => '', showProductImageFallback: stub },
     '@/components/shared/AppDialog': { default: () => null, appConfirm: async () => true, appAlert: async () => {} }, '@/lib/catalog-csv': { catalogCsv: stub }, '@/components/products/ProductImageField': { default: stub },
+    '@/components/products/VariantPhotoCell': { default: stub, clearVariantPhoto: stub, pickVariantPhoto: stub, withUploadedVariantPhotos: async value => value },
+    '@/components/admin/MergeDuplicatesModal': { default: stub }, '@/components/admin/ManualMergeModal': { default: stub },
     '@/lib/product-media-client': { uploadProductImage: stub },
     '@/lib/data/data-client': { collection: (_db, name) => name, getDocs: async () => { reads++; return { docs: [
       { id: 'product', data: () => ({ name: 'Synthetic Rice', brand: 'Brand', segment: 'Grocery', status: 'Active', variants: [] }) }] }; } },

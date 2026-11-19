@@ -30,7 +30,6 @@ async function openCustomer(page) {
   await form(page).getByRole('textbox', { name: 'Category', exact: true }).fill('Beverages');
   await form(page).getByRole('textbox', { name: 'Brand', exact: true }).fill('Bluefield');
   await form(page).getByRole('textbox', { name: 'Variant 1 size', exact: true }).fill('250 ml');
-  await form(page).getByRole('spinbutton', { name: 'Variant 1 price', exact: true }).fill('19.50');
   await form(page).locator('input[type=file]').setInputFiles({ name: 'tea.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF1sAAAAASUVORK5CYII=', 'base64') });
 }
 async function geometry(page, dialog) {
@@ -39,7 +38,9 @@ async function geometry(page, dialog) {
 }
 
 test('Customer and Admin real UI: responsive dialogs, focus, feedback, immutable retries and decisions', { timeout: 120000 }, async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true,
+    // Lets environments whose preinstalled Chromium differs from this Playwright's pinned build reuse it.
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
   const page = await browser.newPage(); page.setDefaultTimeout(8000);
   const errors = [], checks = []; let outgoing = 0;
   page.on('pageerror', error => errors.push(error.message));

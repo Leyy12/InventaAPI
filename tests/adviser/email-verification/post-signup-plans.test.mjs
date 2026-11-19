@@ -7,8 +7,10 @@ import { hooks, load, nodes, flush } from '../workspace-refresh/harness.mjs';
 const icons = new Proxy({}, { get: (_, name) => String(name) });
 const text = value => Array.isArray(value) ? value.map(text).join(' ') :
   value && typeof value === 'object' ? text(value.props?.children) : String(value ?? '');
+// The real, side-effect-free limits module, so the catalog copy is never built from stale values.
+const limits = await import('../../../functions/entitlement-limits.mjs');
 const config = name => load('dashboard/src/config/plans.ts', `exports.${name}`, hooks(), {
-  '../../../functions/entitlement-limits.mjs': { PRO_DAILY_REQUEST_LIMIT: 500, PAID_MONTHLY_REQUEST_LIMIT: 15000, PRO_MAX_SEGMENT_KEYS: 3, TRIAL_MAX_PRODUCTS: 50, TRIAL_MAX_ACTIVE_KEYS: 5 }, 'lucide-react': icons,
+  '../../../functions/entitlement-limits.mjs': limits, 'lucide-react': icons,
 });
 const plans = config('plansForRequestLimits')({ free_trial: null, pro: 500, pro_max: null });
 const classes = node => String(node.props?.className ?? '').split(/\s+/u);
@@ -41,7 +43,7 @@ test('each plan card is a flex column whose feature list grows, so every button 
 test('the three buttons choose free, pro and pro_max with the catalog CTA text', () => {
   const fixture = cards();
   assert.deepEqual(fixture.buttons().map(button => text(button).replace(/\s+/gu, ' ').trim()),
-    ['Get Started Free →', 'Subscribe Now →', 'Get Pro Max →']);
+    ['Get Started Free', 'Subscribe Now', 'Get Pro Max']);
   for (const button of fixture.buttons()) { assert.equal(button.props.type, 'button'); assert.equal(button.props.disabled, false); button.props.onClick(); }
   assert.deepEqual(fixture.selected, ['free', 'pro', 'pro_max']);
   fixture.h.stop();

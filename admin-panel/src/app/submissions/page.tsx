@@ -1,16 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, ClipboardList, RefreshCw } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, ClipboardList, RefreshCw } from 'lucide-react';
 import { useAdminAuth } from '@/lib/supabase/admin-auth-context';
 import { reviewSubmission } from '@/lib/submission-review';
 import SubmissionReviewDialog, { ReviewStatus, SubmissionImage, submittedDate, reviewButtonClass, type Submission, type Decision } from '@/components/products/SubmissionReviewDialog';
+
+const PAGE_SIZE = 10;
+
+// Page numbers to show: always first and last, the current page and its neighbours, with gaps as null.
+function pageList(current: number, count: number): (number | null)[] {
+  const wanted = [...new Set([1, count, current - 1, current, current + 1])].filter(p => p >= 1 && p <= count).sort((a, b) => a - b);
+  return wanted.flatMap((p, i) => i > 0 && p - wanted[i - 1] > 1 ? [null, p] : [p]);
+}
 
 export default function SubmissionsPage() {
   const { user } = useAdminAuth();
   const [status, setStatus] = useState('submitted');
   const [rows, setRows] = useState<Submission[]>([]);
   const [next, setNext] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [lockedIds, setLockedIds] = useState<string[]>([]);
@@ -86,15 +95,27 @@ export default function SubmissionsPage() {
       setDecision(null);
     }
   }
+  // Rows arrive from the server 50 at a time; the table shows them PAGE_SIZE at a time.
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visibleRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const canGoNext = currentPage < pageCount || !!next;
+  async function goNext() {
+    if (currentPage < pageCount) { setPage(currentPage + 1); return; }
+    if (!next) return;
+    await load(next);
+    setPage(currentPage + 1); // clamped back if the fetch added nothing
+  }
+  const pagerButton = 'inline-flex min-h-9 min-w-9 items-center justify-center gap-1 rounded-lg border border-slate-700 px-3 text-sm text-slate-300 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400';
   return <div className="min-w-0 space-y-5 p-4 text-slate-200 sm:p-6 lg:p-8">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div><h1 className="text-2xl font-semibold tracking-tight text-white">Product Submissions</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Review Customer products before they enter the catalog. Open a submission to inspect its photo, details and variants.</p></div>
       <div className="flex items-center gap-2">
-        <select aria-label="Review status" value={status} disabled={busy} onChange={event => { setSelectedId(null); setStatus(event.target.value); }} className="min-h-10 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm focus-visible:ring-2 focus-visible:ring-indigo-400">
+        <select aria-label="Review status" value={status} disabled={busy} onChange={event => { setSelectedId(null); setPage(1); setStatus(event.target.value); }} className="min-h-10 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm focus-visible:ring-2 focus-visible:ring-indigo-400">
           <option value="submitted">Awaiting review</option><option value="approved">Approved</option><option value="rejected">Rejected</option>
         </select>
-        <button type="button" disabled={busy} onClick={() => { void load(); }} className={reviewButtonClass + ' border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800'}><RefreshCw className={'h-4 w-4 ' + (busy ? 'animate-spin' : '')} aria-hidden="true" />Refresh</button>
+        <button type="button" disabled={busy} onClick={() => { setPage(1); void load(); }} className={reviewButtonClass + ' border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800'}><RefreshCw className={'h-4 w-4 ' + (busy ? 'animate-spin' : '')} aria-hidden="true" />Refresh</button>
       </div>
     </div>
     {error && !selected && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/5 p-3 text-sm text-rose-200">{error}</p>}
@@ -109,7 +130,7 @@ export default function SubmissionsPage() {
               <th scope="col" className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">{rows.map(row => {
+          <tbody className="divide-y divide-slate-800">{visibleRows.map(row => {
             const variants = row.content?.variants || [];
             const firstVariant = String(variants[0]?.size || variants[0]?.flavor || "");
             return <tr key={row.id} className="align-middle transition-colors hover:bg-slate-800/40">
@@ -136,8 +157,19 @@ export default function SubmissionsPage() {
           })}</tbody>
         </table>
       </div>
+      <nav aria-label="Submissions pages" className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-4 py-3">
+        <p className="text-xs text-slate-400">Showing {(currentPage - 1) * PAGE_SIZE + 1}–{(currentPage - 1) * PAGE_SIZE + visibleRows.length} of {rows.length}{next ? '+' : ''}</p>
+        <div className="flex items-center gap-1.5">
+          <button type="button" disabled={busy || currentPage === 1} onClick={() => setPage(currentPage - 1)} className={pagerButton} aria-label="Previous page"><ChevronLeft className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Previous</span></button>
+          {pageList(currentPage, pageCount).map((p, i) => p === null
+            ? <span key={'gap' + i} className="px-1 text-sm text-slate-500" aria-hidden="true">…</span>
+            : <button key={p} type="button" disabled={busy} onClick={() => setPage(p)} aria-label={`Page ${p}`} aria-current={p === currentPage ? 'page' : undefined}
+              className={pagerButton + (p === currentPage ? ' border-indigo-400/60 bg-indigo-500/15 text-indigo-200' : '')}>{p}</button>)}
+          {next && currentPage === pageCount && <span className="px-1 text-sm text-slate-500" aria-hidden="true">…</span>}
+          <button type="button" disabled={busy || !canGoNext} onClick={() => { void goNext(); }} className={pagerButton} aria-label="Next page"><span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4" aria-hidden="true" /></button>
+        </div>
+      </nav>
     </div>}
-    {next && <button type="button" disabled={busy} onClick={() => { void load(next); }} className={reviewButtonClass + ' border border-slate-700 text-slate-200'}>Load more</button>}
     {selected && <SubmissionReviewDialog key={selected.id} row={selected} busy={busy} decision={decision} locked={lockedIds.includes(selected.id)} error={error}
       onClose={() => setSelectedId(null)} onReview={(id, action) => { void review(id, action); }} onRefresh={() => { void load(); }} />}
   </div>;
