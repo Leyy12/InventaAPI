@@ -180,9 +180,11 @@ test('products already in a key stay listed and labelled; filter by one key name
   assert.equal(control.props.value, 'all');
   assert.deepEqual(nodes(control, n => n.type === 'option').map(n => text(n).replace(/\s+/g, ' ')), ['API key: All', 'API key: Fixture POS']);
   assert.equal(f.cards().length, 60);
-  // Paid accounts can reuse a product already in a key for another key.
-  await f.click(f.card('grocery-0')); highlighted(f.card('grocery-0'));
-  await f.click(f.card('grocery-0'));
+  // A product already in the API key can't be picked again (adding it would change nothing).
+  await f.click(f.card('grocery-0')); notHighlighted(f.card('grocery-0'));
+  assert.match(text(f.card('grocery-0')), /Already in your API key/);
+  await f.click(f.card('grocery-5')); highlighted(f.card('grocery-5'));
+  await f.click(f.card('grocery-5'));
   await f.keyFilter('unused');
   assert.equal(f.cards().length, 55); assert.ok(!ids(f).includes('grocery-0'));
   await f.keyFilter('key:fixture-key');
@@ -198,7 +200,8 @@ test('default shows every product; products in a key carry a quiet note and no h
   assert.equal(f.cards().length, 60);
   assert.match(text(f.card('grocery-0')), /In key:\s+Fixture POS/); notHighlighted(f.card('grocery-0'));
   await f.keyFilter('key:fixture-key'); await f.click(f.card('grocery-0'));
-  await f.keyFilter('all'); highlighted(f.card('grocery-0'));
+  await f.keyFilter('all'); notHighlighted(f.card('grocery-0'));
+  await f.click(f.card('grocery-5')); highlighted(f.card('grocery-5'));
 }));
 
 test('product category filter lists the categories in view and composes with search and selection', () => using({ trial: false }, async f => {

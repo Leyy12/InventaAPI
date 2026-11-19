@@ -45,6 +45,17 @@ function withMonthly(metadata, key, context) {
     segment: monthly.plan === 'pro' ? normalizeSegment(key.segment) || null : null };
 }
 
+// True when two scopes hold the same products and, for variant-only products, the same variants.
+export function sameScope(a, b) {
+  const variants = scope => {
+    const partial = scope?.linkedVariantSelections && typeof scope.linkedVariantSelections === 'object'
+      && !Array.isArray(scope.linkedVariantSelections) ? scope.linkedVariantSelections : {};
+    return new Map(authorizedProductIds(scope || {}).map(id => [id, Object.hasOwn(partial, id) ? [...new Set(partial[id])].sort().join('\n') : '*']));
+  };
+  const left = variants(a), right = variants(b);
+  return left.size === right.size && [...left].every(([id, value]) => right.get(id) === value);
+}
+
 // Adds products to an existing selection. A product added in full replaces a
 // variant-only selection; variant selections for the same product are combined.
 export function mergeScope(existing, addFull, addPartial) {
@@ -546,7 +557,9 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
             const version = Number.isSafeInteger(existing.scopeVersion) ? existing.scopeVersion : 0;
             tx.update(db.collection('api_keys').doc(target.id), { ...merged, scopeVersion: version + 1, productAvailability: availability,
               ...(plan === 'pro' && !normalizeSegment(existing.segment) ? { segment } : {}) });
-            out.push({ segment: plan === 'pro' ? segment : null, keyId: target.id, name: existing.name || '', created: false, added, total });
+            // changed: false means everything picked was already in the key (no new products or variants).
+            out.push({ segment: plan === 'pro' ? segment : null, keyId: target.id, name: existing.name || '', created: false, added, total,
+              changed: !sameScope(existing, merged) });
             continue;
           }
           const credential = issued[next++];
@@ -556,7 +569,7 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
             userId: actor.uid, userEmail: actor.email || '', status: 'active', createdAt: now, lastUsed: null, requestsUsed: 0,
             plan: entitlement.plan, requestLimit: monthlyRequestLimit(plan), productAvailability: availability,
           });
-          out.push({ segment: plan === 'pro' ? segment : null, keyId: credential.id, name, created: true, added, total, key: credential.credential });
+          out.push({ segment: plan === 'pro' ? segment : null, keyId: credential.id, name, created: true, added, total, changed: true, key: credential.credential });
         }
         return out;
       });

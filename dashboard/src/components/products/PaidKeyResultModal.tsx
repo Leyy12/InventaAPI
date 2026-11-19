@@ -7,12 +7,16 @@ import { Check, Copy, Key, X } from "lucide-react";
 // secret here once; it can be copied again later from the API Keys page.
 export type PaidAddResult = {
   segment: string | null; keyId: string; name: string; created: boolean; added: number; total: number; key?: string;
+  /** False when everything picked was already in the key. Older servers omit it. */
+  changed?: boolean;
 };
 
 export default function PaidKeyResultModal({ results, onClose }: { results: PaidAddResult[]; onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState("");
   const created = results.filter(result => result.created && result.key);
+  // Everything picked was already in the key(s): say so instead of "Products added · 0 added".
+  const nothingNew = results.length > 0 && results.every(result => !result.created && result.changed === false);
   const copy = async (result: PaidAddResult) => {
     try {
       await navigator.clipboard.writeText(result.key!);
@@ -30,9 +34,10 @@ export default function PaidKeyResultModal({ results, onClose }: { results: Paid
         <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mb-4">
           <Check className="w-6 h-6 text-emerald-400" />
         </div>
-        <h3 id="paid-key-result-title" className="text-xl font-bold text-white mb-1">Products added</h3>
+        <h3 id="paid-key-result-title" className="text-xl font-bold text-white mb-1">{nothingNew ? "Already in your API key" : "Products added"}</h3>
         <p className="text-sm text-slate-400 mb-5">
-          {created.length ? "Copy each new key now and store it securely. You can copy it again later from API Keys." : "Your API key now includes these products. No new key was needed."}
+          {nothingNew ? "These products were already in your key, so nothing changed."
+            : created.length ? "Copy each new key now and store it securely. You can copy it again later from API Keys." : "Your API key now includes these products. No new key was needed."}
         </p>
         <ul className="space-y-3">
           {results.map(result => (

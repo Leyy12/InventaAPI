@@ -1,5 +1,8 @@
-/** Product IDs already linked to each active API key, labelled by the key's name. */
-export interface KeyProductUsage { id: string; name: string; productIds: Set<string> }
+/** Product IDs already linked to each active API key, labelled by the key's name.
+ * fullIds: products in the key with every variant; variantSelections: products in it
+ * with only some variants (variant IDs are "flavor|size"). */
+export interface KeyProductUsage { id: string; name: string; productIds: Set<string>;
+  fullIds: Set<string>; variantSelections: Map<string, Set<string>> }
 
 export type KeyUsageFilter = 'all' | 'unused' | 'used' | `key:${string}`;
 
@@ -13,8 +16,14 @@ export function keyProductUsage(keys: unknown): KeyProductUsage[] {
     const partial = key.linkedVariantSelections && typeof key.linkedVariantSelections === 'object'
       ? Object.keys(key.linkedVariantSelections) : [];
     const productIds = new Set<string>([...full, ...partial].filter((id): id is string => typeof id === 'string'));
+    const variantSelections = new Map<string, Set<string>>();
+    for (const id of partial) {
+      const values = key.linkedVariantSelections[id];
+      if (Array.isArray(values)) variantSelections.set(id, new Set(values.filter((value: unknown): value is string => typeof value === 'string')));
+    }
+    const fullIds = new Set<string>(full.filter((id: unknown): id is string => typeof id === 'string' && !variantSelections.has(id)));
     const name = typeof key.name === 'string' && key.name.trim() ? key.name.trim() : 'Unnamed key';
-    return [{ id: key.id, name, productIds }];
+    return [{ id: key.id, name, productIds, fullIds, variantSelections }];
   });
 }
 
@@ -73,4 +82,17 @@ export function previewScopeFromQuery(products: string | null, variants: string 
     }
   }
   return { linkedProductIds: ids.filter(id => !Object.hasOwn(linkedVariantSelections, id)), linkedVariantSelections };
+}
+
+const variantKey = (variant: { flavor?: string; size?: string }) => `${variant.flavor || ''}|${variant.size || ''}`;
+
+/** What the customer's keys already hold for one product: every variant, some, or none. */
+export function keyCoverage(usage: KeyProductUsage[], product: { id?: string; variants?: { flavor?: string; size?: string }[] }):
+  { full: boolean; variants: Set<string> } {
+  const id = product.id;
+  const all = (product.variants ?? []).map(variantKey);
+  if (!id) return { full: false, variants: new Set() };
+  if (usage.some(key => key.fullIds.has(id))) return { full: true, variants: new Set(all) };
+  const variants = new Set(usage.flatMap(key => [...(key.variantSelections.get(id) ?? [])]));
+  return { full: all.length > 0 && all.every(value => variants.has(value)), variants };
 }
