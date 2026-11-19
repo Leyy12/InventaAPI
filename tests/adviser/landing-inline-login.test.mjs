@@ -16,10 +16,11 @@ test('header brand uses safe page gutters rather than the centered max-width con
 test('desktop hero places unchanged marketing first and reusable inline login second', () => {
   assert.match(hero, /grid items-center gap-10 lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,440px\)\]/);
   assert.match(hero, /text-center lg:text-left/);
-  for (const copy of ['Data-as-a-Service Platform v1.0', 'Centralized Product', 'Database for SMEs',
+  for (const copy of ['Centralized Product', 'Database for SMEs',
     'Stop building your product catalog from scratch. Consume our standardized, highly-available REST API to power your Point of Sale, Inventory, or E-Commerce applications instantly.']) assert.ok(hero.includes(copy));
   assert.ok(hero.indexOf('<h1') < hero.indexOf('<LoginForm'));
   assert.equal((entry.match(/<LoginForm/g) || []).length, 1);
+  assert.ok(!hero.includes('Data-as-a-Service Platform v1.0'));
 });
 test('mobile stacks marketing and login with shrinkable columns and bounded card width', () => {
   assert.match(hero, /min-w-0 w-full max-w-md mx-auto/);

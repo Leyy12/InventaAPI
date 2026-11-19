@@ -268,11 +268,6 @@ export default function AuthEntry() {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-x-16 lg:gap-y-8">
           <div className="min-w-0 text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-slate-300 mb-5">
-              <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-              Data-as-a-Service Platform v1.0
-            </div>
-
             <h1 className="text-3xl sm:text-4xl xl:text-5xl font-extrabold tracking-tight mb-4 leading-tight">
               Centralized Product <br className="hidden md:block" />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
