@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useId, useRef } from "react";
 import {
   Package, Pencil, Search, Download, Upload,
   Eye, RotateCcw, X, ShoppingCart, Wrench, Pill, Layers,
-  FolderArchive, ChevronDown, Plus, Trash2, Save, Loader2, AlertTriangle, Archive,
+  FolderArchive, ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2, Save, Loader2, AlertTriangle, Archive, ImageOff,
   type LucideIcon
 } from "lucide-react";
 import { collection, getDocs } from "@/lib/data/data-client";
@@ -206,7 +206,7 @@ const exportCSV = (data: Product[], fileName = "master_catalog.csv") => {
 // ─── Variant values ──────────────────────────────────────────────────────────
 // Each value on its own chip. Long lists show the first few with "Show all (N)",
 // which opens inside the row so nothing is cut off.
-const VALUES_SHOWN = 3;
+const VALUES_SHOWN = 2;
 function VariantValues({ items, mono = false }: { items: string[]; mono?: boolean }) {
   const [open, setOpen] = useState(false);
   if (!items.length) return <span className="text-[13px] text-slate-600">—</span>;
@@ -216,14 +216,14 @@ function VariantValues({ items, mono = false }: { items: string[]; mono?: boolea
     <div className="flex flex-wrap items-center gap-1.5">
       {shown.map((item, i) => (
         <span key={`${item}-${i}`} title={item}
-          className={`max-w-[11rem] truncate rounded-md border border-slate-700/80 bg-slate-800/50 px-2 py-0.5 text-[12px] text-slate-300 ${mono ? "font-mono" : ""}`}>
+          className={`max-w-[10rem] truncate rounded-md bg-slate-800/80 px-2 py-0.5 text-[12px] leading-5 text-slate-200 ${mono ? "tabular-nums" : ""}`}>
           {item}
         </span>
       ))}
       {hidden > 0 && (
         <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-          className="rounded-md px-1.5 py-0.5 text-[12px] font-medium text-slate-400 underline-offset-2 hover:text-slate-100 hover:underline">
-          {open ? "Show less" : `Show all (${items.length})`}
+          className="rounded-md px-1.5 py-0.5 text-[12px] font-medium text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200">
+          {open ? "Show less" : `+${hidden} more`}
         </button>
       )}
     </div>
@@ -240,7 +240,7 @@ function StatusBadge({ status }: { status: string }) {
   };
   const c = cfg[status] ?? cfg.Active;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-bold uppercase tracking-wider whitespace-nowrap ${c.bg}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap ${c.bg}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       {status}
     </span>
@@ -857,12 +857,12 @@ function TooltipButton({
 }) {
   const tooltipId = useId();
 
-  // No fill: each action is told apart by its icon colour, with a soft tint on hover.
+  // Quiet grey icons; each action shows its colour on hover/focus.
   const variants = {
-    view: "text-blue-400 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-300",
-    edit: "text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-300",
-    archive: "text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-300",
-    danger: "text-red-400 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-300",
+    view: "hover:bg-blue-500/10 hover:text-blue-300",
+    edit: "hover:bg-emerald-500/10 hover:text-emerald-300",
+    archive: "hover:bg-amber-500/10 hover:text-amber-300",
+    danger: "hover:bg-red-500/10 hover:text-red-300",
   };
 
   const activeVariant = variants[tone];
@@ -874,7 +874,7 @@ function TooltipButton({
         aria-label={label}
         aria-describedby={tooltipId}
         onClick={onClick}
-        className={`inline-flex select-none items-center justify-center rounded-lg w-8 h-8 border border-slate-700 bg-transparent outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-slate-400 ${activeVariant}`}
+        className={`inline-flex select-none items-center justify-center rounded-lg w-8 h-8 bg-transparent text-slate-400 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-slate-400 ${activeVariant}`}
       >
         <Icon className="w-4 h-4" strokeWidth={2} />
       </button>
@@ -894,6 +894,12 @@ function TooltipButton({
 }
 
 const PRODUCTS_PER_PAGE = 50;
+
+// Page numbers to show: first, last, the current page and its neighbours; null marks a gap.
+function pageList(current: number, count: number): (number | null)[] {
+  const wanted = [...new Set([0, count - 1, current - 1, current, current + 1])].filter(p => p >= 0 && p < count).sort((a, b) => a - b);
+  return wanted.flatMap((p, i) => i > 0 && p - wanted[i - 1] > 1 ? [null, p] : [p]);
+}
 // A photo link, or a photo uploaded through the site.
 const hasImage = (p: Product) => !!productImageSource(p) || !!(p as { image_asset_id?: string }).image_asset_id;
 
@@ -1093,11 +1099,11 @@ export default function MasterProductCatalogPage() {
         {/* Toolbar */}
         <div className="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-[#111827]">
           {/* Search (Moved to left) */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input type="text" placeholder="Search by name, brand, SKU…" value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-slate-950/60 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/15" />
+              className="h-9 w-full bg-slate-950/60 border border-slate-800 rounded-lg pl-9 pr-8 text-[13px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/15" />
             {search && (
               <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
                 <X className="w-3 h-3" />
@@ -1109,72 +1115,74 @@ export default function MasterProductCatalogPage() {
             {/* Segment selector */}
             <div className="relative">
               <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)}
-                className="appearance-none pl-3 pr-6 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800 border border-slate-700 text-slate-300 focus:outline-none focus:border-indigo-500/60 cursor-pointer">
+                aria-label="Segment"
+                className="h-9 appearance-none pl-3 pr-8 rounded-lg text-xs font-medium bg-slate-950/60 border border-slate-800 text-slate-200 focus:outline-none focus:border-indigo-500/60 cursor-pointer">
                 <option value="All">All Segments</option>
                 <option value="Hardware">Hardware</option>
                 <option value="Grocery">Grocery</option>
                 <option value="Pharmacy">Pharmacy</option>
               </select>
-              <ChevronDown className="w-3 h-3 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
             {/* Products without a photo */}
             <button onClick={() => setImageFilter(imageFilter === "missing" ? "all" : "missing")}
               title="Show products without a photo. Export them, add image_url links, then Import CSV to fill them in."
-              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${imageFilter === "missing"
-                ? "bg-amber-500/15 text-amber-300 border border-amber-500/40"
-                : "text-slate-500 hover:text-slate-300 border border-transparent hover:border-slate-700"}`}>
-              No image ({missingImages.toLocaleString()})
+              aria-pressed={imageFilter === "missing"}
+              className={`inline-flex h-9 items-center gap-1.5 px-3 rounded-lg text-xs font-medium border transition-colors ${imageFilter === "missing"
+                ? "bg-amber-500/15 text-amber-200 border-amber-500/40"
+                : "text-slate-300 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50"}`}>
+              <ImageOff className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
+              No image
+              <span className="rounded-full bg-amber-500/15 px-1.5 text-[11px] font-semibold text-amber-300">{missingImages.toLocaleString()}</span>
             </button>
             {/* Status pills */}
-            {["All", "Active", "Archived"].map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${statusFilter === s
-                  ? "bg-slate-700 text-white border border-slate-600"
-                  : "text-slate-500 hover:text-slate-300 border border-transparent hover:border-slate-700"
-                  }`}>
-                {s}
-              </button>
-            ))}
+            <div role="group" aria-label="Status" className="inline-flex h-9 items-center rounded-lg border border-slate-800 bg-slate-950/60 p-0.5">
+              {["All", "Active", "Archived"].map(s => (
+                <button key={s} onClick={() => setStatusFilter(s)} aria-pressed={statusFilter === s}
+                  className={`h-full px-3 rounded-md text-xs font-medium transition-colors ${statusFilter === s
+                    ? "bg-slate-700 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                    }`}>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Table */}
         <div ref={tableTop} className="overflow-auto max-h-[62vh] custom-scrollbar">
-          <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "960px" }}>
-            {/* One width per column (7). An 8th width here used to leave an empty strip on the right. */}
+          <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "1040px" }}>
+            {/* One width per column (6); Product takes the remaining space. */}
             <colgroup>
-              <col style={{ width: "5%" }} />
-              <col style={{ width: "29%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "72px" }} />
+              <col />
+              <col style={{ width: "120px" }} />
+              <col style={{ width: "34%" }} />
+              <col style={{ width: "104px" }} />
+              <col style={{ width: "172px" }} />
             </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md pl-6 pr-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">NO.</th>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">PRODUCT</th>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">{tableHeaders[0]}</th>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-left select-none">{tableHeaders[1]}</th>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center select-none">VARIANTS</th>
-                <th className="sticky top-0 z-20 bg-[#111827]/90 backdrop-blur-md px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center select-none">STATUS</th>
-                <th className="sticky top-0 right-0 z-30 bg-[#111827]/95 backdrop-blur-md pl-4 pr-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center select-none border-l border-slate-800">
-                  ACTIONS
-                </th>
+                <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none pl-6 text-left">#</th>
+                <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Product</th>
+                <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Segment</th>
+                <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Variants</th>
+                <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Status</th>
+                <th className="sticky top-0 z-30 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none right-0 border-l pl-4 pr-6 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/40">
+            <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-slate-500">
+                  <td colSpan={6} className="py-16 text-center text-slate-500">
                     <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2.5" />
                     <p className="text-xs">Loading catalog…</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-slate-500">
+                  <td colSpan={6} className="py-16 text-center text-slate-500">
                     <Package className="w-10 h-10 text-slate-700 mx-auto mb-2.5" />
                     <p className="text-sm font-medium text-slate-400">No products match your criteria</p>
                     <p className="text-xs mt-1">Adjust filters or clear the search</p>
@@ -1190,14 +1198,16 @@ export default function MasterProductCatalogPage() {
                   const expiryWarn = hasExpiryWarning(product);
                   const variantCount = product.variants?.length
                     ?? ((attrs1.length || attrs2.length) ? 1 : 0);
+                  const [attr1Key, attr2Key] = getSegmentPair(product.segment);
+                  const attr1Label = FIELD_META[attr1Key].label, attr2Label = FIELD_META[attr2Key].label;
 
                   return (
                     <tr key={product.id}
                       className="group transition-colors duration-150 hover:bg-slate-800/40">
 
                       {/* Number Column */}
-                      <td className={`pl-6 pr-4 py-3 align-middle text-[13px] font-medium text-slate-400 ${isArchived ? "opacity-50" : ""} ${expiryWarn ? "border-l-2 border-amber-500/60" : ""}`}>
-                        <label className="flex items-center gap-2 cursor-pointer">
+                      <td className={`pl-6 pr-2 py-3 align-middle text-xs tabular-nums text-slate-500 border-b border-slate-800/60 ${isArchived ? "opacity-50" : ""} ${expiryWarn ? "border-l-2 border-l-amber-500/60" : ""}`}>
+                        <label className="flex items-center gap-2.5 cursor-pointer">
                           <input type="checkbox" checked={picked.has(product.id)} onChange={() => togglePicked(product.id)}
                             aria-label={`Select ${getProductName(product)} to merge`} className="h-3.5 w-3.5 accent-indigo-500" />
                           {globalIndex}
@@ -1205,16 +1215,16 @@ export default function MasterProductCatalogPage() {
                       </td>
 
                       {/* Product Column */}
-                      <td className={`px-4 py-3 overflow-hidden align-middle ${isArchived ? "opacity-50" : ""}`}>
+                      <td className={`px-4 py-3 overflow-hidden align-middle border-b border-slate-800/60 ${isArchived ? "opacity-50" : ""}`}>
                         <div className="flex items-center gap-3">
                           {/* Thumbnail */}
-                          <div key={productImageSource(product)} className="relative w-9 h-9 shrink-0">
+                          <div key={productImageSource(product)} className="relative w-10 h-10 shrink-0">
                             {productImageSource(product) ? (
                               <img src={productImageSource(product)} alt={getProductName(product)} loading="lazy"
                                 referrerPolicy="no-referrer" onError={showProductImageFallback}
-                                className="w-9 h-9 rounded-lg object-cover border border-white/5 bg-slate-800/80" />
+                                className="w-10 h-10 rounded-lg object-cover border border-white/5 bg-slate-800/80" />
                             ) : null}
-                            <div className={`absolute inset-0 w-9 h-9 rounded-lg bg-slate-800/80 border border-white/5 flex items-center justify-center ${productImageSource(product) ? 'hidden' : ''}`}>
+                            <div className={`absolute inset-0 w-10 h-10 rounded-lg bg-slate-800/80 border border-dashed border-slate-700 flex items-center justify-center ${productImageSource(product) ? 'hidden' : ''}`}>
                               <Package className="w-4 h-4 text-slate-500" />
                             </div>
                           </div>
@@ -1226,52 +1236,46 @@ export default function MasterProductCatalogPage() {
                                   <AlertTriangle className="w-2.5 h-2.5" /> Expiring
                                 </span>
                               )}
-                              <p className="truncate text-[14px] font-semibold text-slate-100 leading-snug" title={getProductName(product)}>{getProductName(product)}</p>
+                              <p className="truncate text-sm font-semibold text-slate-100 leading-5" title={getProductName(product)}>{getProductName(product)}</p>
                             </div>
-                            <p className="mt-0.5 truncate text-xs font-medium text-slate-400" title={getBrand(product)}>{getBrand(product) || "—"}</p>
-                            {product.category ? (
-                              <div className="mt-1">
-                                <span title={product.category} className="block w-40 max-w-full truncate rounded-md border border-slate-700 bg-slate-800/60 px-2 py-0.5 text-[11px] font-medium text-slate-300">
-                                  {product.category}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="mt-1"><span className="text-xs text-slate-600">—</span></div>
-                            )}
+                            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs leading-5 text-slate-400">
+                              <span className="truncate font-medium" title={getBrand(product)}>{getBrand(product) || "No brand"}</span>
+                              {product.category && <><span aria-hidden="true" className="text-slate-600">·</span><span className="truncate text-slate-500" title={product.category}>{product.category}</span></>}
+                              {variantCount > 0 && <><span aria-hidden="true" className="text-slate-600">·</span><span className="inline-flex shrink-0 items-center gap-1 text-slate-500"><Layers className="w-3 h-3" aria-hidden="true" />{variantCount} {variantCount > 1 ? "variants" : "variant"}</span></>}
+                            </p>
                           </div>
                         </div>
                       </td>
 
-                      {/* Attributes */}
-                      <td className={`px-4 py-3 overflow-hidden align-middle text-left ${isArchived ? "opacity-50" : ""}`}>
-                        <VariantValues items={attrs1} />
+                      {/* Segment */}
+                      <td className={`px-4 py-3 align-middle border-b border-slate-800/60 ${isArchived ? "opacity-50" : ""}`}>
+                        {product.segment
+                          ? <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${segmentStyle(product.segment)}`}>{product.segment}</span>
+                          : <span className="text-[13px] text-slate-600">—</span>}
                       </td>
 
-                      {/* Attribute details */}
-                      <td className={`px-4 py-3 overflow-hidden align-middle text-left ${isArchived ? "opacity-50" : ""}`}>
-                        <VariantValues items={attrs2} mono />
-                      </td>
-
-                      {/* Variant Count Badge */}
-                      <td className={`px-4 py-3 align-middle text-center ${isArchived ? "opacity-50" : ""}`}>
-                        {variantCount > 0 ? (
-                          <span title={`${variantCount} Total Variant${variantCount > 1 ? 's' : ''}`}
-                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-300">
-                            <Layers className="w-3 h-3" /> {variantCount} {variantCount > 1 ? 'Variants' : 'Variant'}
-                          </span>
-                        ) : (
-                          <span className="text-[13px] text-slate-600">—</span>
-                        )}
+                      {/* Variants: the segment's two fields, each on its own labelled row */}
+                      <td className={`px-4 py-3 overflow-hidden align-middle border-b border-slate-800/60 ${isArchived ? "opacity-50" : ""}`}>
+                        {attrs1.length || attrs2.length ? (
+                          <div className="space-y-1.5">
+                            {[[attr1Label, attrs1, false], [attr2Label, attrs2, true]].map(([label, items, mono]) => (items as string[]).length > 0 && (
+                              <div key={label as string} className="flex items-start gap-2">
+                                <span className="w-[5.5rem] shrink-0 pt-0.5 text-[10px] font-semibold uppercase leading-5 tracking-wider text-slate-500">{label as string}</span>
+                                <VariantValues items={items as string[]} mono={mono as boolean} />
+                              </div>
+                            ))}
+                          </div>
+                        ) : <span className="text-[13px] text-slate-600">—</span>}
                       </td>
 
                       {/* Status */}
-                      <td className="px-4 py-3 align-middle text-center">
+                      <td className="px-4 py-3 align-middle border-b border-slate-800/60">
                         <StatusBadge status={status} />
                       </td>
 
                       {/* Actions — sticky, opaque bg to match card */}
-                      <td className="sticky right-0 z-10 bg-[#111827] group-hover:bg-[#161f2f] pl-4 pr-6 py-3 align-middle border-l border-slate-800/60 transition-colors duration-150">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="sticky right-0 z-10 bg-[#111827] group-hover:bg-[#161f2f] pl-4 pr-6 py-3 align-middle border-l border-b border-slate-800/60 transition-colors duration-150">
+                        <div className="flex items-center justify-center gap-1">
                           <TooltipButton icon={Eye} label="View Details" tone="view" onClick={() => setViewProduct(product)} />
                           <TooltipButton icon={Pencil} label="Edit Product" tone="edit" onClick={() => setEditProduct(product)} />
                           {isArchived ? (
@@ -1299,13 +1303,16 @@ export default function MasterProductCatalogPage() {
               {filtered.length !== products.length && <> (from {products.length.toLocaleString()})</>}{" "}products
             </p>
             {pageCount > 1 && (
-              <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0}
-                  className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-40">Previous</button>
-                <span>Page {currentPage + 1} of {pageCount}</span>
-                <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount - 1}
-                  className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-40">Next</button>
-              </div>
+              <nav aria-label="Catalog pages" className="flex items-center gap-1.5 text-xs text-slate-300">
+                <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0} aria-label="Previous page"
+                  className="inline-flex h-8 items-center gap-1 px-2.5 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /><span className="hidden sm:inline">Previous</span></button>
+                {pageList(currentPage, pageCount).map((p, i) => p === null
+                  ? <span key={"gap" + i} aria-hidden="true" className="px-1 text-slate-500">…</span>
+                  : <button key={p} onClick={() => goToPage(p)} aria-label={`Page ${p + 1}`} aria-current={p === currentPage ? "page" : undefined}
+                    className={`h-8 min-w-8 px-2 rounded-lg border tabular-nums ${p === currentPage ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-slate-700 hover:bg-slate-800"}`}>{p + 1}</button>)}
+                <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount - 1} aria-label="Next page"
+                  className="inline-flex h-8 items-center gap-1 px-2.5 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"><span className="hidden sm:inline">Next</span><ChevronRight className="w-3.5 h-3.5" aria-hidden="true" /></button>
+              </nav>
             )}
           </div>
         )}
