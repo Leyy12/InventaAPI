@@ -180,11 +180,11 @@ test('products already in a key stay listed and labelled; filter by one key name
   assert.equal(control.props.value, 'all');
   // One key per account: the filter offers in / not in the key, not a list of keys.
   assert.deepEqual(nodes(control, n => n.type === 'option').map(n => text(n).replace(/\s+/g, ' ')),
-    ['API key: All products', 'API key: In my API key', 'API key: Not in my API key']);
+    ['Key status: All', 'Key status: Included', 'Key status: Not included']);
   assert.equal(f.cards().length, 60);
   // A product already in the API key can't be picked again (adding it would change nothing).
   await f.click(f.card('grocery-0')); notHighlighted(f.card('grocery-0'));
-  assert.match(text(f.card('grocery-0')), /Already in your API key/);
+  assert.match(text(f.card('grocery-0')), /Included in your API key/);
   await f.click(f.card('grocery-5')); highlighted(f.card('grocery-5'));
   await f.click(f.card('grocery-5'));
   await f.keyFilter('unused');

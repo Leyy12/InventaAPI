@@ -888,15 +888,15 @@ DAAS_API_KEY=${generatedKey}
         </div>
 
         <div className="min-w-0">
-          <label htmlFor="key-usage-filter" className="sr-only">Filter products by whether they are in your API key</label>
+          <label htmlFor="key-usage-filter" className="sr-only">Filter products by key status</label>
           <select id="key-usage-filter" value={activeKeyUsageFilter}
             onChange={event => setKeyUsageFilter(event.target.value as KeyUsageFilter)}
             className="max-w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
-            <option value="all">API key: All products</option>
-            <option value="used">API key: In my API key</option>
-            <option value="unused">API key: Not in my API key</option>
+            <option value="all">Key status: All</option>
+            <option value="used">Key status: Included</option>
+            <option value="unused">Key status: Not included</option>
             {/* Accounts have one key; per-key choices only matter for an older account that still has several. */}
-            {keyUsage.length > 1 && keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>API key: only {key.name}</option>)}
+            {keyUsage.length > 1 && keyUsage.map(key => <option key={key.id} value={`key:${key.id}`}>Key status: {key.name}</option>)}
           </select>
         </div>
 
@@ -946,8 +946,8 @@ DAAS_API_KEY=${generatedKey}
         <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-8 text-center">
           <h2 className="text-lg font-semibold text-white">{selectionFilter === 'selected' ? 'No selected products.'
             : selectionFilter === 'not-selected' ? 'No unselected products.'
-              : activeKeyUsageFilter === 'unused' ? 'Every product here is already in your API key.'
-              : activeKeyUsageFilter === 'used' ? 'None of these products are in your API key yet.' : 'No products match these filters.'}</h2>
+              : activeKeyUsageFilter === 'unused' ? 'Every product here is already included in your API key.'
+              : activeKeyUsageFilter === 'used' ? 'No products here are included in your API key yet.' : 'No products match these filters.'}</h2>
           <p className="mt-2 text-sm text-slate-400">{searchQuery.trim() ? 'Within your current search and business segment.' : 'Within your current business segment.'}</p>
           <button type="button" onClick={resetPresentationFilters} className="mt-3 text-sm text-indigo-300">View All Products</button>
         </div>
@@ -973,7 +973,7 @@ DAAS_API_KEY=${generatedKey}
                 key={product.id}
                 onClick={() => toggleProduct(product)}
                 aria-disabled={selectionDisabled || undefined}
-                aria-label={`${product.name}${isIncluded ? ', Included' : inPaidKey ? ', Already in your API key' : isSelected ? ', Selected' : ''}`}
+                aria-label={`${product.name}${isIncluded ? ', Included' : inPaidKey ? ', Included in your API key' : isSelected ? ', Selected' : ''}`}
                 style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : 'var(--color-slate-700)',
                   boxShadow: isSelected ? '0 0 0 1px #818cf8, 0 4px 20px rgb(99 102 241 / 0.2)' : undefined }}
                 className={`glass-card rounded-xl transition-all overflow-hidden flex h-[24rem] flex-col ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
@@ -1023,7 +1023,7 @@ DAAS_API_KEY=${generatedKey}
                 <div className="p-4 flex flex-1 flex-col min-w-0 min-h-0">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
-                  {inPaidKey && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Already in your API key</span>}
+                  {inPaidKey && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included in your API key</span>}
                   {keyNames.has(product.id!) && <p className="flex items-center gap-1 text-xs text-emerald-300 mb-1 min-w-0">
                     <Key className="w-3 h-3 shrink-0" aria-hidden="true" />
                     <span className="truncate">In key: {keyNames.get(product.id!)!.join(', ')}</span>
@@ -1043,7 +1043,7 @@ DAAS_API_KEY=${generatedKey}
                             key={i}
                             onClick={(e) => toggleVariant(e, product.id!, variantId)}
                             disabled={selectionDisabled || isVarInKey}
-                            title={`${[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}${isVarInKey ? ' (already in your API key)' : ''}`}
+                            title={`${[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}${isVarInKey ? ' (included in your API key)' : ''}`}
                             className={`inline-flex h-5 max-w-full items-center gap-1 px-2 rounded text-[10px] leading-none font-medium whitespace-nowrap transition-colors ${
                               isVarIncluded
                                 ? 'bg-slate-800/80 text-emerald-300/90 border border-emerald-700/40'
