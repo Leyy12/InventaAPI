@@ -41,7 +41,7 @@ export async function productsFixture({ trial = true, included = 0, count = 60, 
     '@/lib/supabase/auth-context': { useAuth: () => state },
     '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
     '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters,
-    '@/components/products/PaidKeyResultModal': () => null,
+    '@/components/products/PaidKeyResultModal': () => null, '@/components/shared/AppDialog': { appConfirm: async () => true, appAlert: async () => {} },
     '@/lib/api-keys': { apiKeyRequest: async (_user, path = '', init) => {
       if (init?.method) throw Error('Persisted mutations prohibited in selection fixture');
       keyCalls.push(path);

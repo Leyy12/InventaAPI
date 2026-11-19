@@ -1,6 +1,7 @@
 "use client";
 import { TRIAL_MAX_ACTIVE_KEYS, TRIAL_MAX_PRODUCTS } from "../../../../../functions/entitlement-limits.mjs";
 import { trialCapacityMessage, trialRemainingSlots } from '@/lib/trial-display.mjs';
+import { appConfirm } from '@/components/shared/AppDialog';
 import { trialSelectionState, toggleTrialPending, trialAdditionScope, type TrialCatalogKey } from '@/lib/trial-catalog-selection';
 import { invalidateAccountUsage } from '@/lib/account-usage-events';
 import type { TrialCatalog } from '@/lib/quota-refresh';
@@ -22,7 +23,7 @@ import { selectedLinkedProducts } from "@/lib/linked-product-selection";
 import { apiKeyRequest } from "@/lib/api-keys";
 import PaidKeyResultModal, { type PaidAddResult } from "@/components/products/PaidKeyResultModal";
 import { createCatalogRefresh, loadSegmentCatalog, searchCatalog, catalogSelectableIds, catalogPresentationState, type CatalogSource, type CatalogPage } from '@/lib/segment-catalog';
-import { ALL_CATEGORIES, keyNamesByProduct, keyProductUsage, matchesCategory, matchesKeyUsage, playgroundHref, productCategories, type KeyProductUsage, type KeyUsageFilter } from '@/lib/product-filters';
+import { ALL_CATEGORIES, keyNamesByProduct, keyProductUsage, matchesCategory, matchesKeyUsage, playgroundHref, productCategories, type KeyProductUsage, type KeyUsageFilter, keyCoverage } from '@/lib/product-filters';
 
 // Product type now imported from products-service (matches new variants schema)
 // CartSummary local type
@@ -127,6 +128,10 @@ function CustomerCatalogSession() {
   const [keyUsageFilter, setKeyUsageFilter] = useState<KeyUsageFilter>('all');
   const [keyUsage, setKeyUsage] = useState<KeyProductUsage[]>([]);
   const keyNames = useMemo(() => keyNamesByProduct(keyUsage), [keyUsage]);
+  // Pro / Pro Max: what the key already holds, so nothing is picked twice.
+  // (Free Trial has its own included-products state.)
+  const paidCoverage = useCallback((product: Product) => activeTrial ? { full: false, variants: new Set<string>() } : keyCoverage(keyUsage, product),
+    [activeTrial, keyUsage]);
   
   // API Key Generation State
   const [showGenModal, setShowGenModal] = useState(false);
@@ -299,8 +304,9 @@ function CustomerCatalogSession() {
       // Only products outside the shared Trial catalog consume remaining slots.
       included: trialState.included, remaining: trialState.remaining - trialState.pending.size + selectedProducts.size,
       allowed: trialSelectionAllowed,
-    } : null),
-  ], [trialNewKey, trialSelectionAllowed, filteredProducts, trialState, selectedProducts, activeTrial]);
+    // Pro / Pro Max: products already fully in the API key can't be picked again.
+    } : null).filter(id => { const product = filteredProducts.find(item => item.id === id); return activeTrial || !product || !paidCoverage(product).full; }),
+  ], [trialNewKey, trialSelectionAllowed, filteredProducts, trialState, selectedProducts, activeTrial, paidCoverage]);
 
   const cartSummary = useMemo((): CartSummary => {
     const selectedItems = selectedLinkedProducts(products, appUser, selectedProducts);
@@ -344,6 +350,8 @@ function CustomerCatalogSession() {
       });
       return;
     }
+    const coverage = paidCoverage(product);
+    if (coverage.full && !selectedProducts.has(productId)) return; // already in the API key
     setSelectedProducts((prevProds) => {
       const newProds = new Set(prevProds);
       const isCurrentlySelected = newProds.has(productId);
@@ -359,20 +367,25 @@ function CustomerCatalogSession() {
         if (isCurrentlySelected) {
           delete newVars[productId];
         } else if (product.variants && product.variants.length > 0) {
-          newVars[productId] = new Set(product.variants.map(v => `${v.flavor || ''}|${v.size || ''}`));
+          // Only the variants the key doesn't have yet.
+          newVars[productId] = new Set(product.variants.map(v => `${v.flavor || ''}|${v.size || ''}`).filter(id => !coverage.variants.has(id)));
         }
         return newVars;
       });
       
       return newProds;
     });
-  }, [activeTrial, trialReady, upgradeRequired, generating, trialState, trialNewKey, selectedProducts]);
+  }, [activeTrial, trialReady, upgradeRequired, generating, trialState, trialNewKey, selectedProducts, paidCoverage]);
 
   const toggleVariant = useCallback((e: React.MouseEvent, productId: string, variantId: string) => {
     e.stopPropagation();
     if (upgradeRequired || !trialReady || generating) return;
     if (activeTrial && (!trialState.canToggle || (trialState.included.has(productId)
       ? !trialNewKey : !trialState.pending.has(productId) && !trialState.canSelect))) return;
+    if (!activeTrial) {
+      const product = products.find(item => item.id === productId);
+      if (product && paidCoverage(product).variants.has(variantId)) return; // already in the API key
+    }
     setClickedVariant(previous => ({ ...previous, [productId]: variantId }));
     
     setSelectedVariants((prevVars) => {
@@ -402,7 +415,7 @@ function CustomerCatalogSession() {
       
       return newMap;
     });
-  }, [activeTrial, trialReady, upgradeRequired, generating, trialState, trialNewKey]);
+  }, [activeTrial, trialReady, upgradeRequired, generating, trialState, trialNewKey, products, paidCoverage]);
 
   const selectAllInView = useCallback(() => {
     if (upgradeRequired || !trialReady || generating || (activeTrial && !trialState.canToggle)) return;
@@ -416,12 +429,13 @@ function CustomerCatalogSession() {
       const additions = new Set(selectableIds);
       filteredProducts.forEach(p => {
         if (additions.has(p.id!) && p.variants && p.variants.length > 0) {
-          newVars[p.id!] = new Set(p.variants.map(v => `${v.flavor || ''}|${v.size || ''}`));
+          const inKey = paidCoverage(p).variants;
+          newVars[p.id!] = new Set(p.variants.map(v => `${v.flavor || ''}|${v.size || ''}`).filter(id => !inKey.has(id)));
         }
       });
       return newVars;
     });
-  }, [filteredProducts, selectedProducts, activeTrial, upgradeRequired, trialReady, trialState.canToggle, generating, selectableIds]);
+  }, [filteredProducts, selectedProducts, activeTrial, upgradeRequired, trialReady, trialState.canToggle, generating, selectableIds, paidCoverage]);
 
   const clearSelection = useCallback(() => {
     if (upgradeRequired || !trialReady || generating) return;
@@ -518,8 +532,21 @@ function CustomerCatalogSession() {
     }
   };
 
+  // Ask before products go into a key: names the first few and what the addition uses.
+  const confirmAddition = (items: { name?: string }[], destination: string, detail: string) => {
+    const names = items.map(item => item.name || 'Unnamed product');
+    const listed = names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
+    const count = `${items.length} ${items.length === 1 ? 'product' : 'products'}`;
+    return appConfirm({ title: `Add ${count} to ${destination}?`, message: `${listed}. ${detail}`,
+      confirmLabel: `Yes, add ${count}`, cancelLabel: 'Not yet', tone: 'info' });
+  };
+
   const addTrialProducts = async () => {
     if (!user || !trialKey || !canGenerate || generating || !trialState.canSubmit) return;
+    const adding = selectedLinkedProducts(products, appUser, trialState.pending);
+    const slots = trialCatalog ? trialRemainingSlots(trialCatalog.productsIncluded) : null;
+    if (!await confirmAddition(adding, 'your Free Trial key',
+      `They become available through your API key right away${slots === null ? '' : ` and use ${adding.length} of your ${slots} remaining Free Trial slots`}. You can remove them later.`)) return;
     setGenerating(true); setSelectionError('');
     try {
       const full: string[] = [];
@@ -549,6 +576,9 @@ function CustomerCatalogSession() {
   // Pro / Pro Max: add the selection to the right API key (created the first time).
   const addPaidProducts = async () => {
     if (!user || !paidKeyPlan || generating || selectedProducts.size === 0) return;
+    const adding = selectedLinkedProducts(products, appUser, selectedProducts);
+    if (!await confirmAddition(adding, paidKeyPlan === 'pro' ? 'your Pro API key' : 'your Pro Max API key',
+      'They become available through your API key right away, and each variant delivered counts toward your monthly allowance.')) return;
     setGenerating(true); setSelectionError('');
     try {
       const full: string[] = [];
@@ -921,8 +951,10 @@ DAAS_API_KEY=${generatedKey}
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
           {pageProducts.map((product) => {
             const isIncluded = activeTrial && trialState.included.has(product.id!);
+            const coverage = paidCoverage(product);
+            const inPaidKey = coverage.full && !selectedProducts.has(product.id!);
             // A new Trial key may reuse included products; only new products need a free slot.
-            const selectionDisabled = upgradeRequired || !trialReady || generating || (activeTrial && (!trialState.canToggle
+            const selectionDisabled = upgradeRequired || !trialReady || generating || inPaidKey || (activeTrial && (!trialState.canToggle
               || (isIncluded ? !trialNewKey : !trialState.pending.has(product.id!) && !trialState.canSelect)));
             // Only products picked in this session are highlighted; products
             // already in a key carry a quiet note instead.
@@ -937,7 +969,7 @@ DAAS_API_KEY=${generatedKey}
                 key={product.id}
                 onClick={() => toggleProduct(product)}
                 aria-disabled={selectionDisabled || undefined}
-                aria-label={`${product.name}${isIncluded ? ', Included' : isSelected ? ', Selected' : ''}`}
+                aria-label={`${product.name}${isIncluded ? ', Included' : inPaidKey ? ', Already in your API key' : isSelected ? ', Selected' : ''}`}
                 style={{ borderWidth: isSelected ? 2 : 1, borderColor: isSelected ? '#6366f1' : 'var(--color-slate-700)',
                   boxShadow: isSelected ? '0 0 0 1px #818cf8, 0 4px 20px rgb(99 102 241 / 0.2)' : undefined }}
                 className={`glass-card rounded-xl transition-all overflow-hidden flex h-[24rem] flex-col ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02]'} ${
@@ -987,6 +1019,7 @@ DAAS_API_KEY=${generatedKey}
                 <div className="p-4 flex flex-1 flex-col min-w-0 min-h-0">
                   <h3 className="text-sm font-bold text-white mb-1 line-clamp-1">{product.name}</h3>
                   {isIncluded && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Included</span>}
+                  {inPaidKey && <span className="inline-flex items-center gap-1 text-xs text-slate-400 mb-1"><Check className="w-3 h-3" aria-hidden="true" />Already in your API key</span>}
                   {keyNames.has(product.id!) && <p className="flex items-center gap-1 text-xs text-emerald-300 mb-1 min-w-0">
                     <Key className="w-3 h-3 shrink-0" aria-hidden="true" />
                     <span className="truncate">In key: {keyNames.get(product.id!)!.join(', ')}</span>
@@ -998,14 +1031,15 @@ DAAS_API_KEY=${generatedKey}
                     <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 mt-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" onClick={e => e.stopPropagation() /* Prevent double toggle if clicking container */}>
                       {product.variants.map((v, i) => {
                         const variantId = `${v.flavor || ''}|${v.size || ''}`;
-                        const isVarSelected = productVars.has(variantId);
-                        const isVarIncluded = isVarSelected && showIncludedScope;
+                        const isVarInKey = coverage.variants.has(variantId);
+                        const isVarSelected = productVars.has(variantId) || isVarInKey;
+                        const isVarIncluded = (isVarSelected && showIncludedScope) || isVarInKey;
                         return (
                           <button
                             key={i}
                             onClick={(e) => toggleVariant(e, product.id!, variantId)}
-                            disabled={selectionDisabled}
-                            title={[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}
+                            disabled={selectionDisabled || isVarInKey}
+                            title={`${[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}${isVarInKey ? ' (already in your API key)' : ''}`}
                             className={`inline-flex h-5 max-w-full items-center gap-1 px-2 rounded text-[10px] leading-none font-medium whitespace-nowrap transition-colors ${
                               isVarIncluded
                                 ? 'bg-slate-800/80 text-emerald-300/90 border border-emerald-700/40'

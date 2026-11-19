@@ -36,7 +36,7 @@ function customer() {
     '@/lib/product-image-url': { productImageSource: () => '', showProductImageFallback: stub },
     '@/lib/supabase/auth-context': { useAuth: () => state },
     '@/lib/products-service': { getBasePrice: () => 1, getBaseSize: () => 'each', hasNearExpiry: () => false },
-    '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } }, '@/components/products/PaidKeyResultModal': () => null,
+    '@/lib/linked-product-selection': linked, '@/lib/product-filters': productFilters, '@/lib/api-keys': { apiKeyRequest: () => { throw Error('unexpected key read'); } }, '@/components/products/PaidKeyResultModal': () => null, '@/components/shared/AppDialog': { appConfirm: async () => true, appAlert: async () => {} },
     '@/lib/segment-catalog': { ...catalog, createCatalogRefresh: options => catalog.createCatalogRefresh({ ...options, schedule: c.schedule, cancel: c.cancel }) },
   }, { ...b, fetch: async url => {
     calls.push(url);
