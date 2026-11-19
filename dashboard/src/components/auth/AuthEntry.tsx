@@ -9,6 +9,7 @@ import SessionLoadingScreen from "@/components/auth/SessionLoadingScreen";
 import SubscriptionModal from "@/components/subscription/SubscriptionModal";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 import PlanCards from "@/components/subscription/PlanCards";
+import IntegrationShowcase from "@/components/landing/IntegrationShowcase";
 import { useAuth } from "@/lib/supabase/auth-context";
 import type { PlanId } from "@/config/plans";
 import { usePlanCatalog } from '@/lib/plan-request-policy';
@@ -228,6 +229,7 @@ export default function AuthEntry() {
             <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
               <a href="#features" className="hover:text-white transition-colors">Features</a>
               <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
+              <a href="#integration" className="hover:text-white transition-colors">Integration</a>
               <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
 
             </div>
@@ -254,6 +256,7 @@ export default function AuthEntry() {
           >
             <a href="#features" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Features</a>
             <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">How it Works</a>
+            <a href="#integration" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Integration</a>
             <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Pricing</a>
           </div>
         </div>
@@ -356,6 +359,17 @@ export default function AuthEntry() {
             </div>
           </div>
 
+        </div>
+      </section>
+
+      {/* Integration Examples */}
+      <section id="integration" className="scroll-mt-20 py-24 border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Integrate in Minutes</h2>
+            <p className="text-slate-400 max-w-2xl mx-auto">Pick your language and copy a ready-to-run request. Replace YOUR_API_KEY with a securely stored key on your server; never publish it in browser code or URLs.</p>
+          </div>
+          <IntegrationShowcase />
         </div>
       </section>
 
