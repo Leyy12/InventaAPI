@@ -144,14 +144,6 @@ const getAttr1 = (p: Product): string[] => {
   return values.filter(v => !sizes.includes(v));
 };
 
-const getTableHeaders = (segment: string): [string, string] => {
-  if (segment && segment !== "All") {
-    const [a, b] = getSegmentPair(segment);
-    return [FIELD_META[a].tableLabel, FIELD_META[b].tableLabel];
-  }
-  return ["VARIANT OPTION", "VARIANT DETAIL"];
-};
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getProductName = (p: Product) => p.name || p.product || "Unnamed Product";
 const getBrand = (p: Product) => p.brand || p.attributes?.brand || "";
@@ -1010,7 +1002,6 @@ export default function MasterProductCatalogPage() {
   const pharmacy = products.filter(p => getStatus(p) === "Active" && p.segment === "Pharmacy").length;
   const pct = (n: number) => total ? `${Math.round(n / total * 100)}% of total` : "0%";
 
-  const tableHeaders = getTableHeaders(segmentFilter);
 
   return (
     <div className="w-full px-6 max-sm:px-0 lg:px-8 space-y-5 pb-8">
@@ -1152,14 +1143,13 @@ export default function MasterProductCatalogPage() {
 
         {/* Table */}
         <div ref={tableTop} className="overflow-auto max-h-[62vh] custom-scrollbar">
-          <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "1040px" }}>
-            {/* One width per column (6); Product takes the remaining space. */}
+          <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "940px" }}>
+            {/* One width per column (5); Product takes the remaining space. */}
             <colgroup>
               <col style={{ width: "72px" }} />
               <col />
               <col style={{ width: "120px" }} />
               <col style={{ width: "34%" }} />
-              <col style={{ width: "104px" }} />
               <col style={{ width: "172px" }} />
             </colgroup>
             <thead>
@@ -1168,21 +1158,20 @@ export default function MasterProductCatalogPage() {
                 <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Product</th>
                 <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Segment</th>
                 <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Variants</th>
-                <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Status</th>
                 <th className="sticky top-0 z-30 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none sm:right-0 border-l pl-4 pr-6 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-16 text-center text-slate-500">
+                  <td colSpan={5} className="py-16 text-center text-slate-500">
                     <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2.5" />
                     <p className="text-xs">Loading catalog…</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-16 text-center text-slate-500">
+                  <td colSpan={5} className="py-16 text-center text-slate-500">
                     <Package className="w-10 h-10 text-slate-700 mx-auto mb-2.5" />
                     <p className="text-sm font-medium text-slate-400">No products match your criteria</p>
                     <p className="text-xs mt-1">Adjust filters or clear the search</p>
@@ -1268,10 +1257,6 @@ export default function MasterProductCatalogPage() {
                         ) : <span className="text-[13px] text-slate-600">—</span>}
                       </td>
 
-                      {/* Status */}
-                      <td className="px-4 py-3 align-middle border-b border-slate-800/60">
-                        <StatusBadge status={status} />
-                      </td>
 
                       {/* Actions — sticky, opaque bg to match card */}
                       <td className="sm:sticky right-0 z-10 bg-[#111827] group-hover:bg-[#161f2f] pl-4 pr-6 py-3 align-middle border-l border-b border-slate-800/60 transition-colors duration-150">
