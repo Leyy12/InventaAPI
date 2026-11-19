@@ -841,11 +841,14 @@ function TooltipButton({
   label,
   tone = "view",
   onClick,
+  alignEnd = false,
 }: {
   icon: LucideIcon;
   label: string;
   tone?: ActionTone;
   onClick: () => void;
+  /** Anchor the tooltip to the button's right edge so the last button's label never spills past the table. */
+  alignEnd?: boolean;
 }) {
   const tooltipId = useId();
 
@@ -875,11 +878,11 @@ function TooltipButton({
       <span
         id={tooltipId}
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/95 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 opacity-0 shadow-xl shadow-black/50 transition-all duration-200 translate-y-1 group-hover/btn:translate-y-0 group-hover/btn:opacity-100"
+        className={`pointer-events-none absolute bottom-full z-50 mb-2 ${alignEnd ? "right-0" : "left-1/2 -translate-x-1/2"} whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/95 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 opacity-0 shadow-xl shadow-black/50 transition-all duration-200 translate-y-1 group-hover/btn:translate-y-0 group-hover/btn:opacity-100`}
       >
         {label}
         {/* Tooltip Arrow */}
-        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[4px] border-l-transparent border-r-transparent border-t-slate-700" />
+        <span className={`absolute -bottom-1 ${alignEnd ? "right-3" : "left-1/2 -translate-x-1/2"} border-l-[4px] border-r-[4px] border-t-[4px] border-l-transparent border-r-transparent border-t-slate-700`} />
       </span>
     </span>
   );
@@ -1142,7 +1145,8 @@ export default function MasterProductCatalogPage() {
         </div>
 
         {/* Table */}
-        <div ref={tableTop} className="overflow-auto max-h-[62vh] custom-scrollbar">
+        {/* Fills the screen below the top bar, toolbar and footer, so the list isn't cut short. */}
+        <div ref={tableTop} className="overflow-auto max-h-[calc(100dvh-13rem)] min-h-[320px] custom-scrollbar">
           <table className="w-full text-left table-fixed border-separate border-spacing-0" style={{ minWidth: "940px" }}>
             {/* One width per column (5); Product takes the remaining space. */}
             <colgroup>
@@ -1268,7 +1272,7 @@ export default function MasterProductCatalogPage() {
                           ) : (
                             <TooltipButton icon={Archive} label="Archive Product" tone="archive" onClick={() => handleArchive(product)} />
                           )}
-                          <TooltipButton icon={Trash2} label="Delete Product" tone="danger" onClick={() => handleDelete(product)} />
+                          <TooltipButton icon={Trash2} label="Delete Product" tone="danger" alignEnd onClick={() => handleDelete(product)} />
                         </div>
                       </td>
                     </tr>
