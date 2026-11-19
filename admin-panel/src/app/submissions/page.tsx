@@ -100,19 +100,43 @@ export default function SubmissionsPage() {
     {error && !selected && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/5 p-3 text-sm text-rose-200">{error}</p>}
     {busy && !decision && <p role="status" className="text-xs text-slate-400">Loading submissions…</p>}
     {!busy && rows.length === 0 && <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-10 text-center"><ClipboardList className="mx-auto mb-3 h-7 w-7 text-slate-500" aria-hidden="true" /><p className="text-sm font-medium text-slate-300">No submissions in this view.</p><p className="mt-1 text-xs text-slate-500">Choose another status or refresh to check for updates.</p></div>}
-    <div className="grid gap-3 xl:grid-cols-2">{rows.map(row => <article key={row.id} className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 transition-colors hover:border-slate-700">
-      <div className="flex items-start gap-3"><SubmissionImage row={row} size="thumbnail" />
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-start gap-2"><h2 className="min-w-0 flex-1 break-words text-sm font-semibold leading-5 text-white">{row.content?.name || 'Legacy submission'}</h2><ReviewStatus status={row.status} /></div>
-          <p className="mt-1 truncate text-xs text-slate-400" title={row.content?.brand}>{row.content?.brand || 'No brand provided'}</p>
-          <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-500"><span className="text-slate-300">{row.content?.segment || '—'}</span><span className="break-words">{row.content?.category || 'Uncategorized'}</span></p>
-        </div>
+    {rows.length > 0 && <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
+      <div className="relative overflow-x-auto">
+        <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-800 bg-slate-900/40">
+              {['Product', 'Segment / Category', 'Variants', 'Submitted', 'Status'].map(label => <th key={label} scope="col" className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</th>)}
+              <th scope="col" className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400"><span className="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">{rows.map(row => {
+            const variants = row.content?.variants || [];
+            const firstVariant = String(variants[0]?.size || variants[0]?.flavor || "");
+            return <tr key={row.id} className="align-middle transition-colors hover:bg-slate-800/40">
+              <td className="px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="shrink-0 [&_.h-20]:h-14 [&_.h-20]:w-14 [&_.h-20]:rounded-lg [&_.h-20_img]:p-1 [&_.h-20_.text-xs]:text-[10px]"><SubmissionImage row={row} size="thumbnail" /></div>
+                  <div className="min-w-0">
+                    <p className="max-w-[260px] truncate font-semibold text-white" title={row.content?.name}>{row.content?.name || 'Legacy submission'}</p>
+                    <p className="max-w-[260px] truncate text-xs text-slate-400" title={row.content?.brand}>{row.content?.brand || 'No brand provided'}</p>
+                    {lockedIds.includes(row.id) && <p className="mt-1 text-xs text-amber-200">Refresh required before another decision.</p>}
+                  </div>
+                </div>
+              </td>
+              <td className="px-4 py-3"><p className="text-slate-200">{row.content?.segment || '—'}</p><p className="text-xs text-slate-500">{row.content?.category || 'Uncategorized'}</p></td>
+              <td className="px-4 py-3">{row.content
+                ? <><p className="text-slate-200">{variants.length} variant{variants.length === 1 ? '' : 's'}</p><p className="max-w-[160px] truncate text-xs text-slate-500" title={firstVariant}>{firstVariant || 'Details in review'}</p></>
+                : <p className="text-xs text-amber-200">Operator resolution required</p>}</td>
+              <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">{submittedDate(row.createdAt)}</td>
+              <td className="whitespace-nowrap px-4 py-3"><ReviewStatus status={row.status} /></td>
+              <td className="px-4 py-3 text-right">
+                <button type="button" disabled={!!decision} onClick={() => setSelectedId(row.id)} aria-label={`Review ${row.content?.name || row.id}`} className={reviewButtonClass + ' bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20'}>Review<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></button>
+              </td>
+            </tr>;
+          })}</tbody>
+        </table>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
-        <div className="min-w-0 text-[11px] leading-5 text-slate-500"><p>{submittedDate(row.createdAt)}</p><p className="truncate">{row.content ? `${row.content.variants.length} variant${row.content.variants.length === 1 ? '' : 's'} · ${row.content.variants[0]?.size || row.content.variants[0]?.flavor || 'Details in review'}` : 'Operator resolution required'}</p></div>
-        <button type="button" disabled={!!decision} onClick={() => setSelectedId(row.id)} aria-label={`Review ${row.content?.name || row.id}`} className={reviewButtonClass + ' bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20'}>Review<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></button>
-      </div>
-      {lockedIds.includes(row.id) && <p className="mt-2 text-xs text-amber-200">Refresh required before another decision.</p>}
-    </article>)}</div>
+    </div>}
     {next && <button type="button" disabled={busy} onClick={() => { void load(next); }} className={reviewButtonClass + ' border border-slate-700 text-slate-200'}>Load more</button>}
     {selected && <SubmissionReviewDialog key={selected.id} row={selected} busy={busy} decision={decision} locked={lockedIds.includes(selected.id)} error={error}
       onClose={() => setSelectedId(null)} onReview={(id, action) => { void review(id, action); }} onRefresh={() => { void load(); }} />}

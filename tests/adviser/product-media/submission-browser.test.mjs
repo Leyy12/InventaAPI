@@ -68,10 +68,10 @@ test('Customer and Admin real UI: responsive dialogs, focus, feedback, immutable
       assert.equal(await page.evaluate(() => window.fixture.calls.filter(c => c.path.endsWith('/product-submissions')).length), 1);
       checks.push({ width, customerForm: g, success: sg, loading: true, doneDoesNotSubmit: true, focusRestored: true });
       await show(page, 'admin');
-      await page.locator('article').nth(5).waitFor();
-      const cardHeights = await page.locator('article').evaluateAll(es => es.map(e => e.getBoundingClientRect().height)); assert.ok(Math.max(...cardHeights) < 300);
+      await page.locator('tbody tr').nth(5).waitFor();
+      const cardHeights = await page.locator('tbody tr').evaluateAll(es => es.map(e => e.getBoundingClientRect().height)); assert.ok(Math.max(...cardHeights) < 300);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      const thumb = page.locator('article').first().locator('img'); await thumb.waitFor();
+      const thumb = page.locator('tbody tr').first().locator('img'); await thumb.waitFor();
       assert.equal(await thumb.evaluate(async e => { await e.decode(); return getComputedStyle(e).objectFit; }), 'contain');
       await page.screenshot({ path: join(evidence, 'admin-cards-' + width + '.png') });
       await page.getByRole('button', { name: 'Review Bluefield Sparkling Tea', exact: true }).click(); await review(page).waitFor();
