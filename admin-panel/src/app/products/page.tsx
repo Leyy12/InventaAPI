@@ -1169,7 +1169,7 @@ export default function MasterProductCatalogPage() {
                 <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Segment</th>
                 <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Variants</th>
                 <th className="sticky top-0 z-20 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none text-left">Status</th>
-                <th className="sticky top-0 z-30 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none right-0 border-l pl-4 pr-6 text-center">Actions</th>
+                <th className="sticky top-0 z-30 bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none sm:right-0 border-l pl-4 pr-6 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1274,7 +1274,7 @@ export default function MasterProductCatalogPage() {
                       </td>
 
                       {/* Actions — sticky, opaque bg to match card */}
-                      <td className="sticky right-0 z-10 bg-[#111827] group-hover:bg-[#161f2f] pl-4 pr-6 py-3 align-middle border-l border-b border-slate-800/60 transition-colors duration-150">
+                      <td className="sm:sticky right-0 z-10 bg-[#111827] group-hover:bg-[#161f2f] pl-4 pr-6 py-3 align-middle border-l border-b border-slate-800/60 transition-colors duration-150">
                         <div className="flex items-center justify-center gap-1">
                           <TooltipButton icon={Eye} label="View Details" tone="view" onClick={() => setViewProduct(product)} />
                           <TooltipButton icon={Pencil} label="Edit Product" tone="edit" onClick={() => setEditProduct(product)} />
