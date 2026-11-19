@@ -21,7 +21,7 @@ export default function PlanCards({ plans, onSelect, isDisabled = () => false, c
       onClick={() => onSelect(plan)}
       className={`w-full text-white font-medium py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
     >
-      {ctaText(plan)} →
+      {ctaText(plan)}
     </button>
   );
   const included = (feature: string) => (
