@@ -266,25 +266,25 @@ export default function AuthEntry() {
       <section className="relative pt-28 pb-16 lg:pt-32 lg:pb-24 overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/20 blur-[120px] rounded-full pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-x-16 lg:gap-y-8">
           <div className="min-w-0 text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-slate-300 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-sm text-slate-300 mb-5">
               <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
               Data-as-a-Service Platform v1.0
             </div>
 
-            <h1 className="text-4xl sm:text-5xl xl:text-6xl font-extrabold tracking-tight mb-8 leading-tight">
+            <h1 className="text-3xl sm:text-4xl xl:text-5xl font-extrabold tracking-tight mb-4 leading-tight">
               Centralized Product <br className="hidden md:block" />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
                 Database for SMEs
               </span>
             </h1>
 
-            <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+            <p className="text-base md:text-lg text-slate-400 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
               Stop building your product catalog from scratch. Consume our standardized, highly-available REST API to power your Point of Sale, Inventory, or E-Commerce applications instantly.
             </p>
           </div>
-          <div className="min-w-0 w-full max-w-md mx-auto lg:justify-self-end">
+          <div className="min-w-0 w-full max-w-md mx-auto lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-center lg:justify-self-end">
             <LoginForm
               onStart={() => { setLoginStarted(true); }}
               onComplete={() => { setPendingPlan(null); setLoginStarted(false); }}
@@ -295,6 +295,9 @@ export default function AuthEntry() {
               }}
               initialError={modalError}
             />
+          </div>
+          <div id="integration" className="min-w-0 scroll-mt-24 lg:col-start-1 lg:row-start-2">
+            <IntegrationShowcase compact />
           </div>
         </div>
       </section>
@@ -359,17 +362,6 @@ export default function AuthEntry() {
             </div>
           </div>
 
-        </div>
-      </section>
-
-      {/* Integration Examples */}
-      <section id="integration" className="scroll-mt-20 py-24 border-t border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Integrate in Minutes</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">Pick your language and copy a ready-to-run request. Replace YOUR_API_KEY with a securely stored key on your server; never publish it in browser code or URLs.</p>
-          </div>
-          <IntegrationShowcase />
         </div>
       </section>
 
