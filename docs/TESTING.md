@@ -15,7 +15,12 @@ Get the files once with `git pull` and `npm install`.
 | Compatibility | Playwright | `tests/compatibility/` | `npm run test:compat` |
 | Statistical | Node script | `scripts/stats/` | `npm run stats:k6 -- <file>` |
 
-Results are saved in `test-results/` (not uploaded to GitHub).
+Results are saved in `test-results/` (not uploaded to GitHub). Create that folder once
+before the first k6 run, or k6 says "The system cannot find the path specified":
+
+```
+mkdir test-results
+```
 
 ---
 
