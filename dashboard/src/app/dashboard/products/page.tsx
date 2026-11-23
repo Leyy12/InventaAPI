@@ -74,9 +74,8 @@ function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?
 }
 
 const PRODUCTS_PER_PAGE = 60;
-// Table view shows this many flavor lines (or plain chips) before "Show more".
-const TABLE_VARIANT_GROUPS = 3;
-const TABLE_VARIANT_CHIPS = 6;
+// Collapsed table rows show at most this many variant chips on their one line.
+const TABLE_VARIANT_CHIPS = 3;
 const VIEW_MODE_STORAGE_KEY = 'inventa.products.viewMode';
 type CatalogViewMode = 'grid' | 'table';
 
@@ -1080,36 +1079,45 @@ DAAS_API_KEY=${generatedKey}
                             );
                           };
                           const expanded = expandedVariants.has(product.id!);
-                          const total = grouped ? flavors.length : variants.length;
-                          const limit = grouped ? TABLE_VARIANT_GROUPS : TABLE_VARIANT_CHIPS;
-                          const hidden = expanded ? 0 : Math.max(0, total - limit);
-                          const toggle = total > limit && (
+                          // Collapsed rows show one line: the first flavor (or the first chips),
+                          // then "+N more". Show more opens the full list.
+                          const firstFlavor = flavors[0];
+                          const lineVariants = (grouped ? variants.filter(v => (v.flavor || '') === firstFlavor) : variants).slice(0, TABLE_VARIANT_CHIPS);
+                          const hiddenCount = variants.length - lineVariants.length;
+                          const toggleButton = (label: string, className: string) => (
                             <button type="button" onClick={e => { e.stopPropagation(); toggleVariantsExpanded(product.id!); }}
                               aria-expanded={expanded}
-                              className="mt-1.5 text-xs font-medium text-indigo-300 hover:text-indigo-200">
-                              {expanded ? 'Show less' : `Show more (+${total - limit})`}
+                              className={`text-xs font-medium text-indigo-300 hover:text-indigo-200 whitespace-nowrap ${className}`}>
+                              {label}
                             </button>
+                          );
+                          if (!expanded || hiddenCount === 0) return (
+                            <div className="flex min-w-0 items-center gap-1 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              {grouped && <span className="mr-2 truncate text-xs font-medium text-slate-300" title={firstFlavor}>{firstFlavor || 'Other'}</span>}
+                              {lineVariants.map(v => chip(v, variants.indexOf(v), grouped ? v.size || '' : [v.flavor, v.size].filter(Boolean).join(' · ')))}
+                              {hiddenCount > 0 && toggleButton(`+${hiddenCount} more`, 'ml-1')}
+                            </div>
                           );
                           if (!grouped) return (
                             <div onClick={e => e.stopPropagation()}>
                               <div className="flex flex-wrap gap-1">
-                                {variants.map((v, i) => i < total - hidden ? chip(v, i, [v.flavor, v.size].filter(Boolean).join(' · ')) : null)}
+                                {variants.map((v, i) => chip(v, i, [v.flavor, v.size].filter(Boolean).join(' · ')))}
                               </div>
-                              {toggle}
+                              {toggleButton('Show less', 'mt-1.5')}
                             </div>
                           );
                           // Two aligned columns: flavor names on the left, their size chips on the right.
                           return (
                             <div onClick={e => e.stopPropagation()}>
                             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
-                              {flavors.slice(0, total - hidden).map(flavor => [
+                              {flavors.map(flavor => [
                                 <span key={`${flavor}-label`} className="max-w-[11rem] text-xs font-medium leading-tight text-slate-300">{flavor || 'Other'}</span>,
                                 <div key={`${flavor}-sizes`} className="flex flex-wrap gap-1">
                                   {variants.map((v, i) => (v.flavor || '') === flavor ? chip(v, i, v.size || '') : null)}
                                 </div>,
                               ])}
                             </div>
-                            {toggle}
+                            {toggleButton('Show less', 'mt-1.5')}
                             </div>
                           );
                         })()
