@@ -1,0 +1,23 @@
+# Local Grafana + InfluxDB for k6 results.
+#   Start:  docker compose -f grafana/docker-compose.yml up -d
+#   Grafana: http://localhost:3030  (no login needed, local only)
+#   Send k6 results:  k6 run --out influxdb=http://localhost:8086/k6 tests/load/load.js
+services:
+  influxdb:
+    image: influxdb:1.8
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=k6
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning
+    depends_on:
+      - influxdb

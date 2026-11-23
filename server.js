@@ -5,6 +5,7 @@ import compression from 'compression';
 import { createIpRateLimiter, trustedRateLimitIp } from './services/rate-limit-client-ip.js';
 import { createSystemPolicyMiddleware, createSystemSettingsHandlers } from './services/system-settings.js';
 import { getDataStore } from './database/data-store.js';
+import { createDeveloperPortalHandler } from './services/developer-portal.js';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -186,6 +187,12 @@ app.use('/api/webhooks', webhooksRouter);
 // DaaS Integration Layer (Guarded internally by API Key)
 app.use('/daas/v1', daasRouter);
 
+// --- Developer portal: sends visitors to this environment's dashboard (DASHBOARD_URL) ---
+// Registered before the static files so public/index.html is never served with the
+// local placeholder address.
+const developerPortal = createDeveloperPortalHandler(path.join(__dirname, 'public', 'index.html'));
+app.get(['/', '/index.html', '/developer'], developerPortal);
+
 // --- Serve static assets (CSS, images, etc.) ---
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -205,10 +212,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// --- Developer Portal Route ---
-app.get('/developer', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 // --- API Info endpoint (for raw JSON consumers) ---
 app.get('/api', (req, res) => {

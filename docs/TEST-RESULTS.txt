@@ -1,0 +1,241 @@
+================================================================================
+                 INVENTAAPI - SYSTEM TESTING RESULTS
+================================================================================
+Date of testing : November 23, 2026
+System          : InventaAPI (API-based DaaS Sales & Inventory Management)
+Tester machine  : Windows laptop, Node.js v24.21.0, PowerShell
+Network         : Mobile hotspot
+Tools           : Jest 29 (unit), Grafana k6 v2.4.0 (load), Playwright 1.62
+                  (compatibility), Node statistics script (statistical)
+
+Environments tested
+  Local    : API at http://localhost:5000 (running on the tester's laptop)
+  Deployed : API at https://inventa-api-theta.vercel.app (Vercel, Singapore)
+             Dashboard at https://inventa-dashboard-tau.vercel.app
+
+Acceptance targets
+  Local    : error rate < 1%, 95% of requests < 500 ms, 99% < 1,500 ms
+  Deployed : error rate < 1%, 95% of requests < 1,000 ms, 99% < 2,000 ms
+             (higher because deployed times include internet travel time
+              and serverless "cold starts")
+
+
+================================================================================
+1. UNIT TESTING (Jest)
+================================================================================
+Command : npm run test:jest
+Result  : PASSED
+
+  Test suites : 5 passed, 5 total
+  Tests       : 71 passed, 71 total
+  Time        : 4.677 s
+  (After the defect #1 fix: 6 suites, 80 tests - developer-portal.test.js
+   added with 9 tests. Re-run on the tester's PC pending.)
+
+  Suite                       What it tests
+  --------------------------  ------------------------------------------------
+  product-contract.test.js    Product text/SKU cleanup, business segments,
+                              product visibility rules (fail-closed)
+  api-key-security.test.js    API key creation, parsing, matching, revoked keys
+  plan-limits.test.js         Free Trial product cap, monthly limits, request
+                              limit policy, payment catalog
+  rate-limit.test.js          IP address checks, rate limiter blocks request
+                              no. 6 when the limit is 5 (real HTTP requests)
+  statistics.test.js          Mean, variance, percentiles, confidence
+                              interval, t-test accuracy
+
+
+================================================================================
+2. LOAD TESTING (Grafana k6)
+================================================================================
+Pages tested: /, /developer, /style.css (one "visit" = all three pages)
+
+2.1 Local smoke test (1 user, 30 s)                              Result: PASSED
+--------------------------------------------------------------------------------
+  Requests          : 90           Failed requests : 0 (0.00%)
+  Checks passed     : 180 / 180 (100%)
+  Average           : 5.13 ms      Median          : 4.50 ms
+  p90               : 7.31 ms      p95             : 7.85 ms
+  p99               : 13.02 ms     Max             : 25.93 ms
+
+2.2 Local load test (ramp to 20 users, 4 min)                    Result: PASSED
+--------------------------------------------------------------------------------
+  Requests          : 12,534  (52.06 requests/second)
+  Failed requests   : 0 (0.00%)
+  Checks passed     : 25,068 / 25,068 (100%)
+  Average           : 3.88 ms      Median          : 3.70 ms
+  Min               : 1.05 ms      Max             : 19.47 ms
+  p90               : 5.15 ms      p95             : 5.73 ms
+  p99               : 7.27 ms
+  Data received     : 39 MB        Data sent       : 953 kB
+
+2.3 Deployed smoke test (1 user, 30 s)              Result: FAILED local target
+--------------------------------------------------------------------------------
+  Requests          : 54           Failed requests : 0 (0.00%)
+  Checks passed     : 107 / 108 (99.07%)
+  Average           : 233.61 ms    Median          : 151.77 ms
+  Min               : 84.85 ms     Max             : 1.06 s
+  p90               : 542.61 ms    p95             : 691.14 ms
+  Note: this run used the LOCAL target (p95 < 500 ms) and missed it. The
+  deployed target (p95 < 1,000 ms) was added after this run.
+
+2.4 Deployed load test (ramp to 20 users, 4 min)                 Result: FAILED
+--------------------------------------------------------------------------------
+  Requests          : 3,494  (13.46 requests/second)
+  Failed requests   : 2 (0.05%) - both were 60-second timeouts
+  Checks passed     : 6,354 / 6,988 (90.92%)   target > 95%   FAILED
+  p95               : 2.75 s                    target < 1 s   FAILED
+  p99               : 8.72 s                    target < 2 s   FAILED
+  Error rate        : 0.05%                     target < 1%    PASSED
+  Average           : 886.03 ms    Median          : 390.24 ms
+  Min               : 78.89 ms     Max             : 1 min (timeout)
+
+2.5 Deployed light load test (5 users, 2 min)                    Result: PASSED
+--------------------------------------------------------------------------------
+  Requests          : 1,185        Failed requests : 0 (0.00%)
+  Checks passed     : 2,359 / 2,370 (99.53%)   target > 95%   PASSED
+  p95               : 443.88 ms                 target < 1 s   PASSED
+  p99               : 932.07 ms                 target < 2 s   PASSED
+  Average           : 171.76 ms    Median          : 120.92 ms
+  Min               : 65.33 ms     Max             : 2.35 s
+
+Observations
+  - Server logs on Vercel showed 0 errors and 0 warnings during the tests.
+  - /style.css is delivered by Vercel's CDN without running the API code, yet
+    it was the slowest page under 20 users. This points to the tester's
+    mobile-hotspot connection as the main bottleneck at 20 users. A repeat of
+    the 20-user test on a faster network is recommended to confirm this.
+
+
+================================================================================
+3. STATISTICAL TESTING
+================================================================================
+Command : npm run stats:k6 -- <k6 result file(s)>
+All times in milliseconds (ms). CI = confidence interval.
+CV = coefficient of variation (std dev / mean; lower = more consistent).
+
+3.1 Descriptive statistics, local load test (20 users)
+--------------------------------------------------------------------------------
+  n = 12,534    Mean = 3.88    Median = 3.70    Std dev = 1.09
+  Min = 1.05    Max = 19.47    p90 = 5.15    p95 = 5.73    p99 = 7.28
+  95% CI of mean = 3.86 - 3.90    CV = 0.28
+
+3.2 Local: 10 users vs 50 users (1 min each)
+--------------------------------------------------------------------------------
+                     10 users        50 users
+  Requests (n)       1,791           8,898
+  Error rate         0.00%           0.00%
+  Mean               4.29            5.97
+  Median             3.68            3.99
+  Std dev            3.66            11.20
+  Min                1.53            0.66
+  Max                60.92           122.41
+  p90                5.27            6.74
+  p95                6.48            9.11
+  p99                21.71           77.15
+  95% CI of mean     4.12 - 4.46     5.74 - 6.20
+  CV                 0.85            1.88
+
+  Welch's t-test : t = -11.44, df = 8,697.08, p = 4.447 x 10^-30
+  Conclusion     : The difference IS statistically significant (p < 0.05).
+                   Mean response time rose by 1.68 ms from 10 to 50 users.
+                   This is real but practically small; all responses stayed
+                   far below the 500 ms target. Tail latency (p99) grew from
+                   21.71 ms to 77.15 ms.
+
+3.3 Deployed: 5 users vs 20 users
+--------------------------------------------------------------------------------
+                     5 users         20 users
+  Requests (n)       1,185           3,494
+  Error rate         0.00%           0.06%
+  Mean               171.77          886.04
+  Median             120.92          390.24
+  Std dev            165.28          2,568.84
+  Min                65.34           78.89
+  Max                2,355.39        60,001.63
+  p90                248.41          1,642.35
+  p95                443.89          2,753.65
+  p99                932.08          8,723.03
+  95% CI of mean     162.36 - 181.18 800.86 - 971.22
+  CV                 0.96            2.90
+
+  Welch's t-test : t = -16.34, df = 3,577.22, p = 6.481 x 10^-58
+  Conclusion     : The difference IS statistically significant (p < 0.05).
+                   The deployed system met all targets at 5 users but not
+                   at 20 users over a mobile hotspot.
+
+
+================================================================================
+4. COMPATIBILITY TESTING (Playwright) - first run, deployed system
+================================================================================
+Command : npm run test:compat
+Result  : 77 tests - 65 passed, 11 failed, 1 flaky - time 7.1 min
+
+Browsers and devices: Chrome (Chromium), Firefox, Safari (WebKit), Microsoft
+Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
+
+  Test                                     Result
+  ---------------------------------------  -----------------------------------
+  API info returns JSON                    PASSED on all 7
+  Security headers are sent                PASSED on all 7
+  Dashboard /, /signup, /docs, /contact,   PASSED on all 7
+  /privacy-policy, /terms-of-service
+  Login form can be typed into             PASSED on all 7
+  /login loads and fits the screen         PASSED on Chrome and Android;
+                                           FAILED on Firefox, Safari, iPhone,
+                                           iPad; flaky on Edge (see note A)
+  Developer page redirects to dashboard    FAILED on all 7 (see note B; fixed
+                                           in code, passes once deployed)
+
+  Note A - Test timing, not a system defect. The login page is drawn by the
+           browser after the page finishes loading; the first test version
+           checked for text too early. "Login form can be typed into" passed
+           on all 7 browsers, showing the page works. The test now waits up
+           to 15 seconds. Re-run pending.
+
+  Note B - DEFECT FOUND. On the deployed system, the API's developer page
+           (/developer) sends visitors to http://localhost:3000/, a local
+           development address, so visitors cannot reach the dashboard from
+           it. Cause: the address is fixed in public/index.html.
+
+
+================================================================================
+5. DEFECTS AND ISSUES FOUND
+================================================================================
+  #  Severity  Finding
+  -  --------  -----------------------------------------------------------------
+  1  High      Deployed developer page redirects visitors to localhost:3000
+               (found by compatibility testing, all 7 browsers).
+               STATUS: FIXED in code (services/developer-portal.js). The page
+               now uses each environment's DASHBOARD_URL setting (on Vercel:
+               https://inventaapi.shop). Verified locally: redirect test
+               passes, 80/80 unit tests pass (9 new). Takes effect on the
+               live site after deployment; works for visitors once
+               defect #2 (domain) is fixed.
+  2  High      Custom domain inventaapi.shop points to a parked page
+               (Hostinger "dns-parking"), so the site cannot be reached by
+               its domain. The Vercel addresses still work.
+  3  Medium    At 20 concurrent users over a mobile hotspot, the deployed
+               system missed its response-time targets (p95 2.75 s) and 2
+               requests timed out. Likely network-bound; to be confirmed on
+               a faster network.
+  4  Info      The tester's network allowed the database connection to open
+               but held all database traffic, so the API could not be run
+               against the database locally. Testing that needed the
+               database was done on the deployed system instead.
+
+
+================================================================================
+6. SUMMARY
+================================================================================
+  Test type        Result
+  ---------------  -------------------------------------------------------------
+  Unit             PASSED - 71/71 tests
+  Load (local)     PASSED - 12,534 requests, 0% errors, p95 5.73 ms
+  Load (deployed)  PASSED at 5 users (p95 443.88 ms);
+                   FAILED at 20 users (p95 2.75 s, 0.05% errors)
+  Statistical      Completed - descriptive statistics, 95% CIs, two Welch's
+                   t-tests (both significant, p < 0.001)
+  Compatibility    65/77 passed on 7 browsers/devices; 1 real defect found
+                   (developer page redirect); login test re-run pending
+================================================================================
