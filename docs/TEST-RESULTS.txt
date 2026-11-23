@@ -4,8 +4,9 @@
 Date of testing : November 23, 2026
 System          : InventaAPI (API-based DaaS Sales & Inventory Management)
 Tester machine  : Windows laptop, Node.js v24.21.0, PowerShell
-Network         : Mobile hotspot
-Tools           : Jest 29 (unit), Grafana k6 v2.4.0 (load), Playwright 1.62
+Network         : Mobile hotspot (except test 2.6, run from Grafana Cloud)
+Tools           : Jest 29 (unit), Grafana k6 v2.4.0 local / Grafana Cloud
+                  k6 v2.3, Singapore load zone (load), Playwright 1.62
                   (compatibility), Node statistics script (statistical)
 
 Environments tested
@@ -45,6 +46,9 @@ Result  : PASSED
                               no. 6 when the limit is 5 (real HTTP requests)
   statistics.test.js          Mean, variance, percentiles, confidence
                               interval, t-test accuracy
+  developer-portal.test.js    Developer page sends visitors to the configured
+                              dashboard; unsafe or missing addresses fall
+                              back to localhost (added with the fix)
 
 
 ================================================================================
@@ -84,11 +88,11 @@ Pages tested: /, /developer, /style.css (one "visit" = all three pages)
 2.4 Deployed load test (ramp to 20 users, 4 min)                 Result: FAILED
 --------------------------------------------------------------------------------
   Requests          : 3,494  (13.46 requests/second)
-  Failed requests   : 2 (0.05%) - both were 60-second timeouts
+  Failed requests   : 2 of 3,494 (0.06%) - both were 60-second timeouts
   Checks passed     : 6,354 / 6,988 (90.92%)   target > 95%   FAILED
   p95               : 2.75 s                    target < 1 s   FAILED
   p99               : 8.72 s                    target < 2 s   FAILED
-  Error rate        : 0.05%                     target < 1%    PASSED
+  Error rate        : 0.06%                     target < 1%    PASSED
   Average           : 886.03 ms    Median          : 390.24 ms
   Min               : 78.89 ms     Max             : 1 min (timeout)
 
@@ -117,19 +121,22 @@ Pages tested: /, /developer, /style.css (one "visit" = all three pages)
   Per page (ms)   Count  Min    Avg    Std dev  p95    p99    Max
   /style.css      4K     3.4    7.3    12       17     36     470
   /developer      4K     15     24     13       41     72     251
-  /               4K     16     28     34       48     111    1,000
+  /               4K     16     28     34       48     111    ~1 s
+
+  Grafana Cloud shows counts rounded to thousands (4K, 24K) and a max of
+  "1 s"; exact totals: 12,015 requests, 0 failures.
 
   Comparison with 2.4 (same 20-user test, tester's mobile hotspot):
-    p95 2.75 s -> 39 ms, errors 0.05% -> 0%, checks 90.92% -> 100%.
+    p95 2.75 s -> 39 ms, errors 0.06% -> 0%, checks 90.92% -> 100%.
     The only difference was where the load came from, which confirms the
     tester's mobile hotspot, not the system, caused the 2.4 failure.
 
 Observations
   - Server logs on Vercel showed 0 errors and 0 warnings during the tests.
-  - /style.css is delivered by Vercel's CDN without running the API code, yet
-    it was the slowest page under 20 users. This points to the tester's
-    mobile-hotspot connection as the main bottleneck at 20 users. A repeat of
-    the 20-user test on a faster network is recommended to confirm this.
+  - In 2.4, /style.css (delivered by Vercel's CDN without running the API
+    code) was the slowest page, pointing to the tester's mobile hotspot as
+    the bottleneck. Test 2.6 confirmed this: run from Grafana Cloud, the
+    same test passed with p95 39 ms and 0 failures.
 
 
 ================================================================================
@@ -138,6 +145,8 @@ Observations
 Command : npm run stats:k6 -- <k6 result file(s)>
 All times in milliseconds (ms). CI = confidence interval.
 CV = coefficient of variation (std dev / mean; lower = more consistent).
+Values from this script can differ from the k6 summary in the last decimal
+place because of rounding (e.g. p99 7.28 here vs 7.27 in 2.2).
 
 3.1 Descriptive statistics, local load test (20 users)
 --------------------------------------------------------------------------------
@@ -186,8 +195,10 @@ CV = coefficient of variation (std dev / mean; lower = more consistent).
 
   Welch's t-test : t = -16.34, df = 3,577.22, p = 6.481 x 10^-58
   Conclusion     : The difference IS statistically significant (p < 0.05).
-                   The deployed system met all targets at 5 users but not
-                   at 20 users over a mobile hotspot.
+                   Over the tester's mobile hotspot, the deployed system met
+                   all targets at 5 users but not at 20 users. Test 2.6
+                   showed the cause was the hotspot: the same 20-user test
+                   run from Grafana Cloud passed (p95 39 ms, 0 failures).
 
 
 ================================================================================
@@ -279,4 +290,6 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   Compatibility    PASSED - 77/77 on 7 browsers/devices (final run).
                    First run 65/77 found 1 real defect (developer page
                    redirect), which was fixed, deployed and re-tested.
+  Open issue       Custom domain inventaapi.shop still points to a parked
+                   page (defect #2); not a test failure.
 ================================================================================
