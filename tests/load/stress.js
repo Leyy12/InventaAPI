@@ -1,7 +1,9 @@
 // STRESS TEST: keeps adding users to find where the server slows down or fails.
+import { CLOUD_OPTIONS } from './config.js';
 import { visitPages } from './requests.js';
 
 export const options = {
+  cloud: CLOUD_OPTIONS,
   stages: [
     { duration: '1m', target: 50 },
     { duration: '2m', target: 50 },

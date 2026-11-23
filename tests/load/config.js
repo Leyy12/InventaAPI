@@ -21,3 +21,11 @@ const LIVE_THRESHOLDS = {
   checks: ['rate>0.95'],
 };
 export const DEFAULT_THRESHOLDS = __ENV.PROFILE === 'live' ? LIVE_THRESHOLDS : LOCAL_THRESHOLDS;
+
+// Grafana Cloud k6 (k6 cloud run ...): generate the load from Singapore, next to the
+// Vercel API (region sin1), so the tester's own internet connection is not measured.
+// Ignored by plain "k6 run".
+export const CLOUD_OPTIONS = {
+  name: __ENV.TEST_NAME || 'InventaAPI load test',
+  distribution: { singapore: { loadZone: 'amazon:sg:singapore', percent: 100 } },
+};

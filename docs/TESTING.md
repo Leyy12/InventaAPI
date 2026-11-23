@@ -162,3 +162,21 @@ Be careful, this is the real system:
   are higher than localhost. Report them separately.
 - `rate-limit.js` may let more than 300 through live: each Vercel server instance
   counts separately (the code notes this). That is a finding to report, not a test bug.
+
+### Run the live load test from Grafana Cloud (recommended)
+
+A laptop on a phone hotspot cannot generate 20 users' traffic without the hotspot
+itself slowing down, so it measures the hotspot, not the system. Grafana Cloud k6
+runs the same script from Grafana's servers in Singapore, next to the API.
+
+1. Create a free account at https://grafana.com (Grafana Cloud free tier includes k6).
+2. In Grafana Cloud: Testing & synthetics > Performance > Settings > copy your API token.
+3. Log in once (PowerShell):
+   ```
+   k6 cloud login --token YOUR_TOKEN
+   ```
+4. Run (about 4 minutes; uses roughly 1.5 of the free monthly VU-hours):
+   ```
+   k6 cloud run -e PROFILE=live -e BASE_URL=https://inventa-api-theta.vercel.app -e TEST_NAME="Live load 20 users" tests/load/load.js
+   ```
+5. The terminal prints a link to the results in Grafana with live graphs.

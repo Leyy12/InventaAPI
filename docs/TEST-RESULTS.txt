@@ -29,8 +29,10 @@ Result  : PASSED
   Test suites : 5 passed, 5 total
   Tests       : 71 passed, 71 total
   Time        : 4.677 s
-  (After the defect #1 fix: 6 suites, 80 tests - developer-portal.test.js
-   added with 9 tests. Re-run on the tester's PC pending.)
+  Re-run after the defect #1 fix                                   Result: PASSED
+    Test suites : 6 passed, 6 total
+    Tests       : 80 passed, 80 total
+    (developer-portal.test.js added with 9 tests for the redirect fix)
 
   Suite                       What it tests
   --------------------------  ------------------------------------------------
@@ -241,9 +243,8 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
 ================================================================================
   Test type        Result
   ---------------  -------------------------------------------------------------
-  Unit             PASSED - 71/71 tests on the tester's PC
-                   (80 tests after the fix; 80/80 passed in the build
-                   environment, re-run on the tester's PC pending)
+  Unit             PASSED - 80/80 tests on the tester's PC
+                   (71 original + 9 added with the redirect fix)
   Load (local)     PASSED - 12,534 requests, 0% errors, p95 5.73 ms
   Load (deployed)  PASSED at 5 users (p95 443.88 ms);
                    FAILED at 20 users (p95 2.75 s, 0.05% errors)
