@@ -25,13 +25,18 @@ export function auditAction(log: AuditLogRecord): string {
     word === "API" ? word : word[0] + word.slice(1).toLowerCase()) : "Unknown activity";
 }
 
+// API key IDs are partly hidden: the first 5 characters stay visible to tell keys apart.
+export function maskKey(value: string): string {
+  return value.length <= 5 ? value : value.slice(0, 5) + "*".repeat(Math.min(value.length - 5, 27));
+}
+
 export function auditDetails(log: AuditLogRecord): string {
   if (text(log.details) || text(log.description)) return text(log.details) || text(log.description);
   const metadata = object(log.metadata);
   // Historical documents can contain arbitrary metadata. Display only these
   // useful fields, never credentials, tokens, bodies, or the complete object.
   const parts = [
-    ["Entity", text(log.entityId)], ["API key", text(log.keyId) || text(metadata.keyId)],
+    ["Entity", text(log.entityId)], ["API key", maskKey(text(log.keyId) || text(metadata.keyId))],
     ["Product", text(log.productId) || text(metadata.productId)],
     ["Submission", text(log.submissionId) || text(metadata.submissionId)],
     ["Endpoint", (text(log.endpoint) || text(metadata.endpoint)).split("?")[0]],

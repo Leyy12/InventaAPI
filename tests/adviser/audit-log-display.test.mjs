@@ -23,6 +23,11 @@ test('logs saved with only an account ID show the looked-up account email', () =
   assert.deepEqual(shown.map(display.auditActor), ['owner@example.test', 'kept@example.test', 'owner@example.test', 'uid-3']);
   assert.equal(display.auditMatches(shown[0], 'uid-1'), true);
 });
+test('API key IDs in audit details show only their first 5 characters', () => {
+  const details = display.auditDetails(record({ action: 'API Key Generated', keyId: 'aca955a378edec5509dfc4a5789547b8' }));
+  assert.equal(details, 'API key: aca95' + '*'.repeat(27));
+  assert.equal(details.includes('a378edec'), false);
+});
 for (const action of ['Customer Login', 'Customer Logout', 'API Key Generated', 'API Key Revoked', 'API Key Renamed',
   'API Key Products Updated', 'API Request', 'Authentication Failure', 'Product Updated', 'Product Submission Approved']) {
   test(`existing/new action ${action} has readable non-empty details`, () => {

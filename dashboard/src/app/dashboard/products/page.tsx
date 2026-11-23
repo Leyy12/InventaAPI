@@ -998,7 +998,7 @@ DAAS_API_KEY=${generatedKey}
         </div>
       ) : viewMode === 'table' ? (
         <div className="glass-card overflow-x-auto rounded-xl border border-slate-700">
-          <table className="w-full min-w-[56rem] text-left text-sm">
+          <table className="w-full min-w-[50rem] text-left text-sm">
             <thead className="border-b border-slate-700 bg-slate-800/60 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th scope="col" className="w-10 px-3 py-3"><span className="sr-only">Selected</span></th>
@@ -1007,7 +1007,6 @@ DAAS_API_KEY=${generatedKey}
                 <th scope="col" className="px-3 py-3">Industry</th>
                 <th scope="col" className="px-3 py-3">Category</th>
                 <th scope="col" className="px-3 py-3">Variants</th>
-                <th scope="col" className="px-3 py-3">SKU</th>
                 <th scope="col" className="px-3 py-3">Key status</th>
               </tr>
             </thead>
@@ -1046,8 +1045,12 @@ DAAS_API_KEY=${generatedKey}
                     <td className="px-3 py-3 text-xs text-slate-300">{product.category || '—'}</td>
                     <td className="max-w-[20rem] px-3 py-3">
                       {product.variants && product.variants.length > 0 ? (
-                        <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
-                          {product.variants.map((v, i) => {
+                        <div className="space-y-1" onClick={e => e.stopPropagation()}>
+                          {/* Grouped by flavor: one line per flavor with its sizes. */}
+                          {[...new Set(product.variants.map(v => v.flavor || ''))].map(flavor => (
+                          <div key={flavor || 'none'} className="flex flex-wrap items-center gap-1">
+                            {flavor && <span className="mr-1 min-w-[6rem] text-xs font-medium text-slate-300">{flavor}</span>}
+                          {product.variants!.filter(v => (v.flavor || '') === flavor).map((v, i) => {
                             const variantId = `${v.flavor || ''}|${v.size || ''}`;
                             const isVarInKey = coverage.variants.has(variantId);
                             const isVarSelected = productVars.has(variantId) || isVarInKey;
@@ -1061,14 +1064,15 @@ DAAS_API_KEY=${generatedKey}
                                   : isVarSelected ? 'border border-indigo-600 bg-indigo-500 text-white'
                                   : 'border border-slate-700 bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}>
                                 {isVarSelected && <Check className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />}
-                                {[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}
+                                {(flavor ? v.size : [v.flavor, v.size].filter(Boolean).join(' · ')) || 'Variant'}
                               </button>
                             );
                           })}
+                          </div>
+                          ))}
                         </div>
                       ) : <span className="text-xs text-slate-400">{getBaseSize(product) ? `Size: ${getBaseSize(product)}` : '—'}</span>}
                     </td>
-                    <td className="px-3 py-3 font-mono text-xs text-slate-400">{product.sku || '—'}</td>
                     <td className="px-3 py-3 text-xs">
                       {isIncluded || inPaidKey ? <span className="inline-flex items-center gap-1 text-slate-300"><Check className="h-3 w-3" aria-hidden="true" />Included</span>
                         : isSelected ? <span className="text-indigo-300">Selected</span>
