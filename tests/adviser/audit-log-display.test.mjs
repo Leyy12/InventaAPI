@@ -15,6 +15,19 @@ test('UID search remains available when email is present; missing actor is not f
   assert.equal(display.auditMatches(record({ userEmail: 'a@example.test', userId: 'uid-123' }), 'uid-123'), true);
   assert.equal(display.auditActor(record()), 'Unknown actor');
 });
+test('logs saved with only an account ID show the looked-up account email', () => {
+  const logs = [record({ id: 'a', userId: 'uid-1', action: 'API Key Generated' }), record({ id: 'b', userId: 'uid-2', userEmail: 'kept@example.test' }),
+    record({ id: 'c', userId: 'uid-1' }), record({ id: 'd', userId: 'uid-3' })];
+  assert.deepEqual(display.auditActorIdsWithoutEmail(logs), ['uid-1', 'uid-3']);
+  const shown = display.withActorEmails(logs, { 'uid-1': 'owner@example.test' });
+  assert.deepEqual(shown.map(display.auditActor), ['owner@example.test', 'kept@example.test', 'owner@example.test', 'uid-3']);
+  assert.equal(display.auditMatches(shown[0], 'uid-1'), true);
+});
+test('API key IDs in audit details show only their first 5 characters', () => {
+  const details = display.auditDetails(record({ action: 'API Key Generated', keyId: 'aca955a378edec5509dfc4a5789547b8' }));
+  assert.equal(details, 'API key: aca95' + '*'.repeat(27));
+  assert.equal(details.includes('a378edec'), false);
+});
 for (const action of ['Customer Login', 'Customer Logout', 'API Key Generated', 'API Key Revoked', 'API Key Renamed',
   'API Key Products Updated', 'API Request', 'Authentication Failure', 'Product Updated', 'Product Submission Approved']) {
   test(`existing/new action ${action} has readable non-empty details`, () => {

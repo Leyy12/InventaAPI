@@ -10,7 +10,7 @@ import { GENERATION_POLICY, generationErrorMessage } from '@/lib/api-key-generat
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from 'react-dom';
 import { useWorkspaceHeaderSlot } from '@/components/layout/WorkspaceHeaderSlot';
-import { Database, ShoppingCart, Check, Copy, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus } from "lucide-react";
+import { Database, ShoppingCart, Check, Copy, Package, Key, Sparkles, AlertTriangle, Minus, X, Plus, LayoutGrid, List } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ProductCatalogEmptyState from "@/components/product-request/ProductNotFound";
@@ -74,6 +74,10 @@ function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?
 }
 
 const PRODUCTS_PER_PAGE = 60;
+// Collapsed table rows show at most this many variant chips on their one line.
+const TABLE_VARIANT_CHIPS = 3;
+const VIEW_MODE_STORAGE_KEY = 'inventa.products.viewMode';
+type CatalogViewMode = 'grid' | 'table';
 
 export default function ProductCatalogPage() {
   const { user } = useAuth();
@@ -114,6 +118,13 @@ function CustomerCatalogSession() {
   const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
   // Last variant chip clicked on each card; the card photo shows that variant.
   const [clickedVariant, setClickedVariant] = useState<Record<string, string>>({});
+  // Table view: products whose full variant list is open ("Show more").
+  const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
+  const toggleVariantsExpanded = (productId: string) => setExpandedVariants(previous => {
+    const next = new Set(previous);
+    if (!next.delete(productId)) next.add(productId);
+    return next;
+  });
   const [paidSegment, setActiveSegment] = useState<string>("All");
   // Free and Pro accounts browse only their own segment; Pro Max can browse all three.
   const segmentLocked = isFreePlan(appUser?.plan) || paidKeyPlan === 'pro';
@@ -121,6 +132,17 @@ function CustomerCatalogSession() {
   const currentCatalog = catalogSource?.segment === activeSegment ? catalogSource : null;
   const productAvailable = currentCatalog?.status === 'ready' ? currentCatalog.total : null;
   const [searchQuery, setSearchQuery] = useState("");
+  // Grid (cards) or Table (compact rows); remembered per browser.
+  const [viewMode, setViewModeState] = useState<CatalogViewMode>('grid');
+  useEffect(() => {
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY); } catch { /* storage unavailable: default to grid */ }
+    if (stored === 'table') void Promise.resolve().then(() => setViewModeState('table'));
+  }, []);
+  const setViewMode = (mode: CatalogViewMode) => {
+    setViewModeState(mode);
+    try { localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode); } catch { /* choice lasts this visit */ }
+  };
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'not-selected'>('all');
   const [productCategory, setProductCategory] = useState(ALL_CATEGORIES);
   // Products already linked to a key stay listed with a quiet "In key" note and
@@ -686,6 +708,25 @@ DAAS_API_KEY=${generatedKey}
   const generateSelectionDisabled = !canGenerate || !trialReady || generating || (activeTrial && !trialCanGenerate);
   const returnToSummary = () => summaryElement?.scrollIntoView({ block: 'center' });
 
+  // Selection state for one product, shared by the grid cards and table rows.
+  const productViewState = (product: Product) => {
+    const isIncluded = activeTrial && trialState.included.has(product.id!);
+    const coverage = paidCoverage(product);
+    const inPaidKey = coverage.full && !selectedProducts.has(product.id!);
+    // A new Trial key may reuse included products; only new products need a free slot.
+    const selectionDisabled = upgradeRequired || !trialReady || generating || inPaidKey || (activeTrial && (!trialState.canToggle
+      || (isIncluded ? !trialNewKey : !trialState.pending.has(product.id!) && !trialState.canSelect)));
+    // Only products picked in this session are highlighted; products
+    // already in a key carry a quiet note instead.
+    const isSelected = selectedProducts.has(product.id!);
+    const showIncludedScope = isIncluded && !selectedProducts.has(product.id!);
+    const productVars = showIncludedScope ? new Set(includedVariants[product.id!] ?? product.variants?.map(v => `${v.flavor || ''}|${v.size || ''}`)) : selectedVariants[product.id!] || new Set<string>();
+    return { isIncluded, coverage, inPaidKey, selectionDisabled, isSelected, showIncludedScope, productVars };
+  };
+
+  const segmentBadgeClass = (segment?: string) => segment === "Pharmacy" ? "bg-green-500/80 text-white"
+    : segment === "Hardware" ? "bg-orange-500/80 text-white" : "bg-blue-500/80 text-white";
+
   return (
     <div className="w-full px-6 max-sm:px-0 lg:px-8 min-w-0 space-y-4 pb-10">
       {hasPendingSelection && summaryViewport?.target === summaryElement && summaryViewport?.above && headerSlot && createPortal(
@@ -912,6 +953,19 @@ DAAS_API_KEY=${generatedKey}
             Select All ({selectableIds.length})
           </button>
         )}
+
+        {/* Grid / Table view toggle */}
+        <div role="group" aria-label="Product view" className="flex shrink-0 rounded-xl border border-slate-700 bg-slate-800/80 p-1">
+          {([['grid', 'Grid', LayoutGrid], ['table', 'Table', List]] as const).map(([mode, label, Icon]) => (
+            <button key={mode} type="button" onClick={() => setViewMode(mode)} aria-pressed={viewMode === mode}
+              title={`${label} view`}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                viewMode === mode ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div role="region" aria-label="Product list" className="min-w-0 lg:p-1">
@@ -951,20 +1005,142 @@ DAAS_API_KEY=${generatedKey}
           <p className="mt-2 text-sm text-slate-400">{searchQuery.trim() ? 'Within your current search and business segment.' : 'Within your current business segment.'}</p>
           <button type="button" onClick={resetPresentationFilters} className="mt-3 text-sm text-indigo-300">View All Products</button>
         </div>
+      ) : viewMode === 'table' ? (
+        <div className="glass-card overflow-x-auto rounded-xl border border-slate-700">
+          <table className="w-full min-w-[50rem] text-left text-sm">
+            <thead className="border-b border-slate-700 bg-slate-800/60 text-xs uppercase tracking-wide text-slate-400">
+              <tr>
+                <th scope="col" className="w-10 px-3 py-3"><span className="sr-only">Selected</span></th>
+                <th scope="col" className="w-16 px-3 py-3"><span className="sr-only">Image</span></th>
+                <th scope="col" className="px-3 py-3">Product</th>
+                <th scope="col" className="px-3 py-3">Industry</th>
+                <th scope="col" className="px-3 py-3">Category</th>
+                <th scope="col" className="px-3 py-3">Variants</th>
+                <th scope="col" className="px-3 py-3">Key status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/60">
+              {pageProducts.map((product) => {
+                const { isIncluded, coverage, inPaidKey, selectionDisabled, isSelected, showIncludedScope, productVars } = productViewState(product);
+                const image = productImageSource(variantPhoto(product, productVars, clickedVariant[product.id!]));
+                return (
+                  <tr key={product.id}
+                    onClick={() => toggleProduct(product)}
+                    aria-disabled={selectionDisabled || undefined}
+                    aria-selected={isSelected}
+                    className={`align-top transition-colors ${selectionDisabled ? 'cursor-default' : 'cursor-pointer hover:bg-slate-800/60'} ${isSelected ? 'bg-indigo-500/10' : ''}`}>
+                    <td className="px-3 py-3">
+                      <input type="checkbox" checked={isSelected || inPaidKey || (isIncluded && !trialNewKey)} readOnly disabled={selectionDisabled}
+                        onClick={e => { e.stopPropagation(); toggleProduct(product); }}
+                        aria-label={`Select ${product.name}`}
+                        className="h-4 w-4 cursor-pointer accent-indigo-500 disabled:cursor-default" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="relative h-12 w-12 overflow-hidden rounded-lg bg-slate-800">
+                        {image ? <img src={image} alt="" className="h-full w-full object-contain p-1" loading="lazy" decoding="async"
+                          referrerPolicy="no-referrer" onError={showProductImageFallback} /> : null}
+                        <div className={`absolute inset-0 flex items-center justify-center ${image ? 'hidden' : ''}`}>
+                          <Database className="h-5 w-5 text-slate-600" aria-hidden="true" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="max-w-[18rem] px-3 py-3">
+                      <div className="font-semibold text-white">{product.name}</div>
+                      {product.description && <p className="mt-0.5 line-clamp-1 text-xs text-slate-400">{product.description}</p>}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${segmentBadgeClass(product.segment)}`}>{product.segment}</span>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-slate-300">{product.category || '—'}</td>
+                    <td className="max-w-[20rem] px-3 py-3">
+                      {product.variants && product.variants.length > 0 ? (
+                        (() => {
+                          const variants = product.variants!;
+                          const flavors = [...new Set(variants.map(v => v.flavor || ''))];
+                          // Group by flavor only when a flavor has several sizes; otherwise
+                          // (e.g. one "500mg · Capsule" variant) plain chips read better.
+                          const grouped = flavors.some(flavor => flavor && variants.filter(v => (v.flavor || '') === flavor).length > 1);
+                          const chip = (v: typeof variants[number], i: number, label: string) => {
+                            const variantId = `${v.flavor || ''}|${v.size || ''}`;
+                            const isVarInKey = coverage.variants.has(variantId);
+                            const isVarSelected = productVars.has(variantId) || isVarInKey;
+                            const isVarIncluded = (isVarSelected && showIncludedScope) || isVarInKey;
+                            return (
+                              <button key={i} type="button" onClick={e => toggleVariant(e, product.id!, variantId)}
+                                disabled={selectionDisabled || isVarInKey}
+                                title={`${[v.flavor, v.size].filter(Boolean).join(' · ') || 'Variant'}${isVarInKey ? ' (included in your API key)' : ''}`}
+                                className={`inline-flex h-5 items-center gap-1 rounded px-2 text-[10px] font-medium leading-none whitespace-nowrap transition-colors ${
+                                  isVarIncluded ? 'border border-emerald-700/40 bg-slate-800/80 text-emerald-300/90'
+                                  : isVarSelected ? 'border border-indigo-600 bg-indigo-500 text-white'
+                                  : 'border border-slate-700 bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}>
+                                {isVarSelected && <Check className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />}
+                                {label || 'Variant'}
+                              </button>
+                            );
+                          };
+                          const expanded = expandedVariants.has(product.id!);
+                          // Collapsed rows show one line: the first flavor (or the first chips),
+                          // then "+N more". Show more opens the full list.
+                          const firstFlavor = flavors[0];
+                          const lineVariants = (grouped ? variants.filter(v => (v.flavor || '') === firstFlavor) : variants).slice(0, TABLE_VARIANT_CHIPS);
+                          const hiddenCount = variants.length - lineVariants.length;
+                          const toggleButton = (label: string, className: string) => (
+                            <button type="button" onClick={e => { e.stopPropagation(); toggleVariantsExpanded(product.id!); }}
+                              aria-expanded={expanded}
+                              className={`text-xs font-medium text-indigo-300 hover:text-indigo-200 whitespace-nowrap ${className}`}>
+                              {label}
+                            </button>
+                          );
+                          if (!expanded || hiddenCount === 0) return (
+                            <div className="flex min-w-0 items-center gap-1 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              {grouped && <span className="mr-2 truncate text-xs font-medium text-slate-300" title={firstFlavor}>{firstFlavor || 'Other'}</span>}
+                              {lineVariants.map(v => chip(v, variants.indexOf(v), grouped ? v.size || '' : [v.flavor, v.size].filter(Boolean).join(' · ')))}
+                              {hiddenCount > 0 && toggleButton(`+${hiddenCount} more`, 'ml-1')}
+                            </div>
+                          );
+                          if (!grouped) return (
+                            <div onClick={e => e.stopPropagation()}>
+                              <div className="flex flex-wrap gap-1">
+                                {variants.map((v, i) => chip(v, i, [v.flavor, v.size].filter(Boolean).join(' · ')))}
+                              </div>
+                              {toggleButton('Show less', 'mt-1.5')}
+                            </div>
+                          );
+                          // Two aligned columns: flavor names on the left, their size chips on the right.
+                          return (
+                            <div onClick={e => e.stopPropagation()}>
+                            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
+                              {flavors.map(flavor => [
+                                <span key={`${flavor}-label`} className="max-w-[11rem] text-xs font-medium leading-tight text-slate-300">{flavor || 'Other'}</span>,
+                                <div key={`${flavor}-sizes`} className="flex flex-wrap gap-1">
+                                  {variants.map((v, i) => (v.flavor || '') === flavor ? chip(v, i, v.size || '') : null)}
+                                </div>,
+                              ])}
+                            </div>
+                            {toggleButton('Show less', 'mt-1.5')}
+                            </div>
+                          );
+                        })()
+                      ) : <span className="text-xs text-slate-400">{getBaseSize(product) ? `Size: ${getBaseSize(product)}` : '—'}</span>}
+                    </td>
+                    <td className="px-3 py-3 text-xs">
+                      {isIncluded || inPaidKey ? <span className="inline-flex items-center gap-1 text-slate-300"><Check className="h-3 w-3" aria-hidden="true" />Included</span>
+                        : isSelected ? <span className="text-indigo-300">Selected</span>
+                        : <span className="text-slate-500">Not included</span>}
+                      {keyNames.has(product.id!) && <p className="mt-0.5 flex items-center gap-1 text-emerald-300">
+                        <Key className="h-3 w-3 shrink-0" aria-hidden="true" />{keyNames.get(product.id!)!.join(', ')}
+                      </p>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="grid gap-4" style={PRODUCT_GRID_STYLE}>
           {pageProducts.map((product) => {
-            const isIncluded = activeTrial && trialState.included.has(product.id!);
-            const coverage = paidCoverage(product);
-            const inPaidKey = coverage.full && !selectedProducts.has(product.id!);
-            // A new Trial key may reuse included products; only new products need a free slot.
-            const selectionDisabled = upgradeRequired || !trialReady || generating || inPaidKey || (activeTrial && (!trialState.canToggle
-              || (isIncluded ? !trialNewKey : !trialState.pending.has(product.id!) && !trialState.canSelect)));
-            // Only products picked in this session are highlighted; products
-            // already in a key carry a quiet note instead.
-            const isSelected = selectedProducts.has(product.id!);
-            const showIncludedScope = isIncluded && !selectedProducts.has(product.id!);
-            const productVars = showIncludedScope ? new Set(includedVariants[product.id!] ?? product.variants?.map(v => `${v.flavor || ''}|${v.size || ''}`)) : selectedVariants[product.id!] || new Set();
+            const { isIncluded, coverage, inPaidKey, selectionDisabled, isSelected, showIncludedScope, productVars } = productViewState(product);
             const totalVars = product.variants ? product.variants.length : 0;
             const isPartial = isSelected && totalVars > 0 && productVars.size > 0 && productVars.size < totalVars;
             

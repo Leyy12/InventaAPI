@@ -8,10 +8,26 @@ export function auditActor(log: AuditLogRecord): string {
   return text(log.userEmail) || text(log.email) || text(log.userId) || "Unknown actor";
 }
 
+// Account IDs of logs saved without an email (e.g. older API key events), so the
+// admin page can look up each account's email instead of showing the raw ID.
+export function auditActorIdsWithoutEmail(logs: AuditLogRecord[]): string[] {
+  return [...new Set(logs.filter(log => !text(log.userEmail) && !text(log.email)).map(log => text(log.userId)).filter(Boolean))];
+}
+
+export function withActorEmails(logs: AuditLogRecord[], emails: Record<string, string>): AuditLogRecord[] {
+  return logs.map(log => !text(log.userEmail) && !text(log.email) && emails[text(log.userId)]
+    ? { ...log, userEmail: emails[text(log.userId)] } : log);
+}
+
 export function auditAction(log: AuditLogRecord): string {
   const action = text(log.action);
   return action ? action.replaceAll("_", " ").replace(/\b[A-Z]+\b/g, word =>
     word === "API" ? word : word[0] + word.slice(1).toLowerCase()) : "Unknown activity";
+}
+
+// API key IDs are partly hidden: the first 5 characters stay visible to tell keys apart.
+export function maskKey(value: string): string {
+  return value.length <= 5 ? value : value.slice(0, 5) + "*".repeat(Math.min(value.length - 5, 27));
 }
 
 export function auditDetails(log: AuditLogRecord): string {
@@ -20,7 +36,7 @@ export function auditDetails(log: AuditLogRecord): string {
   // Historical documents can contain arbitrary metadata. Display only these
   // useful fields, never credentials, tokens, bodies, or the complete object.
   const parts = [
-    ["Entity", text(log.entityId)], ["API key", text(log.keyId) || text(metadata.keyId)],
+    ["Entity", text(log.entityId)], ["API key", maskKey(text(log.keyId) || text(metadata.keyId))],
     ["Product", text(log.productId) || text(metadata.productId)],
     ["Submission", text(log.submissionId) || text(metadata.submissionId)],
     ["Endpoint", (text(log.endpoint) || text(metadata.endpoint)).split("?")[0]],
