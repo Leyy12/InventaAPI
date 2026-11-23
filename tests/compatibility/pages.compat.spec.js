@@ -32,14 +32,21 @@ test.describe('API server pages', () => {
   });
 
   // public/index.html (served at / and /developer) sends the browser to the dashboard.
+  // It must go to the dashboard of the SAME environment (not localhost on the live site).
   test('developer page redirects to the dashboard', async ({ page }) => {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    // Answer for the dashboard so this test works even when it is not running.
-    await page.route(`${DASHBOARD_URL}/**`, route => route.fulfill({ contentType: 'text/html', body: '<h1>dashboard</h1>' }));
+    // Answer every page outside the API ourselves, so the test does not depend on
+    // the dashboard being up and never hangs on an unreachable address.
+    await page.route('**/*', route => {
+      const request = route.request();
+      if (request.url().startsWith(API_URL) || !request.isNavigationRequest()) return route.continue();
+      return route.fulfill({ contentType: 'text/html', body: '<h1>redirected</h1>' });
+    });
+    const redirect = page.waitForRequest(r => r.isNavigationRequest() && !r.url().startsWith(API_URL), { timeout: 15000 });
     await page.goto(`${API_URL}/developer`);
-    await page.waitForURL(`${DASHBOARD_URL}/**`);
-    expect(page.url().startsWith(DASHBOARD_URL)).toBe(true);
+    const target = (await redirect).url();
+    expect(target.startsWith(DASHBOARD_URL), `the developer page sends visitors to ${target} instead of ${DASHBOARD_URL}`).toBe(true);
     expect(errors, 'JavaScript errors on the page').toEqual([]);
   });
 
@@ -68,7 +75,9 @@ test.describe('Customer dashboard pages', () => {
       const { response, errors } = await openPage(page, `${DASHBOARD_URL}${path}`);
       expect(response.status(), `${path} returned an error status`).toBeLessThan(400);
       await expect(page.locator('body')).toBeVisible();
-      expect((await page.locator('body').innerText()).trim().length, 'page is blank').toBeGreaterThan(0);
+      // Pages render in the browser after loading; give them up to 15 s like a real visitor would wait.
+      await expect.poll(async () => (await page.locator('body').innerText()).trim().length,
+        { message: 'page stayed blank for 15 seconds', timeout: 15000 }).toBeGreaterThan(0);
       await expectNoHorizontalScroll(page);
       expect(errors, 'JavaScript errors on the page').toEqual([]);
     });
