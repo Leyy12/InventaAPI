@@ -121,3 +121,37 @@ k6 run --vus 50 --duration 1m --out json=test-results/run-b.json tests/load/smok
 npm run stats:k6 -- test-results/run-a.json test-results/run-b.json
 ```
 The report is saved to `test-results/statistics-report.json`.
+
+---
+
+## 5. Testing the live (deployed) system instead of localhost
+
+Use this when your computer cannot reach the database (for example a network that
+blocks database ports). The live servers on Vercel connect to Supabase themselves,
+so only normal HTTPS is needed. Nothing has to run on your computer.
+
+| Part | Live address |
+|---|---|
+| API | https://api.inventaapi.shop |
+| Customer dashboard | https://inventaapi.shop |
+
+PowerShell (in Command Prompt use `set NAME=value` instead of `$env:NAME="value"`):
+
+```
+k6 run -e BASE_URL=https://api.inventaapi.shop tests/load/smoke.js
+k6 run -e BASE_URL=https://api.inventaapi.shop --out json=test-results/live-load.json tests/load/load.js
+npm run stats:k6 -- test-results/live-load.json
+k6 run -e BASE_URL=https://api.inventaapi.shop -e API_KEY=daas_v2_xxxx -e REQUESTS=20 --out json=test-results/live-catalog.json tests/load/daas-catalog.js
+
+$env:API_URL="https://api.inventaapi.shop"
+$env:DASHBOARD_URL="https://inventaapi.shop"
+npm run test:compat
+```
+
+Be careful, this is the real system:
+- Run only `smoke.js` and `load.js` live. Skip `stress.js` and `spike.js`: 200 users can
+  slow the site for real customers and use up the Vercel plan.
+- Live response times include internet travel time (tens of milliseconds), so they
+  are higher than localhost. Report them separately.
+- `rate-limit.js` may let more than 300 through live: each Vercel server instance
+  counts separately (the code notes this). That is a finding to report, not a test bug.
