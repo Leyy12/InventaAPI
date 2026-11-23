@@ -261,6 +261,7 @@ test('existing key lifecycle writer emits once per operation and already covers 
   assert.equal((await invoke(keys.revoke, { params: { id } })).statusCode, 200);
   assert.deepEqual(events.map(event => event.action), ['API Key Generated', 'API Key Renamed', 'API Key Products Updated', 'API Key Revoked']);
   assert.equal(events.every(event => event.userId === 'owner'), true);
+  assert.equal(events.every(event => event.userEmail === 'owner@example.test'), true);
   assert.equal(JSON.stringify(events).includes(made.body.key), false);
   db.failCommit = true;
   assert.equal((await invoke(keys.rename, { params: { id }, body: { name: 'Failed' } })).statusCode, 503);

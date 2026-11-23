@@ -1039,11 +1039,6 @@ DAAS_API_KEY=${generatedKey}
                     <td className="max-w-[18rem] px-3 py-3">
                       <div className="font-semibold text-white">{product.name}</div>
                       {product.description && <p className="mt-0.5 line-clamp-1 text-xs text-slate-400">{product.description}</p>}
-                      {hasNearExpiry(product) && (
-                        <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
-                          <AlertTriangle className="h-2.5 w-2.5" aria-hidden="true" /> Expiring soon
-                        </span>
-                      )}
                     </td>
                     <td className="px-3 py-3">
                       <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${segmentBadgeClass(product.segment)}`}>{product.segment}</span>

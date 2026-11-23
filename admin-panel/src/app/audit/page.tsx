@@ -2,9 +2,25 @@
 
 import { useState, useEffect } from "react";
 import { ShieldAlert, Search, Clock, User, FileText } from "lucide-react";
-import { collection, getDocs, query, orderBy, limit, where } from "@/lib/data/data-client";
+import { collection, documentId, getDocs, query, orderBy, limit, where } from "@/lib/data/data-client";
 import { db } from "@/lib/supabase/config";
-import { auditAction, auditActor, auditDetails, auditMatches, auditTimestamp, type AuditLogRecord } from "@/lib/audit-log-display";
+import { auditAction, auditActor, auditActorIdsWithoutEmail, auditDetails, auditMatches, auditTimestamp, withActorEmails, type AuditLogRecord } from "@/lib/audit-log-display";
+
+// Emails for accounts whose logs only stored the account ID. Best effort: a
+// failed lookup leaves the ID shown, never hides the log.
+async function accountEmails(ids: string[]): Promise<Record<string, string>> {
+  const emails: Record<string, string> = Object.create(null);
+  try {
+    for (let i = 0; i < ids.length; i += 30) {
+      const result = await getDocs(query(collection(db, "users"), where(documentId(), "in", ids.slice(i, i + 30))));
+      for (const account of result.docs) {
+        const email = account.data().email;
+        if (typeof email === "string" && email.trim()) emails[account.id] = email.trim();
+      }
+    }
+  } catch { /* keep the account IDs */ }
+  return emails;
+}
 
 const LOGS_PER_PAGE = 50;
 // Where a page starts: logs at or before `at`, minus the ones with exactly that time
@@ -39,7 +55,8 @@ export default function AuditLogsPage() {
 
       if (rows.length || start) {
         const pageRows = rows.slice(0, LOGS_PER_PAGE);
-        setLogs(pageRows);
+        const missing = auditActorIdsWithoutEmail(pageRows);
+        setLogs(missing.length ? withActorEmails(pageRows, await accountEmails(missing)) : pageRows);
         const last = pageRows.at(-1);
         if (rows.length > LOGS_PER_PAGE && last) {
           const sameTime = (value: unknown) => JSON.stringify(value) === JSON.stringify(last.timestamp);

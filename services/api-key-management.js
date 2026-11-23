@@ -205,7 +205,9 @@ export function createApiKeyHandlers({ getDb, verifyIdToken, clock = () => new D
 
   async function audit(db, action, actor, id) {
     // No credentials or request bodies enter audit logs. Audit failure must not replay mutations.
-    await db.collection('audit_logs').add({ action, userId: actor.uid, keyId: id, timestamp: clock() }).catch(() => {});
+    // The email lets admins see who acted instead of a raw account ID.
+    const userEmail = typeof actor.email === 'string' && actor.email.length <= 320 ? { userEmail: actor.email } : {};
+    await db.collection('audit_logs').add({ action, userId: actor.uid, ...userEmail, keyId: id, timestamp: clock() }).catch(() => {});
   }
 
   // The Trial catalog is the union of product IDs across active keys, so

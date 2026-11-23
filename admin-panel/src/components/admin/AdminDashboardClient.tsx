@@ -45,6 +45,7 @@ function Reports({ user }: { user: User }) {
   const holders = activeKeyHolders(sources.keys, sources.users);
   const users = sources.users.status === "ready" ? sources.users.records.filter(record =>
     typeof record.role === "string" && record.role.toLowerCase() !== "admin").length : null;
+  const accountEmails = new Map(sources.users.records.map(record => [String(record.id), typeof record.email === "string" ? record.email : ""]));
   const unavailable = (feed: Feed) => sources[feed].status === "loading" ? "Loading…" : "Unavailable";
   return <div className="w-full px-6 max-sm:px-0 lg:px-8 pb-8 space-y-8">
     <h1 className="text-2xl font-bold text-white">Dashboard and reports</h1>
@@ -90,7 +91,7 @@ function Reports({ user }: { user: User }) {
         !sources.audit.records.length ? <p role="status" className="text-slate-400">No recent audit events recorded.</p> :
         <ul className="max-h-56 space-y-2 overflow-y-auto text-sm text-slate-300">{sources.audit.records.map((record, index) =>
           <li key={String(record.id ?? index)}>{reportTimestamp(record.timestamp)?.toISOString() ?? "Time unavailable"} — {typeof record.action === "string" ? record.action : "Recorded event"}
-            {typeof record.endpoint === "string" ? " [" + record.endpoint + "]" : ""} — {String(record.email || record.userEmail || record.userId || "System")}</li>)}</ul>}
+            {typeof record.endpoint === "string" ? " [" + record.endpoint + "]" : ""} — {String(record.email || record.userEmail || accountEmails.get(String(record.userId)) || record.userId || "System")}</li>)}</ul>}
     </section>
   </div>;
 }

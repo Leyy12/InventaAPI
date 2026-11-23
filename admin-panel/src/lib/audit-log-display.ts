@@ -8,6 +8,17 @@ export function auditActor(log: AuditLogRecord): string {
   return text(log.userEmail) || text(log.email) || text(log.userId) || "Unknown actor";
 }
 
+// Account IDs of logs saved without an email (e.g. older API key events), so the
+// admin page can look up each account's email instead of showing the raw ID.
+export function auditActorIdsWithoutEmail(logs: AuditLogRecord[]): string[] {
+  return [...new Set(logs.filter(log => !text(log.userEmail) && !text(log.email)).map(log => text(log.userId)).filter(Boolean))];
+}
+
+export function withActorEmails(logs: AuditLogRecord[], emails: Record<string, string>): AuditLogRecord[] {
+  return logs.map(log => !text(log.userEmail) && !text(log.email) && emails[text(log.userId)]
+    ? { ...log, userEmail: emails[text(log.userId)] } : log);
+}
+
 export function auditAction(log: AuditLogRecord): string {
   const action = text(log.action);
   return action ? action.replaceAll("_", " ").replace(/\b[A-Z]+\b/g, word =>
