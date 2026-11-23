@@ -53,7 +53,7 @@ Start the API first in another window: `npm start`.
 | `stress.js` | 50 → 100 → 200 users, finds the breaking point | 10 min |
 | `spike.js` | sudden jump to 150 users, checks recovery | 3 min |
 | `rate-limit.js` | 400 quick requests, max 300 per minute should pass | < 1 min |
-| `daas-catalog.js` | real `/daas/v1/catalog` with your API key (uses quota) | 3 min |
+| `daas-catalog.js` | real `/daas/v1/catalog` with your API key (uses quota) | 2 min (40 requests) |
 
 ```
 k6 run tests/load/smoke.js
