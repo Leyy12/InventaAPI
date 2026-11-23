@@ -4,8 +4,9 @@
 Date of testing : November 23, 2026
 System          : InventaAPI (API-based DaaS Sales & Inventory Management)
 Tester machine  : Windows laptop, Node.js v24.21.0, PowerShell
-Network         : Mobile hotspot
-Tools           : Jest 29 (unit), Grafana k6 v2.4.0 (load), Playwright 1.62
+Network         : Mobile hotspot (except test 2.6, run from Grafana Cloud)
+Tools           : Jest 29 (unit), Grafana k6 v2.4.0 local / Grafana Cloud
+                  k6 v2.3, Singapore load zone (load), Playwright 1.62
                   (compatibility), Node statistics script (statistical)
 
 Environments tested
@@ -29,8 +30,10 @@ Result  : PASSED
   Test suites : 5 passed, 5 total
   Tests       : 71 passed, 71 total
   Time        : 4.677 s
-  (After the defect #1 fix: 6 suites, 80 tests - developer-portal.test.js
-   added with 9 tests. Re-run on the tester's PC pending.)
+  Re-run after the defect #1 fix                                   Result: PASSED
+    Test suites : 6 passed, 6 total
+    Tests       : 80 passed, 80 total
+    (developer-portal.test.js added with 9 tests for the redirect fix)
 
   Suite                       What it tests
   --------------------------  ------------------------------------------------
@@ -43,6 +46,9 @@ Result  : PASSED
                               no. 6 when the limit is 5 (real HTTP requests)
   statistics.test.js          Mean, variance, percentiles, confidence
                               interval, t-test accuracy
+  developer-portal.test.js    Developer page sends visitors to the configured
+                              dashboard; unsafe or missing addresses fall
+                              back to localhost (added with the fix)
 
 
 ================================================================================
@@ -82,11 +88,11 @@ Pages tested: /, /developer, /style.css (one "visit" = all three pages)
 2.4 Deployed load test (ramp to 20 users, 4 min)                 Result: FAILED
 --------------------------------------------------------------------------------
   Requests          : 3,494  (13.46 requests/second)
-  Failed requests   : 2 (0.05%) - both were 60-second timeouts
+  Failed requests   : 2 of 3,494 (0.06%) - both were 60-second timeouts
   Checks passed     : 6,354 / 6,988 (90.92%)   target > 95%   FAILED
   p95               : 2.75 s                    target < 1 s   FAILED
   p99               : 8.72 s                    target < 2 s   FAILED
-  Error rate        : 0.05%                     target < 1%    PASSED
+  Error rate        : 0.06%                     target < 1%    PASSED
   Average           : 886.03 ms    Median          : 390.24 ms
   Min               : 78.89 ms     Max             : 1 min (timeout)
 
@@ -99,12 +105,38 @@ Pages tested: /, /developer, /style.css (one "visit" = all three pages)
   Average           : 171.76 ms    Median          : 120.92 ms
   Min               : 65.33 ms     Max             : 2.35 s
 
+2.6 Deployed load test from Grafana Cloud k6, Singapore         Result: PASSED
+    (ramp to 20 users, 4 min - same script and targets as 2.4)
+--------------------------------------------------------------------------------
+  Load generated from : Grafana Cloud k6, Singapore load zone (next to the
+                        Vercel API region), not from the tester's hotspot
+  Requests            : 12,015 (average 45 requests/s, peak 58.25/s)
+  HTTP failures       : 0
+  Thresholds          : 4 / 4 passed
+  Checks passed       : 24K / 24K (100%)
+  p95 (all requests)  : 39 ms        target < 1 s   PASSED
+  Grafana Cloud Insights: Best practice 100, Reliability 100, System 100
+                          (no issues found)
+
+  Per page (ms)   Count  Min    Avg    Std dev  p95    p99    Max
+  /style.css      4K     3.4    7.3    12       17     36     470
+  /developer      4K     15     24     13       41     72     251
+  /               4K     16     28     34       48     111    ~1 s
+
+  Grafana Cloud shows counts rounded to thousands (4K, 24K) and a max of
+  "1 s"; exact totals: 12,015 requests, 0 failures.
+
+  Comparison with 2.4 (same 20-user test, tester's mobile hotspot):
+    p95 2.75 s -> 39 ms, errors 0.06% -> 0%, checks 90.92% -> 100%.
+    The only difference was where the load came from, which confirms the
+    tester's mobile hotspot, not the system, caused the 2.4 failure.
+
 Observations
   - Server logs on Vercel showed 0 errors and 0 warnings during the tests.
-  - /style.css is delivered by Vercel's CDN without running the API code, yet
-    it was the slowest page under 20 users. This points to the tester's
-    mobile-hotspot connection as the main bottleneck at 20 users. A repeat of
-    the 20-user test on a faster network is recommended to confirm this.
+  - In 2.4, /style.css (delivered by Vercel's CDN without running the API
+    code) was the slowest page, pointing to the tester's mobile hotspot as
+    the bottleneck. Test 2.6 confirmed this: run from Grafana Cloud, the
+    same test passed with p95 39 ms and 0 failures.
 
 
 ================================================================================
@@ -113,6 +145,8 @@ Observations
 Command : npm run stats:k6 -- <k6 result file(s)>
 All times in milliseconds (ms). CI = confidence interval.
 CV = coefficient of variation (std dev / mean; lower = more consistent).
+Values from this script can differ from the k6 summary in the last decimal
+place because of rounding (e.g. p99 7.28 here vs 7.27 in 2.2).
 
 3.1 Descriptive statistics, local load test (20 users)
 --------------------------------------------------------------------------------
@@ -161,42 +195,55 @@ CV = coefficient of variation (std dev / mean; lower = more consistent).
 
   Welch's t-test : t = -16.34, df = 3,577.22, p = 6.481 x 10^-58
   Conclusion     : The difference IS statistically significant (p < 0.05).
-                   The deployed system met all targets at 5 users but not
-                   at 20 users over a mobile hotspot.
+                   Over the tester's mobile hotspot, the deployed system met
+                   all targets at 5 users but not at 20 users. Test 2.6
+                   showed the cause was the hotspot: the same 20-user test
+                   run from Grafana Cloud passed (p95 39 ms, 0 failures).
 
 
 ================================================================================
-4. COMPATIBILITY TESTING (Playwright) - first run, deployed system
+4. COMPATIBILITY TESTING (Playwright) - deployed system
 ================================================================================
 Command : npm run test:compat
-Result  : 77 tests - 65 passed, 11 failed, 1 flaky - time 7.1 min
-
 Browsers and devices: Chrome (Chromium), Firefox, Safari (WebKit), Microsoft
 Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
 
+4.1 Final run (after the defect fix was deployed)                Result: PASSED
+--------------------------------------------------------------------------------
+  77 tests - 77 passed, 0 failed
+
   Test                                     Result
   ---------------------------------------  -----------------------------------
+  Developer page redirects to dashboard    PASSED on all 7
   API info returns JSON                    PASSED on all 7
   Security headers are sent                PASSED on all 7
-  Dashboard /, /signup, /docs, /contact,   PASSED on all 7
-  /privacy-policy, /terms-of-service
+  Dashboard /, /login, /signup, /docs,     PASSED on all 7
+  /contact, /privacy-policy,
+  /terms-of-service load and fit screen
   Login form can be typed into             PASSED on all 7
-  /login loads and fits the screen         PASSED on Chrome and Android;
-                                           FAILED on Firefox, Safari, iPhone,
-                                           iPad; flaky on Edge (see note A)
-  Developer page redirects to dashboard    FAILED on all 7 (see note B; fixed
-                                           in code, passes once deployed)
+
+  Each page check confirms: no error status, page not blank, no JavaScript
+  errors, and no sideways scrolling on that screen size.
+
+4.2 First run (before the fix)                         Result: 65 / 77 passed
+--------------------------------------------------------------------------------
+  77 tests - 65 passed, 11 failed, 1 flaky - time 7.1 min
+
+  Failed: Developer page redirects to dashboard - all 7 (note B)
+          /login loads and fits the screen - Firefox, Safari, iPhone, iPad;
+          flaky on Edge (note A)
 
   Note A - Test timing, not a system defect. The login page is drawn by the
            browser after the page finishes loading; the first test version
            checked for text too early. "Login form can be typed into" passed
-           on all 7 browsers, showing the page works. The test now waits up
-           to 15 seconds. Re-run pending.
+           on all 7 browsers, showing the page worked. The test was changed
+           to wait up to 15 seconds, like a real visitor. Passed in 4.1.
 
   Note B - DEFECT FOUND. On the deployed system, the API's developer page
-           (/developer) sends visitors to http://localhost:3000/, a local
-           development address, so visitors cannot reach the dashboard from
-           it. Cause: the address is fixed in public/index.html.
+           (/developer) sent visitors to http://localhost:3000/, a local
+           development address, so visitors could not reach the dashboard
+           from it. Cause: the address was fixed in public/index.html.
+           Fixed and deployed (see defect #1). Passed in 4.1.
 
 
 ================================================================================
@@ -206,19 +253,20 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   -  --------  -----------------------------------------------------------------
   1  High      Deployed developer page redirects visitors to localhost:3000
                (found by compatibility testing, all 7 browsers).
-               STATUS: FIXED in code (services/developer-portal.js). The page
-               now uses each environment's DASHBOARD_URL setting (on Vercel:
-               https://inventaapi.shop). Verified locally: redirect test
-               passes, 80/80 unit tests pass (9 new). Takes effect on the
-               live site after deployment; works for visitors once
-               defect #2 (domain) is fixed.
+               STATUS: FIXED AND DEPLOYED (services/developer-portal.js). The
+               page now uses each environment's DASHBOARD_URL setting (on
+               Vercel: https://inventaapi.shop). Deployed to production on
+               Nov 23, 2026 with no runtime errors; the redirect test then
+               passed on all 7 browsers/devices. Visitors reach the
+               dashboard through it once defect #2 (domain) is fixed.
   2  High      Custom domain inventaapi.shop points to a parked page
                (Hostinger "dns-parking"), so the site cannot be reached by
                its domain. The Vercel addresses still work.
-  3  Medium    At 20 concurrent users over a mobile hotspot, the deployed
+  3  Resolved  At 20 concurrent users over a mobile hotspot, the deployed
                system missed its response-time targets (p95 2.75 s) and 2
-               requests timed out. Likely network-bound; to be confirmed on
-               a faster network.
+               requests timed out. STATUS: NOT A SYSTEM DEFECT. The same
+               test run from Grafana Cloud (Singapore) passed: p95 39 ms,
+               0 failures (section 2.6). The hotspot was the bottleneck.
   4  Info      The tester's network allowed the database connection to open
                but held all database traffic, so the API could not be run
                against the database locally. Testing that needed the
@@ -230,12 +278,18 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
 ================================================================================
   Test type        Result
   ---------------  -------------------------------------------------------------
-  Unit             PASSED - 71/71 tests
+  Unit             PASSED - 80/80 tests on the tester's PC
+                   (71 original + 9 added with the redirect fix)
   Load (local)     PASSED - 12,534 requests, 0% errors, p95 5.73 ms
-  Load (deployed)  PASSED at 5 users (p95 443.88 ms);
-                   FAILED at 20 users (p95 2.75 s, 0.05% errors)
+  Load (deployed)  PASSED - 20 users from Grafana Cloud, Singapore:
+                   12,015 requests, 0 failures, p95 39 ms, 4/4 thresholds.
+                   (From the tester's hotspot: passed at 5 users, failed
+                   at 20 users - caused by the hotspot, see defect #3.)
   Statistical      Completed - descriptive statistics, 95% CIs, two Welch's
                    t-tests (both significant, p < 0.001)
-  Compatibility    65/77 passed on 7 browsers/devices; 1 real defect found
-                   (developer page redirect); login test re-run pending
+  Compatibility    PASSED - 77/77 on 7 browsers/devices (final run).
+                   First run 65/77 found 1 real defect (developer page
+                   redirect), which was fixed, deployed and re-tested.
+  Open issue       Custom domain inventaapi.shop still points to a parked
+                   page (defect #2); not a test failure.
 ================================================================================
