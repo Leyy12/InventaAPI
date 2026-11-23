@@ -166,37 +166,48 @@ CV = coefficient of variation (std dev / mean; lower = more consistent).
 
 
 ================================================================================
-4. COMPATIBILITY TESTING (Playwright) - first run, deployed system
+4. COMPATIBILITY TESTING (Playwright) - deployed system
 ================================================================================
 Command : npm run test:compat
-Result  : 77 tests - 65 passed, 11 failed, 1 flaky - time 7.1 min
-
 Browsers and devices: Chrome (Chromium), Firefox, Safari (WebKit), Microsoft
 Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
 
+4.1 Final run (after the defect fix was deployed)                Result: PASSED
+--------------------------------------------------------------------------------
+  77 tests - 77 passed, 0 failed
+
   Test                                     Result
   ---------------------------------------  -----------------------------------
+  Developer page redirects to dashboard    PASSED on all 7
   API info returns JSON                    PASSED on all 7
   Security headers are sent                PASSED on all 7
-  Dashboard /, /signup, /docs, /contact,   PASSED on all 7
-  /privacy-policy, /terms-of-service
+  Dashboard /, /login, /signup, /docs,     PASSED on all 7
+  /contact, /privacy-policy,
+  /terms-of-service load and fit screen
   Login form can be typed into             PASSED on all 7
-  /login loads and fits the screen         PASSED on Chrome and Android;
-                                           FAILED on Firefox, Safari, iPhone,
-                                           iPad; flaky on Edge (see note A)
-  Developer page redirects to dashboard    FAILED on all 7 (see note B; fixed
-                                           in code, passes once deployed)
+
+  Each page check confirms: no error status, page not blank, no JavaScript
+  errors, and no sideways scrolling on that screen size.
+
+4.2 First run (before the fix)                         Result: 65 / 77 passed
+--------------------------------------------------------------------------------
+  77 tests - 65 passed, 11 failed, 1 flaky - time 7.1 min
+
+  Failed: Developer page redirects to dashboard - all 7 (note B)
+          /login loads and fits the screen - Firefox, Safari, iPhone, iPad;
+          flaky on Edge (note A)
 
   Note A - Test timing, not a system defect. The login page is drawn by the
            browser after the page finishes loading; the first test version
            checked for text too early. "Login form can be typed into" passed
-           on all 7 browsers, showing the page works. The test now waits up
-           to 15 seconds. Re-run pending.
+           on all 7 browsers, showing the page worked. The test was changed
+           to wait up to 15 seconds, like a real visitor. Passed in 4.1.
 
   Note B - DEFECT FOUND. On the deployed system, the API's developer page
-           (/developer) sends visitors to http://localhost:3000/, a local
-           development address, so visitors cannot reach the dashboard from
-           it. Cause: the address is fixed in public/index.html.
+           (/developer) sent visitors to http://localhost:3000/, a local
+           development address, so visitors could not reach the dashboard
+           from it. Cause: the address was fixed in public/index.html.
+           Fixed and deployed (see defect #1). Passed in 4.1.
 
 
 ================================================================================
@@ -206,12 +217,12 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   -  --------  -----------------------------------------------------------------
   1  High      Deployed developer page redirects visitors to localhost:3000
                (found by compatibility testing, all 7 browsers).
-               STATUS: FIXED in code (services/developer-portal.js). The page
-               now uses each environment's DASHBOARD_URL setting (on Vercel:
-               https://inventaapi.shop). Verified locally: redirect test
-               passes, 80/80 unit tests pass (9 new). Takes effect on the
-               live site after deployment; works for visitors once
-               defect #2 (domain) is fixed.
+               STATUS: FIXED AND DEPLOYED (services/developer-portal.js). The
+               page now uses each environment's DASHBOARD_URL setting (on
+               Vercel: https://inventaapi.shop). Deployed to production on
+               Nov 23, 2026 with no runtime errors; the redirect test then
+               passed on all 7 browsers/devices. Visitors reach the
+               dashboard through it once defect #2 (domain) is fixed.
   2  High      Custom domain inventaapi.shop points to a parked page
                (Hostinger "dns-parking"), so the site cannot be reached by
                its domain. The Vercel addresses still work.
@@ -230,12 +241,15 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
 ================================================================================
   Test type        Result
   ---------------  -------------------------------------------------------------
-  Unit             PASSED - 71/71 tests
+  Unit             PASSED - 71/71 tests on the tester's PC
+                   (80 tests after the fix; 80/80 passed in the build
+                   environment, re-run on the tester's PC pending)
   Load (local)     PASSED - 12,534 requests, 0% errors, p95 5.73 ms
   Load (deployed)  PASSED at 5 users (p95 443.88 ms);
                    FAILED at 20 users (p95 2.75 s, 0.05% errors)
   Statistical      Completed - descriptive statistics, 95% CIs, two Welch's
                    t-tests (both significant, p < 0.001)
-  Compatibility    65/77 passed on 7 browsers/devices; 1 real defect found
-                   (developer page redirect); login test re-run pending
+  Compatibility    PASSED - 77/77 on 7 browsers/devices (final run).
+                   First run 65/77 found 1 real defect (developer page
+                   redirect), which was fixed, deployed and re-tested.
 ================================================================================
