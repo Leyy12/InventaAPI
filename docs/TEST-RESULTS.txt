@@ -101,6 +101,29 @@ Pages tested: /, /developer, /style.css (one "visit" = all three pages)
   Average           : 171.76 ms    Median          : 120.92 ms
   Min               : 65.33 ms     Max             : 2.35 s
 
+2.6 Deployed load test from Grafana Cloud k6, Singapore         Result: PASSED
+    (ramp to 20 users, 4 min - same script and targets as 2.4)
+--------------------------------------------------------------------------------
+  Load generated from : Grafana Cloud k6, Singapore load zone (next to the
+                        Vercel API region), not from the tester's hotspot
+  Requests            : 12,015 (average 45 requests/s, peak 58.25/s)
+  HTTP failures       : 0
+  Thresholds          : 4 / 4 passed
+  Checks passed       : 24K / 24K (100%)
+  p95 (all requests)  : 39 ms        target < 1 s   PASSED
+  Grafana Cloud Insights: Best practice 100, Reliability 100, System 100
+                          (no issues found)
+
+  Per page (ms)   Count  Min    Avg    Std dev  p95    p99    Max
+  /style.css      4K     3.4    7.3    12       17     36     470
+  /developer      4K     15     24     13       41     72     251
+  /               4K     16     28     34       48     111    1,000
+
+  Comparison with 2.4 (same 20-user test, tester's mobile hotspot):
+    p95 2.75 s -> 39 ms, errors 0.05% -> 0%, checks 90.92% -> 100%.
+    The only difference was where the load came from, which confirms the
+    tester's mobile hotspot, not the system, caused the 2.4 failure.
+
 Observations
   - Server logs on Vercel showed 0 errors and 0 warnings during the tests.
   - /style.css is delivered by Vercel's CDN without running the API code, yet
@@ -228,10 +251,11 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   2  High      Custom domain inventaapi.shop points to a parked page
                (Hostinger "dns-parking"), so the site cannot be reached by
                its domain. The Vercel addresses still work.
-  3  Medium    At 20 concurrent users over a mobile hotspot, the deployed
+  3  Resolved  At 20 concurrent users over a mobile hotspot, the deployed
                system missed its response-time targets (p95 2.75 s) and 2
-               requests timed out. Likely network-bound; to be confirmed on
-               a faster network.
+               requests timed out. STATUS: NOT A SYSTEM DEFECT. The same
+               test run from Grafana Cloud (Singapore) passed: p95 39 ms,
+               0 failures (section 2.6). The hotspot was the bottleneck.
   4  Info      The tester's network allowed the database connection to open
                but held all database traffic, so the API could not be run
                against the database locally. Testing that needed the
@@ -246,8 +270,10 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   Unit             PASSED - 80/80 tests on the tester's PC
                    (71 original + 9 added with the redirect fix)
   Load (local)     PASSED - 12,534 requests, 0% errors, p95 5.73 ms
-  Load (deployed)  PASSED at 5 users (p95 443.88 ms);
-                   FAILED at 20 users (p95 2.75 s, 0.05% errors)
+  Load (deployed)  PASSED - 20 users from Grafana Cloud, Singapore:
+                   12,015 requests, 0 failures, p95 39 ms, 4/4 thresholds.
+                   (From the tester's hotspot: passed at 5 users, failed
+                   at 20 users - caused by the hotspot, see defect #3.)
   Statistical      Completed - descriptive statistics, 95% CIs, two Welch's
                    t-tests (both significant, p < 0.001)
   Compatibility    PASSED - 77/77 on 7 browsers/devices (final run).
