@@ -46,7 +46,17 @@ test.describe('API server pages', () => {
     const redirect = page.waitForRequest(r => r.isNavigationRequest() && !r.url().startsWith(API_URL), { timeout: 15000 });
     await page.goto(`${API_URL}/developer`);
     const target = (await redirect).url();
-    expect(target.startsWith(DASHBOARD_URL), `the developer page sends visitors to ${target} instead of ${DASHBOARD_URL}`).toBe(true);
+    const local = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/u;
+    if (local.test(API_URL)) {
+      // Local API: must open the local dashboard.
+      expect(target.startsWith(DASHBOARD_URL), `the developer page sends visitors to ${target} instead of ${DASHBOARD_URL}`).toBe(true);
+    } else {
+      // Deployed API: must never send real visitors to a developer's own computer.
+      expect(local.test(target), `the deployed developer page sends visitors to a local address: ${target}`).toBe(false);
+      expect(target.startsWith('https://'), `the deployed developer page sends visitors to a non-HTTPS address: ${target}`).toBe(true);
+      // Optional exact check: set REDIRECT_URL to the dashboard address configured on the server.
+      if (process.env.REDIRECT_URL) expect(target.startsWith(process.env.REDIRECT_URL), `expected ${process.env.REDIRECT_URL}, got ${target}`).toBe(true);
+    }
     expect(errors, 'JavaScript errors on the page').toEqual([]);
   });
 

@@ -184,7 +184,8 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   /login loads and fits the screen         PASSED on Chrome and Android;
                                            FAILED on Firefox, Safari, iPhone,
                                            iPad; flaky on Edge (see note A)
-  Developer page redirects to dashboard    FAILED on all 7 (see note B)
+  Developer page redirects to dashboard    FAILED on all 7 (see note B; fixed
+                                           in code, passes once deployed)
 
   Note A - Test timing, not a system defect. The login page is drawn by the
            browser after the page finishes loading; the first test version
