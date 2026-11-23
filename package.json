@@ -38,7 +38,8 @@
     "test:jest": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:jest:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "test:compat": "playwright test --config tests/compatibility/playwright.config.js",
-    "stats:k6": "node scripts/stats/analyze-k6.mjs"
+    "stats:k6": "node scripts/stats/analyze-k6.mjs",
+    "check:connection": "node scripts/check-connection.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
