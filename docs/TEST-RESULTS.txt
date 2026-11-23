@@ -29,6 +29,8 @@ Result  : PASSED
   Test suites : 5 passed, 5 total
   Tests       : 71 passed, 71 total
   Time        : 4.677 s
+  (After the defect #1 fix: 6 suites, 80 tests - developer-portal.test.js
+   added with 9 tests. Re-run on the tester's PC pending.)
 
   Suite                       What it tests
   --------------------------  ------------------------------------------------
@@ -203,6 +205,12 @@ Edge, Android phone (Pixel 7), iPhone 14, iPad (7th gen)
   -  --------  -----------------------------------------------------------------
   1  High      Deployed developer page redirects visitors to localhost:3000
                (found by compatibility testing, all 7 browsers).
+               STATUS: FIXED in code (services/developer-portal.js). The page
+               now uses each environment's DASHBOARD_URL setting (on Vercel:
+               https://inventaapi.shop). Verified locally: redirect test
+               passes, 80/80 unit tests pass (9 new). Takes effect on the
+               live site after deployment; works for visitors once
+               defect #2 (domain) is fixed.
   2  High      Custom domain inventaapi.shop points to a parked page
                (Hostinger "dns-parking"), so the site cannot be reached by
                its domain. The Vercel addresses still work.
