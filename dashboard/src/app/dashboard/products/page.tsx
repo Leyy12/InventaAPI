@@ -1045,12 +1045,13 @@ DAAS_API_KEY=${generatedKey}
                     <td className="px-3 py-3 text-xs text-slate-300">{product.category || '—'}</td>
                     <td className="max-w-[20rem] px-3 py-3">
                       {product.variants && product.variants.length > 0 ? (
-                        <div className="space-y-1" onClick={e => e.stopPropagation()}>
-                          {/* Grouped by flavor: one line per flavor with its sizes. */}
-                          {[...new Set(product.variants.map(v => v.flavor || ''))].map(flavor => (
-                          <div key={flavor || 'none'} className="flex flex-wrap items-center gap-1">
-                            {flavor && <span className="mr-1 min-w-[6rem] text-xs font-medium text-slate-300">{flavor}</span>}
-                          {product.variants!.filter(v => (v.flavor || '') === flavor).map((v, i) => {
+                        (() => {
+                          const variants = product.variants!;
+                          const flavors = [...new Set(variants.map(v => v.flavor || ''))];
+                          // Group by flavor only when a flavor has several sizes; otherwise
+                          // (e.g. one "500mg · Capsule" variant) plain chips read better.
+                          const grouped = flavors.some(flavor => flavor && variants.filter(v => (v.flavor || '') === flavor).length > 1);
+                          const chip = (v: typeof variants[number], i: number, label: string) => {
                             const variantId = `${v.flavor || ''}|${v.size || ''}`;
                             const isVarInKey = coverage.variants.has(variantId);
                             const isVarSelected = productVars.has(variantId) || isVarInKey;
@@ -1064,13 +1065,27 @@ DAAS_API_KEY=${generatedKey}
                                   : isVarSelected ? 'border border-indigo-600 bg-indigo-500 text-white'
                                   : 'border border-slate-700 bg-slate-800/80 text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}>
                                 {isVarSelected && <Check className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />}
-                                {(flavor ? v.size : [v.flavor, v.size].filter(Boolean).join(' · ')) || 'Variant'}
+                                {label || 'Variant'}
                               </button>
                             );
-                          })}
-                          </div>
-                          ))}
-                        </div>
+                          };
+                          if (!grouped) return (
+                            <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
+                              {variants.map((v, i) => chip(v, i, [v.flavor, v.size].filter(Boolean).join(' · ')))}
+                            </div>
+                          );
+                          // Two aligned columns: flavor names on the left, their size chips on the right.
+                          return (
+                            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5" onClick={e => e.stopPropagation()}>
+                              {flavors.map(flavor => [
+                                <span key={`${flavor}-label`} className="max-w-[11rem] text-xs font-medium leading-tight text-slate-300">{flavor || 'Other'}</span>,
+                                <div key={`${flavor}-sizes`} className="flex flex-wrap gap-1">
+                                  {variants.map((v, i) => (v.flavor || '') === flavor ? chip(v, i, v.size || '') : null)}
+                                </div>,
+                              ])}
+                            </div>
+                          );
+                        })()
                       ) : <span className="text-xs text-slate-400">{getBaseSize(product) ? `Size: ${getBaseSize(product)}` : '—'}</span>}
                     </td>
                     <td className="px-3 py-3 text-xs">
