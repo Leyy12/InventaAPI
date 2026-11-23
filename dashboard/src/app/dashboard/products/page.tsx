@@ -74,6 +74,9 @@ function variantPhoto(product: { image_url?: unknown; image?: unknown; variants?
 }
 
 const PRODUCTS_PER_PAGE = 60;
+// Table view shows this many flavor lines (or plain chips) before "Show more".
+const TABLE_VARIANT_GROUPS = 3;
+const TABLE_VARIANT_CHIPS = 6;
 const VIEW_MODE_STORAGE_KEY = 'inventa.products.viewMode';
 type CatalogViewMode = 'grid' | 'table';
 
@@ -116,6 +119,13 @@ function CustomerCatalogSession() {
   const [selectedVariants, setSelectedVariants] = useState<Record<string, Set<string>>>({});
   // Last variant chip clicked on each card; the card photo shows that variant.
   const [clickedVariant, setClickedVariant] = useState<Record<string, string>>({});
+  // Table view: products whose full variant list is open ("Show more").
+  const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
+  const toggleVariantsExpanded = (productId: string) => setExpandedVariants(previous => {
+    const next = new Set(previous);
+    if (!next.delete(productId)) next.add(productId);
+    return next;
+  });
   const [paidSegment, setActiveSegment] = useState<string>("All");
   // Free and Pro accounts browse only their own segment; Pro Max can browse all three.
   const segmentLocked = isFreePlan(appUser?.plan) || paidKeyPlan === 'pro';
@@ -1069,20 +1079,37 @@ DAAS_API_KEY=${generatedKey}
                               </button>
                             );
                           };
+                          const expanded = expandedVariants.has(product.id!);
+                          const total = grouped ? flavors.length : variants.length;
+                          const limit = grouped ? TABLE_VARIANT_GROUPS : TABLE_VARIANT_CHIPS;
+                          const hidden = expanded ? 0 : Math.max(0, total - limit);
+                          const toggle = total > limit && (
+                            <button type="button" onClick={e => { e.stopPropagation(); toggleVariantsExpanded(product.id!); }}
+                              aria-expanded={expanded}
+                              className="mt-1.5 text-xs font-medium text-indigo-300 hover:text-indigo-200">
+                              {expanded ? 'Show less' : `Show more (+${total - limit})`}
+                            </button>
+                          );
                           if (!grouped) return (
-                            <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
-                              {variants.map((v, i) => chip(v, i, [v.flavor, v.size].filter(Boolean).join(' · ')))}
+                            <div onClick={e => e.stopPropagation()}>
+                              <div className="flex flex-wrap gap-1">
+                                {variants.map((v, i) => i < total - hidden ? chip(v, i, [v.flavor, v.size].filter(Boolean).join(' · ')) : null)}
+                              </div>
+                              {toggle}
                             </div>
                           );
                           // Two aligned columns: flavor names on the left, their size chips on the right.
                           return (
-                            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5" onClick={e => e.stopPropagation()}>
-                              {flavors.map(flavor => [
+                            <div onClick={e => e.stopPropagation()}>
+                            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
+                              {flavors.slice(0, total - hidden).map(flavor => [
                                 <span key={`${flavor}-label`} className="max-w-[11rem] text-xs font-medium leading-tight text-slate-300">{flavor || 'Other'}</span>,
                                 <div key={`${flavor}-sizes`} className="flex flex-wrap gap-1">
                                   {variants.map((v, i) => (v.flavor || '') === flavor ? chip(v, i, v.size || '') : null)}
                                 </div>,
                               ])}
+                            </div>
+                            {toggle}
                             </div>
                           );
                         })()
