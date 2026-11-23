@@ -132,21 +132,28 @@ so only normal HTTPS is needed. Nothing has to run on your computer.
 
 | Part | Live address |
 |---|---|
-| API | https://api.inventaapi.shop |
-| Customer dashboard | https://inventaapi.shop |
+| API | https://inventa-api-theta.vercel.app |
+| Customer dashboard | https://inventa-dashboard-tau.vercel.app |
 
 PowerShell (in Command Prompt use `set NAME=value` instead of `$env:NAME="value"`):
 
 ```
-k6 run -e BASE_URL=https://api.inventaapi.shop tests/load/smoke.js
-k6 run -e BASE_URL=https://api.inventaapi.shop --out json=test-results/live-load.json tests/load/load.js
+k6 run -e PROFILE=live -e BASE_URL=https://inventa-api-theta.vercel.app tests/load/smoke.js
+k6 run -e PROFILE=live -e BASE_URL=https://inventa-api-theta.vercel.app --out json=test-results/live-load.json tests/load/load.js
 npm run stats:k6 -- test-results/live-load.json
-k6 run -e BASE_URL=https://api.inventaapi.shop -e API_KEY=daas_v2_xxxx -e REQUESTS=20 --out json=test-results/live-catalog.json tests/load/daas-catalog.js
+k6 run -e PROFILE=live -e BASE_URL=https://inventa-api-theta.vercel.app -e API_KEY=daas_v2_xxxx -e REQUESTS=20 --out json=test-results/live-catalog.json tests/load/daas-catalog.js
 
-$env:API_URL="https://api.inventaapi.shop"
-$env:DASHBOARD_URL="https://inventaapi.shop"
+$env:API_URL="https://inventa-api-theta.vercel.app"
+$env:DASHBOARD_URL="https://inventa-dashboard-tau.vercel.app"
 npm run test:compat
 ```
+
+`-e PROFILE=live` uses deployed targets (95% of requests within 1 s, 99% within 2 s)
+instead of the localhost targets (0.5 s / 1.5 s), because live times include internet
+travel and serverless cold starts. State which targets you used in your report.
+
+The custom domain inventaapi.shop currently points to a parked page, so the Vercel
+addresses above are used.
 
 Be careful, this is the real system:
 - Run only `smoke.js` and `load.js` live. Skip `stress.js` and `spike.js`: 200 users can

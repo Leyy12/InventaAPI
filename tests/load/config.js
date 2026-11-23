@@ -7,8 +7,17 @@ export const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000';
 // so a load test from one computer on those paths would mostly get 429 answers.
 export const UNLIMITED_PAGES = ['/', '/developer', '/style.css'];
 
-export const DEFAULT_THRESHOLDS = {
+// Localhost targets: no internet travel time, so the server alone is measured.
+const LOCAL_THRESHOLDS = {
   http_req_failed: ['rate<0.01'],                  // less than 1% errors
   http_req_duration: ['p(95)<500', 'p(99)<1500'],  // 95% under 0.5 s, 99% under 1.5 s
   checks: ['rate>0.99'],
 };
+// Deployed targets (-e PROFILE=live): include internet travel time and serverless
+// cold starts, so 95% must finish within 1 s and 99% within 2 s.
+const LIVE_THRESHOLDS = {
+  http_req_failed: ['rate<0.01'],
+  http_req_duration: ['p(95)<1000', 'p(99)<2000'],
+  checks: ['rate>0.95'],
+};
+export const DEFAULT_THRESHOLDS = __ENV.PROFILE === 'live' ? LIVE_THRESHOLDS : LOCAL_THRESHOLDS;
